@@ -1,6 +1,5 @@
 import pymzml as mz
 
-
 data = "mzml/mhcc_d01_A10.mzML.gz"
 
 # Reading the data into a Reader object
