@@ -114,6 +114,8 @@ def integrate(args):
         except ValueError or TypeError:
             print('Invalid retention time tolerance given - using default value.')
             rt_tolerance = float(1.0)
+    else:
+        rt_tolerance = float(1.0)
 
     #
     # Open the mzid file
