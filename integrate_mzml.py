@@ -3,7 +3,6 @@
 Integrate MZML v.0.1.0. Build Date : : :.
 Written by Edward Lau (edward.lau@me.com)
 
-Classes that concern parsing mzIdentML files and creating summary tables
 
 """
 
@@ -16,6 +15,70 @@ from time import time
 class Mzml(object):
     def __init__(self, path):
         """
+        This class reads mzml files using pymzml and integrates based on the parsed mzid
+
+        #######
+        Examples for mzml
+        #######
+
+        import pymzml as mz
+
+        data = "mzml/mhcc_d01_A10.mzML.gz"
+
+        # Reading the data into a Reader object
+        spectra = mz.run.Reader(data)
+
+        # Get the number of spectra
+        spectra.getSpectrumCount()
+
+        # Get info of spectra, including ID of each individual spectrum
+        spectra.info
+        spectra.info['filename']
+
+        # Loop through all the spectra in the Reader object, get their ID
+        ms1_list = []
+        ms2_list = []
+
+        for spectrum in spectra:
+
+        if spectrum['ms level'] == 1:
+            ms1_list.append(spectrum['id'])
+
+        if spectrum['ms level'] == 2:
+            ms2_list.append(spectrum['id'])
+
+
+        # Get all peaks from a spectrum
+
+        spectra[9093].peaks
+
+        # Sort the spectra by intensity
+        def getKey(item):
+            return item[1]
+
+        sorted_spectrum = sorted(spectra[9093].peaks, reverse=True, key = getKey)
+
+        # To get only the top 150 peaks:
+        sorted_spectrum[:150]
+
+        # Write all ms1 file
+        run2 = mz.run.Writer(filename = 'write_test.mzML', run=spectra , overwrite = True)
+
+        for spectrum in spectra:
+
+        if spectrum['ms level'] == 1:
+            print(spectrum['id'])
+            run2.addSpec(spectrum)
+
+        run2.save()
+
+
+
+
+        #######
+        #######
+        #######
+
 
         :param path: path of the mzml file to be loaded, e.g., "~/Desktop/example.mzml"
         """
@@ -35,14 +98,15 @@ class Mzml(object):
 
         # Index retention time; turn this into a dictionary please.
         index = {}
-
+        i = 0
         for spectrum in self.msdata:
+            i += 1
 
             # # Print progress every 1000 spectra
             try:
-                if spectrum['id'] % 1000 == 0:
-                    print('Indexing ' + str(spectrum['id']) + ' of ' +
-                          str(self.msdata.getSpectrumCount()) + ' spectra.')
+                if i % 1000 == 0:
+                    print('Indexing ' + str(i) + ' of ' +
+                          str(self.msdata.getSpectrumCount()) + ' spectra (ID: ' + str(spectrum['id']) + ').' )
 
             except:
                 pass
@@ -82,10 +146,17 @@ class Mzml(object):
 
         # Loop through each spectrum, check if it is an MS1 spectrum, check if it is within 1 minute of retention time
         for nearbyScan_id, nearbyScan_rt in nearbyScans:
-            spectrum = self.msdata[nearbyScan_id]
+            try:
+                spectrum = self.msdata[nearbyScan_id]
+
+            except KeyError:
+                print("Key not found")
+                return []
+
 
             #Loop through every isotope in the to-do list
             for i in iso_to_do:
+
 
                 matchList = spectrum.hasPeak(peptide_am + (i*1.003/z))
 

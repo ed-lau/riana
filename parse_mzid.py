@@ -52,6 +52,9 @@ class Mzid(object):
         self.pep_summary_df = pd.DataFrame()
         self.pro_summary_df = pd.DataFrame()
 
+        self.filtered_protein_df = pd.DataFrame()
+        self.filtered_pep_summary_df = pd.DataFrame()
+
     def parse_file(self):
         """
         Get the mzid file xml root
@@ -94,8 +97,6 @@ class Mzid(object):
 
         for i in range(0, len(SpectrumIdentificationResult)):
 
-            psmList = []
-
             # Print progress every 1000 records
             if i % 1000 == 0:
                 print('Processing ' + str(i) + ' of ' + str(len(SpectrumIdentificationResult)) + ' records (PSM).')
@@ -109,6 +110,8 @@ class Mzid(object):
 
             for j in range(0, len(SpectrumIdentificationItem)):
 
+                psmList = []
+
                 sii_id = SpectrumIdentificationItem[j].attributes['id'].value
                 z = SpectrumIdentificationItem[j].attributes['chargeState'].value
                 mz = SpectrumIdentificationItem[j].attributes['experimentalMassToCharge'].value
@@ -118,6 +121,8 @@ class Mzid(object):
 
                 # Get the Peptide Evidence Ref (need this to link to other tables later)
                 PeptideEvidenceRef = SpectrumIdentificationItem[j].getElementsByTagName('PeptideEvidenceRef')[0]
+
+
                 pe_id = PeptideEvidenceRef.attributes['peptideEvidence_ref'].value
 
                 # Put SIR ID, spectrum_ID, SII ID, z, m/z, theoretical m/z, Peptide ID, passThreshold, PE ID into list
@@ -136,12 +141,15 @@ class Mzid(object):
                     # peptideList.append(name)
                     # peptideList.append(value)
 
-            # Add each PSM's psmList of info into the list of lists
-            allPsmList.append(psmList)
+                    # Add each PSM's psmList of info into the list of lists
+                    allPsmList.append(psmList)
+
+
 
         # Convert into pandas dataframe
         psm_df = pd.DataFrame(allPsmList)
-
+        psm_df.to_csv("all_psms.txt",sep='\t')
+        print(psm_df)
         #
         # Rename the columns in the PSM table
         #
@@ -171,7 +179,6 @@ class Mzid(object):
             psm_df[i] = temp
 
         psm_df.rename(columns=newcol, inplace=True)
-
 
         return psm_df
 
@@ -469,7 +476,7 @@ class Mzid(object):
 
         return True
 
-    def filter_peptide_summary(self, lysine_filter=0, protein_q=1e-2, peptide_q=1e-2):
+    def filter_peptide_summary(self, lysine_filter=0, protein_q=1e-2, peptide_q=1e-2, unique_only=False):
         """
         The peptide-centric summary is then fitered by:
         - peptides that belong to any protein identified at a protein Q value
@@ -479,6 +486,7 @@ class Mzid(object):
         :param lysine_filter: Lysine filter from command line argument
         :param protein_q: Protein-level Q value from command line argument
         :param peptide_q: Peptide-level Q value from command line argument
+        :param unique_only: Only doing unique peptides
         :return: True
         """
 
@@ -487,7 +495,9 @@ class Mzid(object):
         #
         try:
             self.filtered_protein_df = self.protein_df.loc[lambda x: x.percolator_Q_value.astype(float) < protein_q, :]
+            #self.filtered_protein_df = self.filtered_protein_df.reset_index()
         except:
+            print('Filtering protein failed.')
             self.filtered_protein_df = self.protein_df.loc
 
 
@@ -496,7 +506,7 @@ class Mzid(object):
         #
         try:
             self.pep_summary_df = self.pep_summary_df.loc[lambda x: x.percolator_Q_value.astype(float) < peptide_q, :]
-            self.pep_summary_df = self.pep_summary_df.reset_index()
+            self.pep_summary_df = self.pep_summary_df.reset_index(drop=True)
 
         except:
             pass
@@ -509,7 +519,7 @@ class Mzid(object):
         if lysine_filter == 1:
             try:
                 self.pep_summary_df = self.pep_summary_df.loc[lambda x: x.seq.apply(lambda y: y.count('K')) == 1, :]
-                self.pep_summary_df = self.pep_summary_df.reset_index()
+                self.pep_summary_df = self.pep_summary_df.reset_index(drop=True)
 
             except:
                 pass
@@ -517,7 +527,7 @@ class Mzid(object):
         if lysine_filter == 2:
             try:
                 self.pep_summary_df = self.pep_summary_df.loc[lambda x: x.seq.apply(lambda y: y.count('K')) > 0, :]
-                self.pep_summary_df = self.pep_summary_df.reset_index()
+                self.pep_summary_df = self.pep_summary_df.reset_index(drop=True)
 
             except:
                pass
@@ -526,11 +536,25 @@ class Mzid(object):
                                                 self.filtered_protein_df[self.filtered_protein_df.columns[[0,5]]],
                                                 how='inner')
 
+
         #
         # Get the protein Uniprot accession via PE and then via DBS
         #
         self.filtered_pep_summary_df = pd.merge(self.filtered_pep_summary_df, self.pe_df, how='left')
         self.filtered_pep_summary_df = pd.merge(self.filtered_pep_summary_df, self.dbs_df, how='left')
+        self.filtered_pep_summary_df = self.filtered_pep_summary_df.reset_index(drop=True)
+
+        # Get only the peptides associated with one and only one proteins
+        if unique_only:
+
+            try:
+                self.filtered_pep_summary_df = self.filtered_pep_summary_df.groupby('seq').filter(lambda x: (len(set(x['uniprot'])) == 1))
+                self.filtered_pep_summary_df = self.filtered_pep_summary_df.reset_index(drop=True)
+
+            except:
+                pass
+
+        self.filtered_pep_summary_df = self.filtered_pep_summary_df.reset_index(drop=True)
 
         return True
 
