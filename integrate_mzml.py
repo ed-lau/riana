@@ -119,6 +119,12 @@ class Mzml(object):
 
 
     def get_rt_from_scan(self, peptide_scan):
+        """
+        Given the scan number, return the retention time
+
+        :param peptide_scan: the peptide scan number
+        :return: the retention time
+        """
 
         # Some spectral properties: 'id', 'ms level', 'total ion current'
         # NB: According to the mzml OBO, MS:1000016 is the retention time
@@ -126,6 +132,15 @@ class Mzml(object):
 
 
     def get_isotopes_from_amrt(self, peptide_am, peptide_rt, z, rt_tolerance, iso_to_do):
+        """
+
+        :param peptide_am:
+        :param peptide_rt:
+        :param z:
+        :param rt_tolerance:
+        :param iso_to_do:
+        :return:
+        """
 
         if self.index == {}:
             print('No index found: creating new index.')
