@@ -5,6 +5,7 @@ Edward Lau 2016
 Usage:
     riana.py --help
     riana.py integrate <mzid> <mzml>  [--iso=0,6 --lys=0 --unique --test --qvalue=1e-2 --rt=1.0 --out=ria.txt ]
+    riana.py integrate_fast <mzid> <mzml>  [--iso=0,6 --lys=0 --unique --test --qvalue=1e-2 --rt=1.0 --out=ria.txt ]
     riana.py merge <index>
 
 Options:
@@ -25,13 +26,23 @@ Example:
 
 """
 
+
 from docopt import docopt
 from parse_mzid import Mzid
 from integrate_mzml import Mzml
 import pandas as pd
+import scipy
 import sys
 import os
 
+
+# mzml_loc = '/Users/edwardlau/Desktop/Heart_FASP_1_small/Heart_FASP_1_small.mzML'
+# mzid_loc = '/Users/edwardlau/Desktop/Heart_FASP_1_small/percolator.target.mzid'
+# lysine_filter=1
+# qcutoff=0.01
+# unique_pep=1
+# rt_tolerance=1
+# iso_to_do = [0,1,2,3,4,5,6]
 
 def integrate(args):
     """
@@ -354,82 +365,130 @@ def integrate_fast(args):
     print(mzid.filtered_pep_summary_df)
 
     print(end)
-    #
-    # Main loop through the mzidentml summary to pass tasks to the integration worker
-    #
-
-
-
 
     #
-    # Prepare the list of peptides and their mass and isotopomers to integrate
+    # Step 1: Get the list of peptides and their mass, isotopomers, and scan number to integrate
     #
 
-    input_table = [[] for i in range(0, end)]
+    input_table = []
 
     for i in range(end):
-        rt = mzml.get_rt_from_scan(float(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']))
-        z = float(mzid.filtered_pep_summary_df.loc[i, 'z'])
+        print(i)
 
-        # Break apart the get_isotope_from_amrt function to only get the spectra to do
+        # Get ALL the MS1 scans to integrate for this particular peptide
+        to_do = mzml.get_scans_to_do(int(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']), rt_tolerance)
 
+        # Append the input table with ID, peptide_id, uniprot, peptide_seq, all scans to integrate, and z
+        for scan_id, rt in to_do:
 
+            input = [i,
+                     mzid.filtered_pep_summary_df.loc[i, 'pep_id'],
+                     mzid.filtered_pep_summary_df.loc[i, 'uniprot'],
+                     mzid.filtered_pep_summary_df.loc[i, 'seq'],
+                     mzid.filtered_pep_summary_df.loc[i, 'z'],
+                     scan_id,
+                     rt,
+                     mzid.filtered_pep_summary_df.loc[i, 'calc_mz'],
+                                ]
+
+            input_table.append(input)
 
     #
+    # Just for tidiness, convert the input_table to a dataframe
+    #
+    df_columns = ['ID', 'pep_id', 'uniprot', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
+
+    in_df = pd.DataFrame(input_table, columns=df_columns)
+
+    # Arrange by scan number so the mzml iterator doesn't have to do read the files over and over
+    in_df = in_df.sort_values(by='scan_id').reset_index()
+
+    #
+    # Step 2: Get peak intensity for each isotopomer in each spectrum ID in each peptide
+    #
+
+    counter = len(in_df)
     # Prepare an empty list to encompass the output from each row of the mzidentml summary
+    output_table = [[] for i in range(0, counter)]
     #
+    # t1 = time()
+    # print('Extracting intensities from spectra...')
+    #
+    # t2 = time()
+    # print('Done. Extracting time: ' + str(round(t2 - t1, 2)) + ' seconds.')
 
-    output_table = [[] for i in range(0, end)]
-
-    for i in range(end):
+    for i in range(counter):
 
         out = []
 
+        print('Integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
 
-        print('Integrating peptide ' + str(i) + ' of ' + str(end))
-
-        rt = mzml.get_rt_from_scan(float(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']))
-        z = float(mzid.filtered_pep_summary_df.loc[i, 'z'])
-
-        iso = mzml.get_isotopes_from_amrt(peptide_am=float(mzid.filtered_pep_summary_df.loc[i, 'calc_mz']),
-                                          peptide_rt=rt,
-                                          z=z,
-                                          rt_tolerance=rt_tolerance,
+        # Get the intensities of all isotopomers from the spectrum ID
+        # NB: the calc_mz from the mzML file is the monoisotopic m/z
+        iso = mzml.get_isotope_from_scan_id(peptide_am=float(in_df.loc[i, 'calc_mz']),
+                                          z=float(in_df.loc[i, 'z']),
+                                          spectrum_id=in_df.loc[i, 'scan_id'],
                                           iso_to_do=iso_to_do)
 
         if iso:
             out.append(i)
-            out.append(mzid.filtered_pep_summary_df.loc[i, 'uniprot'])
-            out.append(mzid.filtered_pep_summary_df.loc[i, 'seq'])
-            out.append(mzid.filtered_pep_summary_df.loc[i, 'z'])
-            out.append(rt)
-            out.append(mzid.filtered_pep_summary_df.loc[i, 'calc_mz'])
+            out.append(in_df.loc[i, 'pep_id'])
+            out.append(in_df.loc[i, 'uniprot'])
+            out.append(in_df.loc[i, 'seq'])
+            out.append(in_df.loc[i, 'z'])
+            out.append(in_df.loc[i, 'scan_id'])
+            out.append(in_df.loc[i, 'rt'])
+            out.append(in_df.loc[i, 'calc_mz'])
 
             for j in range(0, len(iso_to_do)):
-                out.append(iso[j][1])
+                out.append(iso[j][2])
 
-            print(out)
+            #print(out)
 
             output_table[i] = out
 
-
-
-    #
-    # Convert the output_table into a data frame
-    #
-    df_columns = ['ID', 'uniprot', 'peptide', 'z', 'rt', 'calc_mz',]
+    df_columns = ['ID', 'pep_id', 'uniprot', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
 
     for each_iso in iso_to_do:
         df_columns.append('m' + str(each_iso))
 
     out_df = pd.DataFrame(output_table, columns=df_columns)
 
-    out_df.to_csv(out_loc, sep='\t')
+    # Arrange by scan number so the mzml iterator doesn't have to do read the files over and over
+    out_df = out_df.sort_values(by=['pep_id', 'ID']).reset_index()
+
+    #
+    # Step 3: Integrate each peptide (intensity over retention time)
+    #
+    cols_to_integrate = ['m' + str(iso) for iso in iso_to_do]
+    peptides_to_integrate = list(set(list(out_df.pep_id)))
+
+    integrated_output = []
+
+    for peptide in peptides_to_integrate:
+
+        # Subsetting the dataframe to consider only the current pep_id
+        subset_df = out_df[out_df['pep_id'] == peptide]
+        rt = subset_df['rt']
+
+        # Integrate each isotopomer over the retention time!
+        integrated = subset_df.groupby('pep_id')[cols_to_integrate].agg(lambda x: scipy.integrate.trapz(x, rt)).values.tolist()[0]
+        integrated = [peptide] + integrated
+        integrated_output.append(integrated)
+
+    integrated_df = pd.DataFrame(integrated_output, columns=['pep_id']+cols_to_integrate)
+
+    integrated_out_df = pd.merge(mzid.filtered_pep_summary_df, integrated_df, on='pep_id', how='left')
+
+
+    #
+    # Convert the output_table into a data frame
+    #
+
+
+    integrated_out_df.to_csv(out_loc, sep='\t')
 
     return sys.exit(os.EX_OK)
-
-
-
 
 
 
