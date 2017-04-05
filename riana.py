@@ -26,10 +26,10 @@ Example:
 
 """
 
-
 from docopt import docopt
 from parse_mzid import Mzid
 from integrate_mzml import Mzml
+from time import time
 import pandas as pd
 import scipy
 import sys
@@ -410,18 +410,24 @@ def integrate_fast(args):
     counter = len(in_df)
     # Prepare an empty list to encompass the output from each row of the mzidentml summary
     output_table = [[] for i in range(0, counter)]
-    #
-    # t1 = time()
-    # print('Extracting intensities from spectra...')
-    #
-    # t2 = time()
-    # print('Done. Extracting time: ' + str(round(t2 - t1, 2)) + ' seconds.')
+
+    t1 = time()
+    print('Extracting intensities from spectra...')
+
+
 
     for i in range(counter):
 
         out = []
 
         print('Integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
+
+        if i % 10 == 0:
+            t2 = time()
+            print('Done. Extracting time: ' + str(round(t2 - t1, 2)) + ' seconds.')
+            avg_time = (t2-t1)/(i+1)
+            remaining_time = ((counter - i)/avg_time ) / 60
+            print('Remaining time ' + str(remaining_time) + ' minutes.')
 
         # Get the intensities of all isotopomers from the spectrum ID
         # NB: the calc_mz from the mzML file is the monoisotopic m/z

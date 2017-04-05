@@ -86,18 +86,24 @@ class Mzml(object):
 
         self.path = os.path.join(path)
         self.msdata = mz.run.Reader(self.path, MS1_Precision=20e-6, MSn_Precision=20e-6)
-        self.index = self.make_index()
+        self.ms1_index = {}
+        self.ms2_index = {}
+        self.make_index()
+
 
 
 
     def make_index(self):
         """
+        Generate two indices:
+        MS1 index: a dictionary of ms1 scan number vs. rt
+        MS2 index: a dictionary of ms2 scan number vs. rt
 
-        :return: index: a dictionary ms1 scan number vs. rt
+
+        :return: True
         """
 
         # Index retention time; turn this into a dictionary please.
-        index = {}
         i = 0
         for spectrum in self.msdata:
             i += 1
@@ -111,15 +117,18 @@ class Mzml(object):
             except:
                 pass
 
-            # Only indexing MS1 scans
+            # Only indexing MS1 and MS2 scans
             if spectrum['ms level'] == 1:
-                index[spectrum['id']] = spectrum['MS:1000016']
+                self.ms1_index[spectrum['id']] = spectrum['MS:1000016']
+            if spectrum['ms level'] == 2:
+                self.ms2_index[spectrum['id']] = spectrum['MS:1000016']
 
-        return index
+        return True
 
 
     def get_rt_from_scan(self, peptide_scan):
         """
+        For the deprecated integrate function
         Given the scan number, return the retention time
 
         :param peptide_scan: the peptide scan number
@@ -131,8 +140,80 @@ class Mzml(object):
         return self.msdata[peptide_scan]['MS:1000016']
 
 
+
+    def get_scans_to_do(self, peptide_scan, rt_tolerance):
+        """
+        For the new integrate_fast function
+        Given the scan number, return all the scan IDs to integrate
+
+        :param peptide_scan:    MS2 scan number
+        :param rt_tolerance:    Retention time tolerance in min
+        :return: the ID of the scans to be integrated
+        """
+
+
+        peptide_rt = self.ms2_index[peptide_scan]
+
+        if self.ms2_index == {}:
+            print('No index found: creating new index.')
+            self.make_index()
+
+        # Choose the scan numbers from the index
+        nearbyScans = []
+        for scan_id, scan_rt in self.ms1_index.items():
+            if abs(scan_rt - peptide_rt) <= rt_tolerance:
+                nearbyScans.append([scan_id, scan_rt])
+
+        return nearbyScans
+
+
+    def get_isotope_from_scan_id(self, peptide_am, z, spectrum_id, iso_to_do):
+        """
+        For the new integrate_fast function, get isotope intensities of a scan
+        given a peptide m/z and RT combination
+        :param peptide_am:
+        :param z:
+        :param spectrum_id:
+        :param iso_to_do:
+        :return:
+        """
+
+
+        print(peptide_am, spectrum_id,)
+
+        timeDependentIntensities = []
+
+        # Get the spectrum based on the spectrum number
+        try:
+            spectrum = self.msdata[spectrum_id]
+
+        except KeyError:
+            print("Spectrum not found")
+            return []
+
+
+
+        #Loop through every isotope in the to-do list
+        for i in iso_to_do:
+
+            iso_mz = peptide_am + ((i * 1.003) / z)
+
+            matchList = spectrum.hasPeak(iso_mz)
+
+            if matchList:
+                for mz, I in matchList:
+                    timeDependentIntensities.append([spectrum_id, i, I, mz])
+            else:
+                timeDependentIntensities.append([spectrum_id, i, 0, iso_mz])
+
+       
+        return timeDependentIntensities
+
+
     def get_isotopes_from_amrt(self, peptide_am, peptide_rt, z, rt_tolerance, iso_to_do):
         """
+         For the deprecated integrate function, get isotope intensities of all relevant scans
+         given a peptide m/z and RT combination, then integrate over time
 
         :param peptide_am:
         :param peptide_rt:
@@ -142,7 +223,7 @@ class Mzml(object):
         :return:
         """
 
-        if self.index == {}:
+        if self.ms2_index == {}:
             print('No index found: creating new index.')
             self.make_index()
 
@@ -152,7 +233,7 @@ class Mzml(object):
 
         # Choose the scan numbers from the index
         nearbyScans = []
-        for scan_id, scan_rt in self.index.items():
+        for scan_id, scan_rt in self.ms1_index.items():
             if abs(scan_rt - peptide_rt) <= rt_tolerance:
                 nearbyScans.append([scan_id, scan_rt])
 
