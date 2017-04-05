@@ -1,7 +1,7 @@
 """
 
 Integrate MZML v.0.1.0. Build Date : : :.
-Written by Edward Lau (edward.lau@me.com)
+Written by Edward Lau (edward.lau@me.com) 2016-2017
 
 
 """

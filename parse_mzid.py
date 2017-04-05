@@ -1,13 +1,26 @@
 """
 
 Python mzid Parser v.0.1.0. Build Date : : :.
-Written by Edward Lau (edward.lau@me.com)
+Written by Edward Lau (edward.lau@me.com) 2016-2017
 
 Classes that concern parsing mzIdentML files and creating summary tables
 
 
+Usage:
+    parse_mzid.py --help
+    parse_mzid.py  <mzid> [--out=mzid.txt ]
+
+Options:
+    -h --help            Show this screen.
+    -v --version         Show version.
+    --out=mzid.txt       Name of output file [default: mzid.txt]
+
+Example:
+    riana.py percolator.target.mzid --out=mzid.txt
+
 """
 
+from docopt import docopt
 from time import time
 from xml.dom import minidom
 import pandas as pd
@@ -66,6 +79,9 @@ class Mzid(object):
         print('Reading mzID file as document object model...')
         t1 = time()
         xmldoc = minidom.parse(self.path).childNodes[0]
+        # xmldoc = minidom.parse("external_mzid_test/mzidentml-example.mzid").childNodes[0]
+        # xmldoc = minidom.parse("external_mzid_test/BSA1_msgfplus_v2016_09_16.mzid").childNodes[0]
+
         t2 = time()
         print('Done. Processing time: ' + str(round(t2 - t1, 2)) + ' seconds.')
 
@@ -120,10 +136,11 @@ class Mzid(object):
                 pass_threshold = SpectrumIdentificationItem[j].attributes['passThreshold'].value
 
                 # Get the Peptide Evidence Ref (need this to link to other tables later)
-                PeptideEvidenceRef = SpectrumIdentificationItem[j].getElementsByTagName('PeptideEvidenceRef')[0]
-
-
-                pe_id = PeptideEvidenceRef.attributes['peptideEvidence_ref'].value
+                try:
+                    PeptideEvidenceRef = SpectrumIdentificationItem[j].getElementsByTagName('PeptideEvidenceRef')[0]
+                    pe_id = PeptideEvidenceRef.attributes['peptideEvidence_ref'].value
+                except IndexError:
+                    pe_id = "no_id"
 
                 # Put SIR ID, spectrum_ID, SII ID, z, m/z, theoretical m/z, Peptide ID, passThreshold, PE ID into list
                 psmList.extend([sir_id, spectrum_id, sii_id, z, mz, calc_mz, pep_id, pass_threshold, pe_id])
@@ -132,11 +149,20 @@ class Mzid(object):
                 cvParams = SpectrumIdentificationItem[j].getElementsByTagName('cvParam')
 
                 for cvParam in cvParams:
+
+                    # Restrict to Top level cvParams only (no fragmentation stuff)
+                    if cvParam.parentNode != SpectrumIdentificationItem[j]:
+                        continue
+
                     acc = cvParam.attributes['accession'].value
                     name = cvParam.attributes['name'].value
-                    value = cvParam.attributes['value'].value
+                    try:
+                        value = cvParam.attributes['value'].value
+                    except KeyError:
+                        value = 0
                     cvParamList = [acc, name, value]
                     psmList.append(cvParamList)
+
                     # peptideList.append(acc)
                     # peptideList.append(name)
                     # peptideList.append(value)
@@ -148,7 +174,7 @@ class Mzid(object):
 
         # Convert into pandas dataframe
         psm_df = pd.DataFrame(allPsmList)
-        psm_df.to_csv("all_psms.txt",sep='\t')
+        psm_df.to_csv("all_psms.txt", sep='\t')
         print(psm_df)
         #
         # Rename the columns in the PSM table
@@ -170,12 +196,24 @@ class Mzid(object):
                   8: 'pe_id',
                   }
 
-        # Getting the name of the cvParam from the first row of the ith column of the dataframe
+        # Getting the name of the cvParam from the first filled row of the ith column of the dataframe
         for i in range(9, len(colnames)):
-            newcol[i] = re.sub(' |:', '_', psm_df[i][0][1])
+            for j in range(0, len(psm_df)):
+                try:
+                    newcol[i] = re.sub(' |:', '_', psm_df[i][j][1])
+                    break
+                except TypeError:
+                    continue
+
             temp = []
-            for acc, name, value in psm_df[i]:
-                temp.append(value)
+
+            # Loop over each line and add values
+            for j in range(0, len(psm_df)):
+                if psm_df[i][j] is None:
+                    temp.append(-1)
+                else:
+                    temp.append(psm_df[i][j][2])
+
             psm_df[i] = temp
 
         psm_df.rename(columns=newcol, inplace=True)
@@ -218,9 +256,19 @@ class Mzid(object):
             cvParams = Peptide[i].getElementsByTagName('cvParam')
 
             for cvParam in cvParams:
+
+                # Restrict to Top level cvParams only (no fragmentation stuff)
+                if cvParam.parentNode != Peptide[i]:
+                    continue
+
                 acc = cvParam.attributes['accession'].value
                 name = cvParam.attributes['name'].value
-                value = cvParam.attributes['value'].value
+
+                try:
+                    value = cvParam.attributes['value'].value
+                except KeyError:
+                    value = 0
+
                 cvParamList = [acc, name, value]
                 peptideList.append(cvParamList)
 
@@ -263,6 +311,19 @@ class Mzid(object):
         # Traverse to DataCollection > ProteinDetectionList
         DataCollection = self.root.getElementsByTagName('DataCollection')[0]
         ProteinDetectionList = DataCollection.getElementsByTagName('ProteinDetectionList')
+
+
+        # If there is no ProteinDetectionList in the mzid (apparently seen in some MSGF results)
+        # Return an empty protein_df
+        if not ProteinDetectionList:
+            print('No Protein Detection List found.')
+            protein_df = pd.DataFrame(columns=['pag_id',
+                                               'pdh_ud',
+                                               'dbs_id',
+                                               'prot_pass_threshold',
+                                               'pe_id',
+                                               'sii_id'])
+            return protein_df
 
         # Traverse down to each ProteinAmbiguityGroup from each ProteinDetectionList - There are multiple PAG per PDL
         ProteinAmbiguityGroup = ProteinDetectionList[0].getElementsByTagName('ProteinAmbiguityGroup')
@@ -310,9 +371,19 @@ class Mzid(object):
                     proteinList.extend([pag_id, pdh_id, dbs_id, pass_threshold, pe_id, sii_id])
 
                     for cvParam in cvParams:
+
+                        # Restrict to Top level cvParams only (no fragmentation stuff)
+                        if cvParam.parentNode != ProteinDetectionHypothesis:
+                            continue
+
                         acc = cvParam.attributes['accession'].value
                         name = cvParam.attributes['name'].value
-                        value = cvParam.attributes['value'].value
+
+                        try:
+                            value = cvParam.attributes['value'].value
+                        except KeyError:
+                            value = 0
+
                         cvParamList = [acc, name, value]
                         proteinList.append(cvParamList)
 
@@ -428,7 +499,12 @@ class Mzid(object):
                 print('Processing ' + str(i) + ' of ' + str(len(DBSequence)) + ' records (DatabaseSequences).')
 
             dbs_id = DBSequence[i].attributes['id'].value
-            length = DBSequence[i].attributes['length'].value
+
+            try:
+                length = DBSequence[i].attributes['length'].value
+            except KeyError:
+                length = -1
+
             acc = DBSequence[i].attributes['accession'].value
 
             # Add DBSequence ID, sequence length, and Uniprot accession to the dbsList
@@ -449,7 +525,7 @@ class Mzid(object):
         # The first three columns are ID, Sequence
         newcol = {0: 'dbs_id',
                   1: 'length',
-                  2: 'uniprot',
+                  2: 'acc',
                   }
 
         dbs_df.rename(columns=newcol, inplace=True)
@@ -497,8 +573,8 @@ class Mzid(object):
             self.filtered_protein_df = self.protein_df.loc[lambda x: x.percolator_Q_value.astype(float) < protein_q, :]
             #self.filtered_protein_df = self.filtered_protein_df.reset_index()
         except:
-            print('Filtering protein failed.')
-            self.filtered_protein_df = self.protein_df.loc
+            print('No filtering by protein Q value done.')
+            self.filtered_protein_df = self.protein_df
 
 
         #
@@ -534,7 +610,7 @@ class Mzid(object):
 
         self.filtered_pep_summary_df = pd.merge(self.pep_summary_df,
                                                 self.filtered_protein_df[self.filtered_protein_df.columns[[0,5]]],
-                                                how='inner')
+                                                how='left') # NB: 2017-04-05 might need 'inner' here for riana to work
 
 
         #
@@ -558,9 +634,37 @@ class Mzid(object):
 
         return True
 
+def parse_mzid(args):
+    """
+    Parse
+    :param args: Arguments from command line
+    :return:
+
+    """
+
+    # Handle command line arguments
+    mzid_loc = args['<mzid>']
+    out_loc = args['--out']
+
+    try:
+        mzid = Mzid(mzid_loc)
+        mzid.make_peptide_summary()
+        mzid.filter_peptide_summary(lysine_filter=0, protein_q=1, peptide_q=1, unique_only=False)
+        mzid.filtered_pep_summary_df.to_csv(out_loc, sep='\t')
+
+
+    except OSError as e:
+        sys.exit('Failed to load mzid file. ' + str(e.errno))
+
+    return sys.exit(os.EX_OK)
+
 #
 #   For doctest
 #
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()
+#
+# Docopt
+#
+if __name__ == "__main__":
+    args = docopt(__doc__, version='Python mzid Parser v.0.1.0.')
+    print(args)
+    parse_mzid(args)

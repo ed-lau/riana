@@ -1,6 +1,7 @@
 """
-Relative Isotope Abundance Analyzer v.0.2.0
-Edward Lau 2016
+Relative Isotope Abundance Analyzer v.0.2.0. Build Date : : :.
+Written by Edward Lau (edward.lau@me.com) 2016-2017
+
 
 Usage:
     riana.py --help
@@ -383,7 +384,7 @@ def integrate_fast(args):
 
             input = [i,
                      mzid.filtered_pep_summary_df.loc[i, 'pep_id'],
-                     mzid.filtered_pep_summary_df.loc[i, 'uniprot'],
+                     mzid.filtered_pep_summary_df.loc[i, 'acc'],
                      mzid.filtered_pep_summary_df.loc[i, 'seq'],
                      mzid.filtered_pep_summary_df.loc[i, 'z'],
                      scan_id,
@@ -396,7 +397,7 @@ def integrate_fast(args):
     #
     # Just for tidiness, convert the input_table to a dataframe
     #
-    df_columns = ['ID', 'pep_id', 'uniprot', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
+    df_columns = ['ID', 'pep_id', 'acc', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
 
     in_df = pd.DataFrame(input_table, columns=df_columns)
 
@@ -439,7 +440,7 @@ def integrate_fast(args):
         if iso:
             out.append(i)
             out.append(in_df.loc[i, 'pep_id'])
-            out.append(in_df.loc[i, 'uniprot'])
+            out.append(in_df.loc[i, 'acc'])
             out.append(in_df.loc[i, 'seq'])
             out.append(in_df.loc[i, 'z'])
             out.append(in_df.loc[i, 'scan_id'])
@@ -453,7 +454,7 @@ def integrate_fast(args):
 
             output_table[i] = out
 
-    df_columns = ['ID', 'pep_id', 'uniprot', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
+    df_columns = ['ID', 'pep_id', 'acc', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
 
     for each_iso in iso_to_do:
         df_columns.append('m' + str(each_iso))
