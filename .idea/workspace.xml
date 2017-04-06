@@ -3,6 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="cb41f6fb-6451-4df6-9fcd-a09b4874d8b0" name="Default" comment="">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/readme.md" afterPath="$PROJECT_DIR$/readme.md" />
     </list>
     <ignored path="pymzml_integrator.iws" />
     <ignored path=".idea/workspace.xml" />
@@ -14,7 +15,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="CreatePatchCommitExecutor">
-    <option name="PATCH_PATH" value="" />
+    <option name="PATCH_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="default_target" />
   <component name="FavoritesManager">
@@ -62,8 +63,8 @@
       <file leaf-file-name="readme.md" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/readme.md">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="1305">
-              <caret line="87" column="17" lean-forward="false" selection-start-line="87" selection-start-column="17" selection-end-line="87" selection-end-column="17" />
+            <state relative-caret-position="218">
+              <caret line="88" column="5" lean-forward="false" selection-start-line="88" selection-start-column="5" selection-end-line="88" selection-end-column="5" />
               <folding />
             </state>
           </provider>
@@ -384,7 +385,14 @@
       <option name="project" value="LOCAL" />
       <updated>1491509205875</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="Documentation update">
+      <created>1491509374482</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1491509374482</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TodoView">
@@ -441,7 +449,8 @@
     <MESSAGE value="Misc fixes" />
     <MESSAGE value="Added code to run integrate_mzml directly from command line.&#10;Catching exceptions from loading mzid from MSGF BSA (no ProteinDetectionList in mzid)&#10;Catching exceptions from loading sample mzid from Mascot (fragmentation cvParams with no value field)" />
     <MESSAGE value="Usage example" />
-    <option name="LAST_COMMIT_MESSAGE" value="Usage example" />
+    <MESSAGE value="Documentation update" />
+    <option name="LAST_COMMIT_MESSAGE" value="Documentation update" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -750,8 +759,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/readme.md">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="1305">
-          <caret line="87" column="17" lean-forward="false" selection-start-line="87" selection-start-column="17" selection-end-line="87" selection-end-column="17" />
+        <state relative-caret-position="218">
+          <caret line="88" column="5" lean-forward="false" selection-start-line="88" selection-start-column="5" selection-end-line="88" selection-end-column="5" />
           <folding />
         </state>
       </provider>
