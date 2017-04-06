@@ -1,6 +1,6 @@
 """
 
-Python mzid Parser v.0.1.0. Build Date : : :.
+Python mzid Parser v.0.1.1. 2017-04-06
 Written by Edward Lau (edward.lau@me.com) 2016-2017
 
 Classes that concern parsing mzIdentML files and creating summary tables
@@ -16,7 +16,7 @@ Options:
     --out=mzid.txt       Name of output file [default: mzid.txt]
 
 Example:
-    riana.py percolator.target.mzid --out=mzid.txt
+    parse_mzid.py percolator.target.mzid --out=mzid.txt
 
 """
 
