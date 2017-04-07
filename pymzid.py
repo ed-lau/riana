@@ -1,19 +1,19 @@
 """
 
-Python mzid Parser v.0.1.1. 2017-04-06
-Written by Edward Lau (edward.lau@me.com) 2016-2017
-
-Classes that concern parsing mzIdentML files and creating summary tables
-
+pymzid - python mzIdentML Parser v.0.2.1. 2017-04-07
+pymzid reads in mzid files and creates flat summary tables.
+Written by Edward Lau (lau1@stanford.edu) 2016-2017
 
 Usage:
-    parse_mzid.py --help
-    parse_mzid.py  <mzid> [--out=mzid.txt ]
+    pymzid.py --help
+    pymzid.py read <mzid> [--out=mzid.txt --id --verbose]
 
 Options:
-    -h --help            Show this screen.
-    -v --version         Show version.
-    --out=mzid.txt       Name of output file [default: mzid.txt]
+    -h --help           Show this screen.
+    -v --version        Show version.
+    --out=mzid.txt      Name of output file [default: mzid.txt]
+    --id                Only outputs rows associated with protein accession
+    --verbose           Prints progress messages
 
 Example:
     parse_mzid.py percolator.target.mzid --out=mzid.txt
@@ -79,6 +79,7 @@ class Mzid(object):
         print('Reading mzID file as document object model...')
         t1 = time()
         xmldoc = minidom.parse(self.path).childNodes[0]
+        # xmldoc = minidom.parse("small_test/percolator.target.mzid").childNodes[0]
         # xmldoc = minidom.parse("external_mzid_test/mzidentml-example.mzid").childNodes[0]
         # xmldoc = minidom.parse("external_mzid_test/BSA1_msgfplus_v2016_09_16.mzid").childNodes[0]
 
@@ -87,7 +88,7 @@ class Mzid(object):
 
         # Check if this is mzML 1.1 or above
         if xmldoc.attributes['version'].value < '1.1.0':
-            sys.exit('mzML version is not 1.1 or above.')
+            sys.exit('mzML version is not 1.1.0 or above.')
 
         else:
             return xmldoc
@@ -208,6 +209,9 @@ class Mzid(object):
             temp = []
 
             # Loop over each line and add values
+            # This is rewritten to use [row][column] index instead of just adding the entire column
+            # e.g., like for accession, name, value in psm[i] temp.append(value)
+            # In order to account for some search engines having certain cvParam flags in only some rows.
             for j in range(0, len(psm_df)):
                 if psm_df[i][j] is None:
                     temp.append(-1)
@@ -532,42 +536,65 @@ class Mzid(object):
 
         return dbs_df
 
-    def make_peptide_summary(self):
+    def make_peptide_summary(self, take_psm_df_cvParams=True):
         """
         Take the five Mzid data frames, and return a flat table after filtering for Q values
 
-        It first combines PSM and Peptide into a peptide-centric summary.
+        It first combines PSM and Peptide into a peptide-centric summary, which contains:
+        Peptide ID, sequence, ... (cvParams in peptide_df) ... , SIR_id, spectrum ID, SII_Id
+        z, m/z, calculated m/z, pep_pass_threshold, pe_id, ... (optionally, cvParams in psm_df)
 
+        2016-03-06 EL
+        Unfortunately the ugly "take_psm_df_cvParams" flag is needed here
+        because some workflows like Percolator has cvParams with identical names for different purposes
+        in both the PSM section and the Peptide section.
+
+        Percolator outputs "percolator:score",
+        "percolator:Q value", and "percolator:PEP" for both Spectral Identification Item and for Peptide
+        In Riana we only take the peptide level Q value but not PSM-level q value, hence if the
+        take_psm_df_cvParams flag is set to False we will take only the standard columns [0:8]
+        from the psm_df (without the cvParams-derived columns)
+        in order to avoid conflicts in merging.
+
+        We may have to create other flags (such as to only take certain standard
+        columns from peptide_df and other dataframes) to account for other cvParams conflict.
+
+        :param take_psm_df_cvParams: Whether to keep the cvParams columns from the PSM dataframe
         :return: True
         """
 
-        # From these five tables, output a peptide-centric summary, and a protein-centric summary
-        # Peptide-centric Summary combines PSM and Peptide, contains Sequence, mz, z, spectrumID
-
-
-        # Alternatively, assuming the percolator scores are already sorted
+        # Here we assuming the identification scores are already sorted from top to bottom
+        # #and take only one psm_id for each pep_id.
         self.psm_df = self.psm_df.groupby('pep_id', sort=False).first().reset_index()
 
-        self.pep_summary_df = pd.merge(self.peptide_df, self.psm_df[self.psm_df.columns[0:8]], how='left')
+        if take_psm_df_cvParams:
+            self.pep_summary_df = pd.merge(self.peptide_df, self.psm_df, how='left')
+        else:
+            self.pep_summary_df = pd.merge(self.peptide_df, self.psm_df[self.psm_df.columns[0:8]], how='left')
 
         return True
 
-    def filter_peptide_summary(self, lysine_filter=0, protein_q=1e-2, peptide_q=1e-2, unique_only=False):
+    def filter_peptide_summary(self, lysine_filter=0, protein_q=1e-2, peptide_q=1e-2, unique_only=False, require_protein_id=False):
         """
         The peptide-centric summary is then fitered by:
         - peptides that belong to any protein identified at a protein Q value
         - peptides below a certain peptide Q value
         - peptides containing certain number of lysines
 
+        # 2017-04-06 Note the require_protein_id flag doesn't work for MSGF+ test files at the moment
+        # because it seems the MSGF+ mzID files have no ProteinDetectioNList fields but instead
+        # store the protein accessions inside <DBSequence>. Turn the flag off when doing MSGF+.
+
         :param lysine_filter: Lysine filter from command line argument
         :param protein_q: Protein-level Q value from command line argument
         :param peptide_q: Peptide-level Q value from command line argument
         :param unique_only: Only doing unique peptides
+        :param require_protein_id: Require protein IDs (to filter out some mascot rows with no protein fields)
         :return: True
         """
 
         #
-        # Filter peptides by Protein Q value
+        # Filter peptides by Protein Q value.
         #
         try:
             self.filtered_protein_df = self.protein_df.loc[lambda x: x.percolator_Q_value.astype(float) < protein_q, :]
@@ -608,9 +635,17 @@ class Mzid(object):
             except:
                pass
 
-        self.filtered_pep_summary_df = pd.merge(self.pep_summary_df,
-                                                self.filtered_protein_df[self.filtered_protein_df.columns[[0,5]]],
-                                                how='left') # NB: 2017-04-05 might need 'inner' here for riana to work
+        # 2013-04-06 Again I forgot why we only chose the first five columns here. Resetting to all columns for now.
+
+        if require_protein_id:
+            self.filtered_pep_summary_df = pd.merge(self.pep_summary_df,
+                                                    self.filtered_protein_df[self.filtered_protein_df.columns[[0, 5]]],
+                                                    how='inner') # NB: 2017-04-05 might need 'inner' here for riana to work
+        elif not require_protein_id:
+            self.filtered_pep_summary_df = pd.merge(self.pep_summary_df,
+                                                    self.filtered_protein_df[self.filtered_protein_df.columns[[0, 5]]],
+                                                    how='left')  # NB: 2017-04-05 might need 'inner' here for riana to work
+
 
 
         #
@@ -624,7 +659,7 @@ class Mzid(object):
         if unique_only:
 
             try:
-                self.filtered_pep_summary_df = self.filtered_pep_summary_df.groupby('seq').filter(lambda x: (len(set(x['uniprot'])) == 1))
+                self.filtered_pep_summary_df = self.filtered_pep_summary_df.groupby('seq').filter(lambda x: (len(set(x['acc'])) == 1))
                 self.filtered_pep_summary_df = self.filtered_pep_summary_df.reset_index(drop=True)
 
             except:
@@ -634,7 +669,7 @@ class Mzid(object):
 
         return True
 
-def parse_mzid(args):
+def read(args):
     """
     Parse
     :param args: Arguments from command line
@@ -645,11 +680,12 @@ def parse_mzid(args):
     # Handle command line arguments
     mzid_loc = args['<mzid>']
     out_loc = args['--out']
+    prot_only = args['--id']
 
     try:
         mzid = Mzid(mzid_loc)
-        mzid.make_peptide_summary()
-        mzid.filter_peptide_summary(lysine_filter=0, protein_q=1, peptide_q=1, unique_only=False)
+        mzid.make_peptide_summary(take_psm_df_cvParams=True)
+        mzid.filter_peptide_summary(lysine_filter=0, protein_q=1, peptide_q=1, unique_only=False, require_protein_id=prot_only)
         mzid.filtered_pep_summary_df.to_csv(out_loc, sep='\t')
 
 
@@ -667,4 +703,5 @@ def parse_mzid(args):
 if __name__ == "__main__":
     args = docopt(__doc__, version='Python mzid Parser v.0.1.0.')
     print(args)
-    parse_mzid(args)
+    if args['read']:
+        read(args)

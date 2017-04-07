@@ -22,13 +22,13 @@ Options:
     --out=ria.txt        Name of output file [default: ria.txt]
 
 Example:
-    riana.py integrate percolator.target.mzid Heart_FASP_1.mzML --iso 0,6,12 -t -K 0 --qvalue 5e-3
+    riana.py integrate_fast percolator.target.mzid Heart_FASP_1.mzML --iso 0,6,12 -t -K 0 --qvalue 5e-3
     riana.py merge ria_index.txt
 
 """
 
 from docopt import docopt
-from parse_mzid import Mzid
+from pymzid import Mzid
 from integrate_mzml import Mzml
 from time import time
 import pandas as pd
@@ -131,15 +131,17 @@ def integrate(args):
         rt_tolerance = float(1.0)
 
     #
-    # Open the mzid file
+    # Open the mzid file. Note that take_psm_df_cvParams should be set to False to avoid conflict
+    # between the identical "Percolator:Q value" cvParam names inside both PSM and Peptide fields.
     #
     try:
         mzid = Mzid(mzid_loc)
-        mzid.make_peptide_summary()
+        mzid.make_peptide_summary(take_psm_df_cvParams=False)
         mzid.filter_peptide_summary(lysine_filter=lysine_filter,
                                     protein_q=qcutoff,
-                                    peptide_q=qcutoff,
-                                    unique_only=unique_pep)
+                                    peptide_q=1,
+                                    unique_only=unique_pep,
+                                    require_protein_id=True)
 
     except OSError as e:
         sys.exit('Failed to load mzid file. ' + str(e.errno))
@@ -151,7 +153,7 @@ def integrate(args):
     #
     # Filter only for peptides in a protein
     #
-    #a.pep_summary_df = a.pep_summary_df.loc[lambda x: x.uniprot.astype(str) != "nan", :]
+    #a.pep_summary_df = a.pep_summary_df.loc[lambda x: x.acc.astype(str) != "nan", :]
 
 
     #
@@ -203,7 +205,7 @@ def integrate(args):
 
         if iso:
             out.append(i)
-            out.append(mzid.filtered_pep_summary_df.loc[i, 'uniprot'])
+            out.append(mzid.filtered_pep_summary_df.loc[i, 'acc'])
             out.append(mzid.filtered_pep_summary_df.loc[i, 'seq'])
             out.append(mzid.filtered_pep_summary_df.loc[i, 'z'])
             out.append(rt)
@@ -221,7 +223,7 @@ def integrate(args):
     #
     # Convert the output_table into a data frame
     #
-    df_columns = ['ID', 'uniprot', 'peptide', 'z', 'rt', 'calc_mz',]
+    df_columns = ['ID', 'acc', 'peptide', 'z', 'rt', 'calc_mz',]
 
     for each_iso in iso_to_do:
         df_columns.append('m' + str(each_iso))
@@ -325,11 +327,12 @@ def integrate_fast(args):
     #
     try:
         mzid = Mzid(mzid_loc)
-        mzid.make_peptide_summary()
+        mzid.make_peptide_summary(take_psm_df_cvParams=False)
         mzid.filter_peptide_summary(lysine_filter=lysine_filter,
                                     protein_q=qcutoff,
-                                    peptide_q=qcutoff,
-                                    unique_only=unique_pep)
+                                    peptide_q=1,
+                                    unique_only=unique_pep,
+                                    require_protein_id=True)
 
     except OSError as e:
         sys.exit('Failed to load mzid file. ' + str(e.errno))
@@ -358,7 +361,7 @@ def integrate_fast(args):
     end = len(mzid.filtered_pep_summary_df)
 
     if test_run:
-        end = min(5, len(mzid.filtered_pep_summary_df))
+        end = min(2, len(mzid.filtered_pep_summary_df))
 
     if end == 0:
         return sys.exit(os.EX_CONFIG)
@@ -379,7 +382,7 @@ def integrate_fast(args):
         # Get ALL the MS1 scans to integrate for this particular peptide
         to_do = mzml.get_scans_to_do(int(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']), rt_tolerance)
 
-        # Append the input table with ID, peptide_id, uniprot, peptide_seq, all scans to integrate, and z
+        # Append the input table with ID, peptide_id, acc, peptide_seq, all scans to integrate, and z
         for scan_id, rt in to_do:
 
             input = [i,
