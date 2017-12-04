@@ -701,7 +701,7 @@ def read(args):
 # Docopt
 #
 if __name__ == "__main__":
-    args = docopt(__doc__, version='Python mzid Parser v.0.1.0.')
+    args = docopt(__doc__, version='pymzid - python mzIdentML Parser v.0.2.1. 2017-04-07')
     print(args)
     if args['read']:
         read(args)
