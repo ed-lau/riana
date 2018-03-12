@@ -1,6 +1,6 @@
 """
 Relative Isotope Abundance Analyzer v.0.2.0. Build Date : : :.
-Written by Edward Lau (edward.lau@me.com) 2016-2017
+Written by Edward Lau (edward.lau@me.com) 2016-2018
 
 
 Usage:

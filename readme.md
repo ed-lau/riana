@@ -1,5 +1,9 @@
-Riana Relative Isotope Abundance Analyzer v.0.2.0
-=================================================
+
+# RIAna Relative Isotope Abundance Analyzer v.0.2.0
+
+RIAna (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files and returns mass isotopomer distributions for protein turnover analysis.
+
+## Getting Started
 
 Requirements:
 
@@ -86,5 +90,42 @@ Input files
 
 
 
-Contact: Edward Lau
-lau1@stanford.edu
+### Prerequisites
+
+RIAna requires the following:
+
+```
+Python 3.5.2
+
+```
+
+
+## Contributing
+
+Please contact us if you wish to contribute, and submit pull requests to us.
+
+
+## Versioning
+
+We use [SemVer](http://semver.org/) for versioning.
+
+
+## Authors
+
+* **Edward Lau, PhD** - *Code* - [ed-lau](https://github.com/ed-lau)
+
+
+See also the list of [contributors](https://github.com/ed-lau/pymzml_integrator/graphs/contributors) who participated in this project.
+
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+
+
+## Acknowledgments
+
+* [PurpleBooth](https://github.com/PurpleBooth) for Github Readme template.
+
+
+
