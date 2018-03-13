@@ -698,7 +698,6 @@ if __name__ == "__main__":
                         help='only outputs rows associated with protein accession')
     parser.add_argument('-o', '--out', help='name of the output files [default: mzid.txt]',
                         default='mzid.txt')
-    parser.add_argument('-v', '--verbose', action='store_true', help='verbose error messages')
 
 
     parser.set_defaults(func=read)
