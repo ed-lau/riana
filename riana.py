@@ -2,7 +2,7 @@
 Relative Isotope Abundance Analyzer v.0.3.0. Build Date : : :.
 Written by Edward Lau (edward.lau@me.com) 2016-2018
 
-Example
+Example: python3.6 riana.py small_test/percolator.target.mzid small_test/Heart_FASP_1_small.mzML -v -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
 """
 
 from pymzid import Mzid
@@ -21,7 +21,6 @@ import os
 # unique_pep=1
 # rt_tolerance=1
 # iso_to_do = [0,1,2,3,4,5,6]
-
 
 
 def integrate(args):
@@ -165,7 +164,9 @@ def integrate(args):
     input_table = []
 
     for i in range(end):
-        print(i)
+
+        if args.verbose and i % 10 == 0:
+            print("verbose 1: now getting input list" + i)
 
         # Get ALL the MS1 scans to integrate for this particular peptide
         to_do = mzml.get_scans_to_do(int(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']), rt_tolerance)
@@ -307,15 +308,19 @@ if __name__ == "__main__":
                               default='0,6')
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
     parser.add_argument('-k', '--lysine',
-                        help='lysine mode, 0=do not filter, 1=only one lysine, 2=any lysine [default = 0',
+                        help='lysine mode, 0=do not filter, 1=only one lysine, 2=any lysine [default = 0]',
+                        type=int,
                         choices=[0,1,2],
                         default=0)
     parser.add_argument('-t', '--test', action='store_true',
                         help='test mode: integrates only first 5 qualifying peptides')
-    parser.add_argument('-q', '--qvalue', help='integrate only peptides with q value below this threshold[default: 1e-2]',
+    parser.add_argument('-q', '--qvalue',
+                        help='integrate only peptides with q value below this threshold[default: 1e-2]',
+                        type=float,
                         default=1e-2)
-    parser.add_argument('-r' '--rtime', help='retention time (in minutes, both directions) tolerance for integration',
-                        default=1)
+    parser.add_argument('-r', '--rtime', help='retention time (in minutes, both directions) tolerance for integration',
+                        type=float,
+                        default=1.0)
     parser.add_argument('-o', '--out', help='name of the output files [default: ria.txt]',
                         default='ria.txt')
     parser.add_argument('-v', '--verbose', action='store_true', help='verbose error messages')
