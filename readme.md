@@ -1,7 +1,13 @@
 
-# RIAna Relative Isotope Abundance Analyzer v.0.2.0
+# RIAna Relative Isotope Abundance Analyzer v.0.3.0
 
 RIAna (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files and returns mass isotopomer distributions for protein turnover analysis.
+
+## Update
+
+Updated to python 3.6.4, scipy and numpy, pymzml 2.0.2.
+Removed dependency on docopt.
+Added gitignore
 
 ## Getting Started
 
@@ -9,7 +15,7 @@ Requirements:
 
 On Linux or OSX
 
-	* Install Python 3.5.2
+	* Install Python 3.6.4
 	See instructions on Python website for specific instructions for your operating system
 	Python 3.5 should come with the package manager PIP
 

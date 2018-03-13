@@ -500,12 +500,6 @@ def integrate_fast(args):
 
     return sys.exit(os.EX_OK)
 
-
-
-def merge(args):
-    print('Merging feature to be implemented in coming updates.')
-
-
 #
 # Docopt
 #
