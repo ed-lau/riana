@@ -1,26 +1,14 @@
 """
 
-pymzid - python mzIdentML Parser v.0.2.1. 2017-04-07
+pymzid - python mzIdentML Parser v.0.3.0.
 pymzid reads in mzid files and creates flat summary tables.
-Written by Edward Lau (lau1@stanford.edu) 2016-2017
-
-Usage:
-    pymzid.py --help
-    pymzid.py read <mzid> [--out=mzid.txt --id --verbose]
-
-Options:
-    -h --help           Show this screen.
-    -v --version        Show version.
-    --out=mzid.txt      Name of output file [default: mzid.txt]
-    --id                Only outputs rows associated with protein accession
-    --verbose           Prints progress messages
+Written by Edward Lau (lau1@stanford.edu) 2016-2018
 
 Example:
     parse_mzid.py percolator.target.mzid --out=mzid.txt
 
 """
 
-from docopt import docopt
 from time import time
 from xml.dom import minidom
 import pandas as pd
@@ -678,9 +666,9 @@ def read(args):
     """
 
     # Handle command line arguments
-    mzid_loc = args['<mzid>']
-    out_loc = args['--out']
-    prot_only = args['--id']
+    mzid_loc = args.mzid
+    out_loc = args.out
+    prot_only = args.id
 
     try:
         mzid = Mzid(mzid_loc)
@@ -694,14 +682,35 @@ def read(args):
 
     return sys.exit(os.EX_OK)
 
+
 #
-#   For doctest
+# Code for running main with parsed arguments from command line
 #
-#
-# Docopt
-#
+
+
 if __name__ == "__main__":
-    args = docopt(__doc__, version='pymzid - python mzIdentML Parser v.0.2.1. 2017-04-07')
-    print(args)
-    if args['read']:
-        read(args)
+    import argparse
+
+    parser = argparse.ArgumentParser(description='PyMzid v.0.3.0 reads protein identification mzID files')
+
+    parser.add_argument('mzid', help='path to mzid file')
+    parser.add_argument('-i' '--id', action='store_true',
+                        help='only outputs rows associated with protein accession')
+    parser.add_argument('-o', '--out', help='name of the output files [default: mzid.txt]',
+                        default='mzid.txt')
+    parser.add_argument('-v', '--verbose', action='store_true', help='verbose error messages')
+
+
+    parser.set_defaults(func=read)
+
+    # Print help message if no arguments are given
+    import sys
+    if len(sys.argv[1:]) == 0:
+        parser.print_help()
+        parser.exit()
+
+    # Parse all the arguments
+    args = parser.parse_args()
+
+    # Run the function in the argument
+    args.func(args)

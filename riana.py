@@ -300,7 +300,6 @@ if __name__ == "__main__":
                                                  'isotopomers')
 
 
-    # Create a "translate_rmats" subparser and house its specific arguments
     parser.add_argument('mzid', help='path to mzid file')
     parser.add_argument('mzml', help='path to mzml file')
 
