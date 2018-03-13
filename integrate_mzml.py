@@ -198,7 +198,7 @@ class Mzml(object):
 
             iso_mz = peptide_am + ((i * 1.003) / z)
 
-            matchList = spectrum.hasPeak(iso_mz)
+            matchList = spectrum.has_peak(iso_mz)
 
             if matchList:
                 for mz, I in matchList:
@@ -254,7 +254,7 @@ class Mzml(object):
             for i in iso_to_do:
 
 
-                matchList = spectrum.hasPeak(peptide_am + (i*1.003/z))
+                matchList = spectrum.has_peak(peptide_am + (i*1.003/z))
 
                 if matchList:
                     for mz, I in matchList:

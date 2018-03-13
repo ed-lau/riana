@@ -38,9 +38,7 @@ def integrate(args):
     mzid_loc = args.mzid
     mzml_loc = args.mzml
 
-    # Handle command line options
-    out_loc = args.out
-    test_run = args.test
+    # Handle command line options - creating some placeholders for easier testing.
     unique_pep = args.unique
 
     #
@@ -143,12 +141,12 @@ def integrate(args):
         sys.exit('Failed to load mzml file. ' + str(e.errno))
 
     #
-    # Determine how many peptides to integrate. If test_run is on, only do 5 peptides to save time.
+    # Determine how many peptides to integrate. If test_run is on, only do 50 peptides to save time.
     #
     end = len(mzid.filtered_pep_summary_df)
 
-    if test_run:
-        end = min(2, len(mzid.filtered_pep_summary_df))
+    if args.test:
+        end = min(50, len(mzid.filtered_pep_summary_df))
 
     if end == 0:
         return sys.exit(os.EX_CONFIG)
@@ -166,7 +164,7 @@ def integrate(args):
     for i in range(end):
 
         if args.verbose and i % 10 == 0:
-            print("verbose 1: now getting input list" + i)
+            print("verbose 1: now getting input list" + str(i))
 
         # Get ALL the MS1 scans to integrate for this particular peptide
         to_do = mzml.get_scans_to_do(int(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']), rt_tolerance)
@@ -213,13 +211,14 @@ def integrate(args):
 
         out = []
 
-        print('Integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
+        # If verbose, print out message and time for every 10 peptide-scan combinations
+        if args.verbose and i % 10 == 0:
+            print('Integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
 
-        if i % 10 == 0:
             t2 = time()
             print('Done. Extracting time: ' + str(round(t2 - t1, 2)) + ' seconds.')
             avg_time = (t2-t1)/(i+1)
-            remaining_time = ((counter - i)/avg_time ) / 60
+            remaining_time = ((counter - i) * avg_time ) / 60
             print('Remaining time ' + str(remaining_time) + ' minutes.')
 
         # Get the intensities of all isotopomers from the spectrum ID
@@ -283,9 +282,11 @@ def integrate(args):
     #
     # Convert the output_table into a data frame
     #
+    # Create directory if not exists
+    os.makedirs(args.out, exist_ok=True)
+    save_path = os.path.join(args.out, 'integrated_out.txt')
 
-
-    integrated_out_df.to_csv(out_loc, sep='\t')
+    integrated_out_df.to_csv(save_path, sep='\t')
 
     return sys.exit(os.EX_OK)
 
@@ -313,7 +314,7 @@ if __name__ == "__main__":
                         choices=[0,1,2],
                         default=0)
     parser.add_argument('-t', '--test', action='store_true',
-                        help='test mode: integrates only first 5 qualifying peptides')
+                        help='test mode: integrates only first 50 qualifying peptides')
     parser.add_argument('-q', '--qvalue',
                         help='integrate only peptides with q value below this threshold[default: 1e-2]',
                         type=float,
@@ -321,8 +322,8 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--rtime', help='retention time (in minutes, both directions) tolerance for integration',
                         type=float,
                         default=1.0)
-    parser.add_argument('-o', '--out', help='name of the output files [default: ria.txt]',
-                        default='ria.txt')
+    parser.add_argument('-o', '--out', help='name of the output directory [default: ria_out]',
+                        default='riana_out')
     parser.add_argument('-v', '--verbose', action='store_true', help='verbose error messages')
 
 
