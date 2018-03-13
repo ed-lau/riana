@@ -46,8 +46,8 @@ Running
 		$ python4 riana.py --help
 
 	* Example command: This integrates the 0th and 6th isotopomer, requires one lysine, and requires unique peptides
-	For heavy water experiments, replace iso 0,6 with iso 0,1,2,3,4,5
-		$ python3 riana.py ~/test.mzid ~/test.mzML -u -i 0,6 -q 0.005 -r 0.5 -k 1
+	For heavy water experiments, replace -i 0,6 with -i 0,1,2,3,4; replace -k 1 with -k 0
+		$ python3 riana.py ~/test.mzid ~/test.mzML -u -i 0,6 -q 0.01 -r 0.25 -k 1
 
 	* Deactivate the Virtual Environment upon completion
 		$ deactivate
@@ -57,36 +57,33 @@ Input files
 
 	* Riana takes in mzid file output by Crux Tide/Percolator. It may also take in Comet/Percolator (not tested).
 
-	* The following workflow is recommended for both amino acid and heavy water labeling.
-	 (Bullseye - Tide - Percolator) for both amino acid and heavy water analysis. Comet actually works better for
-	 heavy water labeling data with the --isotope-error tag that is disabled in Tide, but I think the Crux/Comet distribution
-	 automatically performs protein inference for some reason which does not help us remove non-unique peptides
+	* The following workflow has been tested for both amino acid and heavy water labeling data gathered on a QE:
 
-	* Convert raw files to mzML,  ms1, and ms2 files using PWiz (Use PWiz command line and not GUI to ensure correct format)
-		$ msconvert /Path/to/your.raw 
-		$ msconvert /Path/to/your.raw --ms1
-		$ msconvert /Path/to/your.raw --ms2
+	* Convert raw files to mzML, using pwiz 3.0 msconvert in command line, with the following option:
+		** --filter "peakPicking vendor"
 
-	* Download Crux 3.0 or above
+	* Download Crux 3.1
 
-	* Run Bullseye (helps correct for heavy water labeling to bring the Tide performance closer to Comet)
-		$ bin/crux bullseye /Path/to/your.ms1 /Path/to/your.ms2s --output-dir YOUR_OUTPUT_DIR --overwrite T
+	* Run Tide index with the following options:
+	    ** --digestion partial-digest
+	    ** --missed-cleavages
 
-	* For heavy water labeling data (except day 0), add this flag to Bullseye
-		$ --averagine-mod 0.05H1
+	* Run Tide search with the following options:
+		** --isotope-error 1,2 (for HW) or 6,12 (for AA)
+		** --compute-sp T
+		** --mz-bin-width 0.02
+		** --mz-bin-offset 0.0
+		** --precursor-window 20
+		** --precursor-window-type ppm
 
-	* Run Tide index
-		$ bin/crux tide-index /Path/to/your.fasta SWISSPROT_MM_DB --overwrite T --digestion partial-digest --missed-cleavage 1
-
-	* Run Tide search (Note that in the absence of the —isotope-error flag I had to widen the precursor window to 1.005 Da for the heavy water experiments. Far from ideal but I think currently the best option until we figure out how to make Comet link each PSM sequence to all entries in the fasta file.)
-		$ bin/crux tide-search --compute-sp T --output-dir YOUR_OUTPUT_DIR --overwrite T --percursor-window 1.005 --precursor-window-type mz --mz-bin-offset 0.02 --mz-bin-offset 0.0 --isotope-error 1 YOUR_OUTPUT_DIR/bullseye.pid.ms2 SWISSPROT_MM_DB
-
-	* Run Percolator
-		$ bin/crux percolator --protein T --overwrite T --output-dir YOUR_OUTPUT_DIR --fido-empirical-protein-q T --mzid-output T --post-processing-qvality T YOUR_OUTPUT_DIR/tide-search.target.txt
+	* Run Percolator with the following options:
+		** --protein T
+		** --mzid-output T
+		** --fido-empirical-protein-q T
 
     * Input to Riana:
 
-	* The percolator.target.mzid file inside YOUR_OUTPUT_DIR is the mzIdentML file we need.
+	** Take the mzML file (unzipped!) and the percolator.target.mzid file inside the percolator output directory.
 
 
 
@@ -95,7 +92,7 @@ Input files
 RIAna requires the following:
 
 ```
-Python 3.5.2
+Python 3.6.4
 
 ```
 
