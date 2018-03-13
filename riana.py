@@ -2,7 +2,7 @@
 Relative Isotope Abundance Analyzer v.0.3.0. Build Date : : :.
 Written by Edward Lau (edward.lau@me.com) 2016-2018
 
-
+Example
 """
 
 from pymzid import Mzid
@@ -315,7 +315,7 @@ if __name__ == "__main__":
     parser.add_argument('-q', '--qvalue', help='integrate only peptides with q value below this threshold[default: 1e-2]',
                         default=1e-2)
     parser.add_argument('-r' '--rtime', help='retention time (in minutes, both directions) tolerance for integration',
-                        default=1e-2)
+                        default=1)
     parser.add_argument('-o', '--out', help='name of the output files [default: ria.txt]',
                         default='ria.txt')
     parser.add_argument('-v', '--verbose', action='store_true', help='verbose error messages')
