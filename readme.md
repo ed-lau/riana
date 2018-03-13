@@ -5,7 +5,7 @@ RIAna (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry 
 
 ## Update
 
-Updated to python 3.6.4, scipy and numpy, pymzml 2.0.2.
+Updated to use python 3.6.4, up-to-date scipy and numpy, pymzml 2.0.2.
 Removed dependency on docopt.
 Added gitignore
 
@@ -17,43 +17,37 @@ On Linux or OSX
 
 	* Install Python 3.6.4
 	See instructions on Python website for specific instructions for your operating system
-	Python 3.5 should come with the package manager PIP
+	Python 3.6 should come with the package manager PIP
 
-    * Set up a Virtual Environment for Riana
-	Install Virtualenv and Virtualenvwrapper if you have not done so
-		$ pip3 install virtualenv
-		$ pip3 install virtualenvwrapper
-
-	* Set up env, go for example to project folder, then set up a
-	Virtual Environment folder under a particular destination, e.g., ~/ria
-		$  virtualenv —-python=python3.5 ~/ria
+	* Set up virtual environment with venv at a designed path, e.g., ~/ria
+		$ python3.6 -m venv ~/ria
 
 	* Activate the ria environment
 		$ source ~/ria/bin/activate
 
-	* Check to ensure that the specific python build inside the VirtualEnv is used
-		$ which python
+	* Check to ensure that the specific python build inside the venv is used
+		$ which python3.6
 
 	* Install the packages in the requirements.txt file
-		$ pip3 install -r requirements.txt
+		$ pip install -r requirements.txt
 
 On Windows
 
 	* Install Anaconda from Continuum Analytics
 
-	* Install docopt via conda; pymzml via pip
+	* Install pymzml via pip
 
 	* Get psi-ms-4.0.1.obo from bioontology
 
 
 Running
 	
-	* Launch Riana (Usage/Help)
-		$ python3 riana.pyc --help
+	* Launch RIAna (Usage/Help)
+		$ python4 riana.py --help
 
 	* Example command: This integrates the 0th and 6th isotopomer, requires one lysine, and requires unique peptides
 	For heavy water experiments, replace iso 0,6 with iso 0,1,2,3,4,5
-		$ python3 riana.pyc integrate /Path/to/your.mzid /Path/to/your.mzML iso 0,6 -K 1 -u --rt 0.5
+		$ python3 riana.py ~/test.mzid ~/test.mzML -u -i 0,6 -q 0.005 -r 0.5 -k 1
 
 	* Deactivate the Virtual Environment upon completion
 		$ deactivate
@@ -61,9 +55,9 @@ Running
 
 Input files
 
-	* Riana takes in mzIdentML file output by Crux Tide/Percolator. It should also take in Crux Comet/Percolator output.
+	* Riana takes in mzid file output by Crux Tide/Percolator. It may also take in Comet/Percolator (not tested).
 
-	* It may take in any Percolator output mzid file or even any mzid file, but I recommend the following workflow
+	* The following workflow is recommended for both amino acid and heavy water labeling.
 	 (Bullseye - Tide - Percolator) for both amino acid and heavy water analysis. Comet actually works better for
 	 heavy water labeling data with the --isotope-error tag that is disabled in Tide, but I think the Crux/Comet distribution
 	 automatically performs protein inference for some reason which does not help us remove non-unique peptides

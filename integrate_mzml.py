@@ -178,9 +178,6 @@ class Mzml(object):
         :return:
         """
 
-
-        print(peptide_am, spectrum_id,)
-
         timeDependentIntensities = []
 
         # Get the spectrum based on the spectrum number

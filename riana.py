@@ -151,7 +151,8 @@ def integrate(args):
     if end == 0:
         return sys.exit(os.EX_CONFIG)
 
-    print(mzid.filtered_pep_summary_df)
+    if args.verbosity == 2:
+        print(mzid.filtered_pep_summary_df)
 
     print(end)
 
@@ -163,8 +164,8 @@ def integrate(args):
 
     for i in range(end):
 
-        if args.verbose and i % 10 == 0:
-            print("verbose 1: now getting input list" + str(i))
+        if args.verbosity >= 1 and i % 10 == 0:
+            print("verbosity 1: now getting input list " + str(i))
 
         # Get ALL the MS1 scans to integrate for this particular peptide
         to_do = mzml.get_scans_to_do(int(mzid.filtered_pep_summary_df.loc[i, 'spectrum_id']), rt_tolerance)
@@ -203,23 +204,28 @@ def integrate(args):
     output_table = [[] for i in range(0, counter)]
 
     t1 = time()
-    print('Extracting intensities from spectra...')
 
-
+    print('Integrating peak intensities from spectra.')
 
     for i in range(counter):
 
         out = []
 
         # If verbose, print out message and time for every 10 peptide-scan combinations
-        if args.verbose and i % 10 == 0:
-            print('Integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
+        if args.verbosity >= 1 and i % 10 == 0:
+            print('verbosity 1: integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
 
             t2 = time()
-            print('Done. Extracting time: ' + str(round(t2 - t1, 2)) + ' seconds.')
+            print('verbosity 1: elapsed time: ' + str(round((t2 - t1)/60, 2)) + ' minutes.')
             avg_time = (t2-t1)/(i+1)
-            remaining_time = ((counter - i) * avg_time ) / 60
-            print('Remaining time ' + str(remaining_time) + ' minutes.')
+            remaining_time = ((counter - i) * avg_time) / 60
+            print('verbosity 1: estimated remaining time ' + str(round(remaining_time,2)) + ' minutes.')
+
+
+        # Print out the accurate mass and scan number currently being integrated
+        if args.verbosity == 2:
+            print('verbosity 2: integrating mz: ', str(round(float(in_df.loc[i, 'calc_mz']), 4)),
+                  ' scan id: ', str(round(in_df.loc[i, 'scan_id'], 2)))
 
         # Get the intensities of all isotopomers from the spectrum ID
         # NB: the calc_mz from the mzML file is the monoisotopic m/z
@@ -324,7 +330,11 @@ if __name__ == "__main__":
                         default=1.0)
     parser.add_argument('-o', '--out', help='name of the output directory [default: ria_out]',
                         default='riana_out')
-    parser.add_argument('-v', '--verbose', action='store_true', help='verbose error messages')
+    parser.add_argument('-v', '--verbosity',
+                        help='verbosity of error messages level. 0=quiet, 1=default, 2=verbose',
+                        type=int,
+                        choices=[0, 1, 2],
+                        default=1)
 
 
     parser.set_defaults(func=integrate)
