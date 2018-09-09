@@ -6,7 +6,7 @@ Example: python3.6 riana.py small_test/percolator.target.mzid small_test/Heart_F
 Example: python riana.py percolator_test/percolator percolator_test/mzml -v 2 -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
 """
 
-#from pymzid import Mzid
+# from pymzid import Mzid
 from readpercolator import ReadPercolator
 from integrate_mzml import Mzml
 from time import time
@@ -14,7 +14,8 @@ import pandas as pd
 import scipy
 import re
 import os
-
+# NEW 2018-09-09 Now using tqdm for progress bar
+from tqdm import tqdm
 
 # mzml_loc = 'percolator_test/mzml'
 # mzid_loc = 'percolator_test/percolator'
@@ -165,6 +166,7 @@ def integrate(args):
 
     # For each file index (fraction), open the mzML file, and create a subset Percolator ID dataframe
     for idx in mzid.indices:
+
         # Verbosity 0 progress message
         print('[verbosity 0] doing mzml:', mzml_files[idx],
               '(' + str(idx + 1), 'of', str(len(mzid.indices)) + ')', sep=' ')
@@ -247,15 +249,16 @@ def integrate(args):
         # Prepare an empty list to encompass the output from each row of the mzidentml summary
         output_table = []
 
-        t1 = time()
+        #t1 = time()
 
         print('Integrating peak intensities from spectra.')
 
-        for i in range(counter):
+        for i in tqdm(range(counter)):
 
             out = []
 
             # If verbose, print out message and time for every 10 peptide-scan combinations
+            """
             if args.verbosity >= 1 and i % 10 == 0:
                 print('verbosity 1: integrating peptide-scan combination ' + str(i) + ' of ' + str(counter))
 
@@ -264,7 +267,7 @@ def integrate(args):
                 avg_time = (t2-t1)/(i+1)
                 remaining_time = ((counter - i) * avg_time) / 60
                 print('verbosity 1: estimated remaining time of current fraction: ' + str(round(remaining_time, 2)) + ' minutes.')
-
+            """
 
             # Print out the accurate mass and scan number currently being integrated
             if args.verbosity == 2:
@@ -339,6 +342,7 @@ def integrate(args):
         integrated_out_df.to_csv(save_path, sep='\t')
 
     return sys.exit(os.EX_OK)
+
 
 
 #
