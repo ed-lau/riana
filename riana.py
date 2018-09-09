@@ -2,7 +2,7 @@
 Relative Isotope Abundance Analyzer v.0.3.0. Build Date : : :.
 Written by Edward Lau (edward.lau@me.com) 2016-2018
 
-Example: python3.6 riana.py small_test/percolator.target.mzid small_test/Heart_FASP_1_small.mzML -v -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
+Example: python3.6 riana.py small_test/percolator.target.mzid small_test/Heart_FASP_1_small.mzML -v 2 -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
 """
 
 from pymzid import Mzid
@@ -109,6 +109,10 @@ def integrate(args):
 
     #
     # Open the mzid file
+    # Note 2018-09-07 - I am not sure we should use the Mzid module anymore since Percolator doesn't seem to output
+    # Mzid files that conform completely to Mzid standards. In particular I wasn't able to locate where in the xml file
+    # is the file_idx (mzml file from which the spectrum was found) is encoded. It would be much easier at this point to use
+    # the percolator tab-delimited file. Unless I can look at a multi-fraction Percolator run Mzid and modify the Mzid module from there
     #
     try:
         mzid = Mzid(mzid_loc)

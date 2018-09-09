@@ -171,10 +171,10 @@ class Mzml(object):
         """
         For the new integrate_fast function, get isotope intensities of a scan
         given a peptide m/z and RT combination
-        :param peptide_am:
-        :param z:
-        :param spectrum_id:
-        :param iso_to_do:
+        :param peptide_am:  Peptide accurate mass 
+        :param z:           Peptide charge
+        :param spectrum_id: Scan number?
+        :param iso_to_do:   List of isotopomers to integrate
         :return:
         """
 
@@ -185,10 +185,18 @@ class Mzml(object):
             spectrum = self.msdata[spectrum_id]
 
         except KeyError:
-            print("Spectrum not found")
+
+            print('[error] spectrum index out of bound')
             return []
 
+        # 2018-09-07 Need to catch a number of errors of XML tree not
+        # Being able to read the spectrum object returned by pymzml
+        except xml.etree.ElementTree.ParseError:
+            print('[warning] XML eTree does not appear to be able to read this spectrum',
+                      '(scan number:', str(scan) + ')', sep=' ')
+            return []
 
+        assert spectrum['ms level'] == 1, '[error] specified spectrum is not a parent ion scan'
 
         #Loop through every isotope in the to-do list
         for i in iso_to_do:
