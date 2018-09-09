@@ -193,8 +193,10 @@ class Mzml(object):
         # 2018-09-07 Need to catch a number of errors of XML tree not
         # Being able to read the spectrum object returned by pymzml
         except xml.etree.ElementTree.ParseError:
+            """
             print('[warning] XML eTree does not appear to be able to read this spectrum',
                       '(scan number:', str(spectrum_id) + ')', sep=' ')
+            """
             return []
 
         assert spectrum['ms level'] == 1, '[error] specified spectrum is not a parent ion scan'
