@@ -83,11 +83,12 @@ Input files
 		** --precursor-window 20
 		** --precursor-window-type ppm
 
-	(It should be OK to adjust these search parameters.)
-
 	* Run Percolator with the following options:
 		** --protein T
 		** --fido-empirical-protein-q T
+
+	(Obviously you should be able to adjust most if not all of the above parameters to optimize the database search for
+	particular data sets.)
 
     * Input to RIAna:
 
