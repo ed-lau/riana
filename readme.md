@@ -121,7 +121,7 @@ We use [SemVer](http://semver.org/) for versioning.
 ## Authors
 
 * **Edward Lau, PhD** - *Code and design* - [ed-lau](https://github.com/ed-lau)
-* **Maggie Lam, PhD** - *Code and design* - [MaggieLam
+* **Maggie Lam, PhD** - *Code and design* - [Maggie-Lam] (https://github.com/Maggie-Lam)
 
 See also the list of [contributors](https://github.com/ed-lau/pymzml_integrator/graphs/contributors) who participated in this project.
 
