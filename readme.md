@@ -17,7 +17,6 @@ To support multi-fraction analysis, RIAna now takes in Percolator tab delimited 
 Mzid support will be added back in in a future version.
 
 
-
 ## Getting Started
 
 Requirements:
@@ -84,9 +83,10 @@ Input files
 		** --precursor-window 20
 		** --precursor-window-type ppm
 
+	(It should be OK to adjust these search parameters.)
+
 	* Run Percolator with the following options:
 		** --protein T
-		** --mzid-output T
 		** --fido-empirical-protein-q T
 
     * Input to RIAna:
@@ -100,6 +100,10 @@ RIAna requires the following:
 
 ```
 Python 3.5+
+pymzml
+scipy
+numpy
+tqdm
 
 ```
 
@@ -116,8 +120,7 @@ We use [SemVer](http://semver.org/) for versioning.
 
 ## Authors
 
-* **Edward Lau, PhD** - *Code* - [ed-lau](https://github.com/ed-lau)
-
+* **Edward Lau, PhD** - *Code and design* - [ed-lau](https://github.com/ed-lau)
 
 See also the list of [contributors](https://github.com/ed-lau/pymzml_integrator/graphs/contributors) who participated in this project.
 
