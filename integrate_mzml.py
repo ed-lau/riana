@@ -257,10 +257,8 @@ class Mzml(object):
                 print("Key not found")
                 return []
 
-
             #Loop through every isotope in the to-do list
             for i in iso_to_do:
-
 
                 matchList = spectrum.has_peak(peptide_am + (i*1.003/z))
 

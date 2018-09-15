@@ -1,15 +1,16 @@
 """
-Relative Isotope Abundance Analyzer v.0.3.0. Build Date : : :.
-Written by Edward Lau (edward.lau@me.com) 2016-2018
+Relative Isotope Abundance Analyzer v.0.4.0. Build Date : : :.
+Written by Edward Lau (lau1@stanford.edu) 2016-2018
 
-Example: python3.6 riana.py small_test/percolator.target.mzid small_test/Heart_FASP_1_small.mzML -v 2 -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
 Example: python riana.py percolator_test/percolator percolator_test/mzml -v 2 -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
+
+
 """
 
 # from pymzid import Mzid
 from readpercolator import ReadPercolator
 from integrate_mzml import Mzml
-from time import time
+# from time import time
 import pandas as pd
 import scipy
 import re
@@ -353,25 +354,29 @@ if __name__ == "__main__":
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='RIAna v.0.3.0 integrates the relative abundance of'
+    parser = argparse.ArgumentParser(description='RIAna v.0.4.0 integrates the relative abundance of'
                                                  'isotopomers')
 
 
-    parser.add_argument('mzid', help='path to folder containing search result file (percolator tab delimited)')
+    parser.add_argument('mzid', help='path to folder containing the search result file (percolator tab delimited)')
+
     parser.add_argument('mzml', help='path to folder containing mzml files')
 
     parser.add_argument('-i', '--iso', help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
                               default='0,6')
 
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
+
     parser.add_argument('-k', '--lysine',
                         help='lysine mode, 0=do not filter, 1=only one lysine, 2=any lysine [default = 0]',
                         type=int,
                         choices=[0, 1, 2],
                         default=0)
 
+    """
     parser.add_argument('-t', '--test', action='store_true',
                         help='test mode: integrates only first 50 qualifying peptides')
+    """
 
     parser.add_argument('-q', '--qvalue',
                         help='integrate only peptides with q value below this threshold[default: 1e-2]',
@@ -382,7 +387,7 @@ if __name__ == "__main__":
                         type=float,
                         default=1.0)
 
-    parser.add_argument('-o', '--out', help='name of the output directory [default: ria_out]',
+    parser.add_argument('-o', '--out', help='name of the output directory [default: riana_out]',
                         default='riana_out')
 
     parser.add_argument('-v', '--verbosity',
