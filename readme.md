@@ -87,13 +87,12 @@ Input files
 		** --protein T
 		** --fido-empirical-protein-q T
 
-	(Obviously you should be able to adjust most if not all of the above parameters to optimize the database search for
-	particular data sets.)
-
     * Input to RIAna:
 
 	** Take the paths to the directories containing the mzML files (unzipped!) and the percolator.target.psms.txt file
 
+(Obviously you should be able to adjust most if not all of the above parameters to optimize the database search for
+particular data sets.)
 
 ### Prerequisites
 
