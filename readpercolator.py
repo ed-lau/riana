@@ -104,6 +104,14 @@ class ReadPercolator(object):
             except:
                 pass
 
+        if lysine_filter == 3:
+            try:
+                self.id_df = self.id_df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) == 2, :]
+                self.id_df = self.id_df.reset_index(drop=True)
+
+            except:
+                pass
+
         # 2013-04-06 Again I forgot why we only chose the first five columns here. Resetting to all columns for now.
         """
         if require_protein_id:

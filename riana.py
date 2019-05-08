@@ -2,7 +2,7 @@
 Relative Isotope Abundance Analyzer v.0.4.0. Build Date : : :.
 Written by Edward Lau (lau1@stanford.edu) 2016-2018
 
-Example: python riana.py percolator_test/percolator percolator_test/mzml -v 2 -u -i 0,6,12 -q 0.01 -r 0.5 -k 0 -o kk_test
+Example: python riana.py percolator_test/percolator percolator_test/mzml -v 2 -u -i 0,6,12 -q 0.01 -r 0.5 -k 3 -o kk_test
 
 
 """
