@@ -2,7 +2,7 @@
 Relative Isotope Abundance Analyzer v.0.4.0. Build Date : : :.
 Written by Edward Lau (lau1@stanford.edu) 2016-2018
 
-Example: python riana.py percolator_test/percolator percolator_test/mzml -v 2 -u -i 0,1,2,3,4,5 -q 0.05 -r 0.5 -k 0
+Example: python riana.py percolator_test/percolator percolator_test/mzml -v 2 -u -i 0,6,12 -q 0.01 -r 0.5 -k 0 -o kk_test
 
 
 """
@@ -55,7 +55,7 @@ def integrate(args):
 
     try:
         lysine_filter = int(lysine_filter)
-        if lysine_filter not in [1, 2]:
+        if lysine_filter not in [1, 2, 3]:
             lysine_filter = 0
 
     except TypeError or ValueError:
@@ -368,9 +368,9 @@ if __name__ == "__main__":
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
 
     parser.add_argument('-k', '--lysine',
-                        help='lysine mode, 0=do not filter, 1=only one lysine, 2=any lysine [default = 0]',
+                        help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
                         type=int,
-                        choices=[0, 1, 2],
+                        choices=[0, 1, 2, 3],
                         default=0)
 
     """

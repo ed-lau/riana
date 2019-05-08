@@ -623,6 +623,15 @@ class Mzid(object):
             except:
                pass
 
+        # 2019-05-08 Adding a new option to do only dilysine peptides in order to get RIA
+        if lysine_filter == 3:
+            try:
+                self.pep_summary_df = self.pep_summary_df.loc[lambda x: x.seq.apply(lambda y: y.count('K')) == 2, :]
+                self.pep_summary_df = self.pep_summary_df.reset_index(drop=True)
+
+            except:
+               pass
+
         # 2013-04-06 Again I forgot why we only chose the first five columns here. Resetting to all columns for now.
 
         if require_protein_id:
