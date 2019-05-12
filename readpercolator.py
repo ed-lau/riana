@@ -41,7 +41,6 @@ class ReadPercolator(object):
         # Get all the file indices in the Percolator results file.
         return list(set(self.id_df['file_idx']))
 
-
     def filter_id_df(self, lysine_filter=0, protein_q=1e-2, peptide_q=1e-2, unique_only=True, require_protein_id=False):
         """
        Filter the percolator id dataframe by:
