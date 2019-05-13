@@ -2,9 +2,9 @@
 Relative Isotope Abundance Analyzer v.0.5.0. Build Date : : :.
 Written by Edward Lau (lau1@stanford.edu) 2016-2018
 
-Example: python riana.py data/percolator_test/percolator data/percolator_test/mzml -v 2 -u -i 0,6,12 -q 0.01 -r 0.5 -k 3 -t 1 -o single_test
+Example: python riana.py data/percolator_test/percolator data/percolator_test/mzml -v 2 -u -i 0,6,12 -q 0.01 -r 0.5 -k 3 -t 1 -o revamped_speed_test_2
 
-python riana.py data/liverpool_percolator/aa_l_30/ data/liverpool_mzml/aa_l_30/  -v 1 -u -i 0,6,12 -q 0.01 -r 0.5 -k 3 -o aa_l_30_kk
+python riana.py data/liverpool_percolator/aa_l_30/ data/liverpool_mzml/aa_l_30/  -v 1 -u -i 0,6,12 -q 0.01 -r 0.5 -k 3 -o aa_l_30_kk_speedtest_2
 
 mzml_loc = 'data/liverpool_mzml/aa_l_30'
 mzid_loc = 'data/liverpool_percolator/aa_l_30'
@@ -13,7 +13,7 @@ qcutoff=0.001
 unique_pep=1
 rt_tolerance=0.5
 iso_to_do = [0,6,12]
-v=2
+vb=2
 
 from readpercolator import ReadPercolator
 from integrate_mzml import Mzml
@@ -45,13 +45,8 @@ mzml_files.sort()
 idx=0
 
 
+# Make a subset dataframe with the current file index (fraction) being considered
 fraction_id_df = mzid.subset_id_df(idx)
-
-# Arrange the PSM rows by scan number
-fraction_id_df = fraction_id_df.sort_values(by='scan').reset_index(drop=True)
-
-# Add a dummy peptide ID for this fraction only
-fraction_id_df = fraction_id_df.assign(pep_id=fraction_id_df.index)
 
 try:
     mzml = Mzml(os.path.join(mzml_loc, mzml_files[idx]))
@@ -63,12 +58,15 @@ except OSError as e:
 #
 mzml.parse_mzml()
 
-in_df = fraction_id_df
-counter = len(in_df)
+in_df = mzid.fraction_id_df
+#
+# Step 2: Get peak intensity for each isotopomer in each spectrum ID in each peptide
+#
 
-# Link ID file to mzML
+# Link ID file, iso_to_do, and rt_tolerance to mzML
 mzml.associate_id(in_df)
 mzml.set_iso_to_do(iso_to_do)
+mzml.set_rt_tolerance(rt_tolerance)
 
 # Prepare an empty list to encompass the output from each row of the mzidentml summary
 output_table = []
@@ -78,11 +76,11 @@ output_table = []
 # from pymzid import Mzid
 from readpercolator import ReadPercolator
 from integrate_mzml import Mzml
-# from time import time
 import pandas as pd
-import scipy
 import re
 import os
+import gc
+import pymzml as mz
 # NEW 2018-09-09 Now using tqdm for progress bar
 from tqdm import tqdm
 
@@ -97,11 +95,10 @@ def integrate(args):
     :return:
 
     """
-
     # Handle command line arguments
     mzid_loc = args.mzid
     mzml_loc = args.mzml
-    v = args.verbosity
+    vb = args.verbosity
 
     assert os.path.isdir(mzml_loc), '[error] mzml directory not valid'
     assert os.path.isdir(mzid_loc), '[error] percolator directory not valid'
@@ -123,7 +120,6 @@ def integrate(args):
         lysine_filter = 0
 
     print(lysine_filter)
-
 
     #
     # Convert the to-do isotopomer list option into a list of integers
@@ -236,12 +232,6 @@ def integrate(args):
         # Make a subset dataframe with the current file index (fraction) being considered
         fraction_id_df = mzid.subset_id_df(idx)
 
-        # Arrange the PSM rows by scan number
-        fraction_id_df = fraction_id_df.sort_values(by='scan').reset_index(drop=True)
-
-        # Add a dummy peptide ID for this fraction only
-        fraction_id_df = fraction_id_df.assign(pep_id=fraction_id_df.index)
-
         try:
             mzml = Mzml(os.path.join(mzml_loc, mzml_files[idx]))
         except OSError as e:
@@ -249,7 +239,7 @@ def integrate(args):
 
         #
         # Read the spectra into dictionary and also create MS1/MS2 indices
-        #
+
         mzml.parse_mzml()
 
         #
@@ -270,10 +260,9 @@ def integrate(args):
         print(end)
         """
 
-    #
-    # Step 1: Get the list of peptides and their mass, isotopomers, and scan number to integrate
-    #
-
+        #
+        # Step 1: Get the list of peptides and their mass, isotopomers, and scan number to integrate
+        #
 
         #
         # In v0.4.0 we first get all the MS2 to integrate for each peptide then sort by scan number
@@ -313,27 +302,23 @@ def integrate(args):
         # # Arrange by scan number so the mzml iterator doesn't have to do read the files over and over
         # in_df = in_df.sort_values(by='scan_id').reset_index()
 
-        in_df = fraction_id_df
         #
         # Step 2: Get peak intensity for each isotopomer in each spectrum ID in each peptide
         #
 
-        counter = len(in_df)
-
-
-        # Link ID file to mzML
-        mzml.associate_id(in_df)
+        # Link ID file, iso_to_do, and rt_tolerance to mzML
+        mzml.associate_id(mzid.fraction_id_df)
         mzml.set_iso_to_do(iso_to_do)
+        mzml.set_rt_tolerance(rt_tolerance)
 
         # Prepare an empty list to encompass the output from each row of the mzidentml summary
         output_table = []
 
-        #t1 = time()
-
+        # t1 = time()
 
         print('Integrating peak intensities from spectra.')
 
-        for i in tqdm(range(counter)):
+        for i in tqdm(range(len( mzid.fraction_id_df))):
 
             out = []
 
@@ -350,81 +335,61 @@ def integrate(args):
             """
 
             # Print out the accurate mass and scan number currently being integrated
-            if v == 2:
-                print('verbosity 2: integrating mz: ', str(round(float(in_df.loc[i, 'spectrum precursor m/z']), 4)),
-                      ' scan id: ', str(round(in_df.loc[i, 'scan'], 2)))
-
-
+            if vb == 2:
+                print('verbosity 2: integrating mz: ',
+                      str(round(float(fraction_id_df.loc[i, 'spectrum precursor m/z']), 4)),
+                      ' scan id: ', str(round(fraction_id_df.loc[i, 'scan'], 2)))
 
             # Get the intensities of all isotopomers from the spectrum ID
             # NB: the calc_mz from the mzML file is the monoisotopic m/z
 
-            if args.thread > 1:
-                iso = mzml.get_isotope_from_scan_id_wrapper(index=i)
-
-            elif args.thread == 1:
-                # iso = mzml.get_isotope_from_scan_id(peptide_am=float(in_df.loc[i, 'spectrum precursor m/z']),
-                #                                     z=float(in_df.loc[i, 'charge']),
-                #                                     spectrum_id=in_df.loc[i, 'scan'],
-                #                                     iso_to_do=iso_to_do)
-
-                iso2 = mzml.get_isotopes_from_amrt(peptide_am=float(in_df.loc[i, 'spectrum precursor m/z']),
-                                                  peptide_scan=float(in_df.loc[i, 'scan']),
-                                                  z=float(in_df.loc[i, 'charge']),
-                                                  rt_tolerance=rt_tolerance,
-                                                  iso_to_do = iso_to_do)
-
+            iso = mzml.get_isotope_from_scan_id_wrapper(index=i)
 
             if iso:
                 out.append(i)
-                out.append(in_df.loc[i, 'pep_id'])
-                out.append(in_df.loc[i, 'acc'])
-                out.append(in_df.loc[i, 'seq'])
-                out.append(in_df.loc[i, 'z'])
-                out.append(in_df.loc[i, 'scan_id'])
-                out.append(in_df.loc[i, 'rt'])
-                out.append(in_df.loc[i, 'calc_mz'])
+                out.append(mzid.fraction_id_df.loc[i, 'pep_id'])
 
                 for j in range(0, len(iso_to_do)):
-                    out.append(iso[j][2])
+                    out.append(iso[j][1])
 
-                #print(out)
+                # print(out)
 
                 output_table.append(out)
 
-        df_columns = ['ID', 'pep_id', 'acc', 'seq', 'z', 'scan_id', 'rt', 'calc_mz']
+            # gc.collect()
+
+        df_columns = ['ID', 'pep_id']
 
         for each_iso in iso_to_do:
             df_columns.append('m' + str(each_iso))
 
         out_df = pd.DataFrame(output_table, columns=df_columns)
 
-        # Arrange by scan number so the mzml iterator doesn't have to do read the files over and over
-        out_df = out_df.sort_values(by=['pep_id', 'ID']).reset_index()
-
+        # # Arrange by scan number so the mzml iterator doesn't have to do read the files over and over
+        # out_df = out_df.sort_values(by=['pep_id', 'ID']).reset_index()
         #
-        # Step 3: Integrate each peptide (intensity over retention time)
+        # #
+        # # Step 3: Integrate each peptide (intensity over retention time)
+        # #
+        # cols_to_integrate = ['m' + str(iso) for iso in iso_to_do]
+        # peptides_to_integrate = list(set(list(out_df.pep_id)))
         #
-        cols_to_integrate = ['m' + str(iso) for iso in iso_to_do]
-        peptides_to_integrate = list(set(list(out_df.pep_id)))
+        # integrated_output = []
+        #
+        # for peptide in peptides_to_integrate:
+        #
+        #     # Subsetting the dataframe to consider only the current pep_id
+        #     subset_df = out_df[out_df['pep_id'] == peptide]
+        #     rt = subset_df['rt']
+        #
+        #     # Integrate each isotopomer over the retention time!
+        #     integrated = subset_df.groupby('pep_id')[cols_to_integrate].agg(lambda x: scipy.integrate.trapz(x, rt)).values.tolist()[0]
+        #     integrated = [peptide] + integrated
+        #     integrated_output.append(integrated)
+        #
+        # integrated_df = pd.DataFrame(integrated_output, columns=['pep_id']+cols_to_integrate)
 
-        integrated_output = []
-
-        for peptide in peptides_to_integrate:
-
-            # Subsetting the dataframe to consider only the current pep_id
-            subset_df = out_df[out_df['pep_id'] == peptide]
-            rt = subset_df['rt']
-
-            # Integrate each isotopomer over the retention time!
-            integrated = subset_df.groupby('pep_id')[cols_to_integrate].agg(lambda x: scipy.integrate.trapz(x, rt)).values.tolist()[0]
-            integrated = [peptide] + integrated
-            integrated_output.append(integrated)
-
-        integrated_df = pd.DataFrame(integrated_output, columns=['pep_id']+cols_to_integrate)
-
-        integrated_out_df = pd.merge(fraction_id_df, integrated_df, on='pep_id', how='left')
-
+        integrated_out_df = pd.merge(mzid.fraction_id_df, out_df, on='pep_id', how='left')
 
         #
         # Convert the output_table into a data frame
@@ -436,8 +401,6 @@ def integrate(args):
         integrated_out_df.to_csv(save_path, sep='\t')
 
     return sys.exit(os.EX_OK)
-
-
 
 #
 # Code for running main with parsed arguments from command line
@@ -501,9 +464,14 @@ if __name__ == "__main__":
         parser.print_help()
         parser.exit()
 
+    #gc.enable()
+    #gc.set_debug(gc.DEBUG_LEAK)
+
     # Parse all the arguments
     args = parser.parse_args()
 
     # Run the function in the argument
     args.func(args)
+
+
 

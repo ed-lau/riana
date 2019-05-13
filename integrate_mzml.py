@@ -7,94 +7,27 @@ Written by Edward Lau (edward.lau@me.com) 2016-2017
 """
 
 import pymzml as mz
-import os.path
 import pandas as pd
 import scipy.integrate
-from time import time
-import xml
+import gc
 from pathos.multiprocessing import ProcessingPool as Pool
-from tqdm import tqdm
 
 class Mzml(object):
     def __init__(self, path):
         """
         This class reads mzml files using pymzml and integrates based on the parsed mzid
-
-        #######
-        Examples for mzml
-        #######
-
-        import pymzml as mz
-
-        data = "mzml/mhcc_d01_A10.mzML.gz"
-
-        # Reading the data into a Reader object
-        spectra = mz.run.Reader(data)
-
-        # Get the number of spectra
-        spectra.getSpectrumCount()
-
-        # Get info of spectra, including ID of each individual spectrum
-        spectra.info
-        spectra.info['filename']
-
-        # Loop through all the spectra in the Reader object, get their ID
-        ms1_list = []
-        ms2_list = []
-
-        for spectrum in spectra:
-
-        if spectrum['ms level'] == 1:
-            ms1_list.append(spectrum['id'])
-
-        if spectrum['ms level'] == 2:
-            ms2_list.append(spectrum['id'])
-
-
-        # Get all peaks from a spectrum
-
-        spectra[9093].peaks
-
-        # Sort the spectra by intensity
-        def getKey(item):
-            return item[1]
-
-        sorted_spectrum = sorted(spectra[9093].peaks, reverse=True, key = getKey)
-
-        # To get only the top 150 peaks:
-        sorted_spectrum[:150]
-
-        # Write all ms1 file
-        run2 = mz.run.Writer(filename = 'write_test.mzML', run=spectra , overwrite = True)
-
-        for spectrum in spectra:
-
-        if spectrum['ms level'] == 1:
-            print(spectrum['id'])
-            run2.addSpec(spectrum)
-
-        run2.save()
-
-
-
-
-        #######
-        #######
-        #######
-
-
         :param path: path of the mzml file to be loaded, e.g., "~/Desktop/example.mzml"
         """
 
-
-        self.path = os.path.join(path)
+        self.path = path
         self.msdata = {}
-        self.rt_index = {}
-        self.mslevel_index = {}
+        self.rt_idx = {}
+        self.mslvl_idx = {}
         self.id = pd.DataFrame()
         self.iso_to_do = []
+        self.rt_tolerance = 30
         self.njobs = 10
-        self.map = Pool().map
+        self.result = []
 
 
     def parse_mzml(self):
@@ -103,25 +36,40 @@ class Mzml(object):
         :return:
         """
 
-        run = mz.run.Reader(self.path, MS1_Precision=20e-6, MSn_Precision=20e-6)
+        #
+        run = mz.run.Reader(self.path,
+                            MS_precision={
+                                1: 20e-6,
+                                2: 20e-6
+                            })
+
+
         for n, spec in enumerate(run):
-            print(
-                'Spectrum {0}, MS level {ms_level} @ RT {scan_time:1.2f}'.format(
-                    spec.ID,
-                    ms_level=spec.ms_level,
-                    scan_time=spec.scan_time_in_minutes()
+
+            if n %% 100 == 0:
+                print(
+                    'Spectrum {0}, MS level {ms_level} @ RT {scan_time:1.2f}'.format(
+                        spec.ID,
+                        ms_level=spec.ms_level,
+                        scan_time=spec.scan_time_in_minutes()
+                    )
                 )
-            )
-            self.msdata[n] = spec
-            self.mslevel_index[n] = spec.ms_level
-            self.rt_index[n] = spec.scan_time_in_minutes()
+
+            self.mslvl_idx[n + 1] = spec.ms_level
+            self.rt_idx[n + 1] = spec.scan_time_in_minutes()
+
+            if spec.ms_level == 1:
+                self.msdata[n + 1] = spec.peaks("centroided")
 
         print(
             'Parsed {0} spectra from file {1}'.format(
-                n,
-                self.path
+                n + 1,
+                self.path)
             )
-        )
+
+        return True
+
+
 
     def set_iso_to_do(self, iso_to_do):
         """
@@ -131,6 +79,16 @@ class Mzml(object):
         """
 
         self.iso_to_do = iso_to_do
+
+
+    def set_rt_tolerance(self, rt_tolerance):
+        """
+        Setter
+        :param rt_tolerance:
+        :return:
+        """
+
+        self.rt_tolerance = rt_tolerance
 
     def associate_id(self, id_df):
         """
@@ -221,12 +179,15 @@ class Mzml(object):
      #   self.res[i] = ans  # put answer into correct index of result list
       #  self.pbar.update()
 
-    def get_isotop_from_scan_id_multiwrapper(self):
+    def get_isotopes_from_scan_id_multiwrapper(self):
 
+        self.map = Pool().map
         print("multiwrapper")
-        self.result = self.map(print, range(self.njobs))
-        return self.result
+        result = self.map(self.multithread_test, range(10))
+        return result
 
+    def multithread_test(self, index):
+        return index*2
 
     def get_isotope_from_scan_id_wrapper(self, index):
         """
@@ -241,15 +202,15 @@ class Mzml(object):
         #                                     spectrum_id=self.id.loc[index, 'scan_id'],
         #                                     iso_to_do=self.iso_to_do)
 
-        x = self.get_isotopes_from_amrt(peptide_am=float(self.id.loc[index, 'spectrum precursor m/z']),
-                                        peptide_rt=float(self.id.loc[index, 'scan']),
+        self.result = self.get_isotopes_from_amrt_2(peptide_am=float(self.id.loc[index, 'peptide mass']), # spectrum precursor m/z'
+                                        peptide_scan=int(self.id.loc[index, 'scan']),
                                         z=float(self.id.loc[index, 'charge']),
-                                        rt_tolerance=0.5,
+                                        rt_tol=self.rt_tolerance,
                                         iso_to_do=self.iso_to_do)
 
+        #gc.collect()
 
-
-        return x
+        return self.result
 
     # def get_isotope_from_scan_id(self, peptide_am, z, spectrum_id, iso_to_do):
     #     """
@@ -318,7 +279,58 @@ class Mzml(object):
     #     return timeDependentIntensities
 
 
-    def get_isotopes_from_amrt(self, peptide_am, peptide_scan, z, rt_tolerance, iso_to_do):
+    def get_isotopes_from_amrt_2(self, peptide_am, peptide_scan, z, rt_tol, iso_to_do):
+
+        peptide_rt = self.rt_idx.get(peptide_scan)
+        # Calculate precursor mass from
+        peptide_prec = (peptide_am + (z * 1.007825)) / z
+        #peptide_prec = peptide_am
+
+        timeDependentIntensities = []
+
+        # Choose the scan numbers from the index; one-line list comprehension?
+        nearby_scans = [[i, rt] for i, rt in self.rt_idx.items()
+                        if abs(rt - peptide_rt) <= rt_tol and self.mslvl_idx[i] == 1]
+
+        # Loop through each spectrum, check if it is an MS1 spectrum, check if it is within 1 minute of retention time
+        for nearbyScan_id, nearbyScan_rt in nearby_scans:
+            # Get the spectrum based on the spectrum number
+
+            for iso in iso_to_do:
+
+                peptide_prec_isotopomer_am = peptide_prec + (iso * 1.007825 / z)
+                upper = peptide_prec_isotopomer_am + (peptide_prec_isotopomer_am * 50e-6)
+                lower = peptide_prec_isotopomer_am - (peptide_prec_isotopomer_am * 50e-6)
+
+                matching_int = sum([I for mz_value, I in self.msdata.get(nearbyScan_id) if upper > mz_value > lower])
+
+                timeDependentIntensities.append([nearbyScan_rt, iso, matching_int, peptide_prec_isotopomer_am])
+
+
+            # gc.collect()
+
+        # Integrate the individual isotopomers
+        allIso = []
+
+        for j in iso_to_do:
+
+            isotopomer_profile = [[scan, i, I, mz_value] for scan, i, I, mz_value in timeDependentIntensities if i == j]
+
+            # If there is no isotopomer profile, set area to 0
+            if isotopomer_profile:
+                iso_df = pd.DataFrame(isotopomer_profile)
+                iso_area = scipy.integrate.trapz(iso_df[2], iso_df[0])
+                # Remove all negative areas
+                iso_area = max(iso_area, 0)
+
+            else:
+                iso_area = 0
+
+            allIso.append([j, iso_area])
+
+        return allIso
+
+    def get_isotopes_from_amrt(self, peptide_am, peptide_scan, z, rt_tol, iso_to_do):
         """
          For the deprecated integrate function, get isotope intensities of all relevant scans
          given a peptide m/z and RT combination, then integrate over time
@@ -335,85 +347,82 @@ class Mzml(object):
         #     print('No index found: creating new index.')
         #     self.make_index()
 
-        print(peptide_am, peptide_scan,)
+        #print(peptide_am, peptide_scan,)
 
-        peptide_rt = self.rt_index[peptide_scan]
+        peptide_rt = self.rt_idx.get(peptide_scan)
+        # Calculate precursor mass from
+        peptide_prec = (peptide_am + z*1.007825)/z
 
         timeDependentIntensities = []
 
         # Choose the scan numbers from the index; one-line list comprehension?
-        nearby_scans = []
-        for scan_id, scan_rt in self.rt_index.items():
-            if abs(scan_rt - peptide_rt) <= rt_tolerance and self.mslevel_index[scan_id] == 1:
-                nearby_scans.append([scan_id, scan_rt])
+        nearby_scans = [[i, rt] for i, rt in self.rt_idx.items()
+                        if abs(rt - peptide_rt) <= rt_tol and self.mslvl_idx[i] == 1]
 
-        t1 = time()
-        print('Extracting intensities from spectra...')
 
         # Loop through each spectrum, check if it is an MS1 spectrum, check if it is within 1 minute of retention time
         for nearbyScan_id, nearbyScan_rt in nearby_scans:
             # Get the spectrum based on the spectrum number
             try:
-                spectrum = self.msdata[nearbyScan_id]
+                spectrum_peaks = self.msdata.get(nearbyScan_id)
+                spectrum = mz.spec.Spectrum(measured_precision=20e-6)
+                spectrum.measured_precision = 20e-6
+                spectrum.set_peaks(spectrum_peaks, "raw")
+                spectrum.set_peaks(spectrum_peaks, "centroided")
+
 
             except KeyError:
 
                 print('[error] spectrum index out of bound')
-                continue
-
-            # 2018-09-07 Need to catch a number of errors of XML tree not
-            # Being able to read the spectrum object returned by pymzml
-
-            except xml.etree.ElementTree.ParseError:
-
-                print('[warning] XML eTree does not appear to be able to read this spectrum',
-                      '(scan number:', str(nearbyScan_id) + ')', sep=' ')
 
                 continue
 
-            # If it still fails, use the non string version and hope it doesn't freeze
-            except BaseException as err:
-                print(err)
-                spectrum = self.msdata[nearbyScan_id]
+            # # 2018-09-07 Need to catch a number of errors of XML tree not
+            # # Being able to read the spectrum object returned by pymzml
+            #
+            # except xml.etree.ElementTree.ParseError:
+            #
+            #     print('[warning] XML eTree does not appear to be able to read this spectrum',
+            #           '(scan number:', str(nearbyScan_id) + ')', sep=' ')
+            #
+            #     continue
+            #
+            # # If it still fails, use the non string version and hope it doesn't freeze
+            # except BaseException as err:
+            #     print(err)
+            #     spectrum = self.msdata[nearbyScan_id]
+            #
+            # # 2019-05-08 the new pymzml has a weird bug where it would crash when loading some spectra if I specify
+            # # the spectrum number as an int; this problem goes away if the identifier is a str but sometimes it retrieves
+            # # the wrong spectrum, e.g., for the liverpool test if I retrieve '4698' it gets the spectrum 14698 instead
+            # # Since this seems to happen less frequently than the freezing scenario I will use the str for now
+            #
+            # if not spectrum.ID == nearbyScan_id:
+            #     print('[warning] pyMZML failed to retrieve correct spectrum',
+            #            '(scan number:', str(nearbyScan_id) + ')', sep=' ')
 
-            # 2019-05-08 the new pymzml has a weird bug where it would crash when loading some spectra if I specify
-            # the spectrum number as an int; this problem goes away if the identifier is a str but sometimes it retrieves
-            # the wrong spectrum, e.g., for the liverpool test if I retrieve '4698' it gets the spectrum 14698 instead
-            # Since this seems to happen less frequently than the freezing scenario I will use the str for now
+            #   continue
 
-            if not spectrum.ID == nearbyScan_id:
-                print('[warning] pyMZML failed to retrieve correct spectrum',
-                      '(scan number:', str(nearbyScan_id) + ')', sep=' ')
-
-                continue
-
-            assert spectrum.ms_level == 1, '[error] specified spectrum is not a parent ion scan'
+            # assert spectrum.ms_level == 1, '[error] specified spectrum is not a parent ion scan'
 
             #Loop through every isotope in the to-do list
             for i in iso_to_do:
 
-                matchList = spectrum.has_peak(peptide_am + (i*1.003/z))
+                matching_peaks = spectrum.has_peak(peptide_prec + (i*1.007825/z))
 
-                if matchList:
-                    for mz_value, I in matchList:
+                if matching_peaks:
+                    for mz_value, I in matching_peaks:
                         timeDependentIntensities.append([nearbyScan_rt, i, I, mz_value])
 
-        t2 = time()
-        print('Done. Extracting time: ' + str(round(t2 - t1, 2)) + ' seconds.')
+            del spectrum
+            #gc.collect()
 
-        #print(timeDependentIntensities)
-
-        print('Integrating...')
         # Integrate the individual isotopomers
         allIso = []
 
         for j in iso_to_do:
 
-            isotopomer_profile = []
-
-            for scan, i, I, mz_value in timeDependentIntensities:
-                if i == j:
-                    isotopomer_profile.append([scan, i, I, mz_value])
+            isotopomer_profile = [[scan, i, I, mz_value] for scan, i, I, mz_value in timeDependentIntensities if i == j]
 
             # If there is no isotopomer profile, set area to 0
             if isotopomer_profile:
@@ -428,10 +437,3 @@ class Mzml(object):
             allIso.append([j, iso_area])
 
         return allIso
-
-#
-#   For doctest
-#
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()

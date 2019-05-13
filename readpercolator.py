@@ -17,6 +17,7 @@ class ReadPercolator(object):
         self.path = os.path.join(path)
         self.id_df = self.read_target_psms()
         self.indices = self.get_mzid_indices()
+        self.fraction_id_df = pd.DataFrame()
 
     def read_target_psms(self):
         """
@@ -145,10 +146,19 @@ class ReadPercolator(object):
 
     def subset_id_df(self, idx):
         """
-        Return only a fraction
+        Return only a fraction, also get only the peptide with the lowest Q
 
         :param idx:
         :return:
         """
 
-        return self.id_df[self.id_df['file_idx'] == idx]
+        self.fraction_id_df = self.id_df[self.id_df['file_idx'] == idx].sort_values('percolator q-value').drop_duplicates(
+            subset=['sequence', 'charge'])
+
+        # Arrange the PSM rows by scan number
+        self.fraction_id_df = self.fraction_id_df.sort_values(by='scan').reset_index(drop=True)
+
+        # Add a dummy peptide ID for this fraction only
+        self.fraction_id_df = self.fraction_id_df.assign(pep_id=self.fraction_id_df.index)
+
+        return True
