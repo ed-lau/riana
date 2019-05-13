@@ -53,7 +53,8 @@ def integrate(args):
     except TypeError or ValueError:
         lysine_filter = 0
 
-    print(lysine_filter)
+    if vb > 0:
+        print(lysine_filter)
 
     #
     # Convert the to-do isotopomer list option into a list of integers
@@ -118,8 +119,6 @@ def integrate(args):
     else:
         mass_tolerance = float(100) * 1e-6
 
-
-
     #
     # Multi-threading
     #
@@ -129,9 +128,9 @@ def integrate(args):
 
         except ValueError or TypeError:
             print('Invalid thread count, using default: 1.')
-            num_thread = 1
+            num_thread = 4
     else:
-        num_thread = 1
+        num_thread = 4
 
     #
     # Open the mzid file
@@ -188,8 +187,10 @@ def integrate(args):
     for idx in mzid.indices:
 
         # Verbosity 0 progress message
-        print('[verbosity 0] doing mzml:', mzml_files[idx],
-              '(' + str(idx + 1), 'of', str(len(mzid.indices)) + ')', sep=' ')
+        print('[verbosity 0] doing mzml: {0} ({1} of {2})'.format(
+            mzml_files[idx],
+            str(idx + 1),
+            str(len(mzid.indices))))
 
         # Make a subset dataframe with the current file index (fraction) being considered
         mzid.subset_id_df(idx)
@@ -216,7 +217,7 @@ def integrate(args):
         #
         # Get peak intensity for each isotopomer in each spectrum ID in each peptide
         #
-        output_table = peaks.get_isotopes_from_scan_id_multiwrapper(num_thread=num_thread)
+        output_table = peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
 
         df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
         out_df = pd.DataFrame(output_table, columns=df_columns)
@@ -280,9 +281,9 @@ if __name__ == "__main__":
                         type=float,
                         default=100)
 
-    parser.add_argument('-t', '--thread', help='thread (default = 1)',
+    parser.add_argument('-t', '--thread', help='thread (default = 4)',
                         type=float,
-                        default=1.0)
+                        default=4.0)
 
     parser.add_argument('-o', '--out', help='name of the output directory [default: riana_out]',
                         default='riana_out')

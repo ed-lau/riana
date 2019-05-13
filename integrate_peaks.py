@@ -74,7 +74,7 @@ class Peaks(object):
         self.id = id_df
 
 
-    def get_isotopes_from_scan_id_multiwrapper(self, num_thread=1):
+    def get_isotopes_from_amrt_multiwrapper(self, num_thread=1):
         """
         Multi-threaded version
 
@@ -90,26 +90,20 @@ class Peaks(object):
         # return result
 
         with Pool(processes=num_thread) as p:
-            result = list(tqdm.tqdm(p.imap(self.get_isotope_from_scan_id_wrapper,
+            result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
                                            range(len(self.id)), chunksize=50), total=len(self.id)))
 
         return result
 
 
 
-    def get_isotope_from_scan_id_wrapper(self, index):
+    def get_isotopes_from_amrt_wrapper(self, index):
         """
         Wrapper for the get_isotope_from_scan_id() function below
 
         :param in_df:
         :return:
         """
-        #print("wrapper", index)
-        #x = self.get_isotope_from_scan_id(peptide_am=float(self.id.loc[index, 'calc_mz']),
-        #                                     z=float(self.id.loc[index, 'z']),
-        #                                     spectrum_id=self.id.loc[index, 'scan_id'],
-        #                                     iso_to_do=self.iso_to_do)
-
         self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=float(self.id.loc[index, 'peptide mass']), # spectrum precursor m/z'
                                         peptide_scan=int(self.id.loc[index, 'scan']),
                                         z=float(self.id.loc[index, 'charge'])
@@ -117,24 +111,24 @@ class Peaks(object):
 
         result = [index] + [(self.id.loc[index, 'pep_id'])] + self.integrate_isotope_intensity()
 
-        #gc.collect()
-
         return result
 
 
     def get_isotopes_from_amrt(self, peptide_am, peptide_scan, z):
         """
 
-        :param peptide_am:
-        :param peptide_scan:
+        :param peptide_am: Accurate peptide mass
+        :param peptide_scan: Scan number
         :param z:
         :return:
         """
 
+        # Get retention time from scan number
         peptide_rt = self.rt_idx.get(peptide_scan)
-        # Calculate precursor mass from
+
+        # Calculate precursor mass from peptide monoisotopic mass
         peptide_prec = (peptide_am + (z * 1.007825)) / z
-        #peptide_prec = peptide_am
+
 
         intensity_over_time = []
 
