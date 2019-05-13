@@ -1,7 +1,15 @@
-# RIAna Relative Isotope Abundance Analyzer v.0.4.0
+# RIAna Relative Isotope Abundance Analyzer v.0.5.0
 
 RIAna (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
 and returns mass isotopomer distributions, e.g., for protein turnover analysis.
+
+## Update v.0.5.0
+
+Updated to use pymzml 2.2. Multi-threading is now supported with the --thread argument. RIANA now loads all the spectra
+needed for integration into memory. Compared to v.0.4.0 there should now be a substantial speed gain and can finish
+a sizeable fraction (~1 Gb raw file) in 10 min.
+
+User-definable mass tolerance for MS1 integration is now supported via the --masstolerance argument [default 100 ppm].
 
 ## Update v.0.4.0
 
@@ -53,7 +61,7 @@ Running
 		$ python3 riana.py --help
 
 	* Example command: This integrates the 0th and 6th isotopomer, requires one lysine, and requires unique peptides
-	For heavy water experiments, replace -i 0,6 with -i 0,1,2,3,4; replace -k 1 with -k 0
+	For heavy water experiments, replace -i 0,6 with -i 0,1,2,3,4,5; replace -k 1 with -k 0
 		$ python3 riana.py ~/test_mzid ~/test_mzml -u -i 0,6 -q 0.01 -r 0.25 -k 1
 
 	* Deactivate the Virtual Environment upon completion
