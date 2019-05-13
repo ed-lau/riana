@@ -14,15 +14,13 @@ from multiprocessing import Pool, cpu_count
 class Peaks(object):
     def __init__(self, msdata, rt_idx, mslvl_idx):
         """
+        This class uses the parsed peaks from pymzml for peak recognition and counting
 
         :param msdata: The dictionary of spectrum ID vs. mz/I array from parse Mzml
         :param rt_idx: The retention time index dictionary from parse Mzml
         :param mslvl_idx: The spectrum MS level dictionary from parse Mzml
         """
-        """
-        This class reads mzml files using pymzml and integrates based on the parsed mzid
-        :param path: path of the mzml file to be loaded, e.g., "~/Desktop/example.mzml"
-        """
+
         self.msdata = msdata
         self.rt_idx = rt_idx
         self.mslvl_idx = mslvl_idx
@@ -34,20 +32,19 @@ class Peaks(object):
         self.intensity_over_time = []
         self.isotope_intensities = []
 
-
     def set_iso_to_do(self, iso_to_do):
         """
-        Setter
+        Setter for isotope
         :param iso_to_do:
         :return:
         """
 
         self.iso_to_do = iso_to_do
 
-
     def set_rt_tolerance(self, rt_tolerance):
         """
-        Setter
+        Setter for rt_tolerance
+
         :param rt_tolerance:
         :return:
         """
@@ -55,39 +52,35 @@ class Peaks(object):
         self.rt_tolerance = rt_tolerance
 
     def set_mass_tolerance(self, mass_tolerance):
-            """
-            Setter
-            :param iso_to_do:
-            :return:
-            """
+        """
+        Setter for mass tolerance
+        :param iso_to_do:
+        :return:
+        """
 
-            self.mass_tolerance = mass_tolerance
+        self.mass_tolerance = mass_tolerance
 
     def associate_id(self, id_df):
         """
-        Link the peptide id file to this peak list
+        Associate the mzid peptide identification file to this peak list
 
-        :param id_df:
+        :param id_df: Fraction-specific ID list from mzid or Percolator
         :return:
         """
 
         self.id = id_df
 
-
     def get_isotopes_from_amrt_multiwrapper(self, num_thread=1):
-        """
-        Multi-threaded version
 
+        """
+        Multi-threaded wrapper to get the isotopomers from peptide accurate mass and retention time of all qualifying
+        peptides at the same time. The chunk size of multithreading is set to 50 at the moment.
+
+        :param num_thread: Number of threads (default to 1)
         :return:
         """
 
         assert num_thread >= cpu_count()-1, "Number of threads exceeded CPU count"
-
-        #from pathos.multiprocessing import ProcessingPool as Pool
-        #self.map = Pool().map
-        #print("multiwrapper")
-        #result = self.map(self.get_isotope_from_scan_id_wrapper, range(10))
-        # return result
 
         with Pool(processes=num_thread) as p:
             result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
@@ -96,13 +89,12 @@ class Peaks(object):
         return result
 
 
-
     def get_isotopes_from_amrt_wrapper(self, index):
         """
         Wrapper for the get_isotope_from_scan_id() function below
 
-        :param in_df:
-        :return:
+        :param index: int The row number of the peptide ID table passed from the wrapper.
+        :return: list [index, pep_id, m0, m1, m2, ...]
         """
         self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=float(self.id.loc[index, 'peptide mass']), # spectrum precursor m/z'
                                         peptide_scan=int(self.id.loc[index, 'scan']),
@@ -116,11 +108,13 @@ class Peaks(object):
 
     def get_isotopes_from_amrt(self, peptide_am, peptide_scan, z):
         """
+        Given peptide accurate mass and retention time and charge, find all the isotopic peaks intensity at each
+        scan within the retention time window
 
-        :param peptide_am: Accurate peptide mass
-        :param peptide_scan: Scan number
-        :param z:
-        :return:
+        :param peptide_am: float Accurate peptide mass
+        :param peptide_scan: int Scan number
+        :param z: int Peptide charge
+        :return: List of intensity over time
         """
 
         # Get retention time from scan number
@@ -156,7 +150,7 @@ class Peaks(object):
         """
         Given a list of isotopomer intensity over time, give the integrated intensity of each isotopomer
 
-        :return:
+        :return: Integrated intensity of each isotopomer
         """
         # Integrate the individual isotopomers
         iso_intensity = []
