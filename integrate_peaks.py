@@ -70,21 +70,30 @@ class Peaks(object):
 
         self.id = id_df
 
-    def get_isotopes_from_amrt_multiwrapper(self, num_thread=1):
+    def get_isotopes_from_amrt_multiwrapper(self, num_thread=1, chunk_size=50):
 
         """
         Multi-threaded wrapper to get the isotopomers from peptide accurate mass and retention time of all qualifying
         peptides at the same time. The chunk size of multithreading is set to 50 at the moment.
 
         :param num_thread: Number of threads (default to 1)
+        :param chunk_size: Number of threads (default to 1)
         :return:
         """
 
         assert num_thread >= cpu_count()-1, "Number of threads exceeded CPU count"
 
+        assert chunk_size > 0, "Chunk size must be a positive integer"
+
+        loop_count = range(len(self.id))
+
+        chunk_size = max(chunk_size, 250)
+
         with Pool(processes=num_thread) as p:
             result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
-                                           range(len(self.id)), chunksize=50), total=len(self.id)))
+                                           loop_count,
+                                           chunksize=chunk_size),
+                                    total=max(loop_count)))
 
         return result
 
@@ -95,11 +104,21 @@ class Peaks(object):
 
         :param index: int The row number of the peptide ID table passed from the wrapper.
         :return: list [index, pep_id, m0, m1, m2, ...]
+
         """
-        self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=float(self.id.loc[index, 'peptide mass']), # spectrum precursor m/z'
-                                        peptide_scan=int(self.id.loc[index, 'scan']),
-                                        z=float(self.id.loc[index, 'charge'])
-                                                                 )
+
+        peptide_mass = float(self.id.loc[index, 'peptide mass'])
+
+        scan_number = int(self.id.loc[index, 'scan'])
+
+        charge = float(self.id.loc[index, 'charge'])
+
+        self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
+                                                               peptide_scan=scan_number,
+                                                               z=charge)
+
+        if not self.intensity_over_time:
+            print('Empty intensity over time')
 
         result = [index] + [(self.id.loc[index, 'pep_id'])] + self.integrate_isotope_intensity()
 
@@ -117,12 +136,14 @@ class Peaks(object):
         :return: List of intensity over time
         """
 
+        # Proton mass from NIST
+        proton = 1.007825
+
         # Get retention time from scan number
         peptide_rt = self.rt_idx.get(peptide_scan)
 
         # Calculate precursor mass from peptide monoisotopic mass
-        peptide_prec = (peptide_am + (z * 1.007825)) / z
-
+        peptide_prec = (peptide_am + (z * proton)) / z
 
         intensity_over_time = []
 
@@ -136,9 +157,13 @@ class Peaks(object):
 
             for iso in self.iso_to_do:
 
-                peptide_prec_isotopomer_am = peptide_prec + (iso * 1.007825 / z)
-                upper = peptide_prec_isotopomer_am + (peptide_prec_isotopomer_am * (self.mass_tolerance/2))
-                lower = peptide_prec_isotopomer_am - (peptide_prec_isotopomer_am * (self.mass_tolerance/2))
+                # Set upper and lower bound
+
+                peptide_prec_iso_am = peptide_prec + (iso * proton / z)
+
+                upper = peptide_prec_iso_am + (peptide_prec_iso_am * (self.mass_tolerance/2))
+
+                lower = peptide_prec_iso_am - (peptide_prec_iso_am * (self.mass_tolerance/2))
 
                 matching_int = sum([I for mz_value, I in self.msdata.get(nearbyScan_id) if upper > mz_value > lower])
 
