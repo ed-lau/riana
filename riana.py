@@ -241,7 +241,7 @@ if __name__ == "__main__":
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='RIAna v.0.4.0 integrates the relative abundance of'
+    parser = argparse.ArgumentParser(description='RIANA.py v.0.5.0 integrates the relative abundance of'
                                                  'isotopomers')
 
     parser.add_argument('mzid', help='path to folder containing the search result file (percolator tab delimited)')
