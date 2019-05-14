@@ -15,9 +15,6 @@ import re
 import os
 from multiprocessing import cpu_count
 
-# NEW 2018-09-09 Now using tqdm for progress bar
-from tqdm import tqdm
-
 
 def integrate(args):
     """

@@ -166,7 +166,7 @@ class Peaks(object):
 
                 matching_int = sum([I for mz_value, I in self.msdata.get(nearbyScan_id) if upper > mz_value > lower])
 
-                intensity_over_time.append([nearbyScan_rt, iso, matching_int, peptide_prec_isotopomer_am])
+                intensity_over_time.append([nearbyScan_rt, iso, matching_int, peptide_prec_iso_am])
 
         return intensity_over_time
 
