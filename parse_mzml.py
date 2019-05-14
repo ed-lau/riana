@@ -5,10 +5,12 @@ Parse MZML v.0.5.0. Build Date : : :.
 """
 
 import pymzml as mz
-import pandas as pd
 
 class Mzml(object):
-    def __init__(self, path):
+    def __init__(
+            self,
+            path
+    ):
         """
         This class reads mzml files using pymzml and integrates based on the parsed mzid
         :param path: path of the mzml file to be loaded, e.g., "~/Desktop/example.mzml"

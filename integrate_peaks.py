@@ -12,7 +12,11 @@ import tqdm
 from multiprocessing import Pool, cpu_count
 
 class Peaks(object):
-    def __init__(self, msdata, rt_idx, mslvl_idx):
+    def __init__(
+            self,
+            msdata,
+            rt_idx,
+            mslvl_idx):
         """
         This class uses the parsed peaks from pymzml for peak recognition and counting
 
@@ -32,7 +36,10 @@ class Peaks(object):
         self.intensity_over_time = []
         self.isotope_intensities = []
 
-    def set_iso_to_do(self, iso_to_do):
+    def set_iso_to_do(
+            self,
+            iso_to_do
+    ):
         """
         Setter for isotope
         :param iso_to_do:
@@ -41,7 +48,10 @@ class Peaks(object):
 
         self.iso_to_do = iso_to_do
 
-    def set_rt_tolerance(self, rt_tolerance):
+    def set_rt_tolerance(
+            self,
+            rt_tolerance
+    ):
         """
         Setter for rt_tolerance
 
@@ -51,7 +61,10 @@ class Peaks(object):
 
         self.rt_tolerance = rt_tolerance
 
-    def set_mass_tolerance(self, mass_tolerance):
+    def set_mass_tolerance(
+            self,
+            mass_tolerance
+    ):
         """
         Setter for mass tolerance
         :param iso_to_do:
@@ -60,7 +73,10 @@ class Peaks(object):
 
         self.mass_tolerance = mass_tolerance
 
-    def associate_id(self, id_df):
+    def associate_id(
+            self,
+            id_df
+    ):
         """
         Associate the mzid peptide identification file to this peak list
 
@@ -70,7 +86,11 @@ class Peaks(object):
 
         self.id = id_df
 
-    def get_isotopes_from_amrt_multiwrapper(self, num_thread=1, chunk_size=50):
+    def get_isotopes_from_amrt_multiwrapper(
+            self,
+            num_thread=1,
+            chunk_size=50
+    ):
 
         """
         Multi-threaded wrapper to get the isotopomers from peptide accurate mass and retention time of all qualifying
@@ -97,7 +117,10 @@ class Peaks(object):
 
         return result
 
-    def get_isotopes_from_amrt_wrapper(self, index):
+    def get_isotopes_from_amrt_wrapper(
+            self,
+            index
+    ):
         """
         Wrapper for the get_isotope_from_scan_id() function below
 
@@ -124,7 +147,12 @@ class Peaks(object):
         return result
 
 
-    def get_isotopes_from_amrt(self, peptide_am, peptide_scan, z):
+    def get_isotopes_from_amrt(
+            self,
+            peptide_am,
+            peptide_scan,
+            z
+    ):
         """
         Given peptide accurate mass and retention time and charge, find all the isotopic peaks intensity at each
         scan within the retention time window
@@ -168,6 +196,12 @@ class Peaks(object):
 
                 intensity_over_time.append([nearbyScan_rt, iso, matching_int, peptide_prec_iso_am])
 
+        if not intensity_over_time:
+            raise Exception("No intensity profile for peptide {0}".format(
+                peptide_prec_iso_am
+            )
+            )
+
         return intensity_over_time
 
     def integrate_isotope_intensity(self):
@@ -194,6 +228,12 @@ class Peaks(object):
                 iso_area = 0
 
             iso_intensity.append(iso_area)
+
+        if not iso_intensity:
+            raise Exception("No positive numerical value integrated for isotopmer {0}".format(
+                self.intensity_over_time
+            )
+            )
 
         return iso_intensity
 
