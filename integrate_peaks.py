@@ -97,7 +97,6 @@ class Peaks(object):
 
         return result
 
-
     def get_isotopes_from_amrt_wrapper(self, index):
         """
         Wrapper for the get_isotope_from_scan_id() function below
@@ -198,3 +197,118 @@ class Peaks(object):
 
         return iso_intensity
 
+    # def make_index(self):
+    #     """
+    #     Generate two indices:
+    #     MS1 index: a dictionary of ms1 scan number vs. rt
+    #     MS2 index: a dictionary of ms2 scan number vs. rt
+    #     :return: True
+    #     """
+    #
+    #     # Index retention time; turn this into a dictionary please.
+    #     i = 0
+    #     for spectrum in self.msdata:
+    #         i += 1
+    #
+    #         # # Print progress every 1000 spectra
+    #         try:
+    #             if i % 1000 == 0:
+    #                 print('Indexing ' + str(i) + ' of ' +
+    #                       str(self.msdata.getSpectrumCount()) + ' spectra (ID: ' + str(spectrum['id']) + ').')
+    #
+    #         except:
+    #             pass
+    #
+    #         # Only indexing MS1 and MS2 scans
+    #         if spectrum['ms level'] == 1:
+    #             self.ms1_index[spectrum['id']] = spectrum['MS:1000016']
+    #         if spectrum['ms level'] == 2:
+    #             self.ms2_index[spectrum['id']] = spectrum['MS:1000016']
+    #
+    #     return True
+
+
+    # def get_rt_from_scan(self, peptide_scan):
+    #     """
+    #     For the deprecated integrate function
+    #     Given the scan number, return the retention time
+    #     :param peptide_scan: the peptide scan number
+    #     :return: the retention time
+    #     """
+    #
+    #     # Some spectral properties: 'id', 'ms level', 'total ion current'
+    #     # NB: According to the mzml OBO, MS:1000016 is the retention time
+    #     return self.msdata[peptide_scan]['MS:1000016']
+    #
+    #
+    # def get_scans_to_do(self, peptide_scan, rt_tolerance):
+    #     """
+    #     For the new integrate_fast function
+    #     Given the scan number, return all the scan IDs to integrate
+    #     :param peptide_scan:    MS2 scan number
+    #     :param rt_tolerance:    Retention time tolerance in min
+    #     :return: the ID of the scans to be integrated
+    #     """
+    #
+    #     peptide_rt = self.ms2_index[peptide_scan]
+    #
+    #     if self.ms2_index == {}:
+    #         print('No index found: creating new index.')
+    #         self.make_index()
+    #
+    #     # Choose the scan numbers from the index
+    #     nearbyScans = []
+    #     for scan_id, scan_rt in self.ms1_index.items():
+    #         if abs(scan_rt - peptide_rt) <= rt_tolerance:
+    #             nearbyScans.append([scan_id, scan_rt])
+    #
+    #     return nearbyScans
+    #
+    #
+    # def get_isotope_from_scan_id(self, peptide_am, z, spectrum_id, iso_to_do):
+    #     """
+    #     For the new integrate_fast function, get isotope intensities of a scan
+    #     given a peptide m/z and RT combination
+    #     :param peptide_am:  Peptide accurate mass
+    #     :param z:           Peptide charge
+    #     :param spectrum_id: Scan number?
+    #     :param iso_to_do:   List of isotopomers to integrate
+    #     :return:
+    #     """
+    #
+    #     timeDependentIntensities = []
+    #
+    #     # Get the spectrum based on the spectrum number
+    #     try:
+    #         spectrum = self.msdata[spectrum_id]
+    #
+    #     except KeyError:
+    #
+    #         print('[error] spectrum index out of bound')
+    #         return []
+    #
+    #     # 2018-09-07 Need to catch a number of errors of XML tree not
+    #     # Being able to read the spectrum object returned by pymzml
+    #     except xml.etree.ElementTree.ParseError:
+    #         """
+    #         print('[warning] XML eTree does not appear to be able to read this spectrum',
+    #                   '(scan number:', str(spectrum_id) + ')', sep=' ')
+    #         """
+    #         return []
+    #
+    #     assert spectrum['ms level'] == 1, '[error] specified spectrum is not a parent ion scan'
+    #
+    #     # Loop through every isotope in the to-do list
+    #     for i in iso_to_do:
+    #
+    #         iso_mz = peptide_am + ((i * 1.003) / z)
+    #
+    #         matchList = spectrum.has_peak(iso_mz)
+    #
+    #         if matchList:
+    #             for mz, I in matchList:
+    #                 timeDependentIntensities.append([spectrum_id, i, I, mz])
+    #         else:
+    #             timeDependentIntensities.append([spectrum_id, i, 0, iso_mz])
+    #
+    #     return timeDependentIntensities
