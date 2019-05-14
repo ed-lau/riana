@@ -1,6 +1,6 @@
-# RIAna Relative Isotope Abundance Analyzer v.0.5.0
+# RIANA - Relative Isotope Abundance Analyzer v.0.5.0
 
-RIAna (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
+RIANA (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
 and returns mass isotopomer distributions, e.g., for protein turnover analysis.
 
 ## Update v.0.5.0
@@ -21,7 +21,7 @@ the mzml directory contains exactly the same mzml files used for the database se
 in how the operating system order files on the search computer (e.g., file_10.mzml vs. file_2. mzml) or if one of the
 fractions contained no protein ID and Crux/Percolator decided to skip the file in its indexing.
 
-To support multi-fraction analysis, RIAna now takes in Percolator tab delimited files for protein ID rather than mzid.
+To support multi-fraction analysis, RIANA now takes in Percolator tab delimited files for protein ID rather than mzid.
 Mzid support will be added back in in a future version.
 
 
@@ -57,7 +57,7 @@ On Windows
 
 Running
 	
-	* Launch RIAna (Usage/Help)
+	* Launch RIANA.py (Usage/Help)
 		$ python3 riana.py --help
 
 	* Example command: This integrates the 0th and 6th isotopomer, requires one lysine, and requires unique peptides
@@ -70,7 +70,7 @@ Running
 
 Input files
 
-	* RIAna was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
+	* RIANA.py was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
 
 	* The following workflow has been tested for both amino acid and heavy water labeling data gathered on a QE:
 
@@ -95,7 +95,7 @@ Input files
 		** --protein T
 		** --fido-empirical-protein-q T
 
-    * Input to RIAna:
+    * Input to RIANA.py:
 
 	** Take the paths to the directories containing the mzML files (unzipped!) and the percolator.target.psms.txt file
 
@@ -104,7 +104,7 @@ particular data sets.)
 
 ### Prerequisites
 
-RIAna requires the following:
+RIANA.py requires the following:
 
 ```
 Python 3.5+
