@@ -59,6 +59,9 @@ Running
 	
 	* Launch RIANA.py (Usage/Help)
 		$ python3 riana.py --help
+		
+	* RIANA.py takes as input the paths to two folders: one with the Percolator output (percolator.target.psms.txt) 
+	and one with the corresponding .mzML (or .mzML.gz) mass spectrum files.
 
 	* Example command: This integrates the 0th and 6th isotopomer, requires one lysine, and requires unique peptides
 	For heavy water experiments, replace -i 0,6 with -i 0,1,2,3,4,5; replace -k 1 with -k 0
@@ -99,8 +102,6 @@ Input files
 
 	** Take the paths to the directories containing the mzML files (unzipped!) and the percolator.target.psms.txt file
 
-(Obviously you should be able to adjust most if not all of the above parameters to optimize the database search for
-particular data sets.)
 
 ### Prerequisites
 

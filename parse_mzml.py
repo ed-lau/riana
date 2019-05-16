@@ -38,9 +38,8 @@ class Mzml(object):
 
             if n % 1000 == 0:
                 print(
-                    'Spectrum {0}, MS level {ms_level} @ RT {scan_time:1.2f}'.format(
+                    'Loading spectrum {0} at retention time {scan_time:1.2f}'.format(
                         spec.ID,
-                        ms_level=spec.ms_level,
                         scan_time=spec.scan_time_in_minutes()
                     )
                 )
