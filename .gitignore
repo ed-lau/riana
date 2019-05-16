@@ -8,6 +8,7 @@ __pycache__/
 
 # Directories
 .DS_Store
+_testdata/.DS_Store
 
 # Distribution / packaging
 .Python
