@@ -164,7 +164,12 @@ class Peaks(object):
         """
 
         # Proton mass from NIST
-        proton = 1.007825
+        # 2019-05-29 proton mass is different from hydrogen mass is different fron neutron mass
+        # Perhaps we should add neutron mass instead of proton mass for the isotopes which may
+        # make a difference when iso is high enough (e.g., 12 for KK determination)
+        # in the future we may have to account for mass defects
+        proton = 1.007276 #1.007825
+        neutron = 1.008665
 
         # Get retention time from scan number
         peptide_rt = self.rt_idx.get(peptide_scan)
@@ -186,7 +191,7 @@ class Peaks(object):
 
                 # Set upper and lower bound
 
-                peptide_prec_iso_am = peptide_prec + (iso * proton / z)
+                peptide_prec_iso_am = peptide_prec + (iso * neutron / z)
 
                 upper = peptide_prec_iso_am + (peptide_prec_iso_am * (self.mass_tolerance/2))
 
