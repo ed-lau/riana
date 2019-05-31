@@ -14,6 +14,7 @@ import pandas as pd
 import re
 import os
 from multiprocessing import cpu_count
+from _version import __version__
 
 
 def integrate(args):
@@ -284,11 +285,14 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--out', help='name of the output directory [default: riana_out]',
                         default='riana_out')
 
-    parser.add_argument('-v', '--verbosity',
+    parser.add_argument('-vb', '--verbosity',
                         help='verbosity of error messages level. 0=quiet, 1=default, 2=verbose',
                         type=int,
                         choices=[0, 1, 2],
                         default=1)
+
+    parser.add_argument('-v', '--version', action='version',
+                        version='%(prog)s {version}'.format(version=__version__))
 
     parser.set_defaults(func=integrate)
 

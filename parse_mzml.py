@@ -37,6 +37,7 @@ Note on test file created by:
 """
 
 import unittest
+import pymzml as mz
 
 class Mzml(object):
 

@@ -163,13 +163,22 @@ class Peaks(object):
         :return: List of intensity over time
         """
 
-        # Proton mass from NIST
+        # Isotope mass from NIST https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
+        # Electron mass from NIST https://www.physics.nist.gov/cgi-bin/cuu/Value?meu|search_for=electron+mass
+
         # 2019-05-29 proton mass is different from hydrogen mass is different fron neutron mass
         # Perhaps we should add neutron mass instead of proton mass for the isotopes which may
         # make a difference when iso is high enough (e.g., 12 for KK determination)
         # in the future we may have to account for mass defects
-        proton = 1.007276 #1.007825
-        neutron = 1.008665
+        proton = 1.007276466621 #1.007825
+        # neutron = 1.00866491595
+        # electron = 0.000548579907
+
+        # Mass defect of deuterium is 1.007276466621 +  1.00866491595 + 0.000548579907 - 2.01410177812 = 0.00238818435
+        # Mass defect of C13 is 6 * 1.007276466621 + 7 * 1.00866491595 + 6 * 0.000548579907 - 13.00335483507 = 0.1042
+        # Mass difference of C13 - C12 = 1.003354835
+        # Mass difference of deuterium - protium = 1.00627674589
+        iso_added_mass = 1.00627674589 # 1.003354835
 
         # Get retention time from scan number
         peptide_rt = self.rt_idx.get(peptide_scan)
@@ -191,7 +200,7 @@ class Peaks(object):
 
                 # Set upper and lower bound
 
-                peptide_prec_iso_am = peptide_prec + (iso * neutron / z)
+                peptide_prec_iso_am = peptide_prec + (iso * iso_added_mass / z)
 
                 upper = peptide_prec_iso_am + (peptide_prec_iso_am * (self.mass_tolerance/2))
 
@@ -241,6 +250,63 @@ class Peaks(object):
             )
 
         return iso_intensity
+
+
+"""
+
+calcMassA <- function(pep, IAA=T, TMT=F){
+        "
+        pep                      char; peptide sequence string
+        IAA                      logical; whether to add carbamidomethylation
+        TMT                      logical; whether to add TMT label
+        # http://education.expasy.org/student_projects/isotopident/htdocs/aa-list.html
+        # http://www.matrixscience.com/help/aa_help.html
+        # http://www.unimod.org/masses.html 
+        # https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl
+        "
+        require(stringr)
+  
+        atoms <- c("carbon", "hydrogen", "oxygen", "nitrogen", "sulfur")
+        aminoAcids <- c("A", "C", "D", "E", "F", 
+                        "G", "H", "I", "K", "L",
+                        "M", "N", "P", "Q", "R", 
+                        "S", "T", "V", "W", "Y")
+        # Start with a free water
+        v = c(0.0, 2.0, 1.0, 0.0, 0.0)
+        names(v) = atoms
+        
+        aminoAcidVec = stringr::str_count(pep, aminoAcids)
+        
+        # For each amino acid residue, add labeling sites from Commerford et al., add number of atoms.
+        atomCountMatrix <-  matrix(data = c(
+                c(3,5,1,1,0), c(3,5,1,1,1), c(4,5,3,1,0), c(5,7,3,1,0), c(9,9,1,1,0),
+                c(2,3,1,1,0), c(6,7,1,3,0), c(6,11,1,1,0), c(6,12,1,2,0), c(6,11,1,1,0),
+                c(5,9,1,1,1), c(4,6,2,2,0), c(5,7,1,1,0), c(5,8,2,2,0), c(6,12,1,4,0),
+                c(3,5,2,1,0), c(4,7,2,1,0), c(5,9,1,1,0), c(11,10,1,2,0), c(9,9,2,1,0)
+                ), nrow =5, 
+                dimnames=list(atoms, aminoAcids))
+
+        # Get inner product of the amino acid vector with the scoring matrix.
+        v = v + aminoAcidVec %*% t(atomCountMatrix)
+        
+        # Carbamidomethylation
+        if(IAA){v = v + (stringr::str_count(pep, "C") * c(2,3,1,1,0))}
+        
+        massMatrix <- matrix(data = c(12.0000000, 1.00782503223, 15.99491461957, 14.00307400443, 31.9720711744),
+                             nrow=1,
+                             dimnames=list("mass", atoms))
+        
+        m = v %*% t(massMatrix)
+        
+        if(TMT){m = m + ((stringr::str_count(pep, "K")+ 1)*229.162932)}
+        
+        return(m)
+}
+  
+
+"""
+
+
 
     # def make_index(self):
     #     """
