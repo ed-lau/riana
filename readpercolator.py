@@ -1,12 +1,12 @@
 import pandas as pd
 import os
 
+
 class ReadPercolator(object):
     """
     This class reads the Percolator tab-delimited files for riana. Supports multiple fractions
 
     """
-
 
     def __init__(self, path):
         """

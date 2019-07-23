@@ -16,13 +16,15 @@ class Peaks(object):
             self,
             msdata,
             rt_idx,
-            mslvl_idx):
+            mslvl_idx,
+            mol_type):
         """
         This class uses the parsed peaks from pymzml for peak recognition and counting
 
         :param msdata: The dictionary of spectrum ID vs. mz/I array from parse Mzml
         :param rt_idx: The retention time index dictionary from parse Mzml
         :param mslvl_idx: The spectrum MS level dictionary from parse Mzml
+        :param mol_type: Molecule type (lipid or peptide)
         """
 
         self.msdata = msdata
@@ -35,6 +37,7 @@ class Peaks(object):
         self.njobs = 10
         self.intensity_over_time = []
         self.isotope_intensities = []
+        self.mol_type = mol_type
 
     def set_iso_to_do(
             self,
@@ -101,7 +104,7 @@ class Peaks(object):
         :return:
         """
 
-        assert num_thread >= cpu_count()-1, "Number of threads exceeded CPU count"
+        assert num_thread <= cpu_count()-1, "Number of threads exceeded CPU count"
 
         assert chunk_size > 0, "Chunk size must be a positive integer"
 
@@ -113,31 +116,42 @@ class Peaks(object):
             result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
                                            loop_count,
                                            chunksize=chunk_size),
-                                    total=max(loop_count)))
+                                           total=max(loop_count)))
 
         return result
+
 
     def get_isotopes_from_amrt_wrapper(
             self,
             index
     ):
         """
-        Wrapper for the get_isotope_from_scan_id() function below
+        Wrapper for the get_isotope_from_amrt() function below
 
         :param index: int The row number of the peptide ID table passed from the wrapper.
         :return: list [index, pep_id, m0, m1, m2, ...]
 
         """
 
-        peptide_mass = float(self.id.loc[index, 'peptide mass'])
+        if self.mol_type == "peptide":
+            peptide_mass = float(self.id.loc[index, 'peptide mass'])
+            scan_number = int(self.id.loc[index, 'scan'])
+            charge = float(self.id.loc[index, 'charge'])
+            self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
+                                                                   peptide_scan=scan_number,
+                                                                   z=charge
+                                                                   )
 
-        scan_number = int(self.id.loc[index, 'scan'])
-
-        charge = float(self.id.loc[index, 'charge'])
-
-        self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
-                                                               peptide_scan=scan_number,
-                                                               z=charge)
+        elif self.mol_type == "lipid":
+            peptide_mass = float(self.id.loc[index, 'spectrum precursor m/z'])
+            scan_number = int(self.id.loc[index, 'rtime'])
+            charge = float(self.id.loc[index, 'charge'])
+            self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
+                                                                   peptide_scan=scan_number,
+                                                                   z=charge,
+                                                                   am_is_mz=True,
+                                                                   scan_is_rt=True,
+                                                                   )
 
         if not self.intensity_over_time:
             print('Empty intensity over time')
@@ -151,7 +165,9 @@ class Peaks(object):
             self,
             peptide_am,
             peptide_scan,
-            z
+            z,
+            am_is_mz=False,
+            scan_is_rt=False,
     ):
         """
         Given peptide accurate mass and retention time and charge, find all the isotopic peaks intensity at each
@@ -159,6 +175,8 @@ class Peaks(object):
 
         :param peptide_am: float Accurate peptide mass
         :param peptide_scan: int Scan number
+        :param am_is_mz: bool Is the accurate mass actually prec m/z (for lipid)
+        :param scan_is_rt: bool Is the scan number actually rtime (for lipid)
         :param z: int Peptide charge
         :return: List of intensity over time
         """
@@ -181,10 +199,16 @@ class Peaks(object):
         iso_added_mass = 1.00627674589 # 1.003354835
 
         # Get retention time from scan number
-        peptide_rt = self.rt_idx.get(peptide_scan)
+        if not scan_is_rt:
+            peptide_rt = self.rt_idx.get(peptide_scan)
+        else:
+            peptide_rt = peptide_scan
 
         # Calculate precursor mass from peptide monoisotopic mass
-        peptide_prec = (peptide_am + (z * proton)) / z
+        if not am_is_mz:
+            peptide_prec = (peptide_am + (z * proton)) / z
+        else:
+            peptide_prec = peptide_am
 
         intensity_over_time = []
 

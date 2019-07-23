@@ -8,6 +8,7 @@ Example: python riana.py data/percolator_test/percolator data/percolator_test/mz
 
 # from pymzid import Mzid
 from readpercolator import ReadPercolator
+from readlipid import ReadLipid
 from parse_mzml import Mzml
 from integrate_peaks import Peaks
 import pandas as pd
@@ -130,6 +131,15 @@ def integrate(args):
     else:
         num_thread = 4
 
+
+    #
+    # Inclusion lists
+    #
+    if args.lipid:
+        mol_type = "lipid"
+    else:
+        mol_type = "peptide"
+
     #
     # Open the mzid file
     # Note 2018-09-07 - I am not sure we should use the Mzid module anymore since Percolator doesn't seem to output
@@ -151,17 +161,26 @@ def integrate(args):
         sys.exit('Failed to load mzid file. ' + str(e.errno))
     """
 
-    try:
-        mzid = ReadPercolator(mzid_loc)
-        mzid.get_mzid_indices()
-        mzid.filter_id_df(lysine_filter=lysine_filter,
-                          protein_q=qcutoff,
-                          peptide_q=qcutoff,
-                          unique_only=unique_pep,
-                          require_protein_id=True)
+    if mol_type == 'peptide':
+        try:
+            mzid = ReadPercolator(mzid_loc)
+            mzid.get_mzid_indices()
+            mzid.filter_id_df(lysine_filter=lysine_filter,
+                              protein_q=qcutoff,
+                              peptide_q=qcutoff,
+                              unique_only=unique_pep,
+                              require_protein_id=True)
 
-    except OSError as e:
-        sys.exit('Failed to load mzid file. ' + str(e.errno))
+        except OSError as e:
+            sys.exit('Failed to load mzid file. ' + str(e.errno))
+
+    elif mol_type == 'lipid':
+        try:
+            mzid = ReadLipid(mzid_loc)
+            mzid.get_mzid_indices()
+
+        except OSError as e:
+            sys.exit('Failed to load mzid file. ' + str(e.errno))
 
     # Check that the number of mzMLs in the mzML folder is the same as the maximum of the ID file's file_idx column.
     # Note this will throw an error if not every fraction results in at least some ID, but we will ignore for now.
@@ -202,7 +221,10 @@ def integrate(args):
         # Read the spectra into dictionary and also create MS1/MS2 indices as a Peaks object
         #
         mzml.parse_mzml()
-        peaks = Peaks(mzml.msdata, mzml.rt_idx, mzml.mslvl_idx)
+        peaks = Peaks(msdata=mzml.msdata,
+                      rt_idx=mzml.rt_idx,
+                      mslvl_idx=mzml.mslvl_idx,
+                      mol_type=mol_type)
 
         #
         # Link ID file, iso_to_do, and rt_tolerance to mzML
@@ -254,6 +276,9 @@ if __name__ == "__main__":
 
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
 
+    parser.add_argument('--lipid', action='store_true', help='integrate an inclusion list of lipids',
+                        default=False)
+
     parser.add_argument('-k', '--lysine',
                         help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
                         type=int,
@@ -264,6 +289,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--test', action='store_true',
                         help='test mode: integrates only first 50 qualifying peptides')
     """
+
 
     parser.add_argument('-q', '--qvalue',
                         help='integrate only peptides with q value below this threshold[default: 1e-2]',
