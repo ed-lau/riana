@@ -1,7 +1,6 @@
 """
 
-Parse MZML v.0.5.0. Build Date : : :.
-
+This is outdated.
 Note on test file created by:
 
     $ msconvert
@@ -36,8 +35,10 @@ Note on test file created by:
 
 """
 
+
 import unittest
 import pymzml as mz
+import logging
 
 class Mzml(object):
 
@@ -55,6 +56,9 @@ class Mzml(object):
         self.rt_idx = {}
         self.mslvl_idx = {}
 
+        self.logger = logging.getLogger('riana.mzml')
+        self.logger.info('Reading mzML at {0}'.format(self.path))
+
     def parse_mzml(self):
         """
         Read the mzml file and create data dictionary
@@ -70,13 +74,14 @@ class Mzml(object):
 
         for n, spec in enumerate(run):
 
-            if n % 1000 == 0:
-                print(
-                    'Loading spectrum {0} at retention time {scan_time:1.2f}'.format(
-                        spec.ID,
-                        scan_time=spec.scan_time_in_minutes()
-                    )
-                )
+            # Check for retention time
+            #if n % 1000 == 0:
+            #    print(
+            #        'Loading spectrum {0} at retention time {scan_time:1.2f}'.format(
+            #            spec.ID,
+            #            scan_time=spec.scan_time_in_minutes()
+            #        )
+            #    )
 
             self.mslvl_idx[n + 1] = spec.ms_level
             self.rt_idx[n + 1] = spec.scan_time_in_minutes()
@@ -84,7 +89,7 @@ class Mzml(object):
             if spec.ms_level == 1:
                 self.msdata[n + 1] = spec.peaks("centroided")
 
-        print(
+        self.logger.info(
             'Parsed {0} spectra from file {1}'.format(
                 n + 1,
                 self.path)
@@ -94,14 +99,17 @@ class Mzml(object):
 
 
 class TestParseMzml(unittest.TestCase):
-    """Tests for `primes.py`."""
+    """
+    Unit Test
+
+    """
 
     def test_read_small(self):
         """
         Test whether the small file can be read
         """
 
-        Mzml("_testdata/hw_h_6_small.mzML.gz")
+        Mzml("_testdata/mzml/Heart_HW_2h_H6.mzML")
         return
 
 

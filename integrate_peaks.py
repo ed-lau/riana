@@ -8,8 +8,14 @@ Written by Edward Lau (edward.lau@me.com) 2016-2017
 
 import pandas as pd
 import scipy.integrate
+import numpy as np
 import tqdm
-from multiprocessing import Pool, cpu_count
+import logging
+import os
+
+
+# from multiprocessing.pool import ThreadPool
+from concurrent.futures import ThreadPoolExecutor
 
 class Peaks(object):
     def __init__(
@@ -17,14 +23,15 @@ class Peaks(object):
             msdata,
             rt_idx,
             mslvl_idx,
-            mol_type):
+            input_type,
+            directory_to_write):
         """
         This class uses the parsed peaks from pymzml for peak recognition and counting
 
         :param msdata: The dictionary of spectrum ID vs. mz/I array from parse Mzml
         :param rt_idx: The retention time index dictionary from parse Mzml
         :param mslvl_idx: The spectrum MS level dictionary from parse Mzml
-        :param mol_type: Molecule type (lipid or peptide)
+        :param input_type: Molecule type (lipid or peptide)
         """
 
         self.msdata = msdata
@@ -35,9 +42,20 @@ class Peaks(object):
         self.rt_tolerance = 30
         self.mass_tolerance = 100e-6
         self.njobs = 10
+
         self.intensity_over_time = []
         self.isotope_intensities = []
-        self.mol_type = mol_type
+        self.input_type = input_type
+
+        self.id_result_df = pd.DataFrame()
+
+        self.peak_logger = logging.getLogger('riana.integrate')
+        fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_integrate.log'))
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.peak_logger.addHandler(fh)
+
 
     def set_iso_to_do(
             self,
@@ -87,12 +105,14 @@ class Peaks(object):
         :return:
         """
 
-        self.id = id_df
+        self.id = id_df.copy()
+
+        return True
 
     def get_isotopes_from_amrt_multiwrapper(
             self,
             num_thread=1,
-            chunk_size=50
+            chunk_size=25,
     ):
 
         """
@@ -104,7 +124,7 @@ class Peaks(object):
         :return:
         """
 
-        assert num_thread <= cpu_count()-1, "Number of threads exceeded CPU count"
+        assert num_thread <= os.cpu_count()-1, "Number of threads exceeded CPU count"
 
         assert chunk_size > 0, "Chunk size must be a positive integer"
 
@@ -112,13 +132,35 @@ class Peaks(object):
 
         chunk_size = max(chunk_size, 250)
 
+
+        # Using multi[rocessing rather than concurrent.futures
+        #'''
+        from multiprocessing import Pool
         with Pool(processes=num_thread) as p:
             result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
-                                           loop_count,
-                                           chunksize=chunk_size),
-                                           total=max(loop_count)))
+                                          loop_count,
+                                          chunksize=chunk_size),
+                                   total=max(loop_count),
+                                   desc='Integrating Peaks in Current Sample'))
+        #'''
 
-        return result
+
+        # If using concurrent.futures instead of multiprocessing
+        # Better for progress bars and logging but runs slower.
+        '''
+        executor = ThreadPoolExecutor(max_workers=os.cpu_count()*4)
+        result = list(tqdm.tqdm(executor.map(self.get_isotopes_from_amrt_wrapper, loop_count),
+                                total=max(loop_count)))
+        '''
+
+        #
+        # Convert the output_table into a data frame
+        #
+        df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in self.iso_to_do]
+        result_df = pd.DataFrame(result, columns=df_columns)
+        self.id_result_df = pd.merge(self.id, result_df, on='pep_id', how='left')
+
+        return True
 
 
     def get_isotopes_from_amrt_wrapper(
@@ -133,7 +175,7 @@ class Peaks(object):
 
         """
 
-        if self.mol_type == "peptide":
+        if self.input_type == "Percolator":
             peptide_mass = float(self.id.loc[index, 'peptide mass'])
             scan_number = int(self.id.loc[index, 'scan'])
             charge = float(self.id.loc[index, 'charge'])
@@ -142,7 +184,8 @@ class Peaks(object):
                                                                    z=charge
                                                                    )
 
-        elif self.mol_type == "lipid":
+        # If the input type is AMRT, then use retention time to get scan number
+        elif self.input_type == "AMRT":
             peptide_mass = float(self.id.loc[index, 'spectrum precursor m/z'])
             scan_number = int(self.id.loc[index, 'rtime'])
             charge = float(self.id.loc[index, 'charge'])
@@ -159,7 +202,6 @@ class Peaks(object):
         result = [index] + [(self.id.loc[index, 'pep_id'])] + self.integrate_isotope_intensity()
 
         return result
-
 
     def get_isotopes_from_amrt(
             self,
@@ -201,6 +243,7 @@ class Peaks(object):
         # Get retention time from scan number
         if not scan_is_rt:
             peptide_rt = self.rt_idx.get(peptide_scan)
+            assert isinstance(peptide_rt, float), '[error] cannot retrieve retention time from scan number'
         else:
             peptide_rt = peptide_scan
 
@@ -232,7 +275,10 @@ class Peaks(object):
 
                 matching_int = sum([I for mz_value, I in self.msdata.get(nearbyScan_id) if upper > mz_value > lower])
 
-                intensity_over_time.append([nearbyScan_rt, iso, matching_int, peptide_prec_iso_am])
+                intensity_over_time.append([np.round(nearbyScan_rt, 4),
+                                            iso,
+                                            np.round(matching_int, 2),
+                                            np.round(peptide_prec_iso_am, 4)])
 
         if not intensity_over_time:
             raise Exception("No intensity profile for peptide {0}".format(
@@ -240,9 +286,13 @@ class Peaks(object):
             )
             )
 
+        #self.peak_logger.debug(intensity_over_time)
+
         return intensity_over_time
 
-    def integrate_isotope_intensity(self):
+    def integrate_isotope_intensity(self,
+                                    #intensity_over_time
+                                    ):
         """
         Given a list of isotopomer intensity over time, give the integrated intensity of each isotopomer
 
@@ -261,6 +311,11 @@ class Peaks(object):
                 iso_area = scipy.integrate.trapz(iso_df[1], iso_df[0])
                 # Remove all negative areas
                 iso_area = max(iso_area, 0)
+                # Round to 1 digit
+                iso_area = np.round(iso_area, 1)
+
+                # nearbyScan_rt, iso, matching_int, peptide_prec_iso_am
+                # self.peak_logger.debug('intensity_over_time {0)'.format(np.array(iso_df[1])))
 
             else:
                 iso_area = 0
