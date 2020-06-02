@@ -2,23 +2,21 @@
 Relative Isotope Abundance Analyzer v.0.6.0. Build Date : : :.
 Written by Edward Lau (lau1@stanford.edu) 2016-2019
 
-Example: python riana.py _testdata/percolator _testdata/mzml -u -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -k 3 -t 10 -o _testout
 
 """
 
-# from pymzid import Mzid
-from read_directory import ReadDirectory
-from read_peptide import ReadPercolator
-from read_lipid import ReadLipid
-from parse_mzml import Mzml
-from integrate_peaks import Peaks
-import pandas as pd
+
+from riana.read_directory import ReadDirectory
+from riana.read_peptide import ReadPercolator
+from riana.parse_mzml import Mzml
+from riana.integrate_peaks import Peaks
 import re
 import os
+import sys
 import datetime
 import tqdm
 from multiprocessing import cpu_count
-from _version import __version__
+from riana import __version__
 import logging
 
 
@@ -302,11 +300,11 @@ def runRiana(args):
 #
 # Code for running main with parsed arguments from command line
 #
-if __name__ == "__main__":
+def main():
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='RIANA.py integrates the relative abundance of'
+    parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
                                                  'isotopomers')
 
     parser.add_argument('dir', help='path to folders containing the mzml and search files (see documentation)')

@@ -1,3 +1,12 @@
+# OSX
+.DS_Store
+
+# Pycharm
+.idea/
+
+# Project specific
+scripts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -6,9 +15,7 @@ __pycache__/
 # C extensions
 *.so
 
-# Directories
-.DS_Store
-_testdata/.DS_Store
+
 
 # Distribution / packaging
 .Python

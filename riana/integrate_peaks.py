@@ -238,7 +238,7 @@ class Peaks(object):
         # Mass defect of C13 is 6 * 1.007276466621 + 7 * 1.00866491595 + 6 * 0.000548579907 - 13.00335483507 = 0.1042
         # Mass difference of C13 - C12 = 1.003354835
         # Mass difference of deuterium - protium = 1.00627674589
-        iso_added_mass = 1.00627674589 # 1.003354835
+        iso_added_mass = 1.003354835 # 1.003354835
 
         # Get retention time from scan number
         if not scan_is_rt:

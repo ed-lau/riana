@@ -108,7 +108,7 @@ Input files
 RIANA.py requires the following:
 
 ```
-Python 3.5+
+Python 3.6+
 pymzml
 scipy
 numpy
@@ -136,7 +136,7 @@ See also the list of [contributors](https://github.com/ed-lau/pymzml_integrator/
 
 ## License
 
-This project is licensed under the MIT License - see the [license.md](license.md) file for details
+This project is licensed under the MIT License - see the [license.md](LICENSE.md) file for details
 
 
 ## Acknowledgments

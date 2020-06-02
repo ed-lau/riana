@@ -5,9 +5,6 @@ import logging
 import numpy as np
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
-import matplotlib.pyplot as plt
-import tqdm
-from read_directory import ReadDirectory
 from sklearn.metrics import r2_score
 
 
@@ -191,7 +188,7 @@ class ReadPercolator(object):
                                      lysine_filter=0,
                                      protein_q=1e-2,
                                      peptide_q=1e-2,
-                                     unique_only=True,
+                                     unique_only=False,
                                      # require_protein_id=False,
                                      use_soft_threshold=True,
                                      match_across_runs=True
@@ -334,7 +331,7 @@ class ReadPercolator(object):
 
                 other_sample_df = filter_df_by_args(other_sample_df, peptide_q=peptide_q,
                                                     lysine_filter=lysine_filter,
-                                                    unique_only=True)
+                                                    unique_only=unique_only)
                 other_sample_df = other_sample_df[['concat', 'scan']]
 
                 compare_df = other_sample_df.merge(self.curr_frac_filtered_id_df[['concat', 'scan']],

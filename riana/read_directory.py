@@ -23,7 +23,8 @@ class ReadDirectory(object):
         :return:
         """
 
-        sample_list = sorted(os.listdir(self.path))
+        sample_list = [s for s in sorted(os.listdir(self.path)) if s != '.DS_Store']
+
         for sample in sample_list:
             sample_loc = os.path.join(self.path, sample)
             assert os.path.isdir(sample_loc), '[error] project sample subdirectory not valid'
