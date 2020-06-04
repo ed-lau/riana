@@ -3,26 +3,6 @@
 RIANA (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
 and returns mass isotopomer distributions, e.g., for protein turnover analysis.
 
-## Update v.0.5.0
-
-Updated to use pymzml 2.2. Multi-threading is now supported with the --thread argument. RIANA now loads all the spectra
-needed for integration into memory. Compared to v.0.4.0 there should now be a substantial speed gain and can finish
-a sizeable fraction (~1 Gb raw file) in 10 min.
-
-User-definable mass tolerance for MS1 integration is now supported via the --masstolerance argument [default 100 ppm].
-
-## Update v.0.4.0
-
-Updated to use python 3.5+, up-to-date scipy and numpy, pymzml.
-
-Multi-fraction runs are now supported - the mzml files in the directory need to be the same as the order they appear
-in the Percolator indices (check the Percolator output log file if unsure). For the most cases this shouldn't present a problem if
-the mzml directory contains exactly the same mzml files used for the database search, unless there is a difference
-in how the operating system order files on the search computer (e.g., file_10.mzml vs. file_2. mzml) or if one of the
-fractions contained no protein ID and Crux/Percolator decided to skip the file in its indexing.
-
-To support multi-fraction analysis, RIANA now takes in Percolator tab delimited files for protein ID rather than mzid.
-Mzid support will be added back in in a future version.
 
 
 ## Getting Started

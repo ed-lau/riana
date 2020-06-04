@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+
+""" Methods to parse individual peptides from percolator. """
+
 import pandas as pd
 import os
 import sys

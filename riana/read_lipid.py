@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+
+""" Methods to parse lipids. """
+
+
 import pandas as pd
 import os
 

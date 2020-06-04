@@ -1,5 +1,8 @@
-import os
+# -*- coding: utf-8 -*-
 
+""" Methods to read in project directory. """
+
+import os
 
 class ReadDirectory(object):
     """

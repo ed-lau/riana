@@ -1,10 +1,6 @@
-"""
-Relative Isotope Abundance Analyzer v.0.6.0. Build Date : : :.
-Written by Edward Lau (lau1@stanford.edu) 2016-2019
+# -*- coding: utf-8 -*-
 
-
-"""
-
+""" Main. """
 
 from riana.read_directory import ReadDirectory
 from riana.read_peptide import ReadPercolator
@@ -349,7 +345,6 @@ def main():
     parser.add_argument('-t', '--thread', help='thread (default = 4)',
                         type=float,
                         default=4.0)
-
 
     parser.add_argument('-o', '--out', help='prefix of the output directory [default: riana_out]',
                         default='riana_out')
