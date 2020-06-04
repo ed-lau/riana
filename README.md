@@ -4,7 +4,6 @@ RIANA (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry 
 and returns mass isotopomer distributions, e.g., for protein turnover analysis.
 
 
-
 ## Getting Started
 
 Installation:
@@ -89,11 +88,11 @@ Please contact us if you wish to contribute, and submit pull requests to us.
 
 * **Edward Lau, PhD** - *Code/design* - [ed-lau](https://github.com/ed-lau)
 
-See also the list of [contributors](https://github.com/ed-lau/pymzml_integrator/graphs/contributors) who participated in this project.
+See also the list of [contributors](https://github.com/Molecular-Proteomics/riana/graphs/contributors) who participated in this project.
 
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE.md file for details
+This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/Molecular-Proteomics/riana/blob/master/LICENSE.md) file for details
 
 
