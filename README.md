@@ -1,4 +1,4 @@
-# RIANA - Relative Isotope Abundance Analyzer v.0.5.0
+# RIANA - Relative Isotope Abundance Analyzer
 
 RIANA (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
 and returns mass isotopomer distributions, e.g., for protein turnover analysis.
@@ -7,51 +7,31 @@ and returns mass isotopomer distributions, e.g., for protein turnover analysis.
 
 ## Getting Started
 
-Requirements:
+Installation:
 
-On Linux or OSX
+Install riana from pyPI using pip. We recommend using a virtual environment.
 
-	* Install Python 3.5+ and pip
-	See instructions on Python website for specific instructions for your operating system
+    $ pip install riana
 
-	* Set up virtual environment with venv at a designed path, e.g., ./venv/ria
-		$ python3.5 -m venv ./venv/ria
-
-	* Activate the ria environment
-		$ source ./venv/ria/bin/activate
-
-	* Check to ensure that the specific python build inside the venv is used
-		$ which python
-
-	* Install the packages in the requirements.txt file
-		$ pip install -r requirements.txt
-
-On Windows
-
-	* Install Anaconda from Continuum Analytics
-
-	* Install pymzml via pip
-
-	* Get psi-ms-4.0.1.obo from bioontology
-
-
-Running
+Running as a module:
 	
-	* Launch RIANA.py (Usage/Help)
-		$ python3 riana.py --help
-		
-	* RIANA.py takes as input the paths to two folders: one with the Percolator output (percolator.target.psms.txt) 
-	and one with the corresponding .mzML (or .mzML.gz) mass spectrum files.
+	$ python -m riana
 
-	* Example command: This integrates the 0th and 6th isotopomer, requires one lysine, and requires unique peptides
-	For heavy water experiments, replace -i 0,6 with -i 0,1,2,3,4,5; replace -k 1 with -k 0
-		$ python3 riana.py ~/test_mzid ~/test_mzml -u -i 0,6 -q 0.01 -r 0.25 -k 1
+Alternatively:
 
-	* Deactivate the Virtual Environment upon completion
-		$ deactivate
+    $ riana
+    
+To test whether installation completed:
 
+    $ pip install tox
+    $ tox
 
-Input files
+To run the riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result
+to the home directory:
+
+    $ python -m riana tests/data/ -u -i 0,1,2,3,4,5 -q 0.1 -r 0.5 -t 10 -o ~/
+    
+Notes on input files:
 
 	* RIANA.py was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
 
@@ -80,31 +60,27 @@ Input files
 
     * Input to RIANA.py:
 
-	** Take the paths to the directories containing the mzML files (unzipped!) and the percolator.target.psms.txt file
-
+    ** Note that the riana argument path should point to the project directory, where each individual sample mzML and
+     search result files are placed under a sub-directory (e.g., sample1/)
+	
 
 ### Prerequisites
 
-RIANA.py requires the following:
+RIANA.py is tested in Python 3.7 and 3.8 and uses the following packages:
 
 ```
-Python 3.6+
-pymzml
-scipy
-numpy
-tqdm
-
+matplotlib==3.2.1
+pandas==1.0.4
+pymzml==2.4.6
+scipy==1.4.1
+tqdm==4.46.0
+scikit-learn==0.23.1
 ```
 
 
 ## Contributing
 
 Please contact us if you wish to contribute, and submit pull requests to us.
-
-
-## Versioning
-
-We use [SemVer](http://semver.org/) for versioning.
 
 
 ## Authors
@@ -116,12 +92,6 @@ See also the list of [contributors](https://github.com/ed-lau/pymzml_integrator/
 
 ## License
 
-This project is licensed under the MIT License - see the [license.md](LICENSE.md) file for details
-
-
-## Acknowledgments
-
-* [PurpleBooth](https://github.com/PurpleBooth) for Github Readme template.
-
+This project is licensed under the MIT License - see the LICENSE.md file for details
 
 
