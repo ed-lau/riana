@@ -9,19 +9,21 @@ and returns mass isotopomer distributions, e.g., for protein turnover analysis.
 
 Installation:
 
-Install riana from pyPI using pip. We recommend using a virtual environment.
+Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.
+
+Riana can be installed from PyPI via pip. We recommend using a virtual environment.
 
     $ pip install riana
 
-Running as a module:
+Launch riana as a module (Usage/Help):
 	
 	$ python -m riana
 
-Alternatively:
+Alternatively as a console entry point:
 
     $ riana
     
-To test whether installation completed:
+To test that the installation can load test data files in tests/data:
 
     $ pip install tox
     $ tox
@@ -31,7 +33,7 @@ to the home directory:
 
     $ python -m riana tests/data/ -u -i 0,1,2,3,4,5 -q 0.1 -r 0.5 -t 10 -o ~/
     
-Notes on input files:
+Notes on the expected input files:
 
 	* RIANA.py was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
 
