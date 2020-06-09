@@ -65,7 +65,7 @@ Notes on the expected input files:
      search result files are placed under a sub-directory (e.g., sample1/)
 	
 
-### Prerequisites
+### Dependencies
 
 RIANA.py is tested in Python 3.7 and 3.8 and uses the following packages:
 

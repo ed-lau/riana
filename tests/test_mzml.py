@@ -1,8 +1,9 @@
 import unittest
 import os
-import ftplib
+from tempfile import TemporaryDirectory
 
-from tqdm import tqdm
+from riana.read_directory import ReadDirectory
+from riana.read_peptide import ReadPercolator
 
 class MzmlTest(unittest.TestCase):
     """
@@ -12,9 +13,13 @@ class MzmlTest(unittest.TestCase):
     def setUp(self):
         """
 
+
+
         :return:
         """
+        global dir_path
 
+        dir_path = 'tests/data'
         pass
 
     def tearDown(self):
@@ -24,59 +29,34 @@ class MzmlTest(unittest.TestCase):
         """
 
         pass
-        # target = 'TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01-20141210.mzML'
-        #
-        # os.remove(os.path.join('riana', 'tests', '_testdata', target))
 
 
-    def test_that_directory_exists(self):
-        """
+    def test_that_mzML_exists(self):
+        """ Tests that mzML exists. """
 
-        :return:
-        """
+        self.assertTrue(os.path.exists(os.path.join(dir_path, 'sample1', '20180216_BSA.mzML.gz')))
 
-        pass
+    def test_that_perc_exists(self):
+        """ Tests that percolator exists. """
 
-    # def test_that_mzml_downloads(self):
-    #     """
-    #
-    #     Write a test for downloading mzml from PXD and ship test percolator file..
-    #
-    #
-    #     :return:
-    #     """
-    #
-    #     ftp = ftplib.FTP("ftp.pride.ebi.ac.uk")
-    #     ftp.login(user='', passwd='')
-    #     ftp.cwd('/pride/data/archive/2012/03/PXD000001/')
-    #
-    #     target = 'TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01-20141210.mzML'
-    #
-    #     size = ftp.size(target)
-    #
-    #     host_file = os.path.join('riana', 'tests', '_testdata', target)
-    #
-    #     try:
-    #         with open(host_file, 'wb') as local_file:
-    #
-    #             with tqdm(total=size,
-    #                       unit='B', unit_scale=True, unit_divisor=1024,
-    #                       ) as pbar:
-    #
-    #                 pbar.set_description("Downloading test data from ProteomeXchange")
-    #
-    #                 def callback(data):
-    #                     pbar.update(len(data))
-    #                     local_file.write(data)
-    #
-    #                 ftp.retrbinary('RETR {}'.format(target), callback)
-    #
-    #     except ftplib.error_perm:
-    #         print('error FTP')
-    #         pass
-    #
-    #     ftp.quit()
-    #
-    #     # return True
-    #
-    #     pass
+        self.assertTrue(os.path.exists(os.path.join(dir_path, 'sample1', 'percolator.target.psms.txt')))
+
+
+    def test_that_directory_is_read(self):
+        """ Reads in sample directory and assert there is one sample. """
+
+        sample_dir = ReadDirectory(dir_path)
+
+        self.assertEqual(len(sample_dir.samples), 1)
+
+    def test_that_percolator_can_be_read(self):
+        """ Load the percolator file inside the directory"""
+
+        sample_dir = ReadDirectory(dir_path)
+
+        with TemporaryDirectory() as temp_dir:
+            perc = ReadPercolator(sample_dir, temp_dir)
+
+        perc.read_all_project_psms()
+
+        self.assertFalse(perc.master_id_df['file_idx'].empty)
