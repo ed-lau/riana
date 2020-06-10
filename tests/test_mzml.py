@@ -12,14 +12,17 @@ class MzmlTest(unittest.TestCase):
 
     def setUp(self):
         """
-
-
-
-        :return:
+        Read directory and percolator file and store them in class.
         """
-        global dir_path
 
-        dir_path = 'tests/data'
+
+        self.dir_path = 'tests/data'
+        self.sample_dir = ReadDirectory(self.dir_path)
+
+
+        with TemporaryDirectory() as temp_dir:
+            self.perc = ReadPercolator(self.sample_dir, temp_dir)
+
         pass
 
     def tearDown(self):
@@ -31,32 +34,31 @@ class MzmlTest(unittest.TestCase):
         pass
 
 
-    def test_that_mzML_exists(self):
+    def test_files_exist(self):
         """ Tests that mzML exists. """
 
-        self.assertTrue(os.path.exists(os.path.join(dir_path, 'sample1', '20180216_BSA.mzML.gz')))
-
-    def test_that_perc_exists(self):
-        """ Tests that percolator exists. """
-
-        self.assertTrue(os.path.exists(os.path.join(dir_path, 'sample1', 'percolator.target.psms.txt')))
+        self.assertTrue(os.path.exists(os.path.join(self.dir_path, 'sample1', '20180216_BSA.mzML.gz')))
+        self.assertTrue(os.path.exists(os.path.join(self.dir_path, 'sample1', 'percolator.target.psms.txt')))
 
 
     def test_that_directory_is_read(self):
         """ Reads in sample directory and assert there is one sample. """
 
-        sample_dir = ReadDirectory(dir_path)
-
-        self.assertEqual(len(sample_dir.samples), 1)
+        self.assertEqual(len(self.sample_dir.samples), 1)
 
     def test_that_percolator_can_be_read(self):
         """ Load the percolator file inside the directory"""
 
-        sample_dir = ReadDirectory(dir_path)
+        self.perc.read_all_project_psms()
+        self.assertFalse(self.perc.master_id_df['file_idx'].empty)
 
-        with TemporaryDirectory() as temp_dir:
-            perc = ReadPercolator(sample_dir, temp_dir)
+    def test_percolator_first_sample(self):
+        """ Get the first sample from the percolator file and open the mzML"""
 
-        perc.read_all_project_psms()
+        self.perc.read_all_project_psms()
 
-        self.assertFalse(perc.master_id_df['file_idx'].empty)
+        self.perc.get_current_sample_psms(self.perc.samples[0])
+        self.perc.get_current_sample_mzid_indices()
+
+        self.assertEqual(len(self.perc.indices), 1)
+

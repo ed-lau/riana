@@ -100,7 +100,7 @@ def runRiana(args):
             qcutoff = float(args.qvalue)
 
         except ValueError or TypeError:
-            print('Invalid Q value given - using default value.')
+            main_log.warning('Invalid Q value given - using default value.')
             qcutoff = float(1e-2)
 
     #
@@ -112,7 +112,7 @@ def runRiana(args):
             rt_tolerance = float(args.rtime)
 
         except ValueError or TypeError:
-            print('Invalid retention time tolerance given - using default value.')
+            main_log.warning('Invalid retention time tolerance given - using default value.')
             rt_tolerance = float(1.0)
     else:
         rt_tolerance = float(1.0)
@@ -125,7 +125,7 @@ def runRiana(args):
             mass_tolerance = float(args.masstolerance) * 1e-6
 
         except ValueError or TypeError:
-            print('Invalid mass tolerance given - using default value.')
+            main_log.warning('Invalid mass tolerance given - using default value.')
             mass_tolerance = float(100) * 1e-6
     else:
         mass_tolerance = float(100) * 1e-6
@@ -315,6 +315,7 @@ def main():
     parser.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
                         default=False)
 
+    # TODO: remove lysine filter since there is no reason for it anymore (riana should run fast enough)
     parser.add_argument('-k', '--lysine',
                         help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
                         type=int,
