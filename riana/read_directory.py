@@ -6,8 +6,8 @@ import os
 
 class ReadDirectory(object):
     """
-    This class reads the Project Directory and find the Percolator and mzML files inside. We needed some kindof
-    structure in order to do match between run functionality.
+    This class reads the Project Directory and find the Percolator and mzML files inside.
+    This is needed to create a structure in order to do match between run functionality.
 
     """
 

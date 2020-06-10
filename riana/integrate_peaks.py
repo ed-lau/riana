@@ -130,25 +130,25 @@ class Peaks(object):
         chunk_size = max(chunk_size, 250)
 
 
-        # Using multi[rocessing rather than concurrent.futures
+        # Using multiprocessing rather than concurrent.futures
         #'''
-        from multiprocessing import Pool
-        with Pool(processes=num_thread) as p:
-            result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
-                                          loop_count,
-                                          chunksize=chunk_size),
-                                   total=max(loop_count),
-                                   desc='Integrating Peaks in Current Sample'))
+        # from multiprocessing import Pool
+        # with Pool(processes=num_thread) as p:
+        #     result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
+        #                                   loop_count,
+        #                                   chunksize=chunk_size),
+        #                            total=max(loop_count),
+        #                            desc='Integrating Peaks in Current Sample'))
         #'''
 
 
         # If using concurrent.futures instead of multiprocessing
         # Better for progress bars and logging but runs slower.
-        '''
+        #'''
         executor = ThreadPoolExecutor(max_workers=os.cpu_count()*4)
         result = list(tqdm.tqdm(executor.map(self.get_isotopes_from_amrt_wrapper, loop_count),
                                 total=max(loop_count)))
-        '''
+        #'''
 
         #
         # Convert the output_table into a data frame
@@ -176,7 +176,7 @@ class Peaks(object):
             peptide_mass = float(self.id.loc[index, 'peptide mass'])
             scan_number = int(self.id.loc[index, 'scan'])
             charge = float(self.id.loc[index, 'charge'])
-            self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
+            intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
                                                                    peptide_scan=scan_number,
                                                                    z=charge
                                                                    )
@@ -186,17 +186,18 @@ class Peaks(object):
             peptide_mass = float(self.id.loc[index, 'spectrum precursor m/z'])
             scan_number = int(self.id.loc[index, 'rtime'])
             charge = float(self.id.loc[index, 'charge'])
-            self.intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
+            intensity_over_time = self.get_isotopes_from_amrt(peptide_am=peptide_mass,
                                                                    peptide_scan=scan_number,
                                                                    z=charge,
                                                                    am_is_mz=True,
                                                                    scan_is_rt=True,
                                                                    )
 
-        if not self.intensity_over_time:
-            print('Empty intensity over time')
+        if not intensity_over_time:
+            self.peak_logger.warning('Empty intensity over time')
 
-        result = [index] + [(self.id.loc[index, 'pep_id'])] + self.integrate_isotope_intensity()
+        result = [index] + [(self.id.loc[index, 'pep_id'])] + self.integrate_isotope_intensity(intensity_over_time,
+                                                                                               iso_to_do=self.iso_to_do)
 
         return result
 
@@ -250,6 +251,7 @@ class Peaks(object):
         # Calculate precursor mass from peptide monoisotopic mass
         if not am_is_mz:
             peptide_prec = (peptide_am + (z * proton)) / z
+
         else:
             peptide_prec = peptide_am
 
@@ -266,11 +268,8 @@ class Peaks(object):
             for iso in self.iso_to_do:
 
                 # Set upper and lower bound
-
                 peptide_prec_iso_am = peptide_prec + (iso * iso_added_mass / z)
-
                 upper = peptide_prec_iso_am + (peptide_prec_iso_am * (self.mass_tolerance/2))
-
                 lower = peptide_prec_iso_am - (peptide_prec_iso_am * (self.mass_tolerance/2))
 
                 matching_int = sum([I for mz_value, I in self.msdata.get(nearbyScan_id) if upper > mz_value > lower])
@@ -290,8 +289,9 @@ class Peaks(object):
 
         return intensity_over_time
 
-    def integrate_isotope_intensity(self,
-                                    #intensity_over_time
+    @staticmethod
+    def integrate_isotope_intensity(intensity_over_time,
+                                    iso_to_do
                                     ):
         """
         Given a list of isotopomer intensity over time, give the integrated intensity of each isotopomer
@@ -301,9 +301,9 @@ class Peaks(object):
         # Integrate the individual isotopomers
         iso_intensity = []
 
-        for j in self.iso_to_do:
+        for j in iso_to_do:
 
-            isotopomer_profile = [[rt, I] for rt, iso, I, mz_value in self.intensity_over_time if iso == j]
+            isotopomer_profile = [[rt, I] for rt, iso, I, mz_value in intensity_over_time if iso == j]
 
             # If there is no isotopomer profile, set area to 0
             if isotopomer_profile:
@@ -324,7 +324,7 @@ class Peaks(object):
 
         if not iso_intensity:
             raise Exception("No positive numerical value integrated for isotopmer {0}".format(
-                self.intensity_over_time
+                intensity_over_time
             )
             )
 

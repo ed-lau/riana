@@ -322,11 +322,6 @@ def main():
                         choices=[0, 1, 2, 3],
                         default=0)
 
-    '''
-    parser.add_argument('-t', '--test', action='store_true',
-                        help='test mode: integrates only first 50 qualifying peptides')
-    '''
-
     parser.add_argument('--matchbetweenruns', action='store_true', help='attempt to match between runs',
                         default=False)
 

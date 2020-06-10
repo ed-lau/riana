@@ -3,47 +3,9 @@
 """ Methods to parse individual mzml. """
 
 
-"""
-
-This is outdated.
-Note on test file created by:
-
-    $ msconvert
-    hw_h_6_small.raw
-    --filter "peakPicking vendor"
-    --filter "scanTime [2100,2400]"
-    --filter "threshold count 150 most-intense"
-
-    $ crux tide-index
-    20171120_Sp_Mm_Canonical_16935e.fasta
-    SpMmPartial1miss
-    --digestion partial-digest
-    --missed-cleavages 1
-
-    $ crux tide-search
-    --compute-sp T
-    ./hw_h_6_small.mzML.gz
-    SpMmPartial1miss
-    --precursor-window 20
-    --precursor-window-type ppm
-    --mz-bin-width 0.02
-    --mz-bin-offset 0.0
-    --isotope-error 1,2
-
-    $crux percolator
-    --protein T
-    --fido-empirical-protein-q T
-    tide-search.target.txt
-    --mzid-output T
-
-
-
-"""
-
-
-import unittest
 import pymzml as mz
 import logging
+
 
 class Mzml(object):
 
@@ -101,23 +63,4 @@ class Mzml(object):
             )
 
         return True
-
-
-class TestParseMzml(unittest.TestCase):
-    """
-    Unit Test
-
-    """
-
-    def test_read_small(self):
-        """
-        Test whether the small file can be read
-        """
-
-        Mzml("_testdata/mzml/Heart_HW_2h_H6.mzML")
-        return
-
-
-if __name__ == '__main__':
-    unittest.main()
 
