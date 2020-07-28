@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 
 """ Main. """
-
-from riana.read_directory import ReadDirectory
-from riana.read_peptide import ReadPercolator
-from riana.parse_mzml import Mzml
-from riana.integrate_peaks import Peaks
+import logging
 import re
 import os
 import sys
 import datetime
-import tqdm
-from multiprocessing import cpu_count
+from functools import partial
+
+from riana.read_directory import ReadDirectory
+from riana.read_peptide import ReadPercolator
+from riana.parse_mzml import Mzml
+
+from riana import integrate
 from riana import __version__
-import logging
+
+from multiprocessing import cpu_count, Pool
+import tqdm
+import pandas as pd
 
 
 def runRiana(args):
@@ -146,10 +150,10 @@ def runRiana(args):
     #
     # Inclusion lists
     #
-    if args.amrt:
-        input_type = 'AMRT'  #"lipid"
-    else:
-        input_type = 'Percolator'
+    # if args.amrt:
+    #     input_type = 'AMRT'  #"lipid"
+    # else:
+    #     input_type = 'Percolator'
 
     dir_loc = args.dir
     assert os.path.isdir(dir_loc), '[error] project directory not valid'
@@ -158,16 +162,16 @@ def runRiana(args):
     project = ReadDirectory(dir_loc)
 
     # Get the master peptide ID list
-    if input_type == 'Percolator':
-        mzid = ReadPercolator(project, directory_to_write)
-        mzid.read_all_project_psms()
-        mzid.make_master_match_list(lysine_filter=lysine_filter,
-                                    peptide_q=qcutoff,
-                                    unique_only=unique_pep,)
+    # if input_type == 'Percolator':
+    mzid = ReadPercolator(project, directory_to_write)
+    mzid.read_all_project_psms()
+    mzid.make_master_match_list(lysine_filter=lysine_filter,
+                                peptide_q=qcutoff,
+                                unique_only=unique_pep,)
 
-    elif input_type == 'AMRT':
-        raise Exception('AMRT temporarily not supported while we work on Match Between Runs')
-        sys.exit()
+    # elif input_type == 'AMRT':
+    #     raise Exception('AMRT temporarily not supported while we work on Match Between Runs')
+    #     sys.exit()
 
     # 2020-02-27 Need to rewrite ReadLipid module to be like ReadPercolator (reading all IDs in project at once)
     '''
@@ -255,39 +259,85 @@ def runRiana(args):
             except OSError as e:
                 sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
 
-            #
-            # Read the spectra into dictionary and also create MS1/MS2 indices as a Peaks object
-            #
+            # #
+            # # Read the spectra into dictionary and also create MS1/MS2 indices
+            # #
             mzml.parse_mzml()
-            peaks = Peaks(msdata=mzml.msdata,
-                          rt_idx=mzml.rt_idx,
-                          mslvl_idx=mzml.mslvl_idx,
-                          input_type=input_type,
-                          directory_to_write=directory_to_write)
 
             #
-            # Link ID file, iso_to_do, and rt_tolerance to mzML
+            # Create a peaks object
             #
-            peaks.associate_id(mzid.curr_frac_filtered_id_df)
-            peaks.set_iso_to_do(iso_to_do)
-            peaks.set_rt_tolerance(rt_tolerance)
-            peaks.set_mass_tolerance(mass_tolerance)
+            # peaks = Peaks(msdata=mzml.msdata,
+            #               rt_idx=mzml.rt_idx,
+            #               mslvl_idx=mzml.mslvl_idx,
+            #               input_type=input_type,
+            #               directory_to_write=directory_to_write)
+            #
+            # #
+            # # Link ID file, iso_to_do, and rt_tolerance to mzML
+            # #
+            # peaks.associate_id(mzid.curr_frac_filtered_id_df)
+            # peaks.set_iso_to_do(iso_to_do)
+            # peaks.set_rt_tolerance(rt_tolerance)
+            # peaks.set_mass_tolerance(mass_tolerance)
+
+
 
             #
             # Get peak intensity for each isotopomer in each spectrum ID in each peptide
             #
-            peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
+            # peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
+
+            loop_ = range(len(mzid.curr_frac_filtered_id_df))
+            integrate_one_partial = partial(integrate.integrate_one,
+                                            id=mzid.curr_frac_filtered_id_df.copy(),
+                                            iso_to_do=iso_to_do,
+                                            rt_idx=mzml.rt_idx,
+                                            rt_tolerance=rt_tolerance,
+                                            mslvl_idx=mzml.mslvl_idx,
+                                            mass_tolerance=mass_tolerance,
+                                            scan_idx=mzml.scan_idx,
+                                            msdata=mzml.msdata,
+                                            )
+
+            # Using multiprocessing rather than concurrent.futures
+            # '''
+            # results = []
+            # for i in loop_:
+            #     print(i)
+            #     results += integrate_one_partial(i)
+
+            with Pool(processes=cpu_count()-1) as p:
+                result = list(tqdm.tqdm(p.imap(integrate_one_partial,
+                                               loop_,
+                                               ),
+                                        total=max(loop_),
+                                        desc='Integrating Peaks in Current Sample'))
+            # '''
+
+            # If using concurrent.futures instead of multiprocessing
+            # Better for progress bars and logging but runs slower.
+            # '''
+            # executor = ThreadPoolExecutor(max_workers=os.cpu_count()*4)
+            # result = list(tqdm.tqdm(executor.map(self.get_isotopes_from_amrt_wrapper, loop_count),
+            #                         total=max(loop_count)))
+            # '''
+
+            #
+            # Convert the output_table into a data frame
+            #
+            df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
+            result_df = pd.DataFrame(result, columns=df_columns)
+            id_result_df = pd.merge(mzid.curr_frac_filtered_id_df, result_df, on='pep_id', how='left')
 
             # Create subdirectory if not exists
             os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
             save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
-            peaks.id_result_df.to_csv(save_path, sep='\t')
+            id_result_df.to_csv(save_path, sep='\t')
 
             # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
             # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
             # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
-
-
 
 
     return sys.exit(os.EX_OK)
@@ -312,8 +362,8 @@ def main():
 
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
 
-    parser.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
-                        default=False)
+    # parser.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
+    #                     default=False)
 
     # TODO: remove lysine filter since there is no reason for it anymore (riana should run fast enough)
     parser.add_argument('-k', '--lysine',
@@ -336,7 +386,7 @@ def main():
 
     parser.add_argument('-m', '--masstolerance', help='mass tolerance in ppm for integration [default 100 ppm]',
                         type=float,
-                        default=100)
+                        default=100e-6)
 
     parser.add_argument('-t', '--thread', help='thread (default = 4)',
                         type=float,

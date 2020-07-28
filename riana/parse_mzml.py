@@ -4,6 +4,7 @@
 
 
 import pymzml as mz
+import numpy as np
 import logging
 
 
@@ -19,12 +20,23 @@ class Mzml(object):
         """
 
         self.path = path
-        self.msdata = {}
-        self.rt_idx = {}
-        self.mslvl_idx = {}
+        self.msdata = None
+        self.rt_idx = None
+        self.mslvl_idx = None
+        self.scan_idx = None
 
         self.logger = logging.getLogger('riana.mzml')
         self.logger.info('Reading mzML at {0}'.format(self.path))
+
+    def __repr__(self):
+        """ repr """
+        return str(self.path)
+
+    def __str__(self):
+        """ repr """
+        return str(self.path)
+
+
 
     def parse_mzml(self):
         """
@@ -39,6 +51,11 @@ class Mzml(object):
                                 2: 20e-6
                             })
 
+        mslvl_idx = np.zeros(shape=run.get_spectrum_count(), dtype=np.int)
+        rt_idx = np.zeros(shape=run.get_spectrum_count())
+        msdata = []
+        scan_numbers = np.zeros(shape=run.get_spectrum_count(), dtype=np.int)
+
         for n, spec in enumerate(run):
 
             # Check for retention time
@@ -50,11 +67,18 @@ class Mzml(object):
             #        )
             #    )
 
-            self.mslvl_idx[n + 1] = spec.ms_level
-            self.rt_idx[n + 1] = spec.scan_time_in_minutes()
+            mslvl_idx[n] = spec.ms_level
+            scan_numbers[n] = n+1
+            rt_idx[n] = spec.scan_time_in_minutes()
 
-            if spec.ms_level == 1:
-                self.msdata[n + 1] = spec.peaks("centroided")
+            #if spec.ms_level == 1:
+            msdata.append(spec.peaks("centroided"))  # a dict of np.ndarray objects
+
+
+        self.msdata = msdata
+        self.rt_idx = rt_idx
+        self.mslvl_idx = mslvl_idx
+        self.scan_idx = scan_numbers
 
         self.logger.info(
             'Parsed {0} spectra from file {1}'.format(
