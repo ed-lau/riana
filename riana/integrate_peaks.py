@@ -132,22 +132,22 @@ class Peaks(object):
 
         # Using multiprocessing rather than concurrent.futures
         #'''
-        # from multiprocessing import Pool
-        # with Pool(processes=num_thread) as p:
-        #     result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
-        #                                   loop_count,
-        #                                   chunksize=chunk_size),
-        #                            total=max(loop_count),
-        #                            desc='Integrating Peaks in Current Sample'))
+        from multiprocessing import Pool
+        with Pool(processes=num_thread) as p:
+            result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
+                                          loop_count,
+                                          chunksize=chunk_size),
+                                   total=max(loop_count),
+                                   desc='Integrating Peaks in Current Sample'))
         #'''
 
 
         # If using concurrent.futures instead of multiprocessing
         # Better for progress bars and logging but runs slower.
         #'''
-        executor = ThreadPoolExecutor(max_workers=os.cpu_count()*4)
-        result = list(tqdm.tqdm(executor.map(self.get_isotopes_from_amrt_wrapper, loop_count),
-                                total=max(loop_count)))
+        # executor = ThreadPoolExecutor(max_workers=os.cpu_count()*4)
+        # result = list(tqdm.tqdm(executor.map(self.get_isotopes_from_amrt_wrapper, loop_count),
+        #                         total=max(loop_count)))
         #'''
 
         #
