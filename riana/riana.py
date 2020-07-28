@@ -343,7 +343,7 @@ def main():
                         default=4.0)
 
     parser.add_argument('-o', '--out', help='prefix of the output directory [default: riana_out]',
-                        default='riana_out')
+                        default='out')
 
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))

@@ -129,11 +129,10 @@ class Peaks(object):
 
         chunk_size = max(chunk_size, 250)
 
-
         # Using multiprocessing rather than concurrent.futures
         #'''
         from multiprocessing import Pool
-        with Pool(processes=num_thread) as p:
+        with Pool(processes=2) as p:
             result = list(tqdm.tqdm(p.imap(self.get_isotopes_from_amrt_wrapper,
                                           loop_count,
                                           chunksize=chunk_size),
@@ -206,8 +205,8 @@ class Peaks(object):
             peptide_am,
             peptide_scan,
             z,
-            am_is_mz=False,
-            scan_is_rt=False,
+            #am_is_mz=False,
+            #scan_is_rt=False,
     ):
         """
         Given peptide accurate mass and retention time and charge, find all the isotopic peaks intensity at each
@@ -242,18 +241,18 @@ class Peaks(object):
         iso_added_mass = 1.003354835
 
         # Get retention time from scan number
-        if not scan_is_rt:
-            peptide_rt = self.rt_idx.get(peptide_scan)
-            assert isinstance(peptide_rt, float), '[error] cannot retrieve retention time from scan number'
-        else:
-            peptide_rt = peptide_scan
+        #if not scan_is_rt:
+        peptide_rt = self.rt_idx.get(peptide_scan)
+        assert isinstance(peptide_rt, float), '[error] cannot retrieve retention time from scan number'
+        #else:
+        #    peptide_rt = peptide_scan
 
         # Calculate precursor mass from peptide monoisotopic mass
-        if not am_is_mz:
-            peptide_prec = (peptide_am + (z * proton)) / z
+        #if not am_is_mz:
+        peptide_prec = (peptide_am + (z * proton)) / z
 
-        else:
-            peptide_prec = peptide_am
+        #else:
+        #    peptide_prec = peptide_am
 
         intensity_over_time = []
 
