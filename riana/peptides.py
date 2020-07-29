@@ -8,6 +8,8 @@ import sys
 import logging
 import numpy as np
 
+from riana import params
+
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
 from sklearn.metrics import r2_score
@@ -85,7 +87,7 @@ class ReadPercolator(object):
             id_df['concat'] = id_df['sequence'].map(str) + '_' + id_df['charge'].map(str)
 
             self.logger.info('Percolator file for {0} has size {1}'.format(sample,
-                                                                            id_df.shape))
+                                                                           id_df.shape))
 
             all_psms = all_psms.append(id_df, sort=False)
 
@@ -273,7 +275,7 @@ class ReadPercolator(object):
         # and are additionally identified at the q-cutoff in at least 50% samples.
         #
 
-        soft_threshold_q = 0.25
+        soft_threshold_q = params.soft_threshold_q
 
         # Subset the match across run master df into current fraction only
         idx = self.curr_frac_id_df['file_idx'][0]

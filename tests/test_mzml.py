@@ -2,8 +2,8 @@ import unittest
 import os
 from tempfile import TemporaryDirectory
 
-from riana.read_directory import ReadDirectory
-from riana.read_peptide import ReadPercolator
+from riana.project import ReadDirectory
+from riana.peptides import ReadPercolator
 
 class MzmlTest(unittest.TestCase):
     """

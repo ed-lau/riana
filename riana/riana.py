@@ -8,9 +8,9 @@ import sys
 import datetime
 from functools import partial
 
-from riana.read_directory import ReadDirectory
-from riana.read_peptide import ReadPercolator
-from riana.parse_mzml import Mzml
+from riana.project import ReadDirectory
+from riana.peptides import ReadPercolator
+from riana.spectra import Mzml
 
 from riana import integrate
 from riana import __version__
