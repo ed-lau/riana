@@ -15,7 +15,6 @@ from riana.parse_mzml import Mzml
 from riana import integrate
 from riana import __version__
 
-from multiprocessing import cpu_count, Pool
 import tqdm
 import pandas as pd
 
@@ -62,14 +61,14 @@ def runRiana(args):
     # Handle command line arguments
     unique_pep = args.unique
 
-    lysine_filter = args.lysine  # Does lysine peptides only (for Liverpool aa labeling data
-    try:
-        lysine_filter = int(lysine_filter)
-        if lysine_filter not in [1, 2, 3]:
-            lysine_filter = 0
-
-    except TypeError or ValueError:
-        lysine_filter = 0
+    # lysine_filter = args.lysine  # Does lysine peptides only (for Liverpool aa labeling data
+    # try:
+    #     lysine_filter = int(lysine_filter)
+    #     if lysine_filter not in [1, 2, 3]:
+    #         lysine_filter = 0
+    #
+    # except TypeError or ValueError:
+    #     lysine_filter = 0
 
     #
     # Convert the to-do isotopomer list option into a list of integers
@@ -139,13 +138,14 @@ def runRiana(args):
     #
     if args.thread:
         try:
-            num_thread = max(cpu_count()-1, int(args.thread))
+            num_threads = max(os.cpu_count()*4, int(args.thread))
 
         except ValueError or TypeError:
-            print('Invalid thread count, using default.')
-            num_thread = 4
+            print('Invalid thread count. Using default.')
+            num_threads = os.cpu_count()*4
+
     else:
-        num_thread = 4
+        num_threads = os.cpu_count()*4
 
     #
     # Inclusion lists
@@ -165,7 +165,7 @@ def runRiana(args):
     # if input_type == 'Percolator':
     mzid = ReadPercolator(project, directory_to_write)
     mzid.read_all_project_psms()
-    mzid.make_master_match_list(lysine_filter=lysine_filter,
+    mzid.make_master_match_list(lysine_filter=0,
                                 peptide_q=qcutoff,
                                 unique_only=unique_pep,)
 
@@ -247,12 +247,12 @@ def runRiana(args):
 
             # Make a subset dataframe with the current file index (fraction) being considered
             mzid.get_current_fraction_psms(idx)
-            mzid.filter_current_fraction_psms(lysine_filter=lysine_filter,
+            mzid.filter_current_fraction_psms(lysine_filter=0,
                                               protein_q=1,
                                               peptide_q=qcutoff,
                                               unique_only=unique_pep,
                                               use_soft_threshold=True,
-                                              match_across_runs=True)
+                                              match_across_runs=False)
 
             try:
                 mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
@@ -289,38 +289,31 @@ def runRiana(args):
             # peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
 
             loop_ = range(len(mzid.curr_frac_filtered_id_df))
+
             integrate_one_partial = partial(integrate.integrate_one,
                                             id=mzid.curr_frac_filtered_id_df.copy(),
                                             iso_to_do=iso_to_do,
-                                            rt_idx=mzml.rt_idx,
+                                            mzml=mzml,
                                             rt_tolerance=rt_tolerance,
-                                            mslvl_idx=mzml.mslvl_idx,
                                             mass_tolerance=mass_tolerance,
-                                            scan_idx=mzml.scan_idx,
-                                            msdata=mzml.msdata,
                                             )
 
-            # Using multiprocessing rather than concurrent.futures
+            # Single threaded loop
             # '''
             # results = []
             # for i in loop_:
             #     print(i)
             #     results += integrate_one_partial(i)
+            # '''
 
-            with Pool(processes=cpu_count()-1) as p:
-                result = list(tqdm.tqdm(p.imap(integrate_one_partial,
-                                               loop_,
-                                               ),
+
+            # For parellization, use concurrent.futures instead of multiprocessing for higher speed
+            # '''
+            from concurrent import futures
+            with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
+                result = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
                                         total=max(loop_),
                                         desc='Integrating Peaks in Current Sample'))
-            # '''
-
-            # If using concurrent.futures instead of multiprocessing
-            # Better for progress bars and logging but runs slower.
-            # '''
-            # executor = ThreadPoolExecutor(max_workers=os.cpu_count()*4)
-            # result = list(tqdm.tqdm(executor.map(self.get_isotopes_from_amrt_wrapper, loop_count),
-            #                         total=max(loop_count)))
             # '''
 
             #
@@ -338,7 +331,6 @@ def runRiana(args):
             # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
             # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
             # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
-
 
     return sys.exit(os.EX_OK)
 
@@ -365,15 +357,14 @@ def main():
     # parser.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
     #                     default=False)
 
-    # TODO: remove lysine filter since there is no reason for it anymore (riana should run fast enough)
-    parser.add_argument('-k', '--lysine',
-                        help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
-                        type=int,
-                        choices=[0, 1, 2, 3],
-                        default=0)
+    # parser.add_argument('-k', '--lysine',
+    #                     help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
+    #                     type=int,
+    #                     choices=[0, 1, 2, 3],
+    #                     default=0)
 
-    parser.add_argument('--matchbetweenruns', action='store_true', help='attempt to match between runs',
-                        default=False)
+    # parser.add_argument('--matchbetweenruns', action='store_true', help='attempt to match between runs',
+    #                     default=False)
 
     parser.add_argument('-q', '--qvalue',
                         help='integrate only peptides with q value below this threshold[default: 1e-2]',
@@ -384,13 +375,13 @@ def main():
                         type=float,
                         default=1.0)
 
-    parser.add_argument('-m', '--masstolerance', help='mass tolerance in ppm for integration [default 100 ppm]',
+    parser.add_argument('-m', '--masstolerance', help='mass tolerance in ppm for integration [default 50 ppm]',
                         type=float,
-                        default=100e-6)
+                        default=50)
 
-    parser.add_argument('-t', '--thread', help='thread (default = 4)',
-                        type=float,
-                        default=4.0)
+    parser.add_argument('-t', '--thread', help='number of threads for concurrency; leave as 0 for auto (default = 0)',
+                        type=int,
+                        default=0)
 
     parser.add_argument('-o', '--out', help='prefix of the output directory [default: riana_out]',
                         default='out')

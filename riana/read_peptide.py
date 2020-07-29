@@ -196,7 +196,7 @@ class ReadPercolator(object):
                                      unique_only=False,
                                      # require_protein_id=False,
                                      use_soft_threshold=True,
-                                     match_across_runs=True
+                                     match_across_runs=False,
                                      ):
 
         """
@@ -392,6 +392,7 @@ class ReadPercolator(object):
                 scan_list[~np.isnan(scan_list)] = regr.predict(scan_list[~np.isnan(scan_list)].reshape(-1, 1))
                 pred_df[each_sample] = scan_list
 
+            # TODO: This gives an astype error (NaN for all scans?)
             mar_out_df = pd.DataFrame(
                 {'file_idx': self.curr_frac_filtered_id_df.file_idx[0],
                  'scan': pred_df.median(axis=1).astype(int),  # Median value of all predicted scans

@@ -1,7 +1,10 @@
-import os
-import pandas as pd
+# -*- coding: utf-8 -*-
+
+""" Functions to integrate isotopomer peaks """
+
 import numpy as np
-import scipy.integrate
+from riana import params
+
 
 def integrate_one(index,
                   id,
@@ -44,7 +47,7 @@ def integrate_one(index,
     # Perhaps we should add neutron mass instead of proton mass for the isotopes which may
     # make a difference when iso is high enough (e.g., 12 for KK determination)
     # in the future we may have to account for mass defects
-    proton = 1.007276466621  # 1.007825
+    proton = params.proton_mass  # 1.007276466621  # 1.007825
     # The above can also be accessed through scipy.constants.physical_constants['proton mass in u'] but
     # we will hard code for now
 
@@ -58,7 +61,7 @@ def integrate_one(index,
     iso_added_mass = 1.003354835
 
     # Get retention time from Percolator scan number
-    peptide_rt = mzml.rt_idx[mzml.scan_idx == scan_number]
+    peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left')]
 
     assert isinstance(peptide_rt.item(), float), '[error] cannot retrieve retention time from scan number'
 
@@ -66,20 +69,21 @@ def integrate_one(index,
     # Calculate precursor mass from peptide monoisotopic mass
     peptide_prec = (peptide_mass + (charge * proton)) / charge
 
-
-
     intensity_over_time = []
 
     # Choose the scan numbers from the index (watch out that scan is 1-indexed ..)
-    nearby_scans = mzml.scan_idx[np.abs(mzml.rt_idx - peptide_rt.item()) <= rt_tolerance]
+    nearby_ms1_scans = mzml.scan_idx[np.abs(mzml.rt_idx - peptide_rt) <= rt_tolerance]
 
-    # All nearby ms1 scans:
-    nearby_ms1_scans = nearby_scans[mzml.mslvl_idx[nearby_scans] == 1]
+
 
     # Loop through each spectrum, check if it is an MS1 spectrum, check if it is within 1 minute of retention time
     for scan in nearby_ms1_scans:
 
-        spec = mzml.msdata[scan-1]  # Going back to 0 index
+        try:
+            spec = mzml.msdata[np.array(np.where(mzml.scan_idx == scan)).item()]
+
+        except ValueError or IndexError:
+            raise Exception('Scan does not correspond to MS1 data.')
 
         # Get the spectrum based on the spectrum number
         for iso in iso_to_do:
@@ -87,12 +91,11 @@ def integrate_one(index,
             prec_iso_am = peptide_prec + (iso * iso_added_mass / charge)
             delta_mass = prec_iso_am*mass_tolerance/2
 
-            matching_int = np.sum(spec[np.abs(spec[:,0] - prec_iso_am) <= delta_mass, 1])
+            matching_int = np.sum(spec[np.abs(spec[:, 0] - prec_iso_am) <= delta_mass, 1])
 
             intensity_over_time.append([iso,
                                         mzml.rt_idx[mzml.scan_idx == scan].item(),
                                         matching_int,
-                                        #prec_iso_am,
             ]
             )
 
@@ -104,11 +107,11 @@ def integrate_one(index,
 
     # self.peak_logger.debug(intensity_over_time)
 
-    print(intensity_over_time)
+    # print(intensity_over_time)
 
     intensity_array = np.array(intensity_over_time)
 
-    print(array)
+    # print(intensity_array)
     #print(array[:, 0])
     #print(array[:, 0] == 1)
     #print(array[array[:, 0] == 1])
@@ -135,20 +138,22 @@ def integrate_isotope_intensity(intensity_over_time,
 
     for j in iso_to_do:
 
-        isotopomer_profile = [[rt, I] for rt, iso, I, mz_value in intensity_over_time if iso == j]
+        isotopomer_profile = intensity_over_time[intensity_over_time[:, 0] == j]
 
-        # If there is no isotopomer profile, set area to 0
-        if isotopomer_profile:
-            iso_df = pd.DataFrame(isotopomer_profile)
-            iso_area = scipy.integrate.trapz(iso_df[1], iso_df[0])
-            # Remove all negative areas
-            iso_area = max(iso_area, 0)
-            # Round to 1 digit
-            iso_area = np.round(iso_area, 1)
+        if isotopomer_profile.size > 0:
+            # iso_df = pd.DataFrame(isotopomer_profile)
+            # iso_area = scipy.integrate.trapz(iso_df[2], iso_df[1])
+            # # Remove all negative areas
+            # iso_area = max(iso_area, 0)
+            # # Round to 1 digit
+            # iso_area = np.round(iso_area, 1)
 
             # nearbyScan_rt, iso, matching_int, peptide_prec_iso_am
             # self.peak_logger.debug('intensity_over_time {0)'.format(np.array(iso_df[1])))
 
+            iso_area = np.trapz(isotopomer_profile[:, 2], x=isotopomer_profile[:, 1])
+
+        # If there is no isotopomer profile, set area to 0
         else:
             iso_area = 0
 

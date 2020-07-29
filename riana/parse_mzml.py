@@ -2,7 +2,6 @@
 
 """ Methods to parse individual mzml. """
 
-
 import pymzml as mz
 import numpy as np
 import logging
@@ -12,7 +11,7 @@ class Mzml(object):
 
     def __init__(
             self,
-            path
+            path,
     ):
         """
         This class reads mzml files using pymzml and integrates based on the parsed mzid
@@ -22,7 +21,6 @@ class Mzml(object):
         self.path = path
         self.msdata = None
         self.rt_idx = None
-        self.mslvl_idx = None
         self.scan_idx = None
 
         self.logger = logging.getLogger('riana.mzml')
@@ -47,43 +45,31 @@ class Mzml(object):
         #
         run = mz.run.Reader(self.path,
                             MS_precision={
-                                1: 20e-6,
-                                2: 20e-6
+                                1: 10e-6,
+                                2: 50e-6
                             })
 
-        mslvl_idx = np.zeros(shape=run.get_spectrum_count(), dtype=np.int)
-        rt_idx = np.zeros(shape=run.get_spectrum_count())
+        rt_idx = []
         msdata = []
-        scan_numbers = np.zeros(shape=run.get_spectrum_count(), dtype=np.int)
+        scan_numbers = []
 
         for n, spec in enumerate(run):
 
-            # Check for retention time
-            #if n % 1000 == 0:
-            #    print(
-            #        'Loading spectrum {0} at retention time {scan_time:1.2f}'.format(
-            #            spec.ID,
-            #            scan_time=spec.scan_time_in_minutes()
-            #        )
-            #    )
-
-            mslvl_idx[n] = spec.ms_level
-            scan_numbers[n] = n+1
-            rt_idx[n] = spec.scan_time_in_minutes()
-
-            #if spec.ms_level == 1:
-            msdata.append(spec.peaks("centroided"))  # a dict of np.ndarray objects
-
+            # 2020-07-28: take only MS1 level data
+            if spec.ms_level == 1:
+                scan_numbers.append(n + 1)
+                rt_idx.append(spec.scan_time_in_minutes())
+                msdata.append(spec.peaks("centroided"))  # a dict of np.ndarray objects
 
         self.msdata = msdata
-        self.rt_idx = rt_idx
-        self.mslvl_idx = mslvl_idx
-        self.scan_idx = scan_numbers
+        self.rt_idx = np.array(rt_idx, dtype=np.float64)
+        self.scan_idx = np.array(scan_numbers, dtype=np.int)
 
         self.logger.info(
             'Parsed {0} spectra from file {1}'.format(
                 n + 1,
-                self.path)
+                self.path,
+            )
             )
 
         return True
