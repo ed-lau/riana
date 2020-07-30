@@ -3,45 +3,43 @@
 """ Functions to integrate isotopomer peaks """
 
 import numpy as np
+import pandas as pd
 from riana import params
 
 
-def integrate_one(index,
-                  id,
-                  iso_to_do,
-                  rt_tolerance,
-                  mass_tolerance,
+def integrate_one(index: int,
+                  id_: pd.DataFrame,
+                  iso_to_do: list,
+                  rt_tolerance: float,
+                  mass_tolerance: float,
                   mzml,
-                  deuterium_mass_defect,
-                  ):
+                  deuterium_mass_defect: bool,
+                  ) -> list:
     """
-    Wrapper for the get_isotope_from_amrt() function below
+    get all isotopomer mass intensities from ms1 scans within range and integrate
 
     :param index: int The row number of the peptide ID table passed from the wrapper.
-    :return: list [index, pep_id, m0, m1, m2, ...]
+    :param id_: protein identification dataframe
+    :param iso_to_do: list of isotopomers
+    :param rt_tolerance: retention time range in minutes
+    :param: mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
+    :param mzml: mzml file object
+    :param deuterium_mass_defect: whether to use mass difference of deuterium-protium in integration
+    :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
-    Given peptide accurate mass and retention time and charge, find all the isotopic peaks intensity at each
-    scan within the retention time window
-
-    :param peptide_am: float Accurate peptide mass
-    :param peptide_scan: int Scan number
-    :param am_is_mz: bool Is the accurate mass actually prec m/z (for lipid)
-    :param scan_is_rt: bool Is the scan number actually rtime (for lipid)
-    :param z: int Peptide charge
-    :return: List of intensity over time
     """
 
     proton = params.proton_mass
 
     if deuterium_mass_defect:
-        iso_added_mass = params.deuterium_mass_diff # 1.003354835
+        iso_added_mass = params.deuterium_mass_diff  # see params for details
     else:
         iso_added_mass = params.c13_mass_diff
 
     # get peptide mass, scan number, and charge
-    peptide_mass = float(id.loc[index, 'peptide mass'])
-    scan_number = int(id.loc[index, 'scan'])
-    charge = float(id.loc[index, 'charge'])
+    peptide_mass = float(id_.loc[index, 'peptide mass'])
+    scan_number = int(id_.loc[index, 'scan'])
+    charge = float(id_.loc[index, 'charge'])
 
     # get retention time from Percolator scan number
     peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left')]

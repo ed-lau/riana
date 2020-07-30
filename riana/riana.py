@@ -273,7 +273,7 @@ def runRiana(args):
             loop_ = range(len(mzid.curr_frac_filtered_id_df))
 
             integrate_one_partial = partial(integrate.integrate_one,
-                                            id=mzid.curr_frac_filtered_id_df.copy(),
+                                            id_=mzid.curr_frac_filtered_id_df.copy(),
                                             iso_to_do=iso_to_do,
                                             mzml=mzml,
                                             rt_tolerance=rt_tolerance,
