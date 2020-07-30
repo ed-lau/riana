@@ -94,13 +94,15 @@ def integrate_one(index: int,
     return result
 
 
-def integrate_isotope_intensity(intensity_over_time,
-                                iso_to_do
-                                ):
+def integrate_isotope_intensity(intensity_over_time: np.ndarray,
+                                iso_to_do: list,
+                                ) -> list:
     """
     Given a list of isotopomer intensity over time, give the integrated intensity of each isotopomer
 
-    :return: Integrated intensity of each isotopomer
+    :param intensity_over_time: Numpy array of isotopomer, time, intensities
+    :param iso_to_do: list of isotopomers
+    :return: list of itegrated intensity of each isotopomer
     """
 
     # integrate the individual isotopomers
