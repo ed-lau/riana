@@ -264,24 +264,6 @@ def runRiana(args):
             # #
             mzml.parse_mzml()
 
-            #
-            # Create a peaks object
-            #
-            # peaks = Peaks(msdata=mzml.msdata,
-            #               rt_idx=mzml.rt_idx,
-            #               mslvl_idx=mzml.mslvl_idx,
-            #               input_type=input_type,
-            #               directory_to_write=directory_to_write)
-            #
-            # #
-            # # Link ID file, iso_to_do, and rt_tolerance to mzML
-            # #
-            # peaks.associate_id(mzid.curr_frac_filtered_id_df)
-            # peaks.set_iso_to_do(iso_to_do)
-            # peaks.set_rt_tolerance(rt_tolerance)
-            # peaks.set_mass_tolerance(mass_tolerance)
-
-
 
             #
             # Get peak intensity for each isotopomer in each spectrum ID in each peptide
@@ -296,6 +278,7 @@ def runRiana(args):
                                             mzml=mzml,
                                             rt_tolerance=rt_tolerance,
                                             mass_tolerance=mass_tolerance,
+                                            deuterium_mass_defect=args.deuterium,
                                             )
 
             # Single threaded loop
@@ -347,10 +330,10 @@ def main():
 
     parser.add_argument('dir', help='path to folders containing the mzml and search files (see documentation)')
 
-    # parser.add_argument('mzml', help='path to folder containing mzml files')
-
     parser.add_argument('-i', '--iso', help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
                               default='0,6')
+
+    parser.add_argument('-d', '--deuterium', action='store_true', help='use mass defect for deuterium.')
 
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
 

@@ -12,6 +12,7 @@ def integrate_one(index,
                   rt_tolerance,
                   mass_tolerance,
                   mzml,
+                  deuterium_mass_defect,
                   ):
     """
     Wrapper for the get_isotope_from_amrt() function below
@@ -30,53 +31,32 @@ def integrate_one(index,
     :return: List of intensity over time
     """
 
+    proton = params.proton_mass
 
+    if deuterium_mass_defect:
+        iso_added_mass = params.deuterium_mass_diff # 1.003354835
+    else:
+        iso_added_mass = params.c13_mass_diff
+
+    # get peptide mass, scan number, and charge
     peptide_mass = float(id.loc[index, 'peptide mass'])
     scan_number = int(id.loc[index, 'scan'])
     charge = float(id.loc[index, 'charge'])
 
-    # print('Peptide mass', peptide_mass)
-    # print('scan number', scan_number)
-    # print('charge', charge)
-
-
-    # Isotope mass from NIST https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
-    # Electron mass from NIST https://www.physics.nist.gov/cgi-bin/cuu/Value?meu|search_for=electron+mass
-
-    # 2019-05-29 proton mass is different from hydrogen mass is different fron neutron mass
-    # Perhaps we should add neutron mass instead of proton mass for the isotopes which may
-    # make a difference when iso is high enough (e.g., 12 for KK determination)
-    # in the future we may have to account for mass defects
-    proton = params.proton_mass  # 1.007276466621  # 1.007825
-    # The above can also be accessed through scipy.constants.physical_constants['proton mass in u'] but
-    # we will hard code for now
-
-    # neutron = 1.00866491595
-    # electron = 0.000548579907
-
-    # Mass defect of deuterium is 1.007276466621 +  1.00866491595 + 0.000548579907 - 2.01410177812 = 0.00238818435
-    # Mass defect of C13 is 6 * 1.007276466621 + 7 * 1.00866491595 + 6 * 0.000548579907 - 13.00335483507 = 0.1042
-    # Mass difference of C13 - C12 = 1.003354835
-    # Mass difference of deuterium - protium = 1.00627674589
-    iso_added_mass = 1.003354835
-
-    # Get retention time from Percolator scan number
+    # get retention time from Percolator scan number
     peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left')]
 
     assert isinstance(peptide_rt.item(), float), '[error] cannot retrieve retention time from scan number'
 
-
-    # Calculate precursor mass from peptide monoisotopic mass
+    # calculate precursor mass from peptide monoisotopic mass
     peptide_prec = (peptide_mass + (charge * proton)) / charge
 
     intensity_over_time = []
 
-    # Choose the scan numbers from the index (watch out that scan is 1-indexed ..)
+    # choose the scan numbers from the index (beware that scan number is 1-indexed)
     nearby_ms1_scans = mzml.scan_idx[np.abs(mzml.rt_idx - peptide_rt) <= rt_tolerance]
 
-
-
-    # Loop through each spectrum, check if it is an MS1 spectrum, check if it is within 1 minute of retention time
+    # loop through each MS1 spectrum within retention time range
     for scan in nearby_ms1_scans:
 
         try:
@@ -85,12 +65,13 @@ def integrate_one(index,
         except ValueError or IndexError:
             raise Exception('Scan does not correspond to MS1 data.')
 
-        # Get the spectrum based on the spectrum number
         for iso in iso_to_do:
-            # Set upper and lower bound
+
+            # set upper and lower mass tolerance bounds
             prec_iso_am = peptide_prec + (iso * iso_added_mass / charge)
             delta_mass = prec_iso_am*mass_tolerance/2
 
+            # sum intensities within range
             matching_int = np.sum(spec[np.abs(spec[:, 0] - prec_iso_am) <= delta_mass, 1])
 
             intensity_over_time.append([iso,
@@ -100,21 +81,11 @@ def integrate_one(index,
             )
 
     if not intensity_over_time:
-        raise Exception("No intensity profile for peptide {0}".format(
-            prec_iso_am
+        raise Exception(
+            "No intensity profile for peptide {0}".format(prec_iso_am)
         )
-        )
-
-    # self.peak_logger.debug(intensity_over_time)
-
-    # print(intensity_over_time)
 
     intensity_array = np.array(intensity_over_time)
-
-    # print(intensity_array)
-    #print(array[:, 0])
-    #print(array[:, 0] == 1)
-    #print(array[array[:, 0] == 1])
 
     if not intensity_over_time:
         print('Empty intensity over time')
@@ -133,7 +104,8 @@ def integrate_isotope_intensity(intensity_over_time,
 
     :return: Integrated intensity of each isotopomer
     """
-    # Integrate the individual isotopomers
+
+    # integrate the individual isotopomers
     iso_intensity = []
 
     for j in iso_to_do:
@@ -141,28 +113,18 @@ def integrate_isotope_intensity(intensity_over_time,
         isotopomer_profile = intensity_over_time[intensity_over_time[:, 0] == j]
 
         if isotopomer_profile.size > 0:
-            # iso_df = pd.DataFrame(isotopomer_profile)
-            # iso_area = scipy.integrate.trapz(iso_df[2], iso_df[1])
-            # # Remove all negative areas
-            # iso_area = max(iso_area, 0)
-            # # Round to 1 digit
-            # iso_area = np.round(iso_area, 1)
 
-            # nearbyScan_rt, iso, matching_int, peptide_prec_iso_am
-            # self.peak_logger.debug('intensity_over_time {0)'.format(np.array(iso_df[1])))
-
+            # use np.trapz rather than scipy.integrate to integrate
             iso_area = np.trapz(isotopomer_profile[:, 2], x=isotopomer_profile[:, 1])
 
-        # If there is no isotopomer profile, set area to 0
+        # if there is no isotopomer profile, set area to 0
         else:
             iso_area = 0
 
         iso_intensity.append(iso_area)
 
     if not iso_intensity:
-        raise Exception("No positive numerical value integrated for isotopmer {0}".format(
-            intensity_over_time
-        )
+        raise Exception("No positive numerical value integrated for isotopmer {0}".format(intensity_over_time)
         )
 
     return iso_intensity
