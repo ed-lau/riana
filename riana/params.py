@@ -22,3 +22,7 @@ deuterium_mass_diff = 1.00627674589  # mass difference of deuterium - protium = 
 
 # match between runs
 soft_threshold_q = 0.25  # soft threshold for q-value to include peptides if found in other time points
+
+
+# dummy runs
+dummy = True  # do not integrate, simply return 0

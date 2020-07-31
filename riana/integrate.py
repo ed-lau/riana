@@ -5,6 +5,7 @@
 import numpy as np
 import pandas as pd
 from riana import params
+import time
 
 
 def integrate_one(index: int,
@@ -28,6 +29,11 @@ def integrate_one(index: int,
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
+
+    # bypass all integration for match between runs
+    if params.dummy:
+        time.sleep(0.025)
+        return [index] + [(id_.loc[index, 'pep_id'])] + [0 for _ in iso_to_do]
 
     proton = params.proton_mass
 
@@ -88,7 +94,7 @@ def integrate_one(index: int,
     if not intensity_over_time:
         print('Empty intensity over time')
 
-    result = [index] + [(id.loc[index, 'pep_id'])] + integrate_isotope_intensity(intensity_array,
+    result = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(intensity_array,
                                                                                  iso_to_do=iso_to_do)
 
     return result

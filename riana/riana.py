@@ -195,27 +195,6 @@ def runRiana(args):
 
         sample_loc = os.path.join(project.path, current_sample)
 
-        #
-        # Open the mzid file
-        # Note 2018-09-07 - I am not sure we should use the Mzid module anymore since Percolator doesn't seem to output
-        # Mzid files that conform completely to Mzid standards. In particular I wasn't able to locate where in the xml file
-        # is the file_idx (mzml file from which the spectrum was found) is encoded. It would be much easier at this point to use
-        # the percolator tab-delimited file. Unless I can look at a multi-fraction Percolator run Mzid and modify the Mzid module from there
-        #
-        """
-        try:
-            mzid = Mzid(mzid_loc)
-            mzid.make_peptide_summary(take_psm_df_cvParams=False)
-            mzid.filter_peptide_summary(lysine_filter=lysine_filter,
-                                        protein_q=qcutoff,
-                                        peptide_q=1,
-                                        unique_only=unique_pep,
-                                        require_protein_id=True)
-    
-        except OSError as e:
-            sys.exit('Failed to load mzid file. ' + str(e.errno))
-        """
-
         mzid.get_current_sample_psms(current_sample=current_sample)
         mzid.get_current_sample_mzid_indices()
 
@@ -248,11 +227,10 @@ def runRiana(args):
             # Make a subset dataframe with the current file index (fraction) being considered
             mzid.get_current_fraction_psms(idx)
             mzid.filter_current_fraction_psms(lysine_filter=0,
-                                              protein_q=1,
                                               peptide_q=qcutoff,
                                               unique_only=unique_pep,
                                               use_soft_threshold=True,
-                                              match_across_runs=False)
+                                              match_across_runs=True)
 
             try:
                 mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))

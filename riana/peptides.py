@@ -32,10 +32,8 @@ class ReadPercolator(object):
         self.path = project.path
         self.samples = project.samples
 
-        # Logging
-
+        # logging
         self.logger = logging.getLogger('riana.read_id')
-
         self.match_logger = logging.getLogger('riana.match_across_run')
         fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_match_across_run.log'))
         fh.setLevel(logging.DEBUG)
@@ -48,7 +46,7 @@ class ReadPercolator(object):
         self.curr_frac_id_df = pd.DataFrame()
         self.curr_frac_filtered_id_df = pd.DataFrame()
 
-        # For match between run function
+        # for match between run function
         self.match_across_runs_master = pd.DataFrame()
 
         self.indices = []
@@ -100,7 +98,7 @@ class ReadPercolator(object):
     def make_master_match_list(self,
                                peptide_q=1e-2,
                                lysine_filter=0,
-                               unique_only=True,
+                               unique_only: bool = True,
                                min_fraction=0.25):
         """
         Get a list of the peptides that are consistently found at a threshold across all samples
@@ -111,7 +109,7 @@ class ReadPercolator(object):
         :return:
         """
 
-        # Check if the master peptide ID list has been read first
+        # dheck if the master peptide ID list has been read first
         if self.master_id_df.empty:
             self.logger.error('Peptide ID list has not been read yet')
             sys.exit()
@@ -122,7 +120,7 @@ class ReadPercolator(object):
                                                               lysine_filter=lysine_filter,
                                                               unique_only=unique_only)
 
-        # Count the number of samples in which the peptide/z is found, also take the most common file_idx
+        # count the number of samples in which the peptide/z is found, also take the most common file_idx
         self.match_across_runs_master = self.match_across_runs_master.groupby(['concat']) \
             .agg({'sample': 'nunique',
                   'file_idx': 'median',
@@ -193,12 +191,11 @@ class ReadPercolator(object):
 
     def filter_current_fraction_psms(self,
                                      lysine_filter=0,
-                                     protein_q=1e-2,
-                                     peptide_q=1e-2,
+                                     peptide_q: float = 1e-2,
                                      unique_only=False,
                                      # require_protein_id=False,
-                                     use_soft_threshold=True,
-                                     match_across_runs=False,
+                                     use_soft_threshold: bool = True,
+                                     match_across_runs: bool = False,
                                      ):
 
         """
@@ -212,7 +209,6 @@ class ReadPercolator(object):
         # store the protein accessions inside <DBSequence>. Turn the flag off when doing MSGF+.
 
         :param lysine_filter: Lysine filter from command line argument
-        :param protein_q: Protein-level Q value from command line argument
         :param peptide_q: Peptide-level Q value from command line argument
         :param unique_only: Only doing unique peptides
         :param require_protein_id: Require protein IDs (to filter out some mascot rows with no protein fields)
@@ -222,7 +218,7 @@ class ReadPercolator(object):
         """
 
         #
-        # Filter peptides by Protein Q value. To do. Have to read the target.protein.txt
+        # Filter peptides by Protein a value. To do. Have to read the target.protein.txt
         #
         """
         try:

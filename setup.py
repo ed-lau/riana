@@ -58,7 +58,7 @@ setup(
 
    entry_points={
            'console_scripts': [
-               'riana=riana.__main__:main',
+               'riana=riana.riana:main',
            ],
        },
 
