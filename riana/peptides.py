@@ -97,11 +97,11 @@ class ReadPercolator(object):
 
     def make_master_match_list(self,
                                peptide_q=1e-2,
-                               lysine_filter=0,
+                               # lysine_filter=0,
                                unique_only: bool = True,
                                min_fraction=0.25):
         """
-        Get a list of the peptides that are consistently found at a threshold across all samples
+        get the master list of the peptides that are consistently found at a threshold across all samples
         in the project
 
         :param peptide_q:
@@ -109,15 +109,15 @@ class ReadPercolator(object):
         :return:
         """
 
-        # dheck if the master peptide ID list has been read first
+        # check if the master peptide ID list has been read first
         if self.master_id_df.empty:
             self.logger.error('Peptide ID list has not been read yet')
-            sys.exit()
+            raise Exception
 
-        elif not self.master_id_df.empty:
-            self.match_across_runs_master = filter_df_by_args(self.master_id_df,
+        else:
+            self.match_across_runs_master = self.filter_df_by_args(self.master_id_df,
                                                               peptide_q=peptide_q,
-                                                              lysine_filter=lysine_filter,
+                                                              # lysine_filter=lysine_filter,
                                                               unique_only=unique_only)
 
         # count the number of samples in which the peptide/z is found, also take the most common file_idx
@@ -128,14 +128,14 @@ class ReadPercolator(object):
                   'peptide mass': 'median',
                   }).reset_index(drop=False)
 
-        # Rename the n_unique summary column into num_samples
+        # rename the n_unique summary column into num_samples
         self.match_across_runs_master.rename(columns={'sample': 'num_samples'}, inplace=True)
 
-        # Force the median fraction number into an integer
+        # force the median fraction number into an integer
         self.match_across_runs_master['file_idx'] = pd.to_numeric(self.match_across_runs_master['file_idx'],
                                                                   downcast='integer')
 
-        # Take only those peptide/z that are found in at least min_fraction * total samples
+        # take only those peptide/z that are found in at least min_fraction * total samples
         self.match_across_runs_master = self.match_across_runs_master.loc[
                                         lambda x: x['num_samples'].astype(float) >= len(self.samples) * min_fraction, :]
 
@@ -190,7 +190,7 @@ class ReadPercolator(object):
         return True
 
     def filter_current_fraction_psms(self,
-                                     lysine_filter=0,
+                                     # lysine_filter=0,
                                      peptide_q: float = 1e-2,
                                      unique_only=False,
                                      # require_protein_id=False,
@@ -208,7 +208,6 @@ class ReadPercolator(object):
         # because it seems the MSGF+ mzID files have no ProteinDetectioNList fields but instead
         # store the protein accessions inside <DBSequence>. Turn the flag off when doing MSGF+.
 
-        :param lysine_filter: Lysine filter from command line argument
         :param peptide_q: Peptide-level Q value from command line argument
         :param unique_only: Only doing unique peptides
         :param require_protein_id: Require protein IDs (to filter out some mascot rows with no protein fields)
@@ -217,50 +216,10 @@ class ReadPercolator(object):
         :return: True
         """
 
-        #
-        # Filter peptides by Protein a value. To do. Have to read the target.protein.txt
-        #
-        """
-        try:
-            self.filtered_protein_df = self.protein_df.loc[lambda x: x.percolator_Q_value.astype(float) < protein_q, :]
-            #self.filtered_protein_df = self.filtered_protein_df.reset_index()
-        except:
-            print('No filtering by protein Q value done.')
-            self.filtered_protein_df = self.protein_df
-        """
-
-        #
-        # Filter peptides by peptide-level Q-value filter
-        #
-
-        #
-        # Filter peptides by optional lysine filter
-        #
-
-        # 2013-04-06 Again I forgot why we only chose the first five columns here. Resetting to all columns for now.
-        """
-        if require_protein_id:
-            self.filtered_pep_summary_df = pd.merge(self.pep_summary_df,
-                                                    self.filtered_protein_df[self.filtered_protein_df.columns[[0, 5]]],
-                                                    how='inner') # NB: 2017-04-05 might need 'inner' here for riana to work
-        elif not require_protein_id:
-            self.filtered_pep_summary_df = pd.merge(self.pep_summary_df,
-                                                    self.filtered_protein_df[self.filtered_protein_df.columns[[0, 5]]],
-                                                    how='left')  # NB: 2017-04-05 might need 'inner' here for riana to work
-        """
-
-        #
-        # Get the protein Uniprot accession via PE and then via DBS
-        #
-        """
-        self.filtered_pep_summary_df = pd.merge(self.filtered_pep_summary_df, self.pe_df, how='left')
-        self.filtered_pep_summary_df = pd.merge(self.filtered_pep_summary_df, self.dbs_df, how='left')
-        self.filtered_pep_summary_df = self.filtered_pep_summary_df.reset_index(drop=True)
-        """
-
-        self.curr_frac_filtered_id_df = filter_df_by_args(self.curr_frac_id_df,
+        # filter by peptide q, unique, and lysine
+        self.curr_frac_filtered_id_df = self.filter_df_by_args(self.curr_frac_id_df,
                                                           peptide_q=peptide_q,
-                                                          lysine_filter=lysine_filter,
+                                                          # lysine_filter=lysine_filter,
                                                           unique_only=unique_only)
 
         self.curr_frac_filtered_id_df = self.curr_frac_filtered_id_df.reset_index(drop=True)
@@ -270,10 +229,9 @@ class ReadPercolator(object):
         # soft_threshold - data frame has peptide/z with q above the q-cutoff but within the soft-threshold
         # and are additionally identified at the q-cutoff in at least 50% samples.
         #
-
         soft_threshold_q = params.soft_threshold_q
 
-        # Subset the match across run master df into current fraction only
+        # subset the match across run master df into current fraction only
         idx = self.curr_frac_id_df['file_idx'][0]
         assert idx in list(set(self.curr_sample_id_df['file_idx']))
 
@@ -311,29 +269,28 @@ class ReadPercolator(object):
             mar_candidates = [p for p in match_candidates['concat'].tolist() if p
                               not in self.curr_frac_filtered_id_df['concat'].tolist()]
 
-            # This currently only works if you have consistent chromatographic fractions
+            # this currently only works with consistent 2d chromatographic fractions
             # (fraction 0 in one sample corresponds
             # to the same 1st dimension separation to the second sample, etc.)
-
             pred_df = pd.DataFrame(index=mar_candidates)
 
             sample_names = list(set(self.master_id_df['sample']))
             current_sample = self.curr_frac_filtered_id_df['sample'][0]
 
-            # Loop through each sample
+            # loop through each sample
             for i, each_sample in enumerate(sample_names):
 
-                # Skip current sample
+                # skip current sample
                 if each_sample == current_sample:
                     continue
 
-                # Otherwise, get a data frame of good peptides in the other sample
+                # otherwise, get a dataframe of the good peptides in the other sample
                 other_sample_df = self.master_id_df.query('sample == @each_sample & file_idx == @idx')
                 other_sample_df = other_sample_df.sort_values(by=['percolator q-value']). \
                     drop_duplicates('concat').reset_index(drop=True)
 
-                other_sample_df = filter_df_by_args(other_sample_df, peptide_q=peptide_q,
-                                                    lysine_filter=lysine_filter,
+                other_sample_df = self.filter_df_by_args(other_sample_df, peptide_q=peptide_q,
+                                                    # lysine_filter=lysine_filter,
                                                     unique_only=unique_only)
                 other_sample_df = other_sample_df[['concat', 'scan']]
 
@@ -390,10 +347,9 @@ class ReadPercolator(object):
                 scan_list[~np.isnan(scan_list)] = regr.predict(scan_list[~np.isnan(scan_list)].reshape(-1, 1))
                 pred_df[each_sample] = scan_list
 
-            # TODO: This gives an astype error (NaN for all scans?)
             mar_out_df = pd.DataFrame(
                 {'file_idx': self.curr_frac_filtered_id_df.file_idx[0],
-                 'scan': pred_df.median(axis=1).astype(int),  # Median value of all predicted scans
+                 'scan': pred_df.median(axis=1),#.astype(int),  # Median value of all predicted scans
                  'charge': [int(b.split('_')[1]) for b in mar_candidates],
                  'spectrum precursor m/z': np.array(
                      match_candidates.set_index('concat').loc[mar_candidates,]['spectrum precursor m/z']),
@@ -412,43 +368,47 @@ class ReadPercolator(object):
                  'evidence': 'match_across_runs'
                  })
 
+            # 2020-07-31 remove all rows with NaN as predicted scan, and then convert to nearest integer
+            mar_out_df = mar_out_df[~pd.isnull(mar_out_df.scan)]
+            mar_out_df.scan = mar_out_df.scan.astype(np.int)
+
             self.curr_frac_filtered_id_df = self.curr_frac_filtered_id_df.append(mar_out_df, sort=False). \
                 reset_index(drop=True)
 
         return True
 
+    @staticmethod
+    def filter_df_by_args(df,
+                          peptide_q,
+                          # lysine_filter,
+                          unique_only):
+        """
+        # Filter the msater peptide ID list by peptide Q value and peptide uniqueness
+        :param df:
+        :param peptide_q:
+        :param lysine_filter:
+        :param unique_only:
+        :return:
+        """
 
-def filter_df_by_args(df,
-                      peptide_q,
-                      lysine_filter,
-                      unique_only):
-    """
-    # Filter the msater peptide ID list by peptide Q value
-    :param df:
-    :param peptide_q:
-    :param lysine_filter:
-    :param unique_only:
-    :return:
-    """
+        try:
+            df = df.loc[lambda x: x['percolator q-value'].astype(float) < peptide_q, :].reset_index(drop=True)
 
-    try:
-        df = df.loc[lambda x: x['percolator q-value'].astype(float) < peptide_q, :].reset_index(drop=True)
+        except KeyError:
+            pass
 
-    except KeyError:
-        pass
+        # if the lysine filter is on and the peptide has no or more than one lysine, skip
+        # if lysine_filter == 1:
+        #     df = df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) == 1, :].reset_index(drop=True)
+        #
+        # elif lysine_filter == 2:
+        #     df = df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) > 0, :].reset_index(drop=True)
+        #
+        # elif lysine_filter == 3:
+        #     df = df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) == 2, :].reset_index(drop=True)
 
-        # If the lysine filter is on and the peptide has no or more than one lysine, skip
-    if lysine_filter == 1:
-        df = df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) == 1, :].reset_index(drop=True)
+        # Get only the peptides associated with one and only one proteins
+        if unique_only:
+            df = df[(df['protein id'].str.count(',') == 0)].reset_index(drop=True)
 
-    elif lysine_filter == 2:
-        df = df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) > 0, :].reset_index(drop=True)
-
-    elif lysine_filter == 3:
-        df = df.loc[lambda x: x.sequence.apply(lambda y: y.count('K')) == 2, :].reset_index(drop=True)
-
-    # Get only the peptides associated with one and only one proteins
-    if unique_only:
-        df = df[(df['protein id'].str.count(',') == 0)].reset_index(drop=True)
-
-    return df
+        return df

@@ -12,14 +12,13 @@ from riana.project import ReadDirectory
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
 
-from riana import integrate
-from riana import __version__
+from riana import integrate, params, __version__
 
 import tqdm
 import pandas as pd
 
 
-def runRiana(args):
+def runriana(args):
     """
     Improved process to integrate for isotope abundance analysis.
     Idea is to loop through the mzML only once - get all the peptides to be integrated first
@@ -165,9 +164,10 @@ def runRiana(args):
     # if input_type == 'Percolator':
     mzid = ReadPercolator(project, directory_to_write)
     mzid.read_all_project_psms()
-    mzid.make_master_match_list(lysine_filter=0,
+    mzid.make_master_match_list(# lysine_filter=0,
                                 peptide_q=qcutoff,
-                                unique_only=unique_pep,)
+                                unique_only=unique_pep,
+                                min_fraction=params.min_fraction_mar)
 
     # elif input_type == 'AMRT':
     #     raise Exception('AMRT temporarily not supported while we work on Match Between Runs')
@@ -226,7 +226,7 @@ def runRiana(args):
 
             # Make a subset dataframe with the current file index (fraction) being considered
             mzid.get_current_fraction_psms(idx)
-            mzid.filter_current_fraction_psms(lysine_filter=0,
+            mzid.filter_current_fraction_psms(# lysine_filter=0,
                                               peptide_q=qcutoff,
                                               unique_only=unique_pep,
                                               use_soft_threshold=True,
@@ -238,13 +238,12 @@ def runRiana(args):
                 sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
 
             # #
-            # # Read the spectra into dictionary and also create MS1/MS2 indices
+            # # read the spectra into dictionary and also create MS1/MS2 indices
             # #
             mzml.parse_mzml()
 
-
             #
-            # Get peak intensity for each isotopomer in each spectrum ID in each peptide
+            # get peak intensity for each isotopomer in each spectrum ID in each peptide
             #
             # peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
 
@@ -350,7 +349,7 @@ def main():
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))
 
-    parser.set_defaults(func=runRiana)
+    parser.set_defaults(func=runriana)
 
     # Print help message if no arguments are given
     import sys
