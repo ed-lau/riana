@@ -63,7 +63,7 @@ class ReadPercolator(object):
 
         for sample in self.samples:
 
-            sample_loc = os.path.join(self.path, sample)
+            sample_loc = os.path.join(self.path, sample, 'percolator')
             assert os.path.isdir(sample_loc), '[error] project sample subdirectory not valid'
 
             self.logger.info('Reading Percolator file at {0}'.format(sample_loc))
@@ -231,7 +231,7 @@ class ReadPercolator(object):
         #
         soft_threshold_q = params.soft_threshold_q
 
-        # subset the match across run master df into current fraction only
+        # subset the match across run master df into current fraction index only
         idx = self.curr_frac_id_df['file_idx'][0]
         assert idx in list(set(self.curr_sample_id_df['file_idx']))
 
@@ -241,9 +241,10 @@ class ReadPercolator(object):
         ## Note we also need to filter the master list by the same selected criteria (unique, lysine)
         ## Might be best to make a new function to do that.
 
-        # If using soft-threshold, get additional peptides
+        # if using soft-threshold, get additional peptides
         if use_soft_threshold:
-            #
+
+            # get peptides whose q-values are above first q-value threshold but below the soft threshold
             curr_frac_soft_id_df = self.curr_frac_id_df.loc[
                                    lambda x: x['percolator q-value'].astype(float) >= peptide_q, :] \
                 .reset_index(drop=True)
@@ -252,13 +253,13 @@ class ReadPercolator(object):
                                    lambda x: x['percolator q-value'].astype(float) < soft_threshold_q, :] \
                 .reset_index(drop=True)
 
-            # Do an inner join
+            # inner join with total match candidates (identified in certain number of samples)
             curr_frac_soft_id_df = curr_frac_soft_id_df.merge(match_candidates[['concat']],
                                                               on='concat',
                                                               how='inner')
 
+            # append the soft threshold peptides to the filtered id list and label their evidence level
             curr_frac_soft_id_df['evidence'] = 'soft'
-
             self.curr_frac_filtered_id_df = self.curr_frac_filtered_id_df.append(curr_frac_soft_id_df, sort=False). \
                 reset_index(drop=True)
 
@@ -343,33 +344,35 @@ class ReadPercolator(object):
                 match_df = match_df.merge(other_sample_df, how='left', on='concat')
                 scan_list = np.array(match_df.scan).reshape(-1, 1)
 
-                # Replace with predicted values
+                # replace with predicted values
                 scan_list[~np.isnan(scan_list)] = regr.predict(scan_list[~np.isnan(scan_list)].reshape(-1, 1))
                 pred_df[each_sample] = scan_list
 
+            # remove from the predicted value rows that are completely empty
+            # then create a output dataframe mimicking the main percolator output
+            pred_df = pred_df.dropna(axis=0, how='all')
             mar_out_df = pd.DataFrame(
                 {'file_idx': self.curr_frac_filtered_id_df.file_idx[0],
                  'scan': pred_df.median(axis=1),#.astype(int),  # Median value of all predicted scans
-                 'charge': [int(b.split('_')[1]) for b in mar_candidates],
+                 'charge': [int(b.split('_')[1]) for b in pred_df.index],
                  'spectrum precursor m/z': np.array(
-                     match_candidates.set_index('concat').loc[mar_candidates,]['spectrum precursor m/z']),
+                     match_candidates.set_index('concat').loc[pred_df.index,]['spectrum precursor m/z']),
                  'spectrum neutral mass': 0,
-                 'peptide mass': np.array(match_candidates.set_index('concat').loc[mar_candidates,]['peptide mass']),
+                 'peptide mass': np.array(match_candidates.set_index('concat').loc[pred_df.index,]['peptide mass']),
                  'percolator score': 1,
                  'percolator q-value': 0,
                  'percolator PEP': 0,
                  'distinct matches/spectrum': 0,
-                 'sequence': [str(b.split('_')[0]) for b in mar_candidates],
+                 'sequence': [str(b.split('_')[0]) for b in pred_df.index],
                  'protein id': 'NA',
                  'flanking aa': 'NA',
                  'sample': current_sample,
-                 'concat': mar_candidates,
-                 'pep_id': ['matched_' + str(a) for a in range(0, len(mar_candidates))],
+                 'concat': pred_df.index,
+                 'pep_id': ['matched_' + str(a) for a in range(0, len(pred_df.index))],
                  'evidence': 'match_across_runs'
                  })
 
-            # 2020-07-31 remove all rows with NaN as predicted scan, and then convert to nearest integer
-            mar_out_df = mar_out_df[~pd.isnull(mar_out_df.scan)]
+            # 2020-07-31 convert scan to nearest integer
             mar_out_df.scan = mar_out_df.scan.astype(np.int)
 
             self.curr_frac_filtered_id_df = self.curr_frac_filtered_id_df.append(mar_out_df, sort=False). \

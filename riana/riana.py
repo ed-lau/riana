@@ -193,7 +193,7 @@ def runriana(args):
 
     for current_sample in tqdm.tqdm(samples, desc='Processing Sample', total=len(samples)):
 
-        sample_loc = os.path.join(project.path, current_sample)
+        sample_loc = os.path.join(project.path, current_sample, 'mzml')
 
         mzid.get_current_sample_psms(current_sample=current_sample)
         mzid.get_current_sample_mzid_indices()
