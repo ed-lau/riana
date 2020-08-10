@@ -1,6 +1,7 @@
 ## v.0.6.3
 ---
 * Fixed an issue where mbr all-NaN slice causes an error
+* Changed project directory structure so that mzml files have to be within an mzml subfolder
 
 ## Update v.0.6.0
 * Started implementation of match between runs and restructured project for distribution via pip
