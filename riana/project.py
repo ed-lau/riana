@@ -25,8 +25,8 @@ class ReadDirectory(object):
         Get the list of samples and check that each is a directory
         :return:
         """
-
-        sample_list = [s for s in sorted(os.listdir(self.path)) if s != '.DS_Store']
+        # Excluded hidden folders
+        sample_list = [s for s in sorted(os.listdir(self.path)) if not s.startswith('.')]
 
         for sample in sample_list:
             sample_loc = os.path.join(self.path, sample)
