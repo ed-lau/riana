@@ -70,12 +70,11 @@ Notes on the expected input files:
 RIANA.py is tested in Python 3.7 and 3.8 and uses the following packages:
 
 ```
-matplotlib==3.2.1
-pandas==1.0.4
-pymzml==2.4.6
-scipy==1.4.1
-tqdm==4.46.0
-scikit-learn==0.23.1
+matplotlib==3.4.1
+pandas==1.2.4
+pymzml==2.4.7
+tqdm==4.60.0
+scikit-learn==0.24.2
 ```
 
 
