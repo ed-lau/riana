@@ -167,7 +167,7 @@ def runriana(args):
     mzid.make_master_match_list(# lysine_filter=0,
                                 peptide_q=qcutoff,
                                 unique_only=unique_pep,
-                                min_fraction=params.min_fraction_mar)
+                                min_fraction=params.min_fraction_mbr)
 
     # elif input_type == 'AMRT':
     #     raise Exception('AMRT temporarily not supported while we work on Match Between Runs')

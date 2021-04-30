@@ -8,7 +8,7 @@ import sys
 import logging
 import numpy as np
 
-from riana import params
+from riana import accmass, params
 
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
@@ -71,7 +71,12 @@ class ReadPercolator(object):
             # Opening the Percolator tab delimited target.psms.file
             # List all files in the percolator directory ending with target.psms.txt.
             id_files = [f for f in os.listdir(sample_loc) if f.endswith('target.psms.txt')]
-            assert len(id_files) == 1, '[error] check percolator output directory has 1 *.target.psms.txt'
+            assert len(id_files) <= 1, '[error] check percolator output directory has 1 *.target.psms.txt'
+
+            # If there is no percolator.target.psms.txt, read psms.txt
+            if len(id_files) == 0:
+                id_files = [f for f in os.listdir(sample_loc) if f.endswith('psms.txt')]
+                assert len(id_files) == 1, '[error] check percolator output directory has 1 psms.txt'
 
             try:
                 # Read the Percolator psms file.
@@ -80,6 +85,66 @@ class ReadPercolator(object):
 
             except OSError as e:
                 sys.exit('Failed to load mzid file. ' + str(e.errno))
+
+            # Try reading the standalone percolator psms file
+            except pd.errors.ParserError:
+                self.logger.info("Pandas ParserError: trying readlines for possible standalone Percolator file")
+
+                with open(os.path.join(sample_loc, id_files[0]), 'r') as f:
+                    f_ln = f.readlines()
+
+                # The percolator output has different number of columns per row because proteins are separated by tabs
+                # Read the first half of the table without the protein IDs
+                id_df = pd.DataFrame([ln.split('\t')[0:5] for ln in f_ln[1:]])
+                id_df.columns = ['PSMId', 'score', 'percolator q-value', 'percolator PEP', 'peptide']
+                id_df['percolator q-value'] = id_df['percolator q-value'].astype(float)
+                id_df['percolator PEP'] = id_df['percolator PEP'].astype(float)
+
+                # Create a sequence column for compatibility with Crux percolator
+                id_df['sequence'] = [pep[2:-2] for pep in id_df['peptide']]
+                # Create a flanking aa column for compatibility with Crux percolator
+                id_df['flanking aa'] = [pep[0] + pep[-1] for pep in id_df['peptide']][1]
+
+                # Create dummy columns for compatibility
+                id_df['spectrum precursor m/z'] = 0
+                id_df['percolator score'] = 0
+                id_df['spectrum neutral mass'] = 0
+                id_df['distinct matches/spectrum'] = 0
+                id_df['peptide mass'] = [accmass.calculate_ion_mz(seq) for seq in id_df['sequence']]
+
+
+                # Then read in the protein names and join them by comma instead of tab
+                id_df['protein id'] = [','.join(ln.rstrip().split('\t')[5:]) for ln in f_ln[1:]]
+
+                # Split the PSMId column to create file_idx, scan, and charge.
+                id_df['charge'] = [psm.split('_')[-2] for psm in id_df['PSMId']]
+                id_df['charge'] = id_df['charge'].astype(int)
+                id_df['scan'] = [psm.split('_')[-3] for psm in id_df['PSMId']]
+                id_df['scan'] = id_df['scan'].astype(int)
+                # The file name is the underscore('_') split until the last 3 parts, then rejoined by underscore
+                # in case there are underscores in the filename. We then remove everything
+                # We then remove all directories to get base name
+                id_df['file_name'] = [os.path.basename('_'.join(psm.split('_')[:-3])) for psm in id_df['PSMId']]
+
+                # Get the sorted file names, hopefully this is the same index as the Crux Percolator output
+                # TODO: Read the Percolator log file to get actual index and use file names to open the mzml instead
+                sorted_index = sorted(set(id_df['file_name']))
+                id_df['file_idx'] = id_df['file_name'].apply(sorted_index.index)
+
+                id_df = id_df[['file_idx',
+                               'scan',
+                               'charge',
+                               'spectrum precursor m/z',
+                               'spectrum neutral mass',
+                               'peptide mass',
+                               'percolator score',
+                               'percolator q-value',
+                               'percolator PEP',
+                               'distinct matches/spectrum',
+                               'sequence',
+                               'protein id',
+                               'flanking aa',
+                               ]]
 
             id_df.loc[:, 'sample'] = sample
             id_df['concat'] = id_df['sequence'].map(str) + '_' + id_df['charge'].map(str)

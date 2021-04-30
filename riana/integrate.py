@@ -4,7 +4,7 @@
 
 import numpy as np
 import pandas as pd
-from riana import params
+from riana import constants, params
 import time
 
 
@@ -35,12 +35,12 @@ def integrate_one(index: int,
         time.sleep(0.025)
         return [index] + [(id_.loc[index, 'pep_id'])] + [0 for _ in iso_to_do]
 
-    proton = params.proton_mass
+    proton = constants.proton_mass
 
     if deuterium_mass_defect:
-        iso_added_mass = params.deuterium_mass_diff  # see params for details
+        iso_added_mass = constants.deuterium_mass_diff  # see constants for details
     else:
-        iso_added_mass = params.c13_mass_diff
+        iso_added_mass = constants.c13_mass_diff
 
     # get peptide mass, scan number, and charge
     peptide_mass = float(id_.loc[index, 'peptide mass'])
