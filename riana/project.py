@@ -4,6 +4,7 @@
 
 import os
 
+
 class ReadDirectory(object):
     """
     This class reads the Project Directory and find the Percolator and mzML files inside.
@@ -18,12 +19,12 @@ class ReadDirectory(object):
 
         """
         self.path = os.path.join(path)
-        self.samples = self.get_sample_list()
+        self.samples = self._get_sample_list()
 
-    def get_sample_list(self):
+    def _get_sample_list(self):
         """
         Get the list of samples and check that each is a directory
-        :return:
+        :return: list names of subfolders
         """
         # Excluded hidden folders
         sample_list = [s for s in sorted(os.listdir(self.path)) if not s.startswith('.')]

@@ -62,7 +62,7 @@ Notes on the expected input files:
     * Input to RIANA.py:
 
     ** Note that the riana argument path should point to the project directory, where each individual sample mzML and
-     search result files are placed under a sub-directory (e.g., sample1/)
+     search result files are placed under a sub-directory (e.g., sample1/mzml, sample1/percolator, sample2/mzml, sample2/percolator, etc.)
 	
 
 ### Dependencies

@@ -75,7 +75,8 @@ class ReadPercolator(object):
 
             # If there is no percolator.target.psms.txt, read psms.txt
             if len(id_files) == 0:
-                id_files = [f for f in os.listdir(sample_loc) if f.endswith('psms.txt')]
+                id_files = [f for f in os.listdir(sample_loc) if f.endswith('psms.txt') and
+                            not f.startswith('decoy')]
                 assert len(id_files) == 1, '[error] check percolator output directory has 1 psms.txt'
 
             try:
@@ -111,7 +112,6 @@ class ReadPercolator(object):
                 id_df['spectrum neutral mass'] = 0
                 id_df['distinct matches/spectrum'] = 0
                 id_df['peptide mass'] = [accmass.calculate_ion_mz(seq) for seq in id_df['sequence']]
-
 
                 # Then read in the protein names and join them by comma instead of tab
                 id_df['protein id'] = [','.join(ln.rstrip().split('\t')[5:]) for ln in f_ln[1:]]
