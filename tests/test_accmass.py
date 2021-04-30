@@ -41,8 +41,16 @@ class PeptideMassTest(unittest.TestCase):
         self.assertAlmostEqual(accmass.calculate_ion_mz('RHPEYA[0]VSVL[0]LR'), 1438.8045, places=3)
         self.assertAlmostEqual(accmass.calculate_ion_mz('TDEM[15.99]AHFDRERIPER'), 1916.8750, places=3)
 
+        # There should be no character inside the modification
+        with self.assertRaises(ValueError):
+            accmass.calculate_ion_mz('RHPE[C57]YALR', charge=-1)
+
     def test_charge(self):
-        """ Tests charge """
-        pass
+        """ Tests that charge is positive integer """
+        with self.assertRaises(ValueError):
+            accmass.calculate_ion_mz('RHPEYALR', charge=-1)
+
+        with self.assertRaises(AssertionError):
+            accmass.calculate_ion_mz('RHPEYALR', charge=True)
 
 

@@ -69,16 +69,23 @@ def calculate_ion_mz(seq: str,
     b: b ion (no addition)
     y: y ion (with H2O)
 
-    :param seq: str amino acid sequence
-    :param ion: str ion type
-    :param charge: int numerical charge
+    :param seq: str amino acid sequence with modifications defined by []
+    :param ion: str ion type (default: M to return peptide mass)
+    :param charge: int numerical charge (default: 0 to return peptide mass)
     :return: float accurate mass
     """
+
+    assert type(charge) == int, "Charge must be integer."
 
     mass = 0
 
     # First, strip all mass shifts and add them to the starting mass
-    mass += sum([float(mod[1:-1]) for mod in re.findall('\\[.*?]', seq)])
+    try:
+        mods = [float(mod[1:-1]) for mod in re.findall('\\[.*?]', seq)]
+    except ValueError:
+        raise ValueError('Modification contains string characters.')
+
+    mass += sum(mods)
 
     # Strip all modifications
     stripped = re.sub('\\[.*?]', '', seq)
@@ -102,8 +109,11 @@ def calculate_ion_mz(seq: str,
     mass += _calc_atom_mass(ion_atoms)
 
     # Return peptide mass if charge is 0
-    if charge != 0:
+    if charge > 0:
         mz = (mass + constants.proton_mass * charge)/charge
         return mz
+
+    if charge < 0:
+        raise ValueError('Negative charges are not supported.')
 
     return mass
