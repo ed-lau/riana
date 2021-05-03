@@ -44,7 +44,10 @@ def integrate_one(index: int,
 
     # get peptide mass, scan number, and charge
     peptide_mass = float(id_.loc[index, 'peptide mass'])
-    scan_number = int(id_.loc[index, 'scan'])
+
+    # 2021-05-01 Percolator scan number is likely 1-indexed
+    scan_number = int(id_.loc[index, 'scan']) - 1
+
     charge = float(id_.loc[index, 'charge'])
 
     # get retention time from Percolator scan number

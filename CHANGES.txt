@@ -5,7 +5,7 @@
 * Added support for standalone Percolator results for v.3.0.5.
 * Organize the project in identical manner, include one psms.txt for target psms (output of Percolator -m tag) in each percolator folder.
 * When using standalone Percolator dist, peptide masses are calculated de novo
-
+* Toggle match between runs using --mbr or -b
 
 ## Update v.0.6.3
 * Fixed an issue where mbr all-NaN slice causes an error

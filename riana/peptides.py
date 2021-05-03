@@ -397,10 +397,11 @@ class ReadPercolator(object):
                                                                    np.array(compare_df.scan_y).tolist()))
                 self.match_logger.debug('{0} {1} {2} y_hat {3}'.format(current_sample,
                                                                        each_sample,
-                                                                       idx,np.round(y_hat).tolist()))
+                                                                       idx,
+                                                                       np.round(y_hat).tolist()))
 
                 # Log the R2 of the predicted scans
-                self.logger.info('Matched chromatogr. in same '
+                self.logger.info('Matched chromatograph in same '
                                  'frac in {0}. Bagging regr R2: {1}'.format(each_sample,
                                                                             np.round(r2_score(y, y_hat), 3)))
 
@@ -409,9 +410,10 @@ class ReadPercolator(object):
                 match_df = match_df.merge(other_sample_df, how='left', on='concat')
                 scan_list = np.array(match_df.scan).reshape(-1, 1)
 
-                # replace with predicted values
-                scan_list[~np.isnan(scan_list)] = regr.predict(scan_list[~np.isnan(scan_list)].reshape(-1, 1))
-                pred_df[each_sample] = scan_list
+                # replace with predicted values if there are non nan values
+                if len(scan_list[~np.isnan(scan_list)]) > 0:
+                    scan_list[~np.isnan(scan_list)] = regr.predict(scan_list[~np.isnan(scan_list)].reshape(-1, 1))
+                    pred_df[each_sample] = scan_list
 
             # remove from the predicted value rows that are completely empty
             # then create a output dataframe mimicking the main percolator output

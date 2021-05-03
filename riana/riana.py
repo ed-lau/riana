@@ -92,7 +92,6 @@ def runriana(args):
     iso_to_do = list(set(iso_to_do))
     iso_to_do.sort()
 
-
     #
     # Percolator q value cutoff for peptides and proteins
     #
@@ -137,14 +136,14 @@ def runriana(args):
     #
     if args.thread:
         try:
-            num_threads = max(os.cpu_count()*4, int(args.thread))
+            num_threads = max(os.cpu_count() * 4, int(args.thread))
 
         except ValueError or TypeError:
             print('Invalid thread count. Using default.')
-            num_threads = os.cpu_count()*4
+            num_threads = os.cpu_count() * 4
 
     else:
-        num_threads = os.cpu_count()*4
+        num_threads = os.cpu_count() * 4
 
     #
     # Inclusion lists
@@ -164,10 +163,10 @@ def runriana(args):
     # if input_type == 'Percolator':
     mzid = ReadPercolator(project, directory_to_write)
     mzid.read_all_project_psms()
-    mzid.make_master_match_list(# lysine_filter=0,
-                                peptide_q=qcutoff,
-                                unique_only=unique_pep,
-                                min_fraction=params.min_fraction_mbr)
+    mzid.make_master_match_list(  # lysine_filter=0,
+        peptide_q=qcutoff,
+        unique_only=unique_pep,
+        min_fraction=params.min_fraction_mbr)
 
     # elif input_type == 'AMRT':
     #     raise Exception('AMRT temporarily not supported while we work on Match Between Runs')
@@ -226,11 +225,11 @@ def runriana(args):
 
             # Make a subset dataframe with the current file index (fraction) being considered
             mzid.get_current_fraction_psms(idx)
-            mzid.filter_current_fraction_psms(# lysine_filter=0,
-                                              peptide_q=qcutoff,
-                                              unique_only=unique_pep,
-                                              use_soft_threshold=True,
-                                              match_across_runs=True)
+            mzid.filter_current_fraction_psms(  # lysine_filter=0,
+                peptide_q=qcutoff,
+                unique_only=unique_pep,
+                use_soft_threshold=True,
+                match_across_runs=args.mbr)
 
             try:
                 mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
@@ -266,7 +265,6 @@ def runriana(args):
             #     results += integrate_one_partial(i)
             # '''
 
-
             # For parellization, use concurrent.futures instead of multiprocessing for higher speed
             # '''
             from concurrent import futures
@@ -299,7 +297,6 @@ def runriana(args):
 # Code for running main with parsed arguments from command line
 #
 def main():
-
     import argparse
 
     parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
@@ -308,7 +305,7 @@ def main():
     parser.add_argument('dir', help='path to folders containing the mzml and search files (see documentation)')
 
     parser.add_argument('-i', '--iso', help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
-                              default='0,6')
+                        default='0,6')
 
     parser.add_argument('-d', '--deuterium', action='store_true', help='use mass defect for deuterium.')
 
@@ -323,8 +320,8 @@ def main():
     #                     choices=[0, 1, 2, 3],
     #                     default=0)
 
-    # parser.add_argument('--matchbetweenruns', action='store_true', help='attempt to match between runs',
-    #                     default=False)
+    parser.add_argument('-b', '--mbr', action='store_true', help='attempt to match between runs',
+                        default=False)
 
     parser.add_argument('-q', '--qvalue',
                         help='integrate only peptides with q value below this threshold[default: 1e-2]',
@@ -357,8 +354,8 @@ def main():
         parser.print_help()
         parser.exit()
 
-    #gc.enable()
-    #gc.set_debug(gc.DEBUG_LEAK)
+    # gc.enable()
+    # gc.set_debug(gc.DEBUG_LEAK)
 
     # Parse all the arguments
     args = parser.parse_args()
