@@ -31,14 +31,17 @@ def runriana(args):
 
     # Get timestamp for out files
     now = datetime.datetime.now()
-    directory_to_write = os.path.join(args.out, 'riana_' + now.strftime('%Y%m%d%H%M%S'))
+
+    # 2021-05-07 no longer creates subdirectory
+    # directory_to_write = os.path.join(args.out, 'riana_' + now.strftime('%Y%m%d%H%M%S'))
+    directory_to_write = os.path.join(args.out)
     os.makedirs(directory_to_write, exist_ok=True)
 
     main_log = logging.getLogger('riana')
     main_log.setLevel(logging.DEBUG)
 
     # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana.log'))
+    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_' + now.strftime('%Y%m%d%H%M%S') + '.log'))
     fh.setLevel(logging.INFO)
 
     # create console handler with a higher log level
@@ -210,8 +213,11 @@ def runriana(args):
         # Note this will break if the last fraction does not contain at least some ID, but we will ignore for now.
         assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
 
+        # Create the sample master out file
+        sample_master_df = pd.DataFrame()
+
         #
-        # Read the mzml files
+        # Read the mzml files and do integration
         #
 
         # For each file index (fraction), open the mzML file, and create a subset Percolator ID dataframe
@@ -280,11 +286,22 @@ def runriana(args):
             df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
             result_df = pd.DataFrame(result, columns=df_columns)
             id_result_df = pd.merge(mzid.curr_frac_filtered_id_df, result_df, on='pep_id', how='left')
+            id_result_df['sample'] = current_sample
+            id_result_df['file'] = mzml_files[idx]
 
+            # Bind rows of the current result to the sample master
+            if len(sample_master_df.index) == 0:
+                sample_master_df = id_result_df
+            else:
+                sample_master_df = sample_master_df.append(id_result_df, ignore_index=True)
+
+            # 2021-05-07 No longer creates subfolder
             # Create subdirectory if not exists
-            os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
-            save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
-            id_result_df.to_csv(save_path, sep='\t')
+            # os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
+            # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
+
+            save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
+            sample_master_df.to_csv(save_path, sep='\t')
 
             # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
             # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
@@ -340,8 +357,8 @@ def main():
                         type=int,
                         default=0)
 
-    parser.add_argument('-o', '--out', help='prefix of the output directory [default: riana_out]',
-                        default='out')
+    parser.add_argument('-o', '--out', help='path to the output directory [default: riana]',
+                        default='riana')
 
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))

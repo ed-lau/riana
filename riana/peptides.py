@@ -35,7 +35,7 @@ class ReadPercolator(object):
         # logging
         self.logger = logging.getLogger('riana.read_id')
         self.match_logger = logging.getLogger('riana.match_across_run')
-        fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_match_across_run.log'))
+        fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_mbr.log'))
         fh.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
