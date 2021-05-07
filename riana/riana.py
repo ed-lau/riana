@@ -286,7 +286,6 @@ def runriana(args):
             df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
             result_df = pd.DataFrame(result, columns=df_columns)
             id_result_df = pd.merge(mzid.curr_frac_filtered_id_df, result_df, on='pep_id', how='left')
-            id_result_df['sample'] = current_sample
             id_result_df['file'] = mzml_files[idx]
 
             # Bind rows of the current result to the sample master
