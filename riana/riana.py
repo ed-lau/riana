@@ -294,17 +294,17 @@ def runriana(args):
             else:
                 sample_master_df = sample_master_df.append(id_result_df, ignore_index=True)
 
-            # 2021-05-07 No longer creates subfolder
-            # Create subdirectory if not exists
-            # os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
-            # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
+        # 2021-05-07 No longer creates subfolder
+        # Create subdirectory if not exists
+        # os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
+        # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
 
-            save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
-            sample_master_df.to_csv(save_path, sep='\t')
+        save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
+        sample_master_df.to_csv(save_path, sep='\t')
 
-            # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
-            # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
-            # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
+        # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
+        # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
+        # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
 
     return sys.exit(os.EX_OK)
 
