@@ -436,7 +436,7 @@ class ReadPercolator(object):
                  'sample': current_sample,
                  'concat': pred_df.index,
                  'pep_id': ['matched_' + str(a) for a in range(0, len(pred_df.index))],
-                 'evidence': 'match_across_runs'
+                 'evidence': 'match_between_runs'
                  })
 
             # 2020-07-31 convert scan to nearest integer
