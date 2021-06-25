@@ -50,8 +50,8 @@ def integrate_one(index: int,
 
     charge = float(id_.loc[index, 'charge'])
 
-    # get retention time from Percolator scan number
-    peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left')]
+    # get retention time from Percolator scan number # 2021-05-19 added -1
+    peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left') - 1 ]
 
     assert isinstance(peptide_rt.item(), float), '[error] cannot retrieve retention time from scan number'
 
@@ -89,16 +89,16 @@ def integrate_one(index: int,
 
     if not intensity_over_time:
         raise Exception(
-            "No intensity profile for peptide {0}".format(prec_iso_am)
+            'No intensity profile for peptide {0}'.format(prec_iso_am)
         )
 
     intensity_array = np.array(intensity_over_time)
 
     if not intensity_over_time:
-        print('Empty intensity over time')
+        raise Exception('Empty intensity over time for peptide {0}'.format(prec_iso_am))
 
     result = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(intensity_array,
-                                                                                 iso_to_do=iso_to_do)
+                                                                                  iso_to_do=iso_to_do)
 
     return result
 

@@ -87,6 +87,9 @@ def calculate_ion_mz(seq: str,
 
     mass += sum(mods)
 
+    # 2021-05-18 strip all N-terminal n from Comet
+    seq = re.sub('^n', '', seq)
+
     # Strip all modifications
     stripped = re.sub('\\[.*?]', '', seq)
 

@@ -164,7 +164,9 @@ def runriana(args):
 
     # Get the master peptide ID list
     # if input_type == 'Percolator':
-    mzid = ReadPercolator(project, directory_to_write)
+    mzid = ReadPercolator(project=project,
+                          directory_to_write=directory_to_write,
+                          percolator_subdirectory=args.percolator)
     mzid.read_all_project_psms()
     mzid.make_master_match_list(  # lysine_filter=0,
         peptide_q=qcutoff,
@@ -355,6 +357,10 @@ def main():
     parser.add_argument('-t', '--thread', help='number of threads for concurrency; leave as 0 for auto (default = 0)',
                         type=int,
                         default=0)
+
+    parser.add_argument('-p', '--percolator', help='subdirectory name of percolator folder (default = percolator)',
+                        type=str,
+                        default='percolator')
 
     parser.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                         default='riana')

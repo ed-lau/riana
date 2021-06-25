@@ -21,16 +21,21 @@ class ReadPercolator(object):
 
     """
 
-    def __init__(self, project, directory_to_write,
+    def __init__(self,
+                 project,
+                 directory_to_write,
+                 percolator_subdirectory,
                  ):
         """
-        :param path: path of the folder of the file to be loaded, e.g., "~/Desktop/example/"
+        :param project: path of the input
+        :param directory_to_write: path of the output directory
 
 
         """
 
         self.path = project.path
         self.samples = project.samples
+        self.percolator_subdirectory = percolator_subdirectory
 
         # logging
         self.logger = logging.getLogger('riana.read_id')
@@ -63,7 +68,7 @@ class ReadPercolator(object):
 
         for sample in self.samples:
 
-            sample_loc = os.path.join(self.path, sample, 'percolator')
+            sample_loc = os.path.join(self.path, sample, self.percolator_subdirectory)
             assert os.path.isdir(sample_loc), '[error] project sample subdirectory not valid'
 
             self.logger.info('Reading Percolator file at {0}'.format(sample_loc))
@@ -83,13 +88,15 @@ class ReadPercolator(object):
                 # Read the Percolator psms file.
                 id_df = pd.read_csv(filepath_or_buffer=os.path.join(sample_loc, id_files[0]),
                                     sep='\t')
+                # Test for Crux Percolator file
+                test_col = id_df['spectrum precursor m/z']
 
             except OSError as e:
                 sys.exit('Failed to load mzid file. ' + str(e.errno))
 
             # Try reading the standalone percolator psms file
-            except pd.errors.ParserError:
-                self.logger.info("Pandas ParserError: trying readlines for possible standalone Percolator file")
+            except (pd.errors.ParserError, KeyError) as e:
+                self.logger.info("Standalone Percolator file detected")
 
                 with open(os.path.join(sample_loc, id_files[0]), 'r') as f:
                     f_ln = f.readlines()
