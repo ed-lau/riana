@@ -1,15 +1,14 @@
 # TODO:
 
 Short term:
-- write log file for each run ...
 - write unit tests for integrate peak class methods with correct assertions
 - separate out the argParse functions
 - more getters and setter functions
-- Add args for users to specify iso/neutron mass
-- Add function to calculate peptide accurate mass from scratch and check against percolator
+- add args for users to specify iso/neutron mass
+- add function to calculate peptide accurate mass from scratch and check against percolator
+- add support for noncanonical aa
+- validate label free/ibaq against ionquant or maxquant
 
 Mid term:
 - smoothing function
-
-Long term:
-- Maxquant style fill in missing ID
+- write tests for match between run functions
