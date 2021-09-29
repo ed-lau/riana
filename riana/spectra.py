@@ -34,15 +34,12 @@ class Mzml(object):
         """ repr """
         return str(self.path)
 
-
-
     def parse_mzml(self):
         """
         Read the mzml file and create data dictionary
         :return:
         """
 
-        #
         run = mz.run.Reader(self.path,
                             MS_precision={
                                 1: 10e-6,
