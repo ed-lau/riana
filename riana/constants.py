@@ -59,7 +59,7 @@ aa_atoms = {
     'W': [11, 10, 1, 2, 0],
     'Y': [9, 9, 2, 1, 0],
 
-    # Holding off non-canonical AA till later
+    # TODO: include non-canonical AA
     'U': [0, 0, 0, 0, 0],  # Selenocysteine
     'X': [0, 0, 0, 0, 0],
     'B': [0, 0, 0, 0, 0],  # Asn or Asp
