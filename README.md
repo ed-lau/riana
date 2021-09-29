@@ -67,7 +67,7 @@ Notes on the expected input files:
 
 ### Dependencies
 
-RIANA.py is tested in Python 3.7 and 3.8 and uses the following packages:
+RIANA.py is tested in Python 3.7, 3.8, 3.9 and uses the following packages:
 
 ```
 matplotlib==3.4.1
