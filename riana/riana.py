@@ -325,7 +325,7 @@ def main():
     parser.add_argument('-i', '--iso', help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
                         default='0,6')
 
-    parser.add_argument('-d', '--deuterium', action='store_true', help='use mass defect for deuterium.')
+    parser.add_argument('-d', '--deuterium', action='store_true', help='experimental feature: use mass defect for deuterium.')
 
     parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
 
