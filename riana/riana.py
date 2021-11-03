@@ -34,14 +34,15 @@ def runriana(args):
 
     # 2021-05-07 no longer creates subdirectory
     # directory_to_write = os.path.join(args.out, 'riana_' + now.strftime('%Y%m%d%H%M%S'))
-    directory_to_write = os.path.join(args.out)
+    path_to_write = os.path.join(args.out)
+    directory_to_write = os.path.dirname(path_to_write)
     os.makedirs(directory_to_write, exist_ok=True)
 
     main_log = logging.getLogger('riana')
     main_log.setLevel(logging.DEBUG)
 
     # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_' + now.strftime('%Y%m%d%H%M%S') + '.log'))
+    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana.log')) # 'riana_' + now.strftime('%Y%m%d%H%M%S') + '.log'))
     fh.setLevel(logging.INFO)
 
     # create console handler with a higher log level
@@ -202,7 +203,7 @@ def runriana(args):
         mzid.get_current_sample_psms(current_sample=current_sample)
         mzid.get_current_sample_mzid_indices()
 
-        mzml_files = [f for f in os.listdir(sample_loc) if re.match('^.*.mzML', f)]
+        mzml_files = [f for f in os.listdir(sample_loc) if re.match('^.*.mz[Mm][Ll]', f)]
 
         # Sort the mzML files by names
         # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
