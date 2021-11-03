@@ -27,7 +27,7 @@ class ReadDirectory(object):
         :return: list names of subfolders
         """
         # Excluded hidden folders
-        sample_list = [s for s in sorted(os.listdir(self.path)) if not s.startswith('.')]
+        sample_list = [s.name for s in os.scandir(self.path) if s.is_dir()] # [s for s in sorted(os.listdir(self.path)) if not s.startswith('.')]
 
         for sample in sample_list:
             sample_loc = os.path.join(self.path, sample)
