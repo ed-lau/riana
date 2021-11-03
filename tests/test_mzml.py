@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from riana.project import ReadDirectory
 from riana.peptides import ReadPercolator
 
+
 class MzmlTest(unittest.TestCase):
     """
     Test cases involving reading mzml files
@@ -15,13 +16,11 @@ class MzmlTest(unittest.TestCase):
         Read directory and percolator file and store them in class.
         """
 
-
         self.dir_path = 'tests/data'
         self.sample_dir = ReadDirectory(self.dir_path)
 
-
         with TemporaryDirectory() as temp_dir:
-            self.perc = ReadPercolator(self.sample_dir, temp_dir)
+            self.perc = ReadPercolator(self.sample_dir, temp_dir, percolator_subdirectory=".")
 
         pass
 
