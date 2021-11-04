@@ -336,6 +336,8 @@ class ReadPercolator(object):
                 reset_index(drop=True)
 
         if match_across_runs:
+            # This should be moved to a separate method or script to first generate a master list based on the
+            # full set of Percolator input. The integration function should then integrate everything that is filtered.
 
             # The Match Across Runs candidates are the peptide/z concats that are identified in multiple
             # samples but are not in the current fraction being considered

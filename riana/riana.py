@@ -83,8 +83,8 @@ def runriana(args):
         try:
             char = int(char)
 
-            # Only doing down to mz + 12.
-            if char <= 12:
+            # Only doing down to mz + 15.
+            if char <= 15:
                 iso_to_do.append(int(char))
 
         except ValueError or TypeError:
@@ -169,6 +169,8 @@ def runriana(args):
                           directory_to_write=directory_to_write,
                           percolator_subdirectory=args.percolator)
     mzid.read_all_project_psms()
+
+    # TODO: should remove this for now and move to a different script
     mzid.make_master_match_list(  # lysine_filter=0,
         peptide_q=qcutoff,
         unique_only=unique_pep,
@@ -203,6 +205,7 @@ def runriana(args):
         mzid.get_current_sample_psms(current_sample=current_sample)
         mzid.get_current_sample_mzid_indices()
 
+        #2021-11-04 account for mzml and mzML
         mzml_files = [f for f in os.listdir(sample_loc) if re.match('^.*.mz[Mm][Ll]', f)]
 
         # Sort the mzML files by names
