@@ -17,6 +17,8 @@ from riana import integrate, params, __version__
 import tqdm
 import pandas as pd
 
+def runfit(args):
+    pass
 
 def runriana(args):
     """
@@ -170,7 +172,7 @@ def runriana(args):
                           percolator_subdirectory=args.percolator)
     mzid.read_all_project_psms()
 
-    # TODO: should remove this for now and move to a different script
+    # TODO: should remove mbr from the main integration function and move to a different script
     mzid.make_master_match_list(  # lysine_filter=0,
         peptide_q=qcutoff,
         unique_only=unique_pep,
@@ -224,7 +226,8 @@ def runriana(args):
                 peptide_q=qcutoff,
                 unique_only=unique_pep,
                 use_soft_threshold=True,
-                match_across_runs=args.mbr)
+                match_across_runs=False,  # args.mbr
+            )
 
             try:
                 mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
@@ -317,47 +320,9 @@ def main():
     parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
                                                  'isotopomers')
 
-    parser.add_argument('dir', help='path to folders containing the mzml and search files (see documentation)')
-
-    parser.add_argument('-i', '--iso', help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
-                        default='0,6')
-
-    parser.add_argument('-d', '--deuterium', action='store_true', help='experimental feature: use mass defect for deuterium.')
-
-    parser.add_argument('-u', '--unique', action='store_true', help='integrate unique peptides only')
-
-    # parser.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
-    #                     default=False)
-
-    # parser.add_argument('-k', '--lysine',
-    #                     help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
-    #                     type=int,
-    #                     choices=[0, 1, 2, 3],
-    #                     default=0)
-
-    parser.add_argument('-b', '--mbr', action='store_true', help='attempt to match between runs',
-                        default=False)
-
-    parser.add_argument('-q', '--qvalue',
-                        help='integrate only peptides with q value below this threshold[default: 1e-2]',
-                        type=float,
-                        default=1e-2)
-
-    parser.add_argument('-r', '--rtime', help='retention time (in minutes, both directions) tolerance for integration',
-                        type=float,
-                        default=1.0)
-
-    parser.add_argument('-m', '--masstolerance', help='mass tolerance in ppm for integration [default 50 ppm]',
-                        type=float,
-                        default=50)
-
     parser.add_argument('-t', '--thread', help='number of threads for concurrency; leave as 0 for auto (default = 0)',
                         type=int,
                         default=0)
-
-    parser.add_argument('-p', '--percolator', help='subdirectory name of percolator folder (default = percolator)',
-                        type=str,
-                        default='percolator')
 
     parser.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                         default='riana')
@@ -365,7 +330,69 @@ def main():
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))
 
-    parser.set_defaults(func=runriana)
+    # Sub-commands
+    subparsers = parser.add_subparsers(help='Type riana function -h for individual help messages',
+                                       title='Functions',
+                                       description='Riana has the following sub-commands:',
+                                       )
+    parser_integrate = subparsers.add_parser('integrate',
+                                             aliases=['int'],
+                                             help='Integrates isotopomer abundance over retention time')
+    parser_fit = subparsers.add_parser('fit',
+                                       help='Fit to kinetic models. Note implemented yet.')
+
+    # Arguments for integrate subcommand
+    parser_integrate.add_argument('dir',
+                                  help='path to folders containing the mzml and search files (see documentation)')
+
+    parser_integrate.add_argument('-i', '--iso',
+                                  help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
+                                  default='0,6')
+
+    parser_integrate.add_argument('-d', '--deuterium',
+                                  action='store_true',
+                                  help='experimental feature: use mass defect for deuterium.')
+
+    parser_integrate.add_argument('-u', '--unique',
+                                  action='store_true',
+                                  help='integrate unique peptides only')
+
+    # parser_integrate.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
+    #                     default=False)
+
+    # parser_integrate.add_argument('-k', '--lysine',
+    #                     help='lysine mode, 0=No filter, 1=1 K, 2=1 or more K, 3=KK only [default = 0]',
+    #                     type=int,
+    #                     choices=[0, 1, 2, 3],
+    #                     default=0)
+
+    # parser_integrate.add_argument('-b', '--mbr', action='store_true', help='attempt to match between runs',
+    #                    default=False)
+
+    parser_integrate.add_argument('-q', '--qvalue',
+                                  help='integrate only peptides with q value below this threshold[default: 1e-2]',
+                                  type=float,
+                                  default=1e-2)
+
+    parser_integrate.add_argument('-r', '--rtime',
+                                  help='retention time (in minutes, both directions) tolerance for integration',
+                                  type=float,
+                                  default=1.0)
+
+    parser_integrate.add_argument('-m', '--masstolerance',
+                                  help='mass tolerance in ppm for integration [default 50 ppm]',
+                                  type=float,
+                                  default=50)
+
+    parser_integrate.add_argument('-p', '--percolator',
+                                  help='subdirectory name of percolator folder (default = percolator)',
+                                  type=str,
+                                  default='percolator')
+
+    parser_integrate.set_defaults(func=runriana)
+
+    # Arguments for fit subcommand
+    parser_fit.set_defaults(func=runfit)
 
     # Print help message if no arguments are given
     import sys
