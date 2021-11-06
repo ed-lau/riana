@@ -34,7 +34,7 @@ to the home directory:
     
 Notes on the expected input files:
 
-	* RIANA.py was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
+	* Riana.py was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
 
 	* The following workflow has been tested for both amino acid and heavy water labeling data gathered on a QE:
 
@@ -59,7 +59,7 @@ Notes on the expected input files:
 		** --protein T
 		** --fido-empirical-protein-q T
 
-    * Input to RIANA.py:
+    * Input to Riana.py:
 
     ** Note that the riana argument path should point to the project directory, where each individual sample mzML and
      search result files are placed under a sub-directory (e.g., sample1/mzml, sample1/percolator, sample2/mzml, sample2/percolator, etc.)

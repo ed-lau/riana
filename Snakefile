@@ -10,9 +10,7 @@ rule copy_files:
         # dir="out/snakemake/{timepoint}",
         linked_mzml="out/snakemake/{timepoint}/mzml/input.mzml.gz"
     shell:
-        # "mkdir {output.dir}; "
-        # "ln {input.mzml} {output.linked_mzml}" # symlink does not work
-        "cp {input.mzml} {output.linked_mzml}"
+        "cp {input.mzml} {output.linked_mzml}" # should change to symlink instead probably
 
 rule comet:
     input: "out/snakemake/{timepoint}/mzml/input.mzml.gz" # lambda wildcards: config["data"][wildcards.timepoint]
