@@ -197,6 +197,8 @@ def runriana(args):
 
     # Each subdirectory is a sample
     samples = project.samples
+    # Create the grant total out file
+    master_df = pd.DataFrame()
 
     for current_sample in tqdm.tqdm(samples, desc='Processing Sample', total=len(samples)):
 
@@ -311,6 +313,16 @@ def runriana(args):
         # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
         # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
         # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
+
+        # Bind rows of the current sample master to the total (all time point output) master
+        if len(master_df.index) == 0:
+            master_df = sample_master_df
+        else:
+            master_df = master_df.append(sample_master_df, ignore_index=True)
+
+    # Write out the total time point output
+    all_save_path = os.path.join(directory_to_write, 'all_riana.txt')
+    master_df.to_csv(all_save_path, sep='\t')
 
     return sys.exit(os.EX_OK)
 
