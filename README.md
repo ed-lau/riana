@@ -1,6 +1,6 @@
-# RIANA - Relative Isotope Abundance Analyzer
+# Riana.py - Relative Isotope Abundance Analyzer
 
-RIANA (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
+Riana (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
 and returns mass isotopomer distributions, e.g., for protein turnover analysis.
 
 
@@ -67,7 +67,7 @@ Notes on the expected input files:
 
 ### Dependencies
 
-RIANA.py is tested in Python 3.7, 3.8, 3.9 and uses the following packages:
+Riana.py is tested in Python 3.7, 3.8, 3.9 and uses the following packages:
 
 ```
 matplotlib==3.4.1
