@@ -176,28 +176,9 @@ def runriana(args):
         unique_only=unique_pep,
         min_fraction=params.min_fraction_mbr)
 
-    # elif input_type == 'AMRT':
-    #     raise Exception('AMRT temporarily not supported while we work on Match Between Runs')
-    #     sys.exit()
-
-    # 2020-02-27 Need to rewrite ReadLipid module to be like ReadPercolator (reading all IDs in project at once)
-    '''
-    elif mol_type == 'lipid':
-    # Get a master lipid id list
-        for sample in tqdm.tqdm(samples, desc='Processing Sample'):
-
-            sample_loc = os.path.join(project.path, sample)
-            try:
-                mzid = ReadLipid(sample_loc)
-                #mzid.get_mzid_indices()
-
-            except OSError as e:
-                sys.exit('Failed to load am_rt file. ' + str(e.errno))
-    '''
-
     # Each subdirectory is a sample
     samples = project.samples
-    # Create the grant total out file
+    # Create the grand total out file
     master_df = pd.DataFrame()
 
     for current_sample in tqdm.tqdm(samples, desc='Processing Sample', total=len(samples)):
