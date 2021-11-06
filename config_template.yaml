@@ -1,0 +1,19 @@
+# Config
+
+# Data location
+data:
+  time0: /path/to/time0.mzML.gz
+  time1: /path/to/time1.mzML.gz
+  time3: /path/to/time3.mzML.gz
+  time6: /path/to/time6.mzML.gz
+ 
+# Paths to the comet executable, the comet params file, the database, and the percolator executable
+paths:
+  comet: /path/to/comet_source_2020013/comet.exe
+  comet_params: /path/to/params/comet.params
+  fasta: /path/tp/database.fas
+  percolator: /path/to/percolator
+
+# Number of threads
+threads:
+  comet: 6
