@@ -36,15 +36,23 @@ def integrate_all(args):
     # Handle command line arguments
     #
 
+    # Use the sample name if supplied, otherwise use the basename of the mzml
+    if args.sample is None:
+        current_sample = os.path.basename(os.path.normpath(args.mzml_path))
+    else:
+        current_sample = args.sample
+
+    # File out
     path_to_write = os.path.join(args.out)
     directory_to_write = os.path.dirname(path_to_write)
     os.makedirs(directory_to_write, exist_ok=True)
 
+    # Logging
     main_log = logging.getLogger('riana')
     main_log.setLevel(logging.DEBUG)
 
     # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana_integrate.log'))
+    fh = logging.FileHandler(os.path.join(directory_to_write, f'riana_integrate_{current_sample}.log'))
     fh.setLevel(logging.INFO)
 
     # create console handler with a higher log level
@@ -151,13 +159,6 @@ def integrate_all(args):
 
     # This is the directory that holds the entire project
     #20211109 project = ReadDirectory(dir_loc)
-
-
-    # Use the sample name if supplied, otherwise use the basename of the mzml
-    if args.sample:
-        current_sample = "sample"
-    else:
-        current_sample = os.path.basename(os.path.normpath(args.mzml_path))
 
     # Get the master peptide ID list
     mzid = ReadPercolator(path=args.id_path,  # project=project,
