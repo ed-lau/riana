@@ -144,152 +144,168 @@ def integrate_all(args):
     else:
         num_threads = 1  # os.cpu_count() * 4
 
-    dir_loc = args.dir
-    assert os.path.isdir(dir_loc), '[error] project directory not valid'
+    #
+    # Read files in
+    #
+
 
     # This is the directory that holds the entire project
-    project = ReadDirectory(dir_loc)
+    #20211109 project = ReadDirectory(dir_loc)
+
+
+    # Use the sample name if supplied, otherwise use the basename of the mzml
+    if args.sample:
+        current_sample = "sample"
+    else:
+        current_sample = os.path.basename(os.path.normpath(args.mzml_path))
 
     # Get the master peptide ID list
-    mzid = ReadPercolator(project=project,
+    mzid = ReadPercolator(path=args.id_path,  # project=project,
+                          sample=current_sample,
                           directory_to_write=directory_to_write,
-                          percolator_subdirectory=args.percolator)
-    mzid.read_all_project_psms()
+                          #percolator_subdirectory=args.percolator
+                          )
+
+    mzid.read_psms()
 
     # TODO: should remove mbr from the main integration function and move to a different script
-    mzid.make_master_match_list(  # lysine_filter=0,
-        peptide_q=q_threshold,
-        unique_only=unique_pep,
-        min_fraction=params.min_fraction_mbr)
+    # 20211109 mzid.make_master_match_list(  # lysine_filter=0,
+    #   peptide_q=q_threshold,
+    #    unique_only=unique_pep,
+    #    min_fraction=params.min_fraction_mbr)
 
     # Each subdirectory is a sample
-    samples = project.samples
+    # 20211109 samples = project.samples
     # Create the grand total out file
-    master_df = pd.DataFrame()
+    # 20211109 master_df = pd.DataFrame()
 
-    for current_sample in tqdm.tqdm(samples, desc='Processing Sample', total=len(samples)):
+    # 20211109 for current_sample in tqdm.tqdm(samples, desc='Processing Sample', total=len(samples)):
 
-        sample_loc = os.path.join(project.path, current_sample, 'mzml')
+    sample_loc = os.path.normpath(args.mzml_path)   # os.path.join(project.path, current_sample, 'mzml')
+    assert os.path.isdir(sample_loc), '[error] mzml path not a valid directory'
 
-        mzid.get_current_sample_psms(current_sample=current_sample)
-        mzid.get_current_sample_mzid_indices()
+    # These are not necessary since there is only one sample/percolator per run now
+    mzid.get_current_sample_psms(current_sample=current_sample)
+    mzid.get_current_sample_mzid_indices()
 
-        #2021-11-04 account for mzml and mzML
-        mzml_files = [f for f in os.listdir(sample_loc) if re.match('^.*.mz[Mm][Ll]', f)]
+    #2021-11-04 account for mzml and mzML
+    mzml_files = [f for f in os.listdir(sample_loc) if re.match('^.*.mz[Mm][Ll]', f)]
 
-        # Sort the mzML files by names
-        # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
-        # But we will ignore for now
-        mzml_files.sort()
+    # Sort the mzML files by names
+    # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
+    # TODO: check whether Percolator uses nat sort and implement if so
+    mzml_files.sort()
 
-        # Throw an error if there is no mzML file in the mzml directory
-        assert len(mzml_files) != 0, '[error] no mzml files in the specified directory'
-        # Check that the number of mzMLs in the mzML folder is the same as the maximum of the ID file's file_idx column.
-        # Note this will break if the last fraction does not contain at least some ID, but we will ignore for now.
-        assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
+    # Throw an error if there is no mzML file in the mzml directory
+    assert len(mzml_files) != 0, '[error] no mzml files in the specified directory'
+    # Check that the number of mzMLs in the mzML folder is the same as the maximum of the ID file's file_idx column.
+    # Note this will break if the last fraction does not contain at least some ID, but we will ignore for now.
+    assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
 
-        # Create the sample master out file
-        sample_master_df = pd.DataFrame()
+    # Create the sample master out file
+    sample_master_df = pd.DataFrame()
+
+    #
+    # Read the mzml files and do integration
+    #
+
+    # For each file index (fraction), open the mzML file, and create a subset Percolator ID dataframe
+    for idx in mzid.indices:
+
+        # Verbosity 0 progress message
+        main_log.info('Doing mzml: {0} ({1} of {2})'.format(
+            mzml_files[idx],
+            str(idx + 1),
+            str(len(mzid.indices))))
+
+        # Make a subset dataframe with the current file index (fraction) being considered
+        mzid.get_current_fraction_psms(idx)
+        mzid.filter_current_fraction_psms(  # lysine_filter=0,
+            peptide_q=q_threshold,
+            unique_only=unique_pep,
+            use_soft_threshold=False,   # 20211109 True
+            # match_across_runs=False,  # args.mbr
+        )
+
+        try:
+            mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
+
+        except OSError as e:
+            sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
 
         #
-        # Read the mzml files and do integration
+        # read the spectra into dictionary and also create MS1/MS2 indices
         #
+        mzml.parse_mzml()
 
-        # For each file index (fraction), open the mzML file, and create a subset Percolator ID dataframe
-        for idx in mzid.indices:
+        #
+        # get peak intensity for each isotopomer in each spectrum ID in each peptide
+        #
+        # peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
 
-            # Verbosity 0 progress message
-            main_log.info('Doing mzml: {0} ({1} of {2})'.format(
-                mzml_files[idx],
-                str(idx + 1),
-                str(len(mzid.indices))))
+        loop_ = range(len(mzid.curr_frac_filtered_id_df))
 
-            # Make a subset dataframe with the current file index (fraction) being considered
-            mzid.get_current_fraction_psms(idx)
-            mzid.filter_current_fraction_psms(  # lysine_filter=0,
-                peptide_q=q_threshold,
-                unique_only=unique_pep,
-                use_soft_threshold=True,
-                match_across_runs=False,  # args.mbr
-            )
+        integrate_one_partial = partial(integrate_one,
+                                        id_=mzid.curr_frac_filtered_id_df.copy(),
+                                        iso_to_do=iso_to_do,
+                                        mzml=mzml,
+                                        rt_tolerance=rt_tolerance,
+                                        mass_tolerance=mass_tolerance,
+                                        deuterium_mass_defect=args.deuterium,
+                                        )
 
-            try:
-                mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
-            except OSError as e:
-                sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
+        # Single threaded loop
+        # '''
+        # results = []
+        # for i in loop_:
+        #     print(i)
+        #     results += integrate_one_partial(i)
+        # '''
 
-            # #
-            # # read the spectra into dictionary and also create MS1/MS2 indices
-            # #
-            mzml.parse_mzml()
+        # For parallelism, use concurrent.futures instead of multiprocessing for higher speed
+        # '''
+        from concurrent import futures
+        with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
+            result = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
+                                    total=max(loop_),
+                                    desc=f'Integrating Peaks in Sample {current_sample}'))
+        # '''
 
-            #
-            # get peak intensity for each isotopomer in each spectrum ID in each peptide
-            #
-            # peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
+        #
+        # Convert the output_table into a data frame
+        #
+        df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
+        result_df = pd.DataFrame(result, columns=df_columns)
+        id_result_df = pd.merge(mzid.curr_frac_filtered_id_df, result_df, on='pep_id', how='left')
+        id_result_df['file'] = mzml_files[idx]
 
-            loop_ = range(len(mzid.curr_frac_filtered_id_df))
-
-            integrate_one_partial = partial(integrate_one,
-                                            id_=mzid.curr_frac_filtered_id_df.copy(),
-                                            iso_to_do=iso_to_do,
-                                            mzml=mzml,
-                                            rt_tolerance=rt_tolerance,
-                                            mass_tolerance=mass_tolerance,
-                                            deuterium_mass_defect=args.deuterium,
-                                            )
-
-            # Single threaded loop
-            # '''
-            # results = []
-            # for i in loop_:
-            #     print(i)
-            #     results += integrate_one_partial(i)
-            # '''
-
-            # For parellization, use concurrent.futures instead of multiprocessing for higher speed
-            # '''
-            from concurrent import futures
-            with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
-                result = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
-                                        total=max(loop_),
-                                        desc='Integrating Peaks in Current Sample'))
-            # '''
-
-            #
-            # Convert the output_table into a data frame
-            #
-            df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
-            result_df = pd.DataFrame(result, columns=df_columns)
-            id_result_df = pd.merge(mzid.curr_frac_filtered_id_df, result_df, on='pep_id', how='left')
-            id_result_df['file'] = mzml_files[idx]
-
-            # Bind rows of the current result to the sample master
-            if len(sample_master_df.index) == 0:
-                sample_master_df = id_result_df
-            else:
-                sample_master_df = sample_master_df.append(id_result_df, ignore_index=True)
-
-        # 2021-05-07 No longer creates subfolder
-        # Create subdirectory if not exists
-        # os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
-        # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
-
-        save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
-        sample_master_df.to_csv(save_path, sep='\t')
-
-        # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
-        # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
-        # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
-
-        # Bind rows of the current sample master to the total (all time point output) master
-        if len(master_df.index) == 0:
-            master_df = sample_master_df
+        # Bind rows of the current result to the sample master
+        if len(sample_master_df.index) == 0:
+            sample_master_df = id_result_df
         else:
-            master_df = master_df.append(sample_master_df, ignore_index=True)
+            sample_master_df = sample_master_df.append(id_result_df, ignore_index=True)
+
+    # 2021-05-07 No longer creates subfolder
+    # Create subdirectory if not exists
+    # os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
+    # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
+
+    save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
+    sample_master_df.to_csv(path_or_buf=save_path, sep='\t')
+
+    # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
+    # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
+    # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
+
+    """ 20211109 Bind rows of the current sample master to the total (all time point output) master
+    if len(master_df.index) == 0:
+        master_df = sample_master_df
+    else:
+        master_df = master_df.append(sample_master_df, ignore_index=True)
+    """
 
     # Write out the total time point output
-    master_df.to_csv(path_to_write, sep='\t')
+    # 20211109 master_df.to_csv(path_to_write, sep='\t')
 
     return sys.exit(os.EX_OK)
 
@@ -419,7 +435,8 @@ def integrate_isotope_intensity(intensity_over_time: np.ndarray,
         iso_intensity.append(iso_area)
 
     if not iso_intensity:
-        raise Exception("No positive numerical value integrated for isotopmer {0}".format(intensity_over_time)
-        )
+        raise Exception("No positive numerical value integrated "
+                        "for isotopmer {0}".format(intensity_over_time)
+                        )
 
     return iso_intensity
