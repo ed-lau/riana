@@ -31,10 +31,7 @@ n_mass = 14.00307400443
 s_mass = 31.9720711744
 
 """
-Amino acids
-
-Number of carbon, hydrogen, oxygen, nitrogen, sulfur for amino acids
-
+Amino acids: number of carbon, hydrogen, oxygen, nitrogen, sulfur for amino acids
 """
 
 aa_atoms = {
@@ -69,3 +66,41 @@ aa_atoms = {
 mod_atoms = {
     'IAA': [2, 3, 1, 1, 0],
 }
+
+# Commerford, Carsten, and Cronkite 1983 Table 1
+# Number of labelable hydrogen atoms per amino acids
+# Relative specific activity * H/mole
+label_hydrogens = {
+    'A': 4.00,
+    'C': 1.62,
+    'D': 1.89,
+    'E': 3.95,
+    'F': 0.32,
+    'G': 2.06,
+    'H': 2.88,
+    'I': 1.00,
+    'K': 0.54,
+    'L': 0.69,
+    'M': 1.12,
+    'N': 1.89,
+    'P': 2.59,
+    'Q': 3.95,
+    'R': 3.34,
+    'S': 2.61,
+    'T': 0.20,
+    'V': 0.56,
+    'W': 0.08,
+    'Y': 0.42,
+}
+
+"""
+Calculate natural abundance of isotopes from NIST 
+https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
+Berglund and Wieser 2019 http://www.iupac.org/publications/pac/83/2/0397/ 
+"""
+iso_abundances = [0.9893,  # C12
+                  0.999885,  # H1
+                  0.9975,  # O16
+                  0.99636,  # N14
+                  0.9499,  # S32
+                  ]
