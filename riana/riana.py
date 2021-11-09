@@ -305,8 +305,7 @@ def runriana(args):
             master_df = master_df.append(sample_master_df, ignore_index=True)
 
     # Write out the total time point output
-    all_save_path = os.path.join(directory_to_write, 'all_riana.txt')
-    master_df.to_csv(all_save_path, sep='\t')
+    master_df.to_csv(path_to_write, sep='\t')
 
     return sys.exit(os.EX_OK)
 
@@ -320,12 +319,6 @@ def main():
     parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
                                                  'isotopomers')
 
-    parser.add_argument('-t', '--thread', help='number of threads for concurrency; leave as 0 for auto (default = 0)',
-                        type=int,
-                        default=0)
-
-    parser.add_argument('-o', '--out', help='path to the output directory [default: riana]',
-                        default='riana')
 
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))
@@ -356,6 +349,13 @@ def main():
     parser_integrate.add_argument('-u', '--unique',
                                   action='store_true',
                                   help='integrate unique peptides only')
+
+    parser_integrate.add_argument('-t', '--thread', help='number of threads for concurrency; leave as 0 for auto (default = 0)',
+                        type=int,
+                        default=0)
+
+    parser_integrate.add_argument('-o', '--out', help='path to the output directory [default: riana]',
+                        default='riana')
 
     # parser_integrate.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
     #                     default=False)
