@@ -107,7 +107,7 @@ def calculate_ion_mz(seq: str,
     }
     comp_atoms = comp_atom_dict[ion]
 
-    ion_atoms = [res_atoms[i] + comp_atoms[i] for i in range(len(res_atoms))]
+    ion_atoms = [res_atoms[i] + comp_atoms[i] for i, v in enumerate(res_atoms)]
 
     mass += _calc_atom_mass(ion_atoms)
 
