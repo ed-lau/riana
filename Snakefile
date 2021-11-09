@@ -50,4 +50,4 @@ rule riana:
         "out/snakemake/all_riana.txt"
 
     shell:
-        "python -m riana out/snakemake -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output}"
+        "python -m riana integrate out/snakemake -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output}"
