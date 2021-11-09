@@ -56,15 +56,15 @@ def main():
                                   help='integrate unique peptides only')
 
     parser_integrate.add_argument('-t', '--thread',
-                                  help='number of threads for concurrency; leave as 0 for auto (default = 0)',
+                                  help='number of threads for concurrency [default: 1]',
                                   type=int,
-                                  default=0)
+                                  default=1)
 
     parser_integrate.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                                   default='riana')
 
     parser_integrate.add_argument('-q', '--qvalue',
-                                  help='integrate only peptides with q value below this threshold[default: 1e-2]',
+                                  help='integrate only peptides with q value below this threshold [default: 1e-2]',
                                   type=float,
                                   default=1e-2)
 
