@@ -70,4 +70,3 @@ class Mzml(object):
             )
 
         return True
-
