@@ -16,6 +16,7 @@ from riana import integrate, params, __version__
 import tqdm
 import pandas as pd
 
+
 def runfit(args):
     print('Fit function not implemented yet.')
     pass
