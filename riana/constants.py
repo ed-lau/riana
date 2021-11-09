@@ -22,7 +22,8 @@ electron_mass = 0.000548579907
 c13_mass_diff = 1.003354835  # mass difference of C13 - C12 = 1.003354835
 deuterium_mass_diff = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
 
-# atomic masses. TODO: check against scipy.constants and NIST
+# atomic masses.
+# TODO: check against scipy.constants and NIST
 c_mass = 12.0000000
 h_mass = 1.00782503223
 o_mass = 15.99491461957
@@ -35,7 +36,6 @@ Amino acids
 Number of carbon, hydrogen, oxygen, nitrogen, sulfur for amino acids
 
 """
-
 
 aa_atoms = {
     'A': [3, 5, 1, 1, 0],
