@@ -48,6 +48,8 @@ rule riana:
     output:
         # Temporary solution for one concatenated output file for riana.
         "out/snakemake/all_riana.txt"
-
+    threads: config["threads"]["riana"]
     shell:
         "python -m riana integrate out/snakemake -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output}"
+        " -t {threads}"
+

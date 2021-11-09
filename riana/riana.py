@@ -5,20 +5,17 @@ import logging
 import re
 import os
 import sys
-import datetime
 from functools import partial
 
 from riana.project import ReadDirectory
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
 
-from riana import integrate, params, __version__
+from riana import integrate, params, fitcurve, __version__
 
 import tqdm
 import pandas as pd
 
-def runfit(args):
-    pass
 
 def runriana(args):
     """
@@ -31,11 +28,10 @@ def runriana(args):
 
     """
 
-    # Get timestamp for out files
-    now = datetime.datetime.now()
+    #
+    # Handle command line arguments
+    #
 
-    # 2021-05-07 no longer creates subdirectory
-    # directory_to_write = os.path.join(args.out, 'riana_' + now.strftime('%Y%m%d%H%M%S'))
     path_to_write = os.path.join(args.out)
     directory_to_write = os.path.dirname(path_to_write)
     os.makedirs(directory_to_write, exist_ok=True)
@@ -44,7 +40,7 @@ def runriana(args):
     main_log.setLevel(logging.DEBUG)
 
     # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana.log')) # 'riana_' + now.strftime('%Y%m%d%H%M%S') + '.log'))
+    fh = logging.FileHandler(os.path.join(directory_to_write, 'riana.log'))
     fh.setLevel(logging.INFO)
 
     # create console handler with a higher log level
@@ -63,17 +59,10 @@ def runriana(args):
     main_log.info(args)
     main_log.info(__version__)
 
-    # Handle command line arguments
-    unique_pep = args.unique
-
-    # lysine_filter = args.lysine  # Does lysine peptides only (for Liverpool aa labeling data
-    # try:
-    #     lysine_filter = int(lysine_filter)
-    #     if lysine_filter not in [1, 2, 3]:
-    #         lysine_filter = 0
     #
-    # except TypeError or ValueError:
-    #     lysine_filter = 0
+    # Integrates only peptides matched to one protein
+    #
+    unique_pep = args.unique
 
     #
     # Convert the to-do isotopomer list option into a list of integers
@@ -99,16 +88,16 @@ def runriana(args):
     iso_to_do.sort()
 
     #
-    # Percolator q value cutoff for peptides and proteins
+    # Percolator q value threshold for peptides and proteins
     #
     if args.qvalue:
 
         try:
-            qcutoff = float(args.qvalue)
+            q_threshold = float(args.qvalue)
 
         except ValueError or TypeError:
             main_log.warning('Invalid Q value given - using default value.')
-            qcutoff = float(1e-2)
+            q_threshold = float(1e-2)
 
     #
     # Retention time cutoff peptides and proteins
@@ -146,18 +135,10 @@ def runriana(args):
 
         except ValueError or TypeError:
             print('Invalid thread count. Using default.')
-            num_threads = os.cpu_count() * 4
+            num_threads = 1  # os.cpu_count() * 4
 
     else:
-        num_threads = os.cpu_count() * 4
-
-    #
-    # Inclusion lists
-    #
-    # if args.amrt:
-    #     input_type = 'AMRT'  #"lipid"
-    # else:
-    #     input_type = 'Percolator'
+        num_threads = 1  # os.cpu_count() * 4
 
     dir_loc = args.dir
     assert os.path.isdir(dir_loc), '[error] project directory not valid'
@@ -166,7 +147,6 @@ def runriana(args):
     project = ReadDirectory(dir_loc)
 
     # Get the master peptide ID list
-    # if input_type == 'Percolator':
     mzid = ReadPercolator(project=project,
                           directory_to_write=directory_to_write,
                           percolator_subdirectory=args.percolator)
@@ -174,7 +154,7 @@ def runriana(args):
 
     # TODO: should remove mbr from the main integration function and move to a different script
     mzid.make_master_match_list(  # lysine_filter=0,
-        peptide_q=qcutoff,
+        peptide_q=q_threshold,
         unique_only=unique_pep,
         min_fraction=params.min_fraction_mbr)
 
@@ -223,7 +203,7 @@ def runriana(args):
             # Make a subset dataframe with the current file index (fraction) being considered
             mzid.get_current_fraction_psms(idx)
             mzid.filter_current_fraction_psms(  # lysine_filter=0,
-                peptide_q=qcutoff,
+                peptide_q=q_threshold,
                 unique_only=unique_pep,
                 use_soft_threshold=True,
                 match_across_runs=False,  # args.mbr
@@ -336,7 +316,18 @@ def main():
 
     # Arguments for integrate subcommand
     parser_integrate.add_argument('dir',
-                                  help='path to folders containing the mzml and search files (see documentation)')
+                                  type=str,
+                                  help='path to folder containing the mzml files')
+
+    parser_integrate.add_argument('-p', '--percolator',
+                                  help='path to the percolator output psms.txt file',
+                                  type=str,
+                                  default='percolator')
+
+    parser_integrate.add_argument('-s', '--sample',
+                                  help='sample name to override mzml folder name, must include numbers, e.g., time1',
+                                  type=str,
+                                  default=None)
 
     parser_integrate.add_argument('-i', '--iso',
                                   help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
@@ -350,12 +341,13 @@ def main():
                                   action='store_true',
                                   help='integrate unique peptides only')
 
-    parser_integrate.add_argument('-t', '--thread', help='number of threads for concurrency; leave as 0 for auto (default = 0)',
-                        type=int,
-                        default=0)
+    parser_integrate.add_argument('-t', '--thread',
+                                  help='number of threads for concurrency; leave as 0 for auto (default = 0)',
+                                  type=int,
+                                  default=0)
 
     parser_integrate.add_argument('-o', '--out', help='path to the output directory [default: riana]',
-                        default='riana')
+                                  default='riana')
 
     # parser_integrate.add_argument('--amrt', action='store_true', help='integrate an inclusion list of AM-RTs',
     #                     default=False)
@@ -384,15 +376,10 @@ def main():
                                   type=float,
                                   default=50)
 
-    parser_integrate.add_argument('-p', '--percolator',
-                                  help='subdirectory name of percolator folder (default = percolator)',
-                                  type=str,
-                                  default='percolator')
-
     parser_integrate.set_defaults(func=runriana)
 
     # Arguments for fit subcommand
-    parser_fit.set_defaults(func=runfit)
+    parser_fit.set_defaults(func=fitcurve.runfit)
 
     # Print help message if no arguments are given
     import sys
