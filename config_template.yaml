@@ -17,3 +17,4 @@ paths:
 # Number of threads
 threads:
   comet: 6
+  riana: 2
