@@ -2,12 +2,13 @@
 
 """ Main. """
 
-from riana import integrate,fitcurve, __version__
+from riana import integrate, fitcurve, __version__
 
 
 #
 # Code for running main with parsed arguments from command line
 #
+
 def main():
     import argparse
 
@@ -22,6 +23,7 @@ def main():
                                        title='Functions',
                                        description='Riana has the following sub-commands:',
                                        )
+
     parser_integrate = subparsers.add_parser('integrate',
                                              aliases=['int'],
                                              help='Integrates isotopomer abundance over retention time')
@@ -29,14 +31,15 @@ def main():
                                        help='Fit to kinetic models. Note implemented yet.')
 
     # Arguments for integrate subcommand
-    parser_integrate.add_argument('dir',
+    parser_integrate.add_argument('mzml_path',
                                   type=str,
-                                  help='path to folder containing the mzml files')
+                                  help='path to folder containing the mzml files',
+                                  )
 
-    parser_integrate.add_argument('-p', '--percolator',
-                                  help='path to the percolator output psms.txt file',
+    parser_integrate.add_argument('id_path',
                                   type=str,
-                                  default='percolator')
+                                  help='path to the percolator output psms.txt file',
+                                  )
 
     parser_integrate.add_argument('-s', '--sample',
                                   help='sample name to override mzml folder name, must include numbers, e.g., time1',
