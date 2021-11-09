@@ -1,7 +1,7 @@
 configfile: "config.yaml"
 
 rule all:
-    input: "out/snakemake/all_riana.txt" # expand("out/snakemake/{timepoint}_riana.txt", timepoint=config["data"])
+    input: expand("out/snakemake/{timepoint}_riana.txt", timepoint=config["data"])
 
 rule copy_files:
     input:
@@ -43,13 +43,14 @@ rule percolator:
 
 rule riana:
     input:
-        pin=expand("out/snakemake/{timepoint}/percolator/percolator.psms.txt", timepoint=config["data"]),
-        mzml=expand("out/snakemake/{timepoint}/mzml/input.mzml.gz", timepoint=config["data"])
+        pin="out/snakemake/{timepoint}/percolator/percolator.psms.txt",
+        mzml="out/snakemake/{timepoint}/mzml/"
     output:
-        # Temporary solution for one concatenated output file for riana.
-        "out/snakemake/all_riana.txt"
+        riana="out/snakemake/{timepoint}_riana.txt"
     threads: config["threads"]["riana"]
     shell:
-        "python -m riana integrate out/snakemake -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output}"
+        "python -m riana integrate out/snakemake/{wildcards.timepoint}/mzml "
+        "out/snakemake/{wildcards.timepoint}/percolator/percolator.psms.txt"
+        " -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output} -s {wildcards.timepoint}"
         " -t {threads}"
 
