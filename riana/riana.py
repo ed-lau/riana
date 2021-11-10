@@ -2,6 +2,7 @@
 
 """ Main. """
 
+import argparse
 from riana import integrate, fitcurve, __version__
 
 
@@ -10,8 +11,8 @@ from riana import integrate, fitcurve, __version__
 #
 
 def main():
-    import argparse
 
+    # Main command
     parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
                                                  'isotopomers')
 
@@ -29,16 +30,17 @@ def main():
                                              help='Integrates isotopomer abundance over retention time')
     parser_fit = subparsers.add_parser('fit',
                                        help='Fit to kinetic models. Note implemented yet.')
-
+    #
     # Arguments for integrate subcommand
+    #
     parser_integrate.add_argument('mzml_path',
                                   type=str,
-                                  help='path to folder containing the mzml files',
+                                  help='<required> path to folder containing the mzml files',
                                   )
 
     parser_integrate.add_argument('id_path',
                                   type=str,
-                                  help='path to the percolator output psms.txt file',
+                                  help='<required> path to the percolator output psms.txt file',
                                   )
 
     parser_integrate.add_argument('-s', '--sample',
@@ -66,25 +68,51 @@ def main():
     parser_integrate.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                                   default='riana')
 
-    parser_integrate.add_argument('-q', '--qvalue',
+    parser_integrate.add_argument('-q', '--q_value',
                                   help='integrate only peptides with q value below this threshold [default: 1e-2]',
                                   type=float,
                                   default=1e-2)
 
-    parser_integrate.add_argument('-r', '--rtime',
+    parser_integrate.add_argument('-r', '--r_time',
                                   help='retention time (in minutes, both directions) tolerance for integration',
                                   type=float,
                                   default=1.0)
 
     parser_integrate.add_argument('-m', '--mass_tol',
-                                  help='mass tolerance in ppm for integration [default 50 ppm]',
-                                  type=float,
+                                  help='<integer> mass tolerance in ppm for integration [default 50 ppm]',
+                                  type=int,
                                   default=50)
 
     parser_integrate.set_defaults(func=integrate.integrate_all)
 
+    #
     # Arguments for fit subcommand
-    parser_fit.set_defaults(func=fitcurve.runfit)
+    #
+    parser_fit.add_argument('riana_path',
+                            nargs='+',
+                            type=str,
+                            help='<required> paths to one or more integrate out txt files',
+                            )
+
+    parser_fit.add_argument('-m', '--model',
+                            type=str,
+                            choices=['simple'],
+                            default='simple',
+                            help='kinetic models for fitting [default: simple]')
+
+    parser_fit.add_argument('-q', '--q_value',
+                            help='fits only peptide data points with q value below this threshold [default: 1e-2]',
+                            type=float,
+                            default=1e-2)
+
+    parser_fit.add_argument('-d', '--depth',
+                            help='fits only peptides identified in at least this many samples [default: 6]',
+                            type=int,
+                            default=6)
+
+    parser_fit.set_defaults(func=fitcurve.fit_all)
+
+
 
     # Print help message if no arguments are given
     import sys
