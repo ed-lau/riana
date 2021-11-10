@@ -4,6 +4,7 @@
 import logging
 import re
 import os
+import sys
 
 import tqdm
 import pandas as pd
@@ -133,7 +134,8 @@ def fit_all(args):
     out_dict = {}
 
     # loop through each qualifying peptide
-    for seq in tqdm.tqdm(rdf_filtered.concat.unique()):
+    for seq in tqdm.tqdm(rdf_filtered.concat.unique(),
+                         desc=f'Fitting Curves'):
 
         # create subset dataframe with current concat
         y = rdf_filtered.loc[rdf_filtered['concat'] == seq].copy()
@@ -210,6 +212,6 @@ def fit_all(args):
 
     out_df = pd.DataFrame.from_dict(out_dict, orient='index', columns=['k_deg', 'R_squared', 'sd'])
 
-    out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.tsv'))
+    out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'))
 
-    return True
+    return sys.exit(os.EX_OK)
