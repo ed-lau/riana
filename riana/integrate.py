@@ -102,10 +102,10 @@ def integrate_all(args):
     #
     # Percolator q value threshold for peptides and proteins
     #
-    if args.qvalue:
+    if args.q_value:
 
         try:
-            q_threshold = float(args.qvalue)
+            q_threshold = float(args.q_value)
 
         except ValueError or TypeError:
             main_log.warning('Invalid Q value given - using default value.')
@@ -114,10 +114,10 @@ def integrate_all(args):
     #
     # Retention time cutoff peptides and proteins
     #
-    if args.rtime:
+    if args.r_time:
 
         try:
-            rt_tolerance = float(args.rtime)
+            rt_tolerance = float(args.r_time)
 
         except ValueError or TypeError:
             main_log.warning('Invalid retention time tolerance given - using default value.')
@@ -139,7 +139,7 @@ def integrate_all(args):
         mass_tolerance = float(100) * 1e-6
 
     #
-    # Multi-threading
+    # Parallelism
     #
     if args.thread:
         try:
