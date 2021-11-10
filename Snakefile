@@ -59,7 +59,8 @@ rule riana_fit:
         integrated=expand("out/snakemake/{timepoint}_riana.txt", timepoint=config["data"])
     output:
         riana="out/snakemake/riana_fit_peptides.csv"
-    threads: config["threads"]["riana"]
+    threads: config["threads"]["fitcurve"]
     shell:
         "python -m riana fit {input.integrated} "
-        "-q 0.01 -d 12 -o out/snakemake"
+        "-q 0.01 -d 12 -o out/snakemake "
+        "-t {threads}"
