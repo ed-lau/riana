@@ -42,12 +42,14 @@ class ReadPercolator(object):
 
         # logging
         self.logger = logging.getLogger('riana.read_id')
-        self.match_logger = logging.getLogger('riana.match_across_run')
-        fh = logging.FileHandler(os.path.join(directory_to_write, f'riana_peptides_{self.sample}.log'))
-        fh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        self.match_logger.addHandler(fh)
+
+        # 20211109 match between run logs
+        # self.match_logger = logging.getLogger('riana.match_across_run')
+        # fh = logging.FileHandler(os.path.join(directory_to_write, f'riana_peptides_{self.sample}.log'))
+        # fh.setLevel(logging.DEBUG)
+        # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        # fh.setFormatter(formatter)
+        # self.match_logger.addHandler(fh)
 
         self.master_id_df = pd.DataFrame()
         self.curr_sample_id_df = pd.DataFrame()
