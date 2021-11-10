@@ -1,7 +1,7 @@
 configfile: "config.yaml"
 
 rule all:
-    input: expand("out/snakemake/{timepoint}_riana.txt", timepoint=config["data"])
+    input: "out/snakemake/riana_fit_peptides.csv"
 
 rule copy_files:
     input:
@@ -41,7 +41,7 @@ rule percolator:
     shell:
         "percolator -Y -i 20 -P DECOY_ -f {params.fasta} {input.comet_pin} -m {output.psms} 2>> {log}"
 
-rule riana:
+rule riana_integrate:
     input:
         pin="out/snakemake/{timepoint}/percolator/percolator.psms.txt",
         mzml="out/snakemake/{timepoint}/mzml/"
@@ -54,3 +54,12 @@ rule riana:
         " -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output} -s {wildcards.timepoint}"
         " -t {threads}"
 
+rule riana_fit:
+    input:
+        integrated=expand("out/snakemake/{timepoint}_riana.txt", timepoint=config["data"])
+    output:
+        riana="out/snakemake/riana_fit_peptides.csv"
+    threads: config["threads"]["riana"]
+    shell:
+        "python -m riana fit {input.integrated} "
+        "-q 0.01 -d 12 -o out/snakemake"
