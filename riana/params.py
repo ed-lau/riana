@@ -7,7 +7,7 @@ Peptides
 
 """
 iaa = True  # add iodoacetamide to all cysteine peptide mass automatically
-
+deuterium_mass_defect = False  # Use the mass difference between 2H and H as isotopomer mass difference
 
 """
 Match between runs
@@ -20,4 +20,4 @@ min_fraction_mbr = 0.25  # minimum portion of samples in which a sample is ident
 Testing
 
 """
-dummy = False  # for testing only, do not integrate but simply return 0
+dummy = False   # for testing only, do not integrate but simply return 0

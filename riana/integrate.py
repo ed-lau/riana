@@ -252,7 +252,6 @@ def integrate_all(args):
                                         mzml=mzml,
                                         rt_tolerance=rt_tolerance,
                                         mass_tolerance=mass_tolerance,
-                                        deuterium_mass_defect=args.deuterium,
                                         )
 
         # Single threaded loop
@@ -317,7 +316,6 @@ def integrate_one(index: int,
                   rt_tolerance: float,
                   mass_tolerance: float,
                   mzml,
-                  deuterium_mass_defect: bool,
                   ) -> list:
     """
     get all isotopomer mass intensities from ms1 scans within range and integrate
@@ -328,7 +326,6 @@ def integrate_one(index: int,
     :param rt_tolerance: retention time range in minutes
     :param: mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
     :param mzml: mzml file object
-    :param deuterium_mass_defect: whether to use mass difference of deuterium-protium in integration
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
@@ -340,7 +337,7 @@ def integrate_one(index: int,
 
     proton = constants.proton_mass
 
-    if deuterium_mass_defect:
+    if params.deuterium_mass_defect:
         iso_added_mass = constants.deuterium_mass_diff  # see constants for details
     else:
         iso_added_mass = constants.c13_mass_diff

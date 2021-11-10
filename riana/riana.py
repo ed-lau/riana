@@ -52,10 +52,6 @@ def main():
                                   help='isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]',
                                   default='0,6')
 
-    parser_integrate.add_argument('-d', '--deuterium',
-                                  action='store_true',
-                                  help='experimental feature: use mass defect for deuterium.')
-
     parser_integrate.add_argument('-u', '--unique',
                                   action='store_true',
                                   help='integrate unique peptides only')
@@ -91,14 +87,18 @@ def main():
     parser_fit.add_argument('riana_path',
                             nargs='+',
                             type=str,
-                            help='<required> paths to one or more integrate out txt files',
+                            help='<required> paths to one or more integrate out text '
+                                 'files (note: the sample field must include numericals '
+                                 'corresponding to time units (e.g., time0, time 6)',
                             )
 
     parser_fit.add_argument('-m', '--model',
                             type=str,
-                            choices=['simple'],
+                            choices=['simple', 'guan', 'fornasiero'],
                             default='simple',
-                            help='kinetic models for fitting [default: simple]')
+                            help='kinetic models for fitting, currently only the simple '
+                                 'exponential model is implemented [default: simple]',
+                            )
 
     parser_fit.add_argument('-q', '--q_value',
                             help='fits only peptide data points with q value below this threshold [default: 1e-2]',
@@ -110,9 +110,15 @@ def main():
                             type=int,
                             default=6)
 
+    parser_fit.add_argument('-r', '--ria',
+                            help='final isotope enrichment levels, if known [default: 0.5]',
+                            type=float,
+                            default=0.5)
+
+    parser_fit.add_argument('-o', '--out', help='path to the output directory [default: riana]',
+                            default='riana')
+
     parser_fit.set_defaults(func=fitcurve.fit_all)
-
-
 
     # Print help message if no arguments are given
     import sys
