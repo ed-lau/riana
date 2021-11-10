@@ -146,7 +146,7 @@ def integrate_all(args):
             num_threads = max(os.cpu_count() * 4, int(args.thread))
 
         except ValueError or TypeError:
-            print('Invalid thread count. Using default.')
+            main_log.warning('Invalid thread count. Using default.')
             num_threads = 1  # os.cpu_count() * 4
 
     else:
@@ -155,7 +155,6 @@ def integrate_all(args):
     #
     # Read files in
     #
-
 
     # This is the directory that holds the entire project
     #20211109 project = ReadDirectory(dir_loc)
@@ -203,8 +202,11 @@ def integrate_all(args):
     # Note this will break if the last fraction does not contain at least some ID, but we will ignore for now.
     assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
 
-    # Create the sample master out file
-    sample_master_df = pd.DataFrame()
+    # create overall result files
+    overall_integrated_df = pd.DataFrame()   # all integrated isotopomer peak areas
+    overall_intensities_df = pd.DataFrame()  # all raw peak intensities
+
+    #
 
     #
     # Read the mzml files and do integration
@@ -242,8 +244,6 @@ def integrate_all(args):
         #
         # get peak intensity for each isotopomer in each spectrum ID in each peptide
         #
-        # peaks.get_isotopes_from_amrt_multiwrapper(num_thread=num_thread)
-
         loop_ = range(len(mzid.curr_frac_filtered_id_df))
 
         integrate_one_partial = partial(integrate_one,
@@ -266,7 +266,7 @@ def integrate_all(args):
         # '''
         from concurrent import futures
         with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
-            result = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
+            results = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
                                     total=max(loop_),
                                     desc=f'Integrating Peaks in Sample {current_sample}'))
         # '''
@@ -275,15 +275,18 @@ def integrate_all(args):
         # Convert the output_table into a data frame
         #
         df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
-        result_df = pd.DataFrame(result, columns=df_columns)
-        id_result_df = pd.merge(mzid.curr_frac_filtered_id_df, result_df, on='pep_id', how='left')
-        id_result_df['file'] = mzml_files[idx]
+
+        integrated_peaks = [res[0] for res in results]
+
+        integrated_df = pd.DataFrame(integrated_peaks, columns=df_columns)
+        id_integrated_df = pd.merge(mzid.curr_frac_filtered_id_df, integrated_df, on='pep_id', how='left')
+        id_integrated_df['file'] = mzml_files[idx]
 
         # Bind rows of the current result to the sample master
-        if len(sample_master_df.index) == 0:
-            sample_master_df = id_result_df
+        if len(overall_integrated_df.index) == 0:
+            sample_master_df = id_integrated_df
         else:
-            sample_master_df = sample_master_df.append(id_result_df, ignore_index=True)
+            sample_master_df = overall_integrated_df.append(id_integrated_df, ignore_index=True)
 
     # 2021-05-07 No longer creates subfolder
     # Create subdirectory if not exists
@@ -291,7 +294,7 @@ def integrate_all(args):
     # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
 
     save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
-    sample_master_df.to_csv(path_or_buf=save_path, sep='\t')
+    overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
 
     # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
     # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
@@ -324,7 +327,7 @@ def integrate_one(index: int,
     :param id_: protein identification dataframe
     :param iso_to_do: list of isotopomers
     :param rt_tolerance: retention time range in minutes
-    :param: mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
+    :param mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
     :param mzml: mzml file object
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
@@ -335,8 +338,8 @@ def integrate_one(index: int,
         time.sleep(0.025)
         return [index] + [(id_.loc[index, 'pep_id'])] + [0 for _ in iso_to_do]
 
+    # determine the mass of protons and c13
     proton = constants.proton_mass
-
     if params.deuterium_mass_defect:
         iso_added_mass = constants.deuterium_mass_diff  # see constants for details
     else:
@@ -345,7 +348,7 @@ def integrate_one(index: int,
     # get peptide mass, scan number, and charge
     peptide_mass = float(id_.loc[index, 'peptide mass'])
 
-    # 2021-05-01 Percolator scan number is likely 1-indexed
+    # 2021-05-01 percolator scan number is likely 1-indexed
     scan_number = int(id_.loc[index, 'scan']) - 1
 
     charge = float(id_.loc[index, 'charge'])
@@ -388,19 +391,17 @@ def integrate_one(index: int,
             )
 
     if not intensity_over_time:
-        raise Exception(
-            'No intensity profile for peptide {0}'.format(prec_iso_am)
-        )
+        raise Exception(f'No intensity profile for peptide {prec_iso_am}')
 
     intensity_array = np.array(intensity_over_time)
 
     if not intensity_over_time:
-        raise Exception('Empty intensity over time for peptide {0}'.format(prec_iso_am))
+        raise Exception(f'Empty intensity over time for peptide {prec_iso_am}')
 
-    result = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(intensity_array,
+    integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(intensity_array,
                                                                                   iso_to_do=iso_to_do)
-
-    return result
+    # 2021-11-10 return raw too
+    return [integrated, intensity_array]
 
 
 def integrate_isotope_intensity(intensity_over_time: np.ndarray,
@@ -433,8 +434,6 @@ def integrate_isotope_intensity(intensity_over_time: np.ndarray,
         iso_intensity.append(iso_area)
 
     if not iso_intensity:
-        raise Exception("No positive numerical value integrated "
-                        "for isotopmer {0}".format(intensity_over_time)
-                        )
+        raise Exception(f'No positive numerical value integrated for isotopmer {intensity_over_time}')
 
     return iso_intensity
