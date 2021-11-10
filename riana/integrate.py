@@ -213,7 +213,7 @@ def integrate_all(args):
     # For each file index (fraction), open the mzML file, and create a subset Percolator ID dataframe
     for idx in mzid.indices:
 
-        # Verbosity 0 progress message
+        # Progress message
         main_log.info('Doing mzml: {0} ({1} of {2})'.format(
             mzml_files[idx],
             str(idx + 1),
