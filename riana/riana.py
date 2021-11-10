@@ -118,6 +118,11 @@ def main():
     parser_fit.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                             default='riana')
 
+    parser_fit.add_argument('-t', '--thread',
+                            help='number of threads for concurrency [default: 1]',
+                            type=int,
+                            default=1)
+
     parser_fit.set_defaults(func=fitcurve.fit_all)
 
     # Print help message if no arguments are given
