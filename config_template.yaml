@@ -18,3 +18,4 @@ paths:
 threads:
   comet: 6
   riana: 2
+  fitcurve: 12
