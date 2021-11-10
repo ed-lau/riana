@@ -14,9 +14,9 @@ def _count_residue_atoms(seq: str,
     in the residue
     TODO: add in selenocysteine and allow other modifications
 
-    :param seq: str amino acid sequence
-    :param iaa: bool whether cysteins are modified by iodoacetamide
-    :return: list [c, h, o, n, s]
+    :param seq:     str: amino acid sequence
+    :param iaa:     bool: whether cysteins are modified by iodoacetamide
+    :return:        list: atom counts [C, H, O, N, S]
     """
 
     tot_atoms: list = [0, 0, 0, 0, 0]
@@ -36,12 +36,33 @@ def _count_residue_atoms(seq: str,
     return tot_atoms
 
 
+def count_atoms(sequence: str,
+                iaa: bool = True,
+                ) -> list:
+    """
+    wrapper for _count_residue_atoms that returns the full peptide atom count
+
+    :param sequence:    str: peptide seuence
+    :param iaa:         bool: whether to add iaa atoms to cysteines
+    :return:            list: atom counts [C, H, O, N, S]
+    """
+
+    res_atoms = _count_residue_atoms(sequence, iaa=iaa,  # add iodoacetamide to cysteine
+                                     )
+
+    # Add one oxygen and two hydrogen for peptide mass
+    terminal_atoms = [0, 2, 1, 0, 0]
+
+    return [res_atoms[i] + terminal_atoms[i] for i, v in enumerate(res_atoms)]
+
+
 def _calc_atom_mass(atoms: list,
                     ) -> float:
     """
-    given a list of atoms [c, h, o, n, s], return accurate mass
-    :param atoms: list [c, h, o, n, s]
-    :return: float accurate monoisotopic mass
+    given a list of atoms [C, H, O, N, S], return accurate mass
+
+    :param atoms:   list [C, H, O, N, S]
+    :return:        float accurate monoisotopic mass
     """
 
     mass_vec = [constants.c_mass,
