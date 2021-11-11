@@ -40,6 +40,7 @@ rule percolator:
         fasta=config["paths"]["fasta"]
     shell:
         "percolator -Y -i 20 -P DECOY_ -f {params.fasta} {input.comet_pin} -m {output.psms} 2>> {log}"
+    # 2021-11-11: might have to send stdout to log as well to stop it from spamming the shell
 
 rule riana_integrate:
     input:
