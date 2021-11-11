@@ -140,33 +140,20 @@ def fit_all(args):
     concats = concats[concats >= t_threshold]
     rdf_filtered = rdf_filtered[rdf_filtered.concat.isin(concats.index)]
 
-    # create output dictionary
-    out_dict = {}
-
+    # create loop of concat indices for concurrent.futures
     loop_ = range(len(rdf_filtered.concat.unique()))
-
     fit_one_partial = partial(fit_one,
                               concat_list=rdf_filtered.concat.unique(),
                               filtered_integrated_df=rdf_filtered.copy(),
                               ria_max=ria_max,
                               )
 
-    # Single threaded loop
-    # '''
-    # results = []
-    # for i in loop_:
-    #     print(i)
-    #     results += fit_one_partial(i)
-    # '''
-
-    # For parallelism, use concurrent.futures instead of multiprocessing for higher speed
-    # '''
+    # parallel loops using concurrent.futures
     from concurrent import futures
     with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
         results = list(tqdm.tqdm(ex.map(fit_one_partial, loop_),
                                  total=max(loop_),
-                                 desc=f'Fitting peptides to {model} model:'))
-    # '''
+                                 desc=f'Fitting peptides to model - {model}:'))
 
     # collect all the dicts, plot out graphs and output final file
     out_dict = {}
@@ -174,22 +161,31 @@ def fit_all(args):
     for res in tqdm.tqdm(results, desc=f'Plotting curves'):
 
         seq = list(res.keys())[0]
+
+        # get first protein name
+        protein = rdf_filtered[rdf_filtered.concat == seq]['protein id'].iloc[0]
+        first_protein = re.sub('sp\|.+?\|(.+?)_(MOUSE|HUMAN).*', '\\1', protein)
+        if protein.count(',') > 0:
+            first_protein = first_protein + ' (multi)'
+
         k_deg, r_squared, sd, t, fs = list(res.values())[0]
 
         # create plot
         fig, ax = plt.subplots()
         plt.plot(t, fs, '.', label='Fractional synthesis')
-        plt.plot(np.array(range(0, 31)),
-                 models.one_exponent(t=np.array(range(0, int(np.max(t)))), k_deg=k_deg, a_0=0, a_max=1),
+        plt.plot(np.array(range(0, int(np.max(t)))),
+                 models.one_exponent(t=np.array(range(0, int(np.max(t)))),
+                                     k_deg=k_deg, a_0=0, a_max=1),
                  'r-', label=f'k_deg={np.round(k_deg, 3)}'
                  )
 
-        plt.plot(np.array(range(0, 31)),
-                 models.one_exponent(t=np.array(range(0, int(np.max(t)))), k_deg=k_deg + sd, a_0=0, a_max=1),
+        plt.plot(np.array(range(0, int(np.max(t)))),
+                 models.one_exponent(t=np.array(range(0, int(np.max(t)))),
+                                     k_deg=k_deg + sd, a_0=0, a_max=1),
                  'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
                  )
 
-        plt.plot(np.array(range(0, 31)),
+        plt.plot(np.array(range(0, int(np.max(t)))),
                  models.one_exponent(t=np.array(range(0, int(np.max(t)))),
                                      k_deg=k_deg ** 2 / (k_deg + sd),
                                      a_0=0,
@@ -199,22 +195,34 @@ def fit_all(args):
                  )
         plt.xlabel('t')
         plt.ylabel('fs')
-        plt.title(f'Sequence: {seq} R**2: {np.round(r_squared, 3)}')
+        plt.title(f'Protein: {first_protein} Sequence: {seq} R2: {np.round(r_squared, 3)}')
         plt.legend()
         plt.xlim([-1, 32])
-        plt.ylim([-0.1, 1.1])
-        # plt.show()
+        plt.ylim([-0.2, 1.2])
 
-        plot_dir = os.path.join(outdir, 'curves')
+        if k_deg < 0.01:
+            speed = "slow"
+        elif k_deg > 1:
+            speed = "fast"
+        else:
+            speed = "mid"
+
+        if r_squared > 0.5:
+            quality = "fit"
+        else:
+            quality = "poor"
+
+        plot_dir = os.path.join(outdir, f'curves_{speed}_{quality}')
+
         if not os.path.exists(plot_dir):
             os.makedirs(plot_dir)
-        fig.savefig(os.path.join(plot_dir, f'{seq}.png'))
+
+        fig.savefig(os.path.join(plot_dir, f'{first_protein}_{seq}.png'))
         plt.close(fig)
 
         out_dict = out_dict | res
 
     out_df = pd.DataFrame.from_dict(out_dict, orient='index', columns=['k_deg', 'R_squared', 'sd', 't', 'fs'])
-
     out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'))
 
     return sys.exit(os.EX_OK)
@@ -258,11 +266,22 @@ def fit_one(loop_index,
     fit_log.info([t, fs])
 
     # perform curve-fitting
-    popt, pcov = optimize.curve_fit(f=partial(models.one_exponent, a_0=0., a_max=1.),
-                                    xdata=t,
-                                    ydata=fs,
-                                    bounds=([0], [10]),
-                                    )
+    try:
+        popt, pcov = optimize.curve_fit(f=partial(models.one_exponent, a_0=0., a_max=1.),
+                                        xdata=t,
+                                        ydata=fs,
+                                        bounds=([1e-4], [10]),
+                                        )
+    # catch error when not converging
+    except RuntimeError:
+        print(RuntimeError)
+        print(t, fs)
+        return {seq: [np.nan, np.nan, np.nan, t, fs]}
+
+    except ValueError:
+        print(t, fs)
+        return {seq: [np.nan, np.nan, np.nan, t, fs]}
+
     # calculate standard deviation from the non-linear least square cov
     sd = np.sqrt(np.diag(pcov))[0]
 
@@ -270,7 +289,13 @@ def fit_one(loop_index,
     residuals = fs - models.one_exponent(t, a_max=1., a_0=0., k_deg=popt[0])
     ss_res = np.sum(residuals ** 2)
     ss_tot = np.sum((fs - np.mean(fs)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot)
+
+    try:
+        r_squared = 1 - (ss_res / ss_tot)
+    except RuntimeWarning:
+        print(fs, ss_tot)
+        r_squared = np.nan
+
     fit_log.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
 
     return {seq: [popt[0], r_squared, sd, t, fs]}
