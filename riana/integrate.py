@@ -272,21 +272,30 @@ def integrate_all(args):
         # '''
 
         #
-        # Convert the output_table into a data frame
+        # convert the integrated values into a data frame
         #
         df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
-
         integrated_peaks = [res[0] for res in results]
-
         integrated_df = pd.DataFrame(integrated_peaks, columns=df_columns)
         id_integrated_df = pd.merge(mzid.curr_frac_filtered_id_df, integrated_df, on='pep_id', how='left')
         id_integrated_df['file'] = mzml_files[idx]
 
-        # Bind rows of the current result to the sample master
+        # bind rows of the current result to the sample master
         if len(overall_integrated_df.index) == 0:
-            sample_master_df = id_integrated_df
+            overall_integrated_df = id_integrated_df
         else:
-            sample_master_df = overall_integrated_df.append(id_integrated_df, ignore_index=True)
+            overall_integrated_df = overall_integrated_df.append(id_integrated_df, ignore_index=True)
+
+        #
+        # append the raw intensities data frame
+        #
+        intensities_df = pd.DataFrame().append([res[1] for res in results], ignore_index=True)
+        # id_intensities_df = intensities_dfpd.merge(intensities_df, mzid.curr_frac_filtered_id_df, on='pep_id', how='left')
+
+        if len(overall_intensities_df.index) == 0:
+            overall_intensities_df = intensities_df
+        else:
+            overall_intensities_df = overall_integrated_df.append(intensities_df, ignore_index=True)
 
     # 2021-05-07 No longer creates subfolder
     # Create subdirectory if not exists
@@ -295,6 +304,9 @@ def integrate_all(args):
 
     save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
     overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
+
+    save_path = os.path.join(directory_to_write, current_sample + '_riana_raw.txt')
+    overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
 
     # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
     # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
@@ -393,15 +405,20 @@ def integrate_one(index: int,
     if not intensity_over_time:
         raise Exception(f'No intensity profile for peptide {prec_iso_am}')
 
-    intensity_array = np.array(intensity_over_time)
-
-    if not intensity_over_time:
-        raise Exception(f'Empty intensity over time for peptide {prec_iso_am}')
-
-    integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(intensity_array,
-                                                                                  iso_to_do=iso_to_do)
+    integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(np.array(intensity_over_time),
+                                                                                      iso_to_do=iso_to_do)
     # 2021-11-10 return raw too
-    return [integrated, intensity_array]
+
+    intensity_out = pd.DataFrame(intensity_over_time, columns=['iso', 'rt', 'int'])
+    intensity_out = intensity_out.pivot(index='rt', columns='iso', values='int')
+    intensity_out.columns = ['m' + str(iso) for iso in iso_to_do]
+    intensity_out['rt'] = intensity_out.index
+    intensity_out = intensity_out.reset_index(drop=True)
+    intensity_out['ID'] = index
+    intensity_out['pep_id'] = id_.loc[index, 'pep_id']
+    intensity_out['concat'] = id_.loc[index, 'concat']
+
+    return [integrated, intensity_out]
 
 
 def integrate_isotope_intensity(intensity_over_time: np.ndarray,
