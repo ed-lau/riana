@@ -44,7 +44,7 @@ rule percolator:
 rule riana_integrate:
     input:
         pin="out/snakemake/{timepoint}/percolator/percolator.psms.txt",
-        mzml="out/snakemake/{timepoint}/mzml/"
+        mzml="out/snakemake/{timepoint}/mzml/input.mzml.gz"
     output:
         riana="out/snakemake/{timepoint}_riana.txt"
     threads: config["threads"]["riana"]
