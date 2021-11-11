@@ -297,30 +297,12 @@ def integrate_all(args):
         else:
             overall_intensities_df = overall_integrated_df.append(intensities_df, ignore_index=True)
 
-    # 2021-05-07 No longer creates subfolder
-    # Create subdirectory if not exists
-    # os.makedirs(os.path.join(directory_to_write, current_sample), exist_ok=True)
-    # save_path = os.path.join(directory_to_write, current_sample, mzml_files[idx] + '_riana.txt')
-
+    # write the integrated and intensities results
     save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
     overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
 
-    save_path = os.path.join(directory_to_write, current_sample + '_riana_raw.txt')
+    save_path = os.path.join(directory_to_write, current_sample + '_riana_intensities.txt')
     overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
-
-    # Make the soft-threshold data frame. These are the peptides that are ID'ed at 10 times the q-value
-    # as the cut-off in this fraction up to q < 0.1, but has q >= q-value cutoff, and furthermore has been
-    # consistently identified in the other samples at the same fraction (median fraction) at the q-value cutoff
-
-    """ 20211109 Bind rows of the current sample master to the total (all time point output) master
-    if len(master_df.index) == 0:
-        master_df = sample_master_df
-    else:
-        master_df = master_df.append(sample_master_df, ignore_index=True)
-    """
-
-    # Write out the total time point output
-    # 20211109 master_df.to_csv(path_to_write, sep='\t')
 
     return sys.exit(os.EX_OK)
 
@@ -407,8 +389,8 @@ def integrate_one(index: int,
 
     integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(np.array(intensity_over_time),
                                                                                       iso_to_do=iso_to_do)
-    # 2021-11-10 return raw too
 
+    # 2021-11-10 return intensities -- currently this is a pandas df which may be slower...
     intensity_out = pd.DataFrame(intensity_over_time, columns=['iso', 'rt', 'int'])
     intensity_out = intensity_out.pivot(index='rt', columns='iso', values='int')
     intensity_out.columns = ['m' + str(iso) for iso in iso_to_do]
