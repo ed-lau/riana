@@ -17,5 +17,5 @@ paths:
 # Number of threads
 threads:
   comet: 6
-  riana: 2
+  riana: 3
   fitcurve: 12
