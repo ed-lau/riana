@@ -63,4 +63,4 @@ rule riana_fit:
     shell:
         "python -m riana fit {input.integrated} "
         "-q 0.01 -d 12 -o out/snakemake "
-        "-t {threads}"
+        "-t {threads} -r 0.045"
