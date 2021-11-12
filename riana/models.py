@@ -42,3 +42,43 @@ def two_compartment_guan(t: float,
     """
 
     return a_0 + (a_max-a_0) * (1. - (np.exp(-t * k_deg) * k_p - np.exp(-t * k_p) * k_deg) / (k_p - k_deg))
+
+
+def two_compartment_fornasiero(t: float,
+                               k_deg: float,
+                               a_0: float = 0,
+                               a_max: float = 1,
+                               k_p: float = 0.5,
+                               k_r: float = 0.1,
+                               r: float = 10,
+                               ) -> float:
+    """
+    Two-Compartment model with a precursor rate constant k_p (i.e., b in the Fornasiero et al. paper)
+    to describe precursor lag and a global reutilization rate k_r from unlabeled protein degradation (i.e., a)
+    as described in Fornasiero et al. The third parameter r describes the ratio of free vs. protein-bound precursor.
+
+    :param t:       time (x)
+    :param k_deg:   degradation rate constant
+    :param a_0:     initial isotope enrichment
+    :param a_max:   asymptotic isotope enrichment
+    :param k_p:     precursor accumulation-breakdown constant
+    :param k_r:     precursor reutilization rate constant (i.e., a)
+    :param r:       free/bound precursor ratio
+    :return:        float: a_t
+    """
+
+    a = k_r
+    b = k_p
+
+    big_c = np.sqrt(-4 * a * b + (a + b + a * r)**2)
+    k1 = (a + b + a * r + big_c)/2
+    k2 = (a + b + a * r - big_c)/2
+    big_a = -1 * (a - b + a * r - big_c)/(big_c * 2)
+
+    tau1 = 1. / k1  # time constants are reciprocals of the rate constants above
+    tau2 = 1. / k2
+
+    x = 1. - (big_a * tau1 * (1. - np.exp(k_deg * t - k1 * t))/(tau1 - (1. / k_deg))) - \
+        ((1. - big_a) * tau2 * (1. - np.exp(k_deg * t - k2 * t)) / (tau2 - (1. / k_deg)))
+
+    return a_0 + (a_max-a_0) * (1. - np.exp(-k_deg * t)) * x
