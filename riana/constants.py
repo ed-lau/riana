@@ -19,16 +19,16 @@ PROTON_MASS = 1.007276466621  # proton mass, identical to scipy.constants.physic
 NEUTRON_MASS = 1.00866491595
 ELECTRON_MASS = 0.000548579907
 
-c13_mass_diff = 1.003354835  # mass difference of C13 - C12 = 1.003354835
-deuterium_mass_diff = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
+C13_MASSDIFF = 1.003354835  # mass difference of C13 - C12 = 1.003354835
+D_MASSDIFF = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
 
 # atomic masses.
 # TODO: check against scipy.constants and NIST
-c_mass = 12.0000000
-h_mass = 1.00782503223
-o_mass = 15.99491461957
-n_mass = 14.00307400443
-s_mass = 31.9720711744
+C_MASS = 12.0000000
+H_MASS = 1.00782503223
+O_MASS = 15.99491461957
+N_MASS = 14.00307400443
+S_MASS = 31.9720711744
 
 """
 Amino acids: number of carbon, hydrogen, oxygen, nitrogen, sulfur for amino acids

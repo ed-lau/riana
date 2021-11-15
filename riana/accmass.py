@@ -65,11 +65,11 @@ def _calc_atom_mass(atoms: list,
     :return:        float accurate monoisotopic mass
     """
 
-    mass_vec = [constants.c_mass,
-                constants.h_mass,
-                constants.o_mass,
-                constants.n_mass,
-                constants.s_mass]
+    mass_vec = [constants.C_MASS,
+                constants.H_MASS,
+                constants.O_MASS,
+                constants.N_MASS,
+                constants.S_MASS]
 
     # Get dot product between atom list and mass vector
     mass = sum([atoms[i] * mass_vec[i] for i in range(len(atoms))])

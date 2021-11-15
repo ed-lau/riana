@@ -335,9 +335,9 @@ def integrate_one(index: int,
     # determine the mass of protons and c13
     proton = constants.PROTON_MASS
     if params.deuterium_mass_defect:
-        iso_added_mass = constants.deuterium_mass_diff  # see constants for details
+        iso_added_mass = constants.D_MASSDIFF  # see constants for details
     else:
-        iso_added_mass = constants.c13_mass_diff
+        iso_added_mass = constants.C13_MASSDIFF
 
     # get peptide mass, scan number, and charge
     peptide_mass = float(id_.loc[index, 'peptide mass'])
