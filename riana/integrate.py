@@ -333,7 +333,7 @@ def integrate_one(index: int,
         return [index] + [(id_.loc[index, 'pep_id'])] + [0 for _ in iso_to_do]
 
     # determine the mass of protons and c13
-    proton = constants.proton_mass
+    proton = constants.PROTON_MASS
     if params.deuterium_mass_defect:
         iso_added_mass = constants.deuterium_mass_diff  # see constants for details
     else:

@@ -78,6 +78,9 @@ def two_compartment_fornasiero(t: float,
     tau1 = 1. / k1  # time constants are reciprocals of the rate constants above
     tau2 = 1. / k2
 
+    # note: the below describes the precursor ria over time curve
+    # y  = (1. - big_a * np.exp(-k1 * t) - (1. - big_a) * np.exp(-k2 * t))
+
     x = 1. - (big_a * tau1 * (1. - np.exp(k_deg * t - k1 * t))/(tau1 - (1. / k_deg))) - \
         ((1. - big_a) * tau2 * (1. - np.exp(k_deg * t - k2 * t)) / (tau2 - (1. / k_deg)))
 

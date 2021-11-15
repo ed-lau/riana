@@ -134,7 +134,7 @@ def calculate_ion_mz(seq: str,
 
     # Return peptide mass if charge is 0
     if charge > 0:
-        mz = (mass + constants.proton_mass * charge)/charge
+        mz = (mass + constants.PROTON_MASS * charge) / charge
         return mz
 
     if charge < 0:

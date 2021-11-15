@@ -15,9 +15,9 @@ Mass defect of deuterium is 1.007276466621 +  1.00866491595 + 0.000548579907 - 2
 Mass defect of C13 is 6 * 1.007276466621 + 7 * 1.00866491595 + 6 * 0.000548579907 - 13.00335483507 = 0.1042
 
 """
-proton_mass = 1.007276466621  # proton mass, identical to scipy.constants.physical_constants['proton mass in u']
-neutron = 1.00866491595
-electron_mass = 0.000548579907
+PROTON_MASS = 1.007276466621  # proton mass, identical to scipy.constants.physical_constants['proton mass in u']
+NEUTRON_MASS = 1.00866491595
+ELECTRON_MASS = 0.000548579907
 
 c13_mass_diff = 1.003354835  # mass difference of C13 - C12 = 1.003354835
 deuterium_mass_diff = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
