@@ -8,7 +8,7 @@ rule copy_files:
         mzml = lambda wildcards: config["data"][wildcards.timepoint]
     output:
         # dir="out/snakemake/{timepoint}",
-        linked_mzml="out/snakemake/{timepoint}/mzml/input.mzml.gz"
+        linked_mzml=temp("out/snakemake/{timepoint}/mzml/input.mzml.gz")
     shell:
         "cp {input.mzml} {output.linked_mzml}" # should change to symlink instead probably
 
