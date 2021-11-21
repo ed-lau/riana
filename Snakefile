@@ -1,4 +1,4 @@
-configfile: "config.yaml"
+configfile: "config_muscle.yaml"
 
 rule all:
     input: "out/snakemake/riana_fit_peptides.csv"

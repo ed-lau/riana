@@ -82,6 +82,9 @@ def fit_all(args):
 
     riana_list = args.riana_path        # list of integration output
     model = args.model                  # kinetic model, e.g., 'simple'
+    model_pars = {'k_p': args.kp,
+                  'k_r': args.kr,
+                  'r_p': args.rp}
     q_threshold = args.q_value          # peptide q value threshold
     t_threshold = args.depth            # minimal number of time points threshold
     ria_max = args.ria                  # final isotope enrichment level (e.g., 0.046)
@@ -146,6 +149,8 @@ def fit_all(args):
                               concat_list=rdf_filtered.concat.unique(),
                               filtered_integrated_df=rdf_filtered.copy(),
                               ria_max=ria_max,
+                              use_model=model,
+                              model_pars=model_pars,
                               )
 
     # parallel loops using concurrent.futures
@@ -170,9 +175,20 @@ def fit_all(args):
 
         k_deg, r_squared, sd, t, fs = list(res.values())[0]
 
+
+
         # create plot
         fig, ax = plt.subplots()
+
         plt.plot(t, fs, '.', label='Fractional synthesis')
+
+        # 2021-11-20 create clipped t,fs series for fs values out of [-0.2, 1.2] and display them as 'x'
+        t_clipped = t[(fs < -0.2) | (fs > 1.2)]
+        fs_clipped = fs[(fs < -0.2) | (fs > 1.2)]
+        fs_clipped = fs_clipped.clip(min=-0.2, max=1.2)
+        if len(t_clipped) > 0:
+            plt.plot(t_clipped, fs_clipped, 'rx')
+
         plt.plot(np.array(range(0, int(np.max(t)))),
                  models.one_exponent(t=np.array(range(0, int(np.max(t)))),
                                      k_deg=k_deg, a_0=0, a_max=1),
@@ -232,6 +248,8 @@ def fit_one(loop_index,
             concat_list: list,
             filtered_integrated_df: pd.DataFrame,
             ria_max: float,
+            use_model: str,
+            **models_par,
             ):
     """
 
@@ -239,6 +257,8 @@ def fit_one(loop_index,
     :param concat_list:
     :param filtered_integrated_df:
     :param ria_max:
+    :param use_model:
+    :param models_par:
     :return:
     """
 

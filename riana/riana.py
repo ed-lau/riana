@@ -100,6 +100,22 @@ def main():
                                  'exponential model is implemented [default: simple]',
                             )
 
+    parser_fit.add_argument('--kp',
+                            help='for two-compartment models, the precursor rate constant [default: 0.5]',
+                            type=float,
+                            default=0.5)
+
+    parser_fit.add_argument('--kr',
+                            help='for the fornasiero model, the reutilization rate constant [default: 0.05]',
+                            type=float,
+                            default=0.05)
+
+    parser_fit.add_argument('--rp',
+                            help='for the fornasiero model, '
+                                 'the ratio of protein bound to free precursors [default: 10]',
+                            type=float,
+                            default=10)
+
     parser_fit.add_argument('-q', '--q_value',
                             help='fits only peptide data points with q value below this threshold [default: 1e-2]',
                             type=float,

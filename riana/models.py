@@ -50,7 +50,7 @@ def two_compartment_fornasiero(t: float,
                                a_max: float = 1,
                                k_p: float = 0.5,
                                k_r: float = 0.1,
-                               r: float = 10,
+                               r_p: float = 10,
                                ) -> float:
     """
     Two-Compartment model with a precursor rate constant k_p (i.e., b in the Fornasiero et al. paper)
@@ -63,12 +63,13 @@ def two_compartment_fornasiero(t: float,
     :param a_max:   asymptotic isotope enrichment
     :param k_p:     precursor accumulation-breakdown constant
     :param k_r:     precursor reutilization rate constant (i.e., a)
-    :param r:       free/bound precursor ratio
+    :param r_p:      free/bound precursor ratio
     :return:        float: a_t
     """
 
     a = k_r
     b = k_p
+    r = r_p
 
     big_c = np.sqrt(-4 * a * b + (a + b + a * r)**2)
     k1 = (a + b + a * r + big_c)/2
