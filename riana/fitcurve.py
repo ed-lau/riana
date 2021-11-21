@@ -81,7 +81,6 @@ def fit_all(args):
     #
 
     riana_list = args.riana_path        # list of integration output
-    model = args.model                  # kinetic model, e.g., 'simple'
     model_pars = {'k_p': args.kp,
                   'k_r': args.kr,
                   'r_p': args.rp}
@@ -89,6 +88,19 @@ def fit_all(args):
     t_threshold = args.depth            # minimal number of time points threshold
     ria_max = args.ria                  # final isotope enrichment level (e.g., 0.046)
     outdir = args.out                   # output directory
+
+    # select model
+    if args.model == 'simple':
+        model = models.one_exponent
+
+    elif args.model == 'guan':
+        model = models.two_compartment_guan
+
+    elif args.model == 'fornasiero':
+        model = models.two_compartment_fornasiero
+
+    else:
+        raise Exception('Unknown kinetics model.')
 
     if not os.path.exists(outdir):
         os.makedirs(outdir)
@@ -102,6 +114,8 @@ def fit_all(args):
 
     else:
         num_threads = 1  # os.cpu_count() * 4
+
+
 
     #
     # logging
@@ -149,7 +163,7 @@ def fit_all(args):
                               concat_list=rdf_filtered.concat.unique(),
                               filtered_integrated_df=rdf_filtered.copy(),
                               ria_max=ria_max,
-                              use_model=model,
+                              model_=model,
                               model_pars=model_pars,
                               )
 
@@ -158,7 +172,7 @@ def fit_all(args):
     with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
         results = list(tqdm.tqdm(ex.map(fit_one_partial, loop_),
                                  total=max(loop_),
-                                 desc=f'Fitting peptides to model - {model}:'))
+                                 desc=f'Fitting peptides to model - {args.model}:'))
 
     # collect all the dicts, plot out graphs and output final file
     out_dict = {}
@@ -175,8 +189,6 @@ def fit_all(args):
 
         k_deg, r_squared, sd, t, fs = list(res.values())[0]
 
-
-
         # create plot
         fig, ax = plt.subplots()
 
@@ -190,23 +202,32 @@ def fit_all(args):
             plt.plot(t_clipped, fs_clipped, 'rx')
 
         plt.plot(np.array(range(0, int(np.max(t)))),
-                 models.one_exponent(t=np.array(range(0, int(np.max(t)))),
-                                     k_deg=k_deg, a_0=0, a_max=1),
+                 model(t=np.array(range(0, int(np.max(t)))),
+                       k_deg=k_deg,
+                       a_0=0.,
+                       a_max=1.,
+                       **model_pars,
+                       ),
                  'r-', label=f'k_deg={np.round(k_deg, 3)}'
                  )
 
         plt.plot(np.array(range(0, int(np.max(t)))),
-                 models.one_exponent(t=np.array(range(0, int(np.max(t)))),
-                                     k_deg=k_deg + sd, a_0=0, a_max=1),
+                 model(t=np.array(range(0, int(np.max(t)))),
+                       k_deg=k_deg + sd,
+                       a_0=0.,
+                       a_max=1.,
+                       **model_pars,
+                       ),
                  'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
                  )
 
         plt.plot(np.array(range(0, int(np.max(t)))),
-                 models.one_exponent(t=np.array(range(0, int(np.max(t)))),
-                                     k_deg=k_deg ** 2 / (k_deg + sd),
-                                     a_0=0,
-                                     a_max=1,
-                                     ),
+                 model(t=np.array(range(0, int(np.max(t)))),
+                       k_deg=k_deg ** 2 / (k_deg + sd),
+                       a_0=0.,
+                       a_max=1.,
+                       **model_pars,
+                       ),
                  'r--', label=f'Lower={np.round(k_deg ** 2 / (k_deg + sd), 3)}'
                  )
         plt.xlabel('t')
@@ -248,8 +269,8 @@ def fit_one(loop_index,
             concat_list: list,
             filtered_integrated_df: pd.DataFrame,
             ria_max: float,
-            use_model: str,
-            **models_par,
+            model_: callable,
+            model_pars: dict,
             ):
     """
 
@@ -257,8 +278,8 @@ def fit_one(loop_index,
     :param concat_list:
     :param filtered_integrated_df:
     :param ria_max:
-    :param use_model:
-    :param models_par:
+    :param model_:
+    :param model_pars:
     :return:
     """
 
@@ -285,9 +306,11 @@ def fit_one(loop_index,
     fit_log.info(f'concat: {stripped}, n: {num_labeling_sites}, a_0: {a_0}, a_max: {a_max}')
     fit_log.info([t, fs])
 
+    # TODO: 2021-11-21 remove t/fs data poionts where fs is nan
+
     # perform curve-fitting
     try:
-        popt, pcov = optimize.curve_fit(f=partial(models.one_exponent, a_0=0., a_max=1.),
+        popt, pcov = optimize.curve_fit(f=partial(model_, a_0=0., a_max=1., **model_pars),
                                         xdata=t,
                                         ydata=fs,
                                         bounds=([1e-4], [10]),
@@ -306,7 +329,7 @@ def fit_one(loop_index,
     sd = np.sqrt(np.diag(pcov))[0]
 
     # calculate residuals and r2
-    residuals = fs - models.one_exponent(t, a_max=1., a_0=0., k_deg=popt[0])
+    residuals = fs - model_(t, a_max=1., a_0=0., k_deg=popt[0], **model_pars)
     ss_res = np.sum(residuals ** 2)
     ss_tot = np.sum((fs - np.mean(fs)) ** 2)
 

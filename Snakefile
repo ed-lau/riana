@@ -1,4 +1,4 @@
-configfile: "config_muscle.yaml"
+configfile: "config.yaml"
 
 rule all:
     input: "out/snakemake/riana_fit_peptides.csv"
@@ -48,11 +48,13 @@ rule riana_integrate:
         mzml="out/snakemake/{timepoint}/mzml/input.mzml.gz"
     output:
         riana="out/snakemake/{timepoint}_riana.txt"
+    params:
+        iso=config["params"]["isotopomers"]
     threads: config["threads"]["riana"]
     shell:
         "python -m riana integrate out/snakemake/{wildcards.timepoint}/mzml "
         "out/snakemake/{wildcards.timepoint}/percolator/percolator.psms.txt"
-        " -i 0,1,2,3,4,5 -q 0.01 -r 0.5 -m 25 -o {output} -s {wildcards.timepoint}"
+        " -i {params.iso} -q 0.01 -r 0.5 -m 25 -o {output} -s {wildcards.timepoint}"
         " -t {threads}"
 
 rule riana_fit:
@@ -60,8 +62,11 @@ rule riana_fit:
         integrated=expand("out/snakemake/{timepoint}_riana.txt", timepoint=config["data"])
     output:
         riana="out/snakemake/riana_fit_peptides.csv"
+    params:
+        ria=config["params"]["ria_max"],
+        kp=config["params"]["kp"]
     threads: config["threads"]["fitcurve"]
     shell:
         "python -m riana fit {input.integrated} "
-        "-q 0.01 -d 12 -o out/snakemake "
-        "-t {threads} -r 0.045"
+        "-q 0.01 -d 9 -o out/snakemake -m guan --kp {params.kp} "
+        "-t {threads} -r {params.ria}"
