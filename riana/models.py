@@ -5,10 +5,11 @@
 import numpy as np
 
 
-def one_exponent(t: float,
+def one_exponent(t,
                  k_deg: float,
                  a_0: float = 0,
                  a_max: float = 1,
+                 **_,
                  ) -> float:
     """
     Simple exponential model
@@ -23,11 +24,12 @@ def one_exponent(t: float,
     return a_0 + (a_max - a_0) * (1. - np.exp(-k_deg*t))
 
 
-def two_compartment_guan(t: float,
+def two_compartment_guan(t,
                          k_deg: float,
                          a_0: float = 0,
                          a_max: float = 1,
                          k_p: float = 0.5,
+                         **_,
                          ) -> float:
     """
     Two-Compartment model with a lumped precursor rate constant k_p to describe precursor lag
@@ -44,13 +46,14 @@ def two_compartment_guan(t: float,
     return a_0 + (a_max-a_0) * (1. - (np.exp(-t * k_deg) * k_p - np.exp(-t * k_p) * k_deg) / (k_p - k_deg))
 
 
-def two_compartment_fornasiero(t: float,
+def two_compartment_fornasiero(t,
                                k_deg: float,
                                a_0: float = 0,
                                a_max: float = 1,
                                k_p: float = 0.5,
                                k_r: float = 0.1,
                                r_p: float = 10,
+                               **_,
                                ) -> float:
     """
     Two-Compartment model with a precursor rate constant k_p (i.e., b in the Fornasiero et al. paper)
