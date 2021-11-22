@@ -13,13 +13,13 @@ from scipy import optimize
 from functools import partial
 import matplotlib.pyplot as plt
 
-from riana import accmass, constants, models, __version__
+from riana import accmass, constants, models, params, __version__
 
 
 def strip_concat(sequence: str,
                  ) -> str:
     """
-    cleans up concat sequences (peptide_charge) and remove modifications
+    Cleans up concat sequences (peptide_charge) and remove modifications
     to return peptide string for labeling site calculations
 
     :param sequence:    concat sequence containing charge and modificaitons
@@ -40,7 +40,7 @@ def strip_concat(sequence: str,
 def calculate_a0(sequence: str,
                  ) -> float:
     """
-    calculates the initial isotope enrichment of a peptide prior to heavy water labeling
+    Calculates the initial isotope enrichment of a peptide prior to heavy water labeling
 
     :param sequence:    str: concat sequences
     :return:            float: mi at time 0
@@ -56,20 +56,44 @@ def calculate_a0(sequence: str,
 
 
 def calculate_label_n(sequence: str,
+                      label: str,
                       ) -> float:
+    """
+    Calculates labeling sites of the peptide sequence in heavy water
+    or amino acid labeling
 
+    :param sequence:    the peptide sequence
+    :param label:       aa or hw; if aa, only return the labelable residues
+    :return:
+    """
+
+    # strip modification site and charge from concat sequence
     sequence = strip_concat(sequence)
 
-    return sum([constants.label_hydrogens.get(char) for char in sequence])
+    # if amino acid labeling, return number of labeled residues
+    if label == 'aa':
+        return sequence.count(params.labeled_residue)
+
+    # else, return the number of labeling site in heavy water labeling
+    else:
+        return sum([constants.label_hydrogens.get(char) for char in sequence])
 
 
 def calculate_fs(a, a_0, a_max):
+    """
+    Calculates fractional synthesis based on a_t, a_0 (initial), and a_max (asymptote)
+
+    :param a:       mi at a particular time
+    :param a_0:     initial mi value before label onset
+    :param a_max:   final mi value at plateau based on labeling site and precursor RIA
+    :return:
+    """
     return (a-a_0)/(a_max-a_0)
 
 
 def fit_all(args):
     """
-    performs kinetic curve-fitting of integration output using a kinetics model
+    Performs kinetic curve-fitting of integration output using a kinetics model
     returns a csv file containing the peptide concatamer, k_deg, sd, and r2
 
     :param args:
@@ -88,6 +112,7 @@ def fit_all(args):
     t_threshold = args.depth            # minimal number of time points threshold
     ria_max = args.ria                  # final isotope enrichment level (e.g., 0.046)
     outdir = args.out                   # output directory
+    label_ = args.label
 
     # select model
     if args.model == 'simple':
@@ -157,10 +182,14 @@ def fit_all(args):
     concats = concats[concats >= t_threshold]
     rdf_filtered = rdf_filtered[rdf_filtered.concat.isin(concats.index)]
 
+    # TODO: catch when no peptide reaches the time or q threshold
+    # TODO: add lysine filter for amino acid labeling
+
     # create loop of concat indices for concurrent.futures
     loop_ = range(len(rdf_filtered.concat.unique()))
     fit_one_partial = partial(fit_one,
                               concat_list=rdf_filtered.concat.unique(),
+                              label=label_,
                               filtered_integrated_df=rdf_filtered.copy(),
                               ria_max=ria_max,
                               model_=model,
@@ -267,6 +296,7 @@ def fit_all(args):
 
 def fit_one(loop_index,
             concat_list: list,
+            label: str,
             filtered_integrated_df: pd.DataFrame,
             ria_max: float,
             model_: callable,
@@ -275,7 +305,8 @@ def fit_one(loop_index,
     """
 
     :param loop_index:
-    :param concat_list:
+    :param concat_list:                 list of concatamer
+    :param label:                       label type, determines how mi is calculated. currently must be aa or hw
     :param filtered_integrated_df:
     :param ria_max:
     :param model_:
@@ -290,15 +321,31 @@ def fit_one(loop_index,
     fit_log = logging.getLogger('riana.fit')
     fit_log.info(f'Fitting peptide {seq} with data shape {y.shape}')
 
-    # get t, mi from subset dataframe
-    y['mi'] = y['m0'] / (y['m0'] + y['m1'] + y['m2'] + y['m3'] + y['m4'] + y['m5'])
+    '''
+    2021-11-22 Get t, mi from subset dataframe
+    The current implementation is to avoid setting explicit mi formulae,
+    rather it will return m0 over the sum of all m columns that were integrated 
+    
+    # if label == 'aa':
+    #     y['mi'] = y['m0'] / (y['m0'] + y['m6'])
+    # else:
+    #     y['mi'] = y['m0'] / (y['m0'] + y['m1'] + y['m2'] + y['m3'] + y['m4'] + y['m5'])
+    '''
+    # TODO: note that this will create a lot of 0.0 fs data points where there was no m0 intensity
+    #   which could affect integration results. Ideally we should remove these data points
+    #   unless time is 0 and then filter for data series length again according to the data depth
+    #   filter.
+
+    y['colsums'] = y.loc[:, y.columns.str.match('^m[0-9]+$')].sum(axis=1)   # sums all m* columns
+    y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
+
     fit_log.info(y[['sample', 'mi']])
     t = np.array([float(re.sub('[^0-9]', '', time)) for time in y['sample']])
     mi = np.array(y['mi'].tolist())
 
     # calculate a_0, a_max, and fractional synthesis
     stripped = strip_concat(seq)
-    num_labeling_sites = calculate_label_n(seq)
+    num_labeling_sites = calculate_label_n(seq, label)
     a_0 = calculate_a0(seq)
     a_max = a_0 * np.power((1 - ria_max), num_labeling_sites)
     fs = calculate_fs(a=mi, a_0=a_0, a_max=a_max)
@@ -318,10 +365,13 @@ def fit_one(loop_index,
     # catch error when not converging
     except RuntimeError:
         print(RuntimeError)
+        print(stripped)
         print(t, fs)
         return {seq: [np.nan, np.nan, np.nan, t, fs]}
 
     except ValueError:
+        print(ValueError)
+        print(stripped)
         print(t, fs)
         return {seq: [np.nan, np.nan, np.nan, t, fs]}
 
@@ -336,6 +386,8 @@ def fit_one(loop_index,
     try:
         r_squared = 1 - (ss_res / ss_tot)
     except RuntimeWarning:
+        print(RuntimeWarning)
+        print(stripped)
         print(fs, ss_tot)
         r_squared = np.nan
 

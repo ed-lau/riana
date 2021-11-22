@@ -100,6 +100,12 @@ def main():
                                  'exponential model is implemented [default: simple]',
                             )
 
+    parser_fit.add_argument('-l', '--label',
+                            type=str,
+                            choices=['aa', 'hw'],
+                            default='hw',
+                            help='labeling type [default: hw]')
+
     parser_fit.add_argument('--kp',
                             help='for two-compartment models, the precursor rate constant [default: 0.5]',
                             type=float,

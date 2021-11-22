@@ -64,9 +64,14 @@ rule riana_fit:
         riana="out/snakemake/riana_fit_peptides.csv"
     params:
         ria=config["params"]["ria_max"],
-        kp=config["params"]["kp"]
+        kp=config["params"]["kp"],
+        kr=config["params"]["kr"],
+        rp=config["params"]["rp"],
+        depth=config["params"]["depth"],
+        label_type=config["params"]["label_type"]
     threads: config["threads"]["fitcurve"]
     shell:
         "python -m riana fit {input.integrated} "
-        "-q 0.01 -d 9 -o out/snakemake -m guan --kp {params.kp} "
-        "-t {threads} -r {params.ria}"
+        "-q 0.01 -d {params.depth} -o out/snakemake -m guan --kp {params.kp} "
+        "--kr {params.kr} --rp {params.rp} "
+        "-t {threads} -r {params.ria} -l {params.label_type}"
