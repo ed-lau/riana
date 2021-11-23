@@ -38,21 +38,24 @@ def strip_concat(sequence: str,
 
 
 def calculate_a0(sequence: str,
+                 label: str,
                  ) -> float:
     """
     Calculates the initial isotope enrichment of a peptide prior to heavy water labeling
 
     :param sequence:    str: concat sequences
+    :param label:       str: aa or hw, if aa, return 1 assuming no heavy prior to labeling
     :return:            float: mi at time 0
     """
 
-    sequence = strip_concat(sequence)
+    if label == 'aa':
+        return 1
 
-    res_atoms = accmass.count_atoms(sequence)
-
-    a0 = np.product([np.power(constants.iso_abundances[i], res_atoms[i]) for i, v in enumerate(res_atoms)])
-
-    return a0
+    else:
+        sequence = strip_concat(sequence)
+        res_atoms = accmass.count_atoms(sequence)
+        a0 = np.product([np.power(constants.iso_abundances[i], res_atoms[i]) for i, v in enumerate(res_atoms)])
+        return a0
 
 
 def calculate_label_n(sequence: str,
@@ -88,7 +91,13 @@ def calculate_fs(a, a_0, a_max):
     :param a_max:   final mi value at plateau based on labeling site and precursor RIA
     :return:
     """
-    return (a-a_0)/(a_max-a_0)
+
+    # catch errors from no ria or no labeling site
+    if a_max - a_0 == 0:
+        # repeat an array of 0 if the input is an ndarray, otherwise return 0
+        return np.repeat(0, len(a)) if isinstance(a, np.ndarray) else 0
+    else:
+        return (a-a_0)/(a_max-a_0)
 
 
 def fit_all(args):
@@ -132,7 +141,7 @@ def fit_all(args):
 
     if args.thread:
         try:
-            num_threads = max(os.cpu_count() * 4, int(args.thread))
+            num_threads = min(os.cpu_count() * 4, int(args.thread))
 
         except ValueError or TypeError:
             num_threads = 1  # os.cpu_count() * 4
@@ -209,6 +218,12 @@ def fit_all(args):
     for res in tqdm.tqdm(results, desc=f'Plotting curves'):
 
         seq = list(res.keys())[0]
+        k_deg, r_squared, sd, t, fs = list(res.values())[0]
+
+        # do not plot and record result if k_deg is nan
+        if np.isnan(k_deg):
+            # print(k_deg, r_squared, sd, t, fs)
+            continue
 
         # get first protein name
         protein = rdf_filtered[rdf_filtered.concat == seq]['protein id'].iloc[0]
@@ -216,11 +231,8 @@ def fit_all(args):
         if protein.count(',') > 0:
             first_protein = first_protein + ' (multi)'
 
-        k_deg, r_squared, sd, t, fs = list(res.values())[0]
-
         # create plot
         fig, ax = plt.subplots()
-
         plt.plot(t, fs, '.', label='Fractional synthesis')
 
         # 2021-11-20 create clipped t,fs series for fs values out of [-0.2, 1.2] and display them as 'x'
@@ -264,6 +276,7 @@ def fit_all(args):
         plt.title(f'Protein: {first_protein} Sequence: {seq} R2: {np.round(r_squared, 3)}')
         plt.legend()
         plt.xlim([-1, 32])
+        # TODO: find max time range from data
         plt.ylim([-0.2, 1.2])
 
         if k_deg < 0.01:
@@ -314,6 +327,7 @@ def fit_one(loop_index,
     :return:
     """
 
+
     # create subset dataframe with current concat
     seq = concat_list[loop_index]
     y = filtered_integrated_df.loc[filtered_integrated_df['concat'] == seq].copy()
@@ -345,15 +359,20 @@ def fit_one(loop_index,
 
     # calculate a_0, a_max, and fractional synthesis
     stripped = strip_concat(seq)
-    num_labeling_sites = calculate_label_n(seq, label)
-    a_0 = calculate_a0(seq)
+    num_labeling_sites = calculate_label_n(seq, label=label)
+
+    a_0 = calculate_a0(seq, label=label)
     a_max = a_0 * np.power((1 - ria_max), num_labeling_sites)
     fs = calculate_fs(a=mi, a_0=a_0, a_max=a_max)
 
     fit_log.info(f'concat: {stripped}, n: {num_labeling_sites}, a_0: {a_0}, a_max: {a_max}')
     fit_log.info([t, fs])
 
-    # TODO: 2021-11-21 remove t/fs data poionts where fs is nan
+    # TODO: 2021-11-21 remove t/fs data poionts where fs is nan for any reason
+    null_result = {seq: [np.nan, np.nan, np.nan, t, fs]}
+    # if there is no labeling site, skip
+    if num_labeling_sites == 0:
+        return null_result
 
     # perform curve-fitting
     try:
@@ -367,13 +386,13 @@ def fit_one(loop_index,
         print(RuntimeError)
         print(stripped)
         print(t, fs)
-        return {seq: [np.nan, np.nan, np.nan, t, fs]}
+        return null_result
 
     except ValueError:
         print(ValueError)
         print(stripped)
         print(t, fs)
-        return {seq: [np.nan, np.nan, np.nan, t, fs]}
+        return null_result
 
     # calculate standard deviation from the non-linear least square cov
     sd = np.sqrt(np.diag(pcov))[0]
