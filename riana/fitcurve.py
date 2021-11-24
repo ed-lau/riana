@@ -194,6 +194,9 @@ def fit_all(args):
     # TODO: catch when no peptide reaches the time or q threshold
     # TODO: add lysine filter for amino acid labeling
 
+    # get the maximum time in this data set
+    max_time = np.max([float(re.sub('[^0-9]', '', time)) for time in rdf_filtered['sample']])
+
     # create loop of concat indices for concurrent.futures
     loop_ = range(len(rdf_filtered.concat.unique()))
     fit_one_partial = partial(fit_one,
@@ -275,8 +278,7 @@ def fit_all(args):
         plt.ylabel('fs')
         plt.title(f'Protein: {first_protein} Sequence: {seq} R2: {np.round(r_squared, 3)}')
         plt.legend()
-        plt.xlim([-1, 32])
-        # TODO: find max time range from data
+        plt.xlim([-1, max_time+1])
         plt.ylim([-0.2, 1.2])
 
         if k_deg < 0.01:
@@ -286,7 +288,7 @@ def fit_all(args):
         else:
             speed = "mid"
 
-        if r_squared > 0.5:
+        if r_squared >= 0.5:
             quality = "fit"
         else:
             quality = "poor"
