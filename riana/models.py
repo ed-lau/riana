@@ -74,7 +74,7 @@ def two_compartment_fornasiero(t,
     b = k_p
     r = r_p
 
-    big_c = np.sqrt(-4 * a * b + ((a + b + a * r)**2))
+    big_c = np.sqrt(-4 * a * b + (a + b + a * r)**2)
     k1 = (a + b + a * r + big_c)/2
     k2 = (a + b + a * r - big_c)/2
     big_a = -1 * (a - b + a * r - big_c)/(big_c * 2)
