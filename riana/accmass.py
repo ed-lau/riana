@@ -106,7 +106,8 @@ def calculate_ion_mz(seq: str,
     except ValueError:
         raise ValueError('Modification contains string characters.')
 
-    mass += sum(mods)
+    # 2021-11-22 exclude label mass from peptide mass calculation
+    mass += sum(m for m in mods if m != params.label_mass)
 
     # 2021-05-18 strip all N-terminal n from Comet
     seq = re.sub('^n', '', seq)

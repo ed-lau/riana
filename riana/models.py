@@ -48,11 +48,11 @@ def two_compartment_guan(t,
 
 def two_compartment_fornasiero(t,
                                k_deg: float,
-                               a_0: float = 0,
-                               a_max: float = 1,
+                               a_0: float = 0.,
+                               a_max: float = 1.,
                                k_p: float = 0.5,
                                k_r: float = 0.1,
-                               r_p: float = 10,
+                               r_p: float = 10.,
                                **_,
                                ) -> float:
     """

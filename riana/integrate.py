@@ -16,7 +16,6 @@ import pandas as pd
 import tqdm
 
 from riana import constants, params, __version__
-from riana.project import ReadDirectory
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
 

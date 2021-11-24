@@ -29,7 +29,7 @@ def strip_concat(sequence: str,
     sequence = re.sub('^n', '', sequence)
 
     # Strip all modifications
-    sequence = re.sub('\\[.*?]', '', sequence)
+    sequence = re.sub('\\[.*?\\]', '', sequence)
 
     # Strip the underscore and charge
     sequence = re.sub('_[0-9]+', '', sequence)
@@ -380,6 +380,8 @@ def fit_one(loop_index,
                                         xdata=t,
                                         ydata=fs,
                                         bounds=([1e-4], [10]),
+                                        p0=[params.initial_k_deg],
+                                        maxfev=params.max_iter,
                                         )
     # catch error when not converging
     except RuntimeError:

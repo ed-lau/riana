@@ -68,10 +68,11 @@ rule riana_fit:
         kr=config["params"]["kr"],
         rp=config["params"]["rp"],
         depth=config["params"]["depth"],
-        label_type=config["params"]["label_type"]
+        label_type=config["params"]["label_type"],
+        model=config["params"]["model"]
     threads: config["threads"]["fitcurve"]
     shell:
         "python -m riana fit {input.integrated} "
-        "-q 0.01 -d {params.depth} -o out/snakemake -m guan --kp {params.kp} "
+        "-q 0.01 -d {params.depth} -o out/snakemake -m {params.model} --kp {params.kp} "
         "--kr {params.kr} --rp {params.rp} "
         "-t {threads} -r {params.ria} -l {params.label_type}"
