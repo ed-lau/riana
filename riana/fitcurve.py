@@ -5,6 +5,7 @@ import logging
 import re
 import os
 import sys
+import gc
 
 import tqdm
 import pandas as pd
@@ -245,8 +246,8 @@ def fit_all(args):
         if len(t_clipped) > 0:
             plt.plot(t_clipped, fs_clipped, 'rx')
 
-        plt.plot(np.array(range(0, int(np.max(t)))),
-                 model(t=np.array(range(0, int(np.max(t)))),
+        plt.plot(np.array(range(0, int(np.max(t))+1)),
+                 model(t=np.array(range(0, int(np.max(t))+1)),
                        k_deg=k_deg,
                        a_0=0.,
                        a_max=1.,
@@ -255,8 +256,8 @@ def fit_all(args):
                  'r-', label=f'k_deg={np.round(k_deg, 3)}'
                  )
 
-        plt.plot(np.array(range(0, int(np.max(t)))),
-                 model(t=np.array(range(0, int(np.max(t)))),
+        plt.plot(np.array(range(0, int(np.max(t))+1)),
+                 model(t=np.array(range(0, int(np.max(t))+1)),
                        k_deg=k_deg + sd,
                        a_0=0.,
                        a_max=1.,
@@ -265,8 +266,8 @@ def fit_all(args):
                  'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
                  )
 
-        plt.plot(np.array(range(0, int(np.max(t)))),
-                 model(t=np.array(range(0, int(np.max(t)))),
+        plt.plot(np.array(range(0, int(np.max(t))+1)),
+                 model(t=np.array(range(0, int(np.max(t))+1)),
                        k_deg=k_deg ** 2 / (k_deg + sd),
                        a_0=0.,
                        a_max=1.,
@@ -299,7 +300,9 @@ def fit_all(args):
             os.makedirs(plot_dir)
 
         fig.savefig(os.path.join(plot_dir, f'{first_protein}_{seq}.png'))
+        plt.clf()
         plt.close(fig)
+        # gc.collect()
 
         out_dict = out_dict | res
 

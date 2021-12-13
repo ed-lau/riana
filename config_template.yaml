@@ -16,13 +16,14 @@ paths:
 
 # Integratin and fitting parameters
 params:
-  label_type: aa    # labeling type (aa or hw)
-  isotopomers: 0,6  # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
-  ria_max: 0.42     # final precursor ria
-  kp: 0.52          # guan model parameter (kp) or fornasiero model parameter (b)
-  kr: 0.05          # fornasiero model parameter (a)
-  rp: 10            # fornasiero model parameter (r)
-  depth: 12         # minimum number of data points
+  model: fornasiero     # fitting model (simple, guan, fornasiero)
+  label_type: hw        # labeling type (aa or hw)
+  isotopomers: 0,6,12   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
+  ria_max: 0.5          # final precursor ria
+  kp: 1.05              # guan model parameter (kp) or fornasiero model parameter (b)
+  kr: 0.15              # fornasiero model parameter (a)
+  rp: 5.52              # fornasiero model parameter (r)
+  depth: 11             # minimum number of data points
 
 # Number of threads
 threads:
