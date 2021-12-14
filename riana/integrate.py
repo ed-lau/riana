@@ -267,7 +267,8 @@ def integrate_all(args):
         with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
             results = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
                                      total=max(loop_),
-                                     desc=f'Integrating Peaks in Sample {current_sample}'))
+                                     desc=f'Integrating peaks in sample: {current_sample}'
+                                          f' file: {mzml_files[idx]}'))
         # '''
 
         #
