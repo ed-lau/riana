@@ -8,13 +8,14 @@ data:
   time6: /path/to/time6/folder
 
 # Paths to the comet executable, the comet params file, the database, and the percolator executable
+# The Snakefile assumes riana can be executed in the shell by riana
 paths:
   comet: /path/to/comet_source_2020013/comet.exe
   comet_params: /path/to/params/comet.params
   fasta: /path/tp/database.fas
   percolator: /path/to/percolator
 
-# Integratin and fitting parameters
+# Integration and fitting parameters
 params:
   model: fornasiero     # fitting model (simple, guan, fornasiero)
   label_type: hw        # labeling type (aa or hw)
