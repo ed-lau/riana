@@ -45,7 +45,7 @@ def calculate_a0(sequence: str,
     Calculates the initial isotope enrichment of a peptide prior to heavy water labeling
 
     :param sequence:    str: concat sequences
-    :param label:       str: aa or hw, if aa, return 1 assuming no heavy prior to labeling
+    :param label:       str: aa, hw, or o18, if aa, return 1 assuming no heavy prior to labeling
     :return:            float: mi at time 0
     """
 
@@ -67,7 +67,7 @@ def calculate_label_n(sequence: str,
     or amino acid labeling
 
     :param sequence:    the peptide sequence
-    :param label:       aa or hw; if aa, only return the labelable residues
+    :param label:       aa, hw, or o18; if aa, only return the labelable residues
     :return:
     """
 
@@ -78,9 +78,13 @@ def calculate_label_n(sequence: str,
     if label == 'aa':
         return sequence.count(params.labeled_residue)
 
-    # else, return the number of labeling site in heavy water labeling
-    else:
+    # if d2o, return the number of labeling site in heavy water labeling
+    elif label == 'hw':
         return sum([constants.label_hydrogens.get(char) for char in sequence])
+
+    # else if o18, return the number of labeling sites for o18
+    else:
+        return sum([constants.label_oxygens.get(char) for char in sequence]) - 1.
 
 
 def calculate_fs(a, a_0, a_max):
@@ -193,6 +197,8 @@ def fit_all(args):
     rdf_filtered = rdf_filtered[rdf_filtered.concat.isin(concats.index)]
 
     # TODO: catch when no peptide reaches the time or q threshold
+    if rdf_filtered.shape[0] == 0:
+        raise ValueError('No qualifying peptides for fitting. Check q-value or depth threshold.')
     # TODO: add lysine filter for amino acid labeling
 
     # get the maximum time in this data set
@@ -324,7 +330,7 @@ def fit_one(loop_index,
 
     :param loop_index:
     :param concat_list:                 list of concatamer
-    :param label:                       label type, determines how mi is calculated. currently must be aa or hw
+    :param label:                       label type, determines how mi is calculated. currently must be aa, hw, or o18
     :param filtered_integrated_df:
     :param ria_max:
     :param model_:

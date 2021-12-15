@@ -44,7 +44,8 @@ def integrate_all(args):
     # File out
     path_to_write = os.path.join(args.out)
     directory_to_write = os.path.dirname(path_to_write)
-    os.makedirs(directory_to_write, exist_ok=True)
+    if directory_to_write:
+        os.makedirs(directory_to_write, exist_ok=True)
 
     # Logging
     main_log = logging.getLogger('riana')

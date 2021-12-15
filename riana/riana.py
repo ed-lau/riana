@@ -102,7 +102,7 @@ def main():
 
     parser_fit.add_argument('-l', '--label',
                             type=str,
-                            choices=['aa', 'hw'],
+                            choices=['aa', 'hw', 'o18'],
                             default='hw',
                             help='labeling type [default: hw]')
 

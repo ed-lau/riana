@@ -93,6 +93,30 @@ label_hydrogens = {
     'Y': 0.42,
 }
 
+# Number of oxygen labels should be 1-#aa plus an extra 1 for every S or T
+label_oxygens = {
+    'A': 1.,
+    'C': 1.,
+    'D': 1.,
+    'E': 1.,
+    'F': 1.,
+    'G': 1.,
+    'H': 1.,
+    'I': 1.,
+    'K': 1.,
+    'L': 1.,
+    'M': 1.,
+    'N': 1.,
+    'P': 1.,
+    'Q': 1.,
+    'R': 1.,
+    'S': 2.,
+    'T': 2.,
+    'V': 1.,
+    'W': 1.,
+    'Y': 1.,
+}
+
 """
 Calculate natural abundance of isotopes from NIST 
 https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
