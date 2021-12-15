@@ -2,10 +2,10 @@
 
 # Data location
 data:
-  time0: /path/to/time0.mzML.gz
-  time1: /path/to/time1.mzML.gz
-  time3: /path/to/time3.mzML.gz
-  time6: /path/to/time6.mzML.gz
+  time0: /path/to/time0/folder
+  time1: /path/to/time1/folder
+  time3: /path/to/time3/folder
+  time6: /path/to/time6/folder
 
 # Paths to the comet executable, the comet params file, the database, and the percolator executable
 paths:

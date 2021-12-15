@@ -137,8 +137,8 @@ def fit_all(args):
     else:
         raise Exception('Unknown kinetics model.')
 
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
+    # if not os.path.exists(outdir):
+    #     os.makedirs(outdir)
 
     if args.thread:
         try:
