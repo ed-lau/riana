@@ -29,7 +29,7 @@ def main():
                                              aliases=['int'],
                                              help='Integrates isotopomer abundance over retention time')
     parser_fit = subparsers.add_parser('fit',
-                                       help='Fit to kinetic models.')
+                                       help='Fit to kinetic models *under development*')
     #
     # Arguments for integrate subcommand
     #
