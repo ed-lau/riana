@@ -365,7 +365,7 @@ def fit_one(loop_index,
     y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
 
     fit_log.info(y[['sample', 'mi']])
-    t = np.array([float(re.sub('[^0-9]', '', time)) for time in y['sample']])
+    t = np.array([float(re.sub('[^0-9.]', '', time)) for time in y['sample']])
     mi = np.array(y['mi'].tolist())
 
     # calculate a_0, a_max, and fractional synthesis
