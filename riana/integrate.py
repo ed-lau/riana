@@ -291,12 +291,13 @@ def integrate_all(args):
         # append the raw intensities data frame
         #
         intensities_df = pd.DataFrame().append([res[1] for res in results], ignore_index=True)
+        intensities_df['file'] = mzml_files[idx]
         # id_intensities_df = intensities_dfpd.merge(intensities_df, mzid.curr_frac_filtered_id_df, on='pep_id', how='left')
 
         if len(overall_intensities_df.index) == 0:
             overall_intensities_df = intensities_df
         else:
-            overall_intensities_df = overall_integrated_df.append(intensities_df, ignore_index=True)
+            overall_intensities_df = overall_intensities_df.append(intensities_df, ignore_index=True)
 
     # write the integrated and intensities results
     save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
