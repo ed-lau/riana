@@ -255,9 +255,10 @@ class ReadPercolator(object):
 
         self.curr_frac_id_df = self.curr_sample_id_df.query('file_idx == @idx')
 
+        # TODO: 2021-12-17 we should change the behavior here to get all qualifying scans
         # Remove duplicate sequence/z, keeping the one with the lowest q-value only.
-        self.curr_frac_id_df = self.curr_frac_id_df.sort_values('percolator q-value').drop_duplicates(
-            subset=['concat'])
+        # self.curr_frac_id_df = self.curr_frac_id_df.sort_values('percolator q-value').drop_duplicates(
+        #    subset=['concat'])
 
         # Arrange the PSM rows by scan number
         self.curr_frac_id_df = self.curr_frac_id_df.sort_values(by='scan').reset_index(drop=True)

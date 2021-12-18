@@ -244,6 +244,7 @@ def integrate_all(args):
         #
         # get peak intensity for each isotopomer in each spectrum ID in each peptide
         #
+        # TODO: to accommodate multiple PSMs per concat, this should loop through a concat list.
         loop_ = range(len(mzid.curr_frac_filtered_id_df))
 
         integrate_one_partial = partial(integrate_one,
@@ -328,11 +329,6 @@ def integrate_one(index: int,
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
-
-    # bypass all integration for match between runs
-    if params.dummy:
-        time.sleep(0.025)
-        return [index] + [(id_.loc[index, 'pep_id'])] + [0 for _ in iso_to_do]
 
     # determine the mass of protons and c13
     proton = constants.PROTON_MASS

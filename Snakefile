@@ -2,8 +2,7 @@
 Snakefile for multiple fractions
 
 Example command:
-snakemake -c -s Snakefile -d out/snakemake_test --configfile config_multi.yaml
-
+snakemake -c -s Snakefile -d out/snakemake_test --configfile config_o18.yaml
 
 Single fractions:
 rule copy_files:
@@ -38,49 +37,27 @@ rule all:
 rule comet:
     input: mzml = lambda wildcards: config["data"][wildcards.timepoint]
     output:
-        pin="{timepoint}/comet.pin"
+        psms="{timepoint}/percolator/percolator.target.psms.txt"
     log: "{timepoint}/comet.log"
     threads: config["threads"]["comet"]
     benchmark: "{timepoint}/comet.benchmark.txt"
     params:
         comet=config["paths"]["comet"],
+        percolator=config["paths"]["percolator"],
         comet_params=config["paths"]["comet_params"],
         fasta=config["paths"]["fasta"]
     shell: #
         """
         {params.comet} -P{params.comet_params} -D{params.fasta} {input}/*.mzML.gz 1>> {log}
-        tail -n +1 -q {input.mzml}/*.pin >> {output.pin}.temp
-        head -1 {output.pin}.temp > {output.pin}.temp2
-        tail -n +2 -q {input.mzml}/*.pin >> {output.pin}.temp2
-        mv {output.pin}.temp2 {output.pin}
-        rm {input.mzml}/*.pin 
+        {params.percolator} --protein T {input}/*.pep.xml --decoy-prefix DECOY_ \\
+         --overwrite T --output-dir {wildcards.timepoint}/percolator \\
+         --spectral-counting-fdr 0.01 --maxiter 15 1>> {log} 2>>{log}
         """
-        # Comet does not allow output files to be specified and simply creates a pin or pepxml file of the same name
-        # in the same directory. The standalone Percolator only takes in one pin file unlike the Crux distribution.
-        # So the 4-line monstrosity above concatenates all the pin files while keeping only the first line
-        # header in one of them, without using an open bracket which for some reason does not work with snakemake, e.g.,
-        # head -1 {input.mzml}/*.pin([1]) >> {output.pin}.temp
-        # tail -n +2 -q {input.mzml}/*.pin >> {output.pin}.temp
-        # Note the {output.pin}.temp is done because I am not sure if snakemake will jump the gun and
-        # start the percolator step as soon as the header is copied.
 
-rule percolator:
-    input:
-        comet_pin= "{timepoint}/comet.pin"
-    log: "{timepoint}/percolator.log"
-    output:
-        psms="{timepoint}/percolator/percolator.psms.txt"
-    benchmark: "{timepoint}/percolator.benchmark.txt"
-    params:
-        percolator=config["paths"]["percolator"],
-        fasta=config["paths"]["fasta"]
-    shell:
-        "percolator -Y -i 20 -P DECOY_ -f {params.fasta} {input.comet_pin} -m {output.psms} 2>> {log}"
-    # 2021-11-11: might have to send stdout to log as well to stop it from spamming the shell
 
 rule riana_integrate:
     input:
-        pin="{timepoint}/percolator/percolator.psms.txt",
+        pin="{timepoint}/percolator/percolator.target.psms.txt",
         mzml= lambda wildcards: config["data"][wildcards.timepoint]
     output:
         riana="{timepoint}_riana.txt"

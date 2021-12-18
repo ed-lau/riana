@@ -192,9 +192,14 @@ def fit_all(args):
     rdf_filtered = rdf[rdf['percolator q-value'] < q_threshold]
 
     # filter by number of time points
-    concats = rdf_filtered.groupby('concat')['sample'].nunique()
-    concats = concats[concats >= t_threshold]
-    rdf_filtered = rdf_filtered[rdf_filtered.concat.isin(concats.index)]
+    # concats = rdf_filtered.groupby('concat')['sample'].nunique()
+    # concats = concats[concats >= t_threshold]
+    # rdf_filtered = rdf_filtered[rdf_filtered.concat.isin(concats.index)]
+
+    # TODO: 2021-12-17 we should filter the concat dataframe here to take only time series from fractions
+    #   that contain at least X number of data points.
+    rdf_filtered = rdf_filtered.groupby(['concat', 'file_idx']).filter(lambda x: x['sample'].nunique() >= t_threshold)
+
 
     # TODO: catch when no peptide reaches the time or q threshold
     if rdf_filtered.shape[0] == 0:
@@ -415,13 +420,7 @@ def fit_one(loop_index,
     ss_res = np.sum(residuals ** 2)
     ss_tot = np.sum((fs - np.mean(fs)) ** 2)
 
-    try:
-        r_squared = 1 - (ss_res / ss_tot)
-    except RuntimeWarning:
-        print(RuntimeWarning)
-        print(stripped)
-        print(fs, ss_tot)
-        r_squared = np.nan
+    r_squared = np.nan if ss_tot == 0 else 1. - (ss_res / ss_tot)
 
     fit_log.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
 
