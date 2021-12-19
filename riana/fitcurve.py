@@ -320,6 +320,9 @@ def fit_all(args):
     out_df = pd.DataFrame.from_dict(out_dict, orient='index', columns=['k_deg', 'R_squared', 'sd', 't', 'fs'])
     out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'))
 
+    num_peps_fitted = out_df[out_df['R_squared'] >= 0.9].shape[0]
+    fit_log.info(f'There are {num_peps_fitted} concats with R2 ≥ 0.9')
+
     return sys.exit(os.EX_OK)
 
 
