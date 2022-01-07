@@ -18,7 +18,7 @@ paths:
 # Integration and fitting parameters
 params:
   model: fornasiero     # fitting model (simple, guan, fornasiero)
-  label_type: hw        # labeling type (aa or hw)
+  label_type: hw        # labeling type (aa or hw or o18)
   isotopomers: 0,6,12   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
   ria_max: 0.5          # final precursor ria
   kp: 1.05              # guan model parameter (kp) or fornasiero model parameter (b)

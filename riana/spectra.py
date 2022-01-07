@@ -42,8 +42,8 @@ class Mzml(object):
 
         run = mz.run.Reader(self.path,
                             MS_precision={
-                                1: 10e-6,
-                                2: 50e-6
+                                1: 1e-6,
+                                2: 10e-6
                             })
 
         rt_idx = []

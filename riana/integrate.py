@@ -206,12 +206,6 @@ def integrate_all(args):
     overall_integrated_df = pd.DataFrame()   # all integrated isotopomer peak areas
     overall_intensities_df = pd.DataFrame()  # all raw peak intensities
 
-    #
-
-    #
-    # Read the mzml files and do integration
-    #
-
     # For each file index (fraction), open the mzML file, and create a subset Percolator ID dataframe
     for idx in mzid.indices:
 
@@ -230,6 +224,7 @@ def integrate_all(args):
             # match_across_runs=False,  # args.mbr
         )
 
+        # Read the mzml file of hte current fraction
         try:
             mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
 
@@ -246,14 +241,14 @@ def integrate_all(args):
         #
         # TODO: to accommodate multiple PSMs per concat, this should loop through a concat list.
         loop_ = range(len(mzid.curr_frac_filtered_id_df))
-
-        integrate_one_partial = partial(integrate_one,
-                                        id_=mzid.curr_frac_filtered_id_df.copy(),
-                                        iso_to_do=iso_to_do,
-                                        mzml=mzml,
-                                        rt_tolerance=rt_tolerance,
-                                        mass_tolerance=mass_tolerance,
-                                        )
+        get_isotopomer_intensity_partial = partial(get_isotopomer_intensity,
+                                                   id_=mzid.curr_frac_filtered_id_df.copy(),
+                                                   iso_to_do=iso_to_do,
+                                                   mzml=mzml,
+                                                   rt_tolerance=rt_tolerance,
+                                                   mass_tolerance=mass_tolerance,
+                                                   use_range=True,
+                                                   )
 
         # Single threaded loop
         # '''
@@ -267,17 +262,48 @@ def integrate_all(args):
         # '''
         from concurrent import futures
         with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
-            results = list(tqdm.tqdm(ex.map(integrate_one_partial, loop_),
-                                     total=max(loop_),
-                                     desc=f'Integrating peaks in sample: {current_sample}'
-                                          f' file: {mzml_files[idx]}'))
+            intensities_results = list(tqdm.tqdm(ex.map(get_isotopomer_intensity_partial, loop_),
+                                                 total=max(loop_),
+                                                 desc=f'Extracting isotopomer intensities in sample: {current_sample}'
+                                                      f' file: {mzml_files[idx]}'))
         # '''
 
+
+        #
+        # append the raw intensities data frame
+        #
+        intensities_df = pd.DataFrame().append([res for res in intensities_results], ignore_index=True)
+        intensities_df['file'] = mzml_files[idx]
+        intensities_df['idx'] = idx
+        # id_intensities_df = intensities_dfpd.merge(intensities_df, mzid.curr_frac_filtered_id_df, on='pep_id', how='left')
+
+        if len(overall_intensities_df.index) == 0:
+            overall_intensities_df = intensities_df
+        else:
+            overall_intensities_df = overall_intensities_df.append(intensities_df, ignore_index=True)
+
+        # Now perform integration
+        integrated_peaks = []
+        for int_res in tqdm.tqdm(intensities_results,
+                                 desc=f'Integrating peaks in sample: {current_sample} file: {mzml_files[idx]}'
+                                 ):
+            iso_areas = [int_res['pep_id'][0]]
+
+            # TODO: smooth
+            # for m in ['m' + str(iso) for iso in iso_to_do]:
+            #    res3[m] = scipy.signal.savgol_filter(res3[m], 9, 3)
+
+            for m in ['m' + str(iso) for iso in iso_to_do]:
+
+                iso_area = np.trapz(int_res[m], x=int_res['rt'])
+                iso_areas.append(iso_area)
+
+            integrated_peaks.append(iso_areas)
         #
         # convert the integrated values into a data frame
         #
-        df_columns = ['ID', 'pep_id'] + ['m' + str(iso) for iso in iso_to_do]
-        integrated_peaks = [res[0] for res in results]
+        df_columns = ['pep_id'] + ['m' + str(iso) for iso in iso_to_do]
+
         integrated_df = pd.DataFrame(integrated_peaks, columns=df_columns)
         id_integrated_df = pd.merge(mzid.curr_frac_filtered_id_df, integrated_df, on='pep_id', how='left')
         id_integrated_df['file'] = mzml_files[idx]
@@ -287,18 +313,6 @@ def integrate_all(args):
             overall_integrated_df = id_integrated_df
         else:
             overall_integrated_df = overall_integrated_df.append(id_integrated_df, ignore_index=True)
-
-        #
-        # append the raw intensities data frame
-        #
-        intensities_df = pd.DataFrame().append([res[1] for res in results], ignore_index=True)
-        intensities_df['file'] = mzml_files[idx]
-        # id_intensities_df = intensities_dfpd.merge(intensities_df, mzid.curr_frac_filtered_id_df, on='pep_id', how='left')
-
-        if len(overall_intensities_df.index) == 0:
-            overall_intensities_df = intensities_df
-        else:
-            overall_intensities_df = overall_intensities_df.append(intensities_df, ignore_index=True)
 
     # write the integrated and intensities results
     save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
@@ -310,15 +324,16 @@ def integrate_all(args):
     return sys.exit(os.EX_OK)
 
 
-def integrate_one(index: int,
-                  id_: pd.DataFrame,
-                  iso_to_do: list,
-                  rt_tolerance: float,
-                  mass_tolerance: float,
-                  mzml,
-                  ) -> list:
+def get_isotopomer_intensity(index: int,
+                             id_: pd.DataFrame,
+                             iso_to_do: list,
+                             rt_tolerance: float,
+                             mass_tolerance: float,
+                             mzml,
+                             use_range: True,
+                             ) -> list:
     """
-    get all isotopomer mass intensities from ms1 scans within range and integrate
+    get all isotopomer mass intensities from ms1 scans within range for one peptide for integration
 
     :param index: int The row number of the peptide ID table passed from the wrapper.
     :param id_: protein identification dataframe
@@ -326,6 +341,7 @@ def integrate_one(index: int,
     :param rt_tolerance: retention time range in minutes
     :param mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
     :param mzml: mzml file object
+    :param use_range: boolean whether to use all PSM scans for each peptide for RT determination
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
@@ -340,23 +356,33 @@ def integrate_one(index: int,
     # get peptide mass, scan number, and charge
     peptide_mass = float(id_.loc[index, 'peptide mass'])
 
-    # 2021-05-01 percolator scan number is likely 1-indexed
-    scan_number = int(id_.loc[index, 'scan']) - 1
-
     charge = float(id_.loc[index, 'charge'])
-
-    # get retention time from Percolator scan number # 2021-05-19 added -1
-    peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left') - 1 ]
-
-    assert isinstance(peptide_rt.item(), float), '[error] cannot retrieve retention time from scan number'
 
     # calculate precursor mass from peptide monoisotopic mass
     peptide_prec = (peptide_mass + (charge * proton)) / charge
 
     intensity_over_time = []
 
-    # choose the scan numbers from the index (beware that scan number is 1-indexed)
-    nearby_ms1_scans = mzml.scan_idx[np.abs(mzml.rt_idx - peptide_rt) <= rt_tolerance]
+    # choose nearby scans from the span of scans of all qualifying psms that match to the peptide-z concat
+    if use_range:
+        concat_id_ = id_[id_['concat'] == id_.loc[index, 'concat']]
+        min_scan = min(concat_id_['scan'])
+        max_scan = max(concat_id_['scan'])
+
+        peptide_rt_lower = mzml.rt_idx[np.searchsorted(mzml.scan_idx, min_scan, side='left') - 1]
+        peptide_rt_upper = mzml.rt_idx[np.searchsorted(mzml.scan_idx, max_scan, side='left') - 1]
+
+        nearby_ms1_scans = mzml.scan_idx[
+            np.where((mzml.rt_idx - peptide_rt_lower > -rt_tolerance) & (mzml.rt_idx - peptide_rt_upper < rt_tolerance))]
+
+    # If not use range, simply use the scan number from the psm as the center for +/- rt_tolerance
+    else:
+        scan_number = int(id_.loc[index, 'scan']) # - 1
+        # get retention time from Percolator scan number # 2021-05-19 added -1
+        peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left') - 1]
+        assert isinstance(peptide_rt.item(), float), '[error] cannot retrieve retention time from scan number'
+
+        nearby_ms1_scans = mzml.scan_idx[np.abs(mzml.rt_idx - peptide_rt) <= rt_tolerance]
 
     # loop through each MS1 spectrum within retention time range
     for scan in nearby_ms1_scans:
@@ -383,10 +409,12 @@ def integrate_one(index: int,
             )
 
     if not intensity_over_time:
-        raise Exception(f'No intensity profile for peptide {prec_iso_am}')
+        raise Exception(f'No intensity profile for peptide {peptide_prec}'
+                        f' min {min_scan} {peptide_rt_lower} max {max_scan} {peptide_rt_upper}'
+                        f' scans {nearby_ms1_scans} iso {iso_to_do}')
 
-    integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(np.array(intensity_over_time),
-                                                                                      iso_to_do=iso_to_do)
+    # integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(np.array(intensity_over_time),
+    #                                                                                   iso_to_do=iso_to_do)
 
     # 2021-11-10 return intensities -- currently this is a pandas df which may be slower...
     intensity_out = pd.DataFrame(intensity_over_time, columns=['iso', 'rt', 'int'])
@@ -398,7 +426,7 @@ def integrate_one(index: int,
     intensity_out['pep_id'] = id_.loc[index, 'pep_id']
     intensity_out['concat'] = id_.loc[index, 'concat']
 
-    return [integrated, intensity_out]
+    return intensity_out # [integrated, intensity_out]
 
 
 def integrate_isotope_intensity(intensity_over_time: np.ndarray,

@@ -96,6 +96,9 @@ class ReadPercolator(object):
             # Test for Crux Percolator file
             test_col = id_df['spectrum precursor m/z']
 
+            # 2021-12-21 calculate peptide mass because the crux peptide mass column does not include cysteine IAA mass
+            id_df['peptide mass'] = [accmass.calculate_ion_mz(seq) for seq in id_df['sequence']]
+
         except OSError as e:
             sys.exit('Failed to load mzid file. ' + str(e.errno))
 

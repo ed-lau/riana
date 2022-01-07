@@ -2,7 +2,7 @@
 Snakefile for multiple fractions
 
 Example command:
-snakemake -c -s Snakefile -d out/snakemake_test --configfile config_o18.yaml
+snakemake -c -s Snakefile -d out/snakemake_test --configfile config_ipsc_o18.yaml
 
 Single fractions:
 rule copy_files:
@@ -67,7 +67,7 @@ rule riana_integrate:
     shell:
         "riana integrate {input.mzml} "
         "{input.pin} "
-        "-i {params.iso} -q 0.01 -r 0.5 -m 25 -o {output} -s {wildcards.timepoint} "
+        "-i {params.iso} -q 0.01 -r 0.33 -m 20 -o {output} -s {wildcards.timepoint} "
         "-t {threads}"
 
 rule riana_fit:
