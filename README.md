@@ -10,7 +10,7 @@ Installation:
 
 Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.
 
-Riana can be installed from PyPI via pip. We recommend using a virtual environment.
+Riana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.
 
     $ pip install riana
 
@@ -27,11 +27,16 @@ To test that the installation can load test data files in tests/data:
     $ pip install tox
     $ tox
 
-To run the riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result
+To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result
 to the home directory:
 
     $ python -m riana tests/data/ -u -i 0,1,2,3,4,5 -q 0.1 -r 0.5 -t 10 -o ~/
-    
+
+## Processing Datasets
+
+Riana comes with a Snakemake pipeline. To run, edit the `config_template.yaml` file
+to specify the location of Comet and Percolator executables. 
+
 Notes on the expected input files:
 
 	* Riana.py was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.
