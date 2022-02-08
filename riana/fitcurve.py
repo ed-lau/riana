@@ -242,7 +242,7 @@ def fit_all(args):
 
         # get first protein name
         protein = rdf_filtered[rdf_filtered.concat == seq]['protein id'].iloc[0]
-        first_protein = re.sub('(sp|tr)\|.+?\|(.+?)_(MOUSE|HUMAN|RAT).*', '\\1', protein)
+        first_protein = re.sub('(sp|tr)\|.+?\|(.+?)_(MOUSE|HUMAN|RAT).*', '\\2', protein)
         if protein.count(',') > 0:
             first_protein = first_protein + ' (multi)'
 
