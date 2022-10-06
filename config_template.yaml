@@ -17,17 +17,18 @@ paths:
 
 # Integration and fitting parameters
 params:
-  model: fornasiero     # fitting model (simple, guan, fornasiero)
-  label_type: hw        # labeling type (aa or hw or o18)
-  isotopomers: 0,6,12   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
-  ria_max: 0.5          # final precursor ria
-  kp: 1.05              # guan model parameter (kp) or fornasiero model parameter (b)
+  model: simple     # fitting model (simple, guan, fornasiero)
+  label_type: hw        # labeling type (aa or hw)
+  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
+  mass_tol: 15         # mass tolerance in ppm for integration (e.g., 25)
+  ria_max: 1          # final precursor ria
+  kp: 10              # guan model parameter (kp) or fornasiero model parameter (b)
   kr: 0.15              # fornasiero model parameter (a)
   rp: 5.52              # fornasiero model parameter (r)
-  depth: 11             # minimum number of data points
+  depth: 1             # minimum number of data points
 
 # Number of threads
 threads:
-  comet: 6
-  riana: 3
+  comet: 8
+  riana: 4
   fitcurve: 12

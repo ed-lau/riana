@@ -62,12 +62,13 @@ rule riana_integrate:
     output:
         riana="{timepoint}_riana.txt"
     params:
-        iso=config["params"]["isotopomers"]
+        iso=config["params"]["isotopomers"],
+        mass_tol=config["params"]["mass_tol"]
     threads: config["threads"]["riana"]
     shell:
         "riana integrate {input.mzml} "
         "{input.pin} "
-        "-i {params.iso} -q 0.01 -r 0.33 -m 25 -o {output} -s {wildcards.timepoint} "
+        "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o {output} -s {wildcards.timepoint} "
         "-t {threads}"
 
 rule riana_fit:

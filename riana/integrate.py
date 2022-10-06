@@ -350,6 +350,8 @@ def get_isotopomer_intensity(index: int,
     proton = constants.PROTON_MASS
     if params.deuterium_mass_defect:
         iso_added_mass = constants.D_MASSDIFF  # see constants for details
+    elif params.silac_mass_defect:
+        iso_added_mass = constants.SILAC_MASSDIFF
     else:
         iso_added_mass = constants.C13_MASSDIFF
 

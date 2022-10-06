@@ -14,7 +14,7 @@ def main():
 
     # Main command
     parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
-                                                 'isotopomers')
+                                                 ' isotopomers')
 
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))

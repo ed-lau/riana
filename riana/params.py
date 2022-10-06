@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 
-""" Parameters """
+""" Parameters that are not accessible through the CLI """
 
 """
 Peptides
 
 """
 iaa = True  # add iodoacetamide to all cysteine peptide mass automatically
-deuterium_mass_defect = False  # Use the mass difference between 2H and H as isotopomer mass difference
+deuterium_mass_defect = False #True #False  # Use the mass difference between 2H and H as isotopomer mass difference
+silac_mass_defect = True  # Use a custom mass difference for SILAC experiments which contain a mix of 13C and 15N
 labeled_residue = 'K'   # the labeled amino acid in aa labeling
-label_mass = [6.0201]     # this is the label mass in amino acid
+label_mass = [6.02, 6.0201, 8.01, 10.01, 4.03, 9.06]     # this is the label mass in amino acid
 # labeling; will be excluded from peptide mass calculation unlike other PTM masses
 
 """
