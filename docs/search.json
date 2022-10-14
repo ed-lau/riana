@@ -1,0 +1,107 @@
+[
+  {
+    "objectID": "change.html",
+    "href": "change.html",
+    "title": "Change Log",
+    "section": "",
+    "text": "RIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting\nAdded native support to perform curve-fitting and output best-fit curve plots\nAdded support for one-pool, two-compartment (Guan et al.) and three-exponent (Fornasiero et al.) models\nMatch between runs is temporarily disabled to support the Snakemake workflow and will return in a later version."
+  },
+  {
+    "objectID": "change.html#update-v.0.6.4",
+    "href": "change.html#update-v.0.6.4",
+    "title": "Change Log",
+    "section": "Update v.0.6.4",
+    "text": "Update v.0.6.4\n\nAdded support for standalone Percolator results for v.3.0.5.\nOrganize the project in identical manner, include one psms.txt for target psms (output of Percolator -m tag) in each percolator folder.\nWhen using standalone Percolator dist, peptide masses are calculated de novo\nToggle match between runs using –mbr or -b\nNo longer writes results of individual fractions separately."
+  },
+  {
+    "objectID": "change.html#update-v.0.6.3",
+    "href": "change.html#update-v.0.6.3",
+    "title": "Change Log",
+    "section": "Update v.0.6.3",
+    "text": "Update v.0.6.3\n\nFixed an issue where mbr all-NaN slice causes an error\nChanged project directory structure so that mzml files have to be within an mzml subfolder and percolator files are in the percolator folder"
+  },
+  {
+    "objectID": "change.html#update-v.0.6.0",
+    "href": "change.html#update-v.0.6.0",
+    "title": "Change Log",
+    "section": "Update v.0.6.0",
+    "text": "Update v.0.6.0\n\nStarted implementation of match between runs and restructured project for distribution via pip"
+  },
+  {
+    "objectID": "change.html#update-v.0.5.0",
+    "href": "change.html#update-v.0.5.0",
+    "title": "Change Log",
+    "section": "Update v.0.5.0",
+    "text": "Update v.0.5.0\n\nUpdated to use pymzml 2.2.\nMulti-threading is now supported with the –thread argument.\nRIANA now loads all the spectra needed for integration into memory.\nCompared to v.0.4.0 there should now be a substantial speed gain and can finish a sizeable fraction (~1 Gb raw file) in 10 min.\nUser-definable mass tolerance for MS1 integration is now supported via the –masstolerance argument [default 100 ppm]."
+  },
+  {
+    "objectID": "change.html#update-v.0.4.0",
+    "href": "change.html#update-v.0.4.0",
+    "title": "Change Log",
+    "section": "Update v.0.4.0",
+    "text": "Update v.0.4.0\n\nUpdated to use python 3.5+, up-to-date scipy and numpy, pymzml.\nMulti-fraction runs are now supported - the mzml files in the directory need to be the same as the order they appear in the Percolator indices (check the Percolator output log file if unsure). For the most cases this shouldn’t present a problem if the mzml directory contains exactly the same mzml files used for the database search, unless there is a difference in how the operating system order files on the search computer (e.g., file_10.mzml vs. file_2. mzml) or if one of the fractions contained no protein ID and Crux/Percolator decided to skip the file in its indexing.\nTo support multi-fraction analysis, RIANA now takes in Percolator tab delimited files for protein ID rather than mzid. Mzid support will be added back in in a future version."
+  },
+  {
+    "objectID": "faqs.html",
+    "href": "faqs.html",
+    "title": "Frequently Asked Questions",
+    "section": "",
+    "text": "A: Contact us at [edward.lau@cuanschutz.edu]"
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "",
+    "text": "Edward Lau Lab, University of Colorado School of Medicine"
+  },
+  {
+    "objectID": "index.html#about-riana",
+    "href": "index.html#about-riana",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "About RIANA",
+    "text": "About RIANA\nRIANA (Relative Isotope Abundance Analyzer) is a software to automate the analysis of mass spectrometry-based protein turnover measurement experiments.\n\n\n\nRIANA Workflow"
+  },
+  {
+    "objectID": "index.html#downloads",
+    "href": "index.html#downloads",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "Downloads",
+    "text": "Downloads\n\n\nLatest Updates\nv0.7.0\n\n\nRIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting\nAdded native support to perform curve-fitting and output best-fit curve plots\nAdded support for one-pool, two-compartment (Guan et al.) and three-exponent (Fornasiero et al.) models\nMatch between runs is temporarily disabled to support the Snakemake workflow and will return in a later version.\n\n\nSee Change Log for details.\n\nThe latest version and source code of RIANA can be found on github: https://github.com/ed-lau/riana.\nSee the Quick Start and Documentation for instructions."
+  },
+  {
+    "objectID": "index.html#contributors",
+    "href": "index.html#contributors",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "Contributors",
+    "text": "Contributors\n\nEdward Lau, PhD - ed-lau"
+  },
+  {
+    "objectID": "index.html#citations",
+    "href": "index.html#citations",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "Citations",
+    "text": "Citations\n\nHarmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult animals. Hammond DE, Simpson DM, Franco C, Wright Muelas M, Wasters J, Ludwig RW, PRescott MC, Hurst JL, Beynon RJ, E Lau Molecular & Cellular Proteomics 2022, 100252 doi:10.1016/j.mcpro.2022.100252"
+  },
+  {
+    "objectID": "install.html",
+    "href": "install.html",
+    "title": "Quick Start",
+    "section": "",
+    "text": "Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.\nRiana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.\n$ pip install riana\nLaunch riana as a module (Usage/Help):\n$ python -m riana\nAlternatively as a console entry point:\n$ riana\nTo test that the installation can load test data files in tests/data:\n$ pip install tox\n$ tox\nTo run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result to the home directory:\n$ python -m riana tests/data/ -u -i 0,1,2,3,4,5 -q 0.1 -r 0.5 -t 10 -o ~/"
+  },
+  {
+    "objectID": "install.html#processing-datasets",
+    "href": "install.html#processing-datasets",
+    "title": "Quick Start",
+    "section": "Processing Datasets",
+    "text": "Processing Datasets\n\nVia Snakemake\nRIANA comes with a Snakemake pipeline which is the recommended way to run RIANA. To configure, edit the provided config_template.yaml file to specify the location of Comet and Percolator executables. Then run Snakemake, e.g.,:\n$ snakemake --configfile ./{snakemake.yaml} -d {out_dir} --cores 8\nRefer to Snakemake documentations for details on configuring snake files.\nBelow is the config_template.yaml:\n# Config\n\n# Data location\ndata:\n  time0: /path/to/time0/folder\n  time1: /path/to/time1/folder\n  time3: /path/to/time3/folder\n  time6: /path/to/time6/folder\n\n# Paths to the comet executable, the comet params file, the database, and the percolator executable\n# The Snakefile assumes riana can be executed in the shell by riana\npaths:\n  comet: /path/to/comet_source_2020013/comet.exe\n  comet_params: /path/to/params/comet.params\n  fasta: /path/tp/database.fas\n  percolator: /path/to/percolator\n\n# Integration and fitting parameters\nparams:\n  model: simple     # fitting model (simple, guan, fornasiero)\n  label_type: hw        # labeling type (aa or hw)\n  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)\n  mass_tol: 15         # mass tolerance in ppm for integration (e.g., 25)\n  ria_max: 1          # final precursor ria\n  kp: 10              # guan model parameter (kp) or fornasiero model parameter (b)\n  kr: 0.15              # fornasiero model parameter (a)\n  rp: 5.52              # fornasiero model parameter (r)\n  depth: 1             # minimum number of data points\n\n# Number of threads\nthreads:\n  comet: 8\n  riana: 4\n  fitcurve: 12\n\n\nManual Runs\nAlternatively, RIANA can be directly called from command line given the paths to the folder of the mzML files and the Search/Percolator results. To run the turnover analysis pipeline manually, prepare the following expected input files:\n\nRIANA was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.\nThe following workflow has been tested for both amino acid and heavy water labeling data gathered on a Q-Exactive instrument:\nConvert raw files to mzML, using pwiz 3.0 msconvert in command line, with the following option:\n\n--filter \"peakPicking vendor\"\n\nDownload the latest Crux distribution\nRun Tide index with the following options:\n\n--digestion partial-digest\n--missed-cleavages\n\nRun Tide search for each experimental time point separately with the following options:\n\n--isotope-error 1,2 (for HW) or 6,12 (for AA)\n--compute-sp T\n--mz-bin-width 0.02\n--mz-bin-offset 0.0\n--precursor-window 20\n--precursor-window-type ppm\n\nRun Percolator with the following options:\n\n--protein T\n--decoy-prefix DECOY_\n\nRun RIANA integrate for each experimental time point separately\n\n\n\n\n\n\n\nSpecifying paths\n\n\n\nNote that the mzml_path argument should point to the directory where all mzML fractions (fraction1.mzML, fraction2.mzML, etc.) for each labeling time point are located, whereas the id_path argument should point to a percolator.target.psms.txt file from the output of searching and post-processing all the mzML files in that labeling time point together"
+  },
+  {
+    "objectID": "about.html",
+    "href": "about.html",
+    "title": "Documentations",
+    "section": "",
+    "text": "riana integrate -h\nusage: riana integrate [-h] [-s SAMPLE] [-i ISO] [-u] [-t THREAD] [-o OUT] [-q Q_VALUE] [-r R_TIME] [-m MASS_TOL] mzml_path id_path\n\npositional arguments:\n  mzml_path             <required> path to folder containing the mzml files\n  id_path               <required> path to the percolator output psms.txt file\n\noptional arguments:\n  -h, --help            show this help message and exit\n  -s SAMPLE, --sample SAMPLE\n                        sample name to override mzml folder name, must include numbers, e.g., time1\n  -i ISO, --iso ISO     isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]\n  -u, --unique          integrate unique peptides only\n  -t THREAD, --thread THREAD\n                        number of threads for concurrency [default: 1]\n  -o OUT, --out OUT     path to the output directory [default: riana]\n  -q Q_VALUE, --q_value Q_VALUE\n                        integrate only peptides with q value below this threshold [default: 1e-2]\n  -r R_TIME, --r_time R_TIME\n                        retention time (in minutes, both directions) tolerance for integration\n  -m MASS_TOL, --mass_tol MASS_TOL\n                        <integer> mass tolerance in ppm for integration [default 50 ppm]\n\n\n\n\n\n\nriana fit -h\nusage: riana fit [-h] [-m {simple,guan,fornasiero}] [-l {aa,hw,o18}] [--kp KP] [--kr KR] [--rp RP] [-q Q_VALUE] [-d DEPTH] [-r RIA] [-o OUT] [-t THREAD] riana_path [riana_path ...]\n\npositional arguments:\n  riana_path            <required> paths to one or more integrate out text files (note: the sample field must include numericals corresponding to time units (e.g., time0, time 6)\n\noptional arguments:\n  -h, --help            show this help message and exit\n  -m {simple,guan,fornasiero}, --model {simple,guan,fornasiero}\n                        kinetic models for fitting, currently only the simple exponential model is implemented [default: simple]\n  -l {aa,hw,o18}, --label {aa,hw,o18}\n                        labeling type [default: hw]\n  --kp KP               for two-compartment models, the precursor rate constant [default: 0.5]\n  --kr KR               for the fornasiero model, the reutilization rate constant [default: 0.05]\n  --rp RP               for the fornasiero model, the ratio of protein bound to free precursors [default: 10]\n  -q Q_VALUE, --q_value Q_VALUE\n                        fits only peptide data points with q value below this threshold [default: 1e-2]\n  -d DEPTH, --depth DEPTH\n                        fits only peptides identified in at least this many samples [default: 6]\n  -r RIA, --ria RIA     final isotope enrichment levels, if known [default: 0.5]\n  -o OUT, --out OUT     path to the output directory [default: riana]\n  -t THREAD, --thread THREAD\n                        number of threads for concurrency [default: 1]"
+  }
+]

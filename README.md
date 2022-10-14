@@ -27,10 +27,10 @@ To test that the installation can load test data files in tests/data:
     $ pip install tox
     $ tox
 
-To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result
+To run the RIANA test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result
 to the home directory:
 
-    $ python -m riana tests/data/ -u -i 0,1,2,3,4,5 -q 0.1 -r 0.5 -t 10 -o ~/
+    $ python -m riana integrate tests/data/ -u -i 0,1,2,3,4,5 -q 0.1 -r 0.5 -t 10 -o ~/
 
 ## Processing Datasets
 

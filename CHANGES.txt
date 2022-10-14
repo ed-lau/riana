@@ -1,6 +1,12 @@
 ## CHANGES
 ---
 
+## Update v.0.7.0
+* RIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting
+* Added native support to perform curve-fitting and output best-fit curve plots
+* Added support for one-pool, two-compartment (Guan et al.) and three-exponent (Fornasiero et al.) models
+* Match between runs is temporarily disabled to support the Snakemake workflow and will return in a later version.
+
 ## Update v.0.6.4
 * Added support for standalone Percolator results for v.3.0.5.
 * Organize the project in identical manner, include one psms.txt for target psms (output of Percolator -m tag) in each percolator folder.
