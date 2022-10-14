@@ -241,6 +241,9 @@ def integrate_all(args):
         #
         # TODO: to accommodate multiple PSMs per concat, this should loop through a concat list.
         loop_ = range(len(mzid.curr_frac_filtered_id_df))
+
+        assert len(loop_) > 0, 'No qualified peptide after filtering'
+
         get_isotopomer_intensity_partial = partial(get_isotopomer_intensity,
                                                    id_=mzid.curr_frac_filtered_id_df.copy(),
                                                    iso_to_do=iso_to_do,
