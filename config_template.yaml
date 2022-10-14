@@ -26,6 +26,7 @@ params:
   kr: 0.15              # fornasiero model parameter (a)
   rp: 5.52              # fornasiero model parameter (r)
   depth: 1             # minimum number of data points
+  aa: K                 # which amino acid carries heavy label; only relevant if label_type is aa
 
 # Number of threads
 threads:

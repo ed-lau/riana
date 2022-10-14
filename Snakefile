@@ -81,7 +81,7 @@ rule riana_fit:
         kp=config["params"]["kp"],
         kr=config["params"]["kr"],
         rp=config["params"]["rp"],
-        aa=confit["params"]["aa"],
+        aa=config["params"]["aa"],
         depth=config["params"]["depth"],
         label_type=config["params"]["label_type"],
         model=config["params"]["model"]
