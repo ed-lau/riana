@@ -146,6 +146,10 @@ def main():
     parser_fit.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                             default='riana')
 
+    parser_fit.add_argument('-p', '--plotcurve',
+                            action='store_true',
+                            help='plot fitted curves')
+
     parser_fit.add_argument('-t', '--thread',
                             help='number of threads for concurrency [default: 1]',
                             type=int,

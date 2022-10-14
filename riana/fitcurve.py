@@ -234,92 +234,95 @@ def fit_all(args):
     # collect all the dicts, plot out graphs and output final file
     out_dict = {}
 
-    for res in tqdm.tqdm(results, desc=f'Plotting curves'):
-
-        seq = list(res.keys())[0]
-        k_deg, r_squared, sd, t, fs = list(res.values())[0]
-
-        # do not plot and record result if k_deg is nan
-        if np.isnan(k_deg):
-            # print(k_deg, r_squared, sd, t, fs)
-            continue
-
-        # get first protein name
-        protein = rdf_filtered[rdf_filtered.concat == seq]['protein id'].iloc[0]
-        first_protein = re.sub('(sp|tr)\|.+?\|(.+?)_(MOUSE|HUMAN|RAT).*', '\\2', protein)
-        if protein.count(',') > 0:
-            first_protein = first_protein + ' (multi)'
-
-        # create plot
-        fig, ax = plt.subplots()
-        plt.plot(t, fs, '.', label='Fractional synthesis')
-
-        # 2021-11-20 create clipped t,fs series for fs values out of [-0.2, 1.2] and display them as 'x'
-        t_clipped = t[(fs < -0.2) | (fs > 1.2)]
-        fs_clipped = fs[(fs < -0.2) | (fs > 1.2)]
-        fs_clipped = fs_clipped.clip(min=-0.2, max=1.2)
-        if len(t_clipped) > 0:
-            plt.plot(t_clipped, fs_clipped, 'rx')
-
-        plt.plot(np.array(range(0, int(np.max(t))+1)),
-                 model(t=np.array(range(0, int(np.max(t))+1)),
-                       k_deg=k_deg,
-                       a_0=0.,
-                       a_max=1.,
-                       **model_pars,
-                       ),
-                 'r-', label=f'k_deg={np.round(k_deg, 3)}'
-                 )
-
-        plt.plot(np.array(range(0, int(np.max(t))+1)),
-                 model(t=np.array(range(0, int(np.max(t))+1)),
-                       k_deg=k_deg + sd,
-                       a_0=0.,
-                       a_max=1.,
-                       **model_pars,
-                       ),
-                 'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
-                 )
-
-        plt.plot(np.array(range(0, int(np.max(t))+1)),
-                 model(t=np.array(range(0, int(np.max(t))+1)),
-                       k_deg=k_deg ** 2 / (k_deg + sd),
-                       a_0=0.,
-                       a_max=1.,
-                       **model_pars,
-                       ),
-                 'r--', label=f'Lower={np.round(k_deg ** 2 / (k_deg + sd), 3)}'
-                 )
-        plt.xlabel('t')
-        plt.ylabel('fs')
-        plt.title(f'Protein: {first_protein} Sequence: {seq} R2: {np.round(r_squared, 3)}')
-        plt.legend()
-        plt.xlim([-1, max_time+1])
-        plt.ylim([-0.2, 1.2])
-
-        if k_deg < 0.01:
-            speed = "slow"
-        elif k_deg > 1:
-            speed = "fast"
-        else:
-            speed = "mid"
-
-        if r_squared >= 0.5:
-            quality = "fit"
-        else:
-            quality = "poor"
-
-        plot_dir = os.path.join(outdir, f'curves_{speed}_{quality}')
-
-        if not os.path.exists(plot_dir):
-            os.makedirs(plot_dir)
-
-        fig.savefig(os.path.join(plot_dir, f'{first_protein}_{seq}.png'))
-        plt.clf()
-        plt.close(fig)
-        # gc.collect()
-
+    for res in tqdm.tqdm(results, desc=f'Combining results'):
         out_dict = out_dict | res
+
+    if args.plotcurves:
+        for res in tqdm.tqdm(results, desc=f'Plotting curves'):
+
+            seq = list(res.keys())[0]
+            k_deg, r_squared, sd, t, fs = list(res.values())[0]
+
+            # do not plot and record result if k_deg is nan
+            if np.isnan(k_deg):
+                # print(k_deg, r_squared, sd, t, fs)
+                continue
+
+            # get first protein name
+            protein = rdf_filtered[rdf_filtered.concat == seq]['protein id'].iloc[0]
+            first_protein = re.sub('(sp|tr)\|.+?\|(.+?)_(MOUSE|HUMAN|RAT).*', '\\2', protein)
+            if protein.count(',') > 0:
+                first_protein = first_protein + ' (multi)'
+
+            # create plot
+            fig, ax = plt.subplots()
+            plt.plot(t, fs, '.', label='Fractional synthesis')
+
+            # 2021-11-20 create clipped t,fs series for fs values out of [-0.2, 1.2] and display them as 'x'
+            t_clipped = t[(fs < -0.2) | (fs > 1.2)]
+            fs_clipped = fs[(fs < -0.2) | (fs > 1.2)]
+            fs_clipped = fs_clipped.clip(min=-0.2, max=1.2)
+            if len(t_clipped) > 0:
+                plt.plot(t_clipped, fs_clipped, 'rx')
+
+            plt.plot(np.array(range(0, int(np.max(t))+1)),
+                     model(t=np.array(range(0, int(np.max(t))+1)),
+                           k_deg=k_deg,
+                           a_0=0.,
+                           a_max=1.,
+                           **model_pars,
+                           ),
+                     'r-', label=f'k_deg={np.round(k_deg, 3)}'
+                     )
+
+            plt.plot(np.array(range(0, int(np.max(t))+1)),
+                     model(t=np.array(range(0, int(np.max(t))+1)),
+                           k_deg=k_deg + sd,
+                           a_0=0.,
+                           a_max=1.,
+                           **model_pars,
+                           ),
+                     'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
+                     )
+
+            plt.plot(np.array(range(0, int(np.max(t))+1)),
+                     model(t=np.array(range(0, int(np.max(t))+1)),
+                           k_deg=k_deg ** 2 / (k_deg + sd),
+                           a_0=0.,
+                           a_max=1.,
+                           **model_pars,
+                           ),
+                     'r--', label=f'Lower={np.round(k_deg ** 2 / (k_deg + sd), 3)}'
+                     )
+            plt.xlabel('t')
+            plt.ylabel('fs')
+            plt.title(f'Protein: {first_protein} Sequence: {seq} R2: {np.round(r_squared, 3)}')
+            plt.legend()
+            plt.xlim([-1, max_time+1])
+            plt.ylim([-0.2, 1.2])
+
+            if k_deg < 0.01:
+                speed = "slow"
+            elif k_deg > 1:
+                speed = "fast"
+            else:
+                speed = "mid"
+
+            if r_squared >= 0.5:
+                quality = "fit"
+            else:
+                quality = "poor"
+
+            plot_dir = os.path.join(outdir, f'curves_{speed}_{quality}')
+
+            if not os.path.exists(plot_dir):
+                os.makedirs(plot_dir)
+
+            fig.savefig(os.path.join(plot_dir, f'{first_protein}_{seq}.png'))
+            plt.clf()
+            plt.close(fig)
+            # gc.collect()
+
 
     out_df = pd.DataFrame.from_dict(out_dict, orient='index', columns=['k_deg', 'R_squared', 'sd', 't', 'fs'])
     out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'))
