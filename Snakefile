@@ -81,6 +81,7 @@ rule riana_fit:
         kp=config["params"]["kp"],
         kr=config["params"]["kr"],
         rp=config["params"]["rp"],
+        aa=confit["params"]["aa"],
         depth=config["params"]["depth"],
         label_type=config["params"]["label_type"],
         model=config["params"]["model"]
@@ -88,5 +89,6 @@ rule riana_fit:
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
+        "--aa {params.aa}"
         "--kr {params.kr} --rp {params.rp} "
         "-t {threads} -r {params.ria} -l {params.label_type}"

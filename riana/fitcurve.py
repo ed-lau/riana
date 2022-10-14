@@ -61,6 +61,7 @@ def calculate_a0(sequence: str,
 
 def calculate_label_n(sequence: str,
                       label: str,
+                      aa_res: str = 'K',
                       ) -> float:
     """
     Calculates labeling sites of the peptide sequence in heavy water
@@ -68,6 +69,7 @@ def calculate_label_n(sequence: str,
 
     :param sequence:    the peptide sequence
     :param label:       aa, hw, or o18; if aa, only return the labelable residues
+    :param aa_res:       the amino acid being labeled
     :return:
     """
 
@@ -76,7 +78,7 @@ def calculate_label_n(sequence: str,
 
     # if amino acid labeling, return number of labeled residues
     if label == 'aa':
-        return sequence.count(params.labeled_residue)
+        return sequence.count(aa_res)
 
     # if d2o, return the number of labeling site in heavy water labeling
     elif label == 'hw':
@@ -127,6 +129,7 @@ def fit_all(args):
     ria_max = args.ria                  # final isotope enrichment level (e.g., 0.046)
     outdir = args.out                   # output directory
     label_ = args.label
+    aa_res = args.aa
 
     # select model
     if args.model == 'simple':
@@ -217,6 +220,7 @@ def fit_all(args):
                               filtered_integrated_df=rdf_filtered.copy(),
                               ria_max=ria_max,
                               model_=model,
+                              aa_res=aa_res,
                               model_pars=model_pars,
                               )
 
@@ -332,6 +336,7 @@ def fit_one(loop_index,
             filtered_integrated_df: pd.DataFrame,
             ria_max: float,
             model_: callable,
+            aa_res: str,
             model_pars: dict,
             ):
     """
@@ -342,6 +347,7 @@ def fit_one(loop_index,
     :param filtered_integrated_df:
     :param ria_max:
     :param model_:
+    :param aa_res:                      which amino acid residue is labeled, e.g., K
     :param model_pars:
     :return:
     """
@@ -378,7 +384,9 @@ def fit_one(loop_index,
 
     # calculate a_0, a_max, and fractional synthesis
     stripped = strip_concat(seq)
-    num_labeling_sites = calculate_label_n(seq, label=label)
+    num_labeling_sites = calculate_label_n(seq,
+                                           label=label,
+                                           aa_res=aa_res)
 
     a_0 = calculate_a0(seq, label=label)
     a_max = a_0 * np.power((1 - ria_max), num_labeling_sites)

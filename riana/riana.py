@@ -106,6 +106,12 @@ def main():
                             default='hw',
                             help='labeling type [default: hw]')
 
+    parser_fit.add_argument('-a', '--aa',
+                            type=str,
+                            default='K',
+                            help='which amino acid residue is label carrying [default: K]',
+                            )
+
     parser_fit.add_argument('--kp',
                             help='for two-compartment models, the precursor rate constant [default: 0.5]',
                             type=float,

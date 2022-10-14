@@ -19,7 +19,7 @@ paths:
 params:
   model: simple     # fitting model (simple, guan, fornasiero)
   label_type: hw        # labeling type (aa or hw)
-  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
+  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy aa)
   mass_tol: 15         # mass tolerance in ppm for integration (e.g., 25)
   ria_max: 1          # final precursor ria
   kp: 10              # guan model parameter (kp) or fornasiero model parameter (b)
