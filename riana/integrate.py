@@ -251,6 +251,7 @@ def integrate_all(args):
                                                    rt_tolerance=rt_tolerance,
                                                    mass_tolerance=mass_tolerance,
                                                    use_range=True,
+                                                   mass_defect=args.mass_defect,
                                                    )
 
         # Single threaded loop
@@ -321,8 +322,9 @@ def integrate_all(args):
     save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
     overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
 
-    save_path = os.path.join(directory_to_write, current_sample + '_riana_intensities.txt')
-    overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
+    if args.write_intensities:
+        save_path = os.path.join(directory_to_write, current_sample + '_riana_intensities.txt')
+        overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
 
     return sys.exit(os.EX_OK)
 
@@ -334,6 +336,7 @@ def get_isotopomer_intensity(index: int,
                              mass_tolerance: float,
                              mzml,
                              use_range: True,
+                             mass_defect: str = 'D',
                              ) -> list:
     """
     get all isotopomer mass intensities from ms1 scans within range for one peptide for integration
@@ -345,17 +348,18 @@ def get_isotopomer_intensity(index: int,
     :param mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
     :param mzml: mzml file object
     :param use_range: boolean whether to use all PSM scans for each peptide for RT determination
+    :param mass_defect: whether to use deuterium or c13 for mass defect
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
 
     # determine the mass of protons and c13
     proton = constants.PROTON_MASS
-    if params.deuterium_mass_defect:
+    if mass_defect == 'D':
         iso_added_mass = constants.D_MASSDIFF  # see constants for details
-    elif params.silac_mass_defect:
+    elif mass_defect == 'SILAC':
         iso_added_mass = constants.SILAC_MASSDIFF
-    else:
+    elif mass_defect == "C13":
         iso_added_mass = constants.C13_MASSDIFF
 
     # get peptide mass, scan number, and charge

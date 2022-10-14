@@ -21,7 +21,7 @@ ELECTRON_MASS = 0.000548579907
 
 C13_MASSDIFF = 1.003354835  # mass difference of C13 - C12 = 1.003354835
 D_MASSDIFF = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
-SILAC_MASSDIFF = 1.001
+SILAC_MASSDIFF = 1.001      # Average mass difference in SILAC (mixture of N15 or C13)
 
 # atomic masses.
 # TODO: check against scipy.constants and NIST

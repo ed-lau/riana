@@ -74,10 +74,20 @@ def main():
                                   type=float,
                                   default=1.0)
 
+    parser_integrate.add_argument('-w', '--write_intensities',
+                                  action='store_true',
+                                  help='also write pre-integration intensities into a result file')
+
     parser_integrate.add_argument('-m', '--mass_tol',
                                   help='<integer> mass tolerance in ppm for integration [default 50 ppm]',
                                   type=int,
                                   default=50)
+
+    parser_fit.add_argument('-d', '--mass_defect',
+                            type=str,
+                            choices=['D', 'C13', 'SILAC'],
+                            default='D',
+                            help='mass defect type [default: D]')
 
     parser_integrate.set_defaults(func=integrate.integrate_all)
 

@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>RIANA - Documentations</title>
+<title>RIANA v0.7.0 - Documentations</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -56,9 +56,9 @@ ul.task-list{list-style: none;}
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA - Documentations">
-<meta property="og:site-name" content="RIANA">
-<meta name="twitter:title" content="RIANA - Documentations">
+<meta property="og:title" content="RIANA v0.7.0 - Documentations">
+<meta property="og:site-name" content="RIANA v0.7.0">
+<meta name="twitter:title" content="RIANA v0.7.0 - Documentations">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
 <meta name="twitter:card" content="summary_large_image">
@@ -71,7 +71,7 @@ ul.task-list{list-style: none;}
     <nav class="navbar navbar-expand-lg navbar-dark ">
       <div class="navbar-container container-fluid">
       <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA</span>
+    <span class="navbar-title">RIANA v0.7.0</span>
   </a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
@@ -140,7 +140,8 @@ ul.task-list{list-style: none;}
 <section id="riana-integrate" class="level3">
 <h3 class="anchored" data-anchor-id="riana-integrate">RIANA integrate</h3>
 <pre><code>riana integrate -h
-usage: riana integrate [-h] [-s SAMPLE] [-i ISO] [-u] [-t THREAD] [-o OUT] [-q Q_VALUE] [-r R_TIME] [-m MASS_TOL] mzml_path id_path
+usage: riana integrate [-h] [-s SAMPLE] [-i ISO] [-u] [-t THREAD] [-o OUT] [-q Q_VALUE] 
+[-r R_TIME] [-m MASS_TOL] mzml_path id_path
 
 positional arguments:
   mzml_path             &lt;required&gt; path to folder containing the mzml files
@@ -168,28 +169,36 @@ optional arguments:
 <section id="riana-fit" class="level3">
 <h3 class="anchored" data-anchor-id="riana-fit">RIANA fit</h3>
 <pre><code>riana fit -h
-usage: riana fit [-h] [-m {simple,guan,fornasiero}] [-l {aa,hw,o18}] [--kp KP] [--kr KR] [--rp RP] [-q Q_VALUE] [-d DEPTH] [-r RIA] [-o OUT] [-t THREAD] riana_path [riana_path ...]
+usage: __main__.py fit [-h] [-m {simple,guan,fornasiero}] [-l {aa,hw,o18}] [-a AA] [--kp KP] 
+[--kr KR] [--rp RP] [-q Q_VALUE] [-d DEPTH] [-r RIA] [-o OUT] [-p] [-t THREAD] riana_path [riana_path ...]
 
 positional arguments:
-  riana_path            &lt;required&gt; paths to one or more integrate out text files (note: the sample field must include numericals corresponding to time units (e.g., time0, time 6)
+  riana_path            &lt;required&gt; paths to one or more integrate out text files 
+                        (note: the sample field must include numericals corresponding 
+                        to time units (e.g., time0, time 6)
 
 optional arguments:
   -h, --help            show this help message and exit
   -m {simple,guan,fornasiero}, --model {simple,guan,fornasiero}
-                        kinetic models for fitting, currently only the simple exponential model is implemented [default: simple]
+                        kinetic models for fitting, currently only the simple exponential model 
+                        is implemented [default: simple]
   -l {aa,hw,o18}, --label {aa,hw,o18}
                         labeling type [default: hw]
+  -a AA, --aa AA        which amino acid residue is label carrying [default: K]
   --kp KP               for two-compartment models, the precursor rate constant [default: 0.5]
   --kr KR               for the fornasiero model, the reutilization rate constant [default: 0.05]
-  --rp RP               for the fornasiero model, the ratio of protein bound to free precursors [default: 10]
+  --rp RP               for the fornasiero model, the ratio of protein bound to free precursors 
+                        [default: 10]
   -q Q_VALUE, --q_value Q_VALUE
                         fits only peptide data points with q value below this threshold [default: 1e-2]
   -d DEPTH, --depth DEPTH
                         fits only peptides identified in at least this many samples [default: 6]
   -r RIA, --ria RIA     final isotope enrichment levels, if known [default: 0.5]
   -o OUT, --out OUT     path to the output directory [default: riana]
+  -p, --plotcurve       plot fitted curves
   -t THREAD, --thread THREAD
                         number of threads for concurrency [default: 1]
+
 </code></pre>
 
 

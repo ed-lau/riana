@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>RIANA - Frequently Asked Questions</title>
+<title>RIANA v0.7.0 - Frequently Asked Questions</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -54,11 +54,12 @@ ul.task-list{list-style: none;}
   }
 }</script>
 
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA - Frequently Asked Questions">
-<meta property="og:site-name" content="RIANA">
-<meta name="twitter:title" content="RIANA - Frequently Asked Questions">
+<meta property="og:title" content="RIANA v0.7.0 - Frequently Asked Questions">
+<meta property="og:site-name" content="RIANA v0.7.0">
+<meta name="twitter:title" content="RIANA v0.7.0 - Frequently Asked Questions">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
 <meta name="twitter:card" content="summary_large_image">
@@ -71,7 +72,7 @@ ul.task-list{list-style: none;}
     <nav class="navbar navbar-expand-lg navbar-dark ">
       <div class="navbar-container container-fluid">
       <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA</span>
+    <span class="navbar-title">RIANA v0.7.0</span>
   </a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
@@ -133,6 +134,19 @@ ul.task-list{list-style: none;}
 
 <section id="faqs" class="level2">
 <h2 class="anchored" data-anchor-id="faqs">FAQs</h2>
+<section id="q-how-do-i-retrieve-half-life-information-on-the-peptide-and-protein" class="level4">
+<h4 class="anchored" data-anchor-id="q-how-do-i-retrieve-half-life-information-on-the-peptide-and-protein">Q: How do I retrieve half-life information on the peptide and protein?</h4>
+<p>A: The half-life of a peptide or protein can be calculated from the output <code>k</code> parameter using the equation:</p>
+<p><span class="math display">\[ t_{1/2} = ln(2)/k \]</span></p>
+</section>
+<section id="q-how-are-the-plotted-curves-separated-to-the-curves_fast_fit-curves_mid_fit-and-curve_slow_fit-directories" class="level4">
+<h4 class="anchored" data-anchor-id="q-how-are-the-plotted-curves-separated-to-the-curves_fast_fit-curves_mid_fit-and-curve_slow_fit-directories">Q: How are the plotted curves separated to the curves_fast_fit, curves_mid_fit, and curve_slow_fit directories?</h4>
+<p>A: The directories are intended to facilitate navigation only rather than a rigorous indication of data quality. Plots for fitted curves with k &lt; 0.01 are in the “slow” directory, 0.01 &lt;= k &lt;= 1 in the “mid” directory, and 1 &lt; k in the “fast” directory. Plots for fitted curves with R<sup>2</sup> &gt;= 0.5 are in the “fit” directory, and those with R<sup>2</sup> &lt; 0.5 are in the “poor” directory.</p>
+</section>
+<section id="q-does-riana-fit-perform-protein-level-curve-fitting" class="level4">
+<h4 class="anchored" data-anchor-id="q-does-riana-fit-perform-protein-level-curve-fitting">Q: Does RIANA fit perform protein level curve fitting?</h4>
+<p>A: RIANA currently performs curve fitting at the peptide level only. Users can perform protein-level curve fitting using the <code>{sample}_riana.txt</code> integration result files. Alternatively, protein-level rate constants can be derived by taking a median or harmonic mean of the peptide-level rate constants with similar results, as we showed in our recent <a href="https://doi.org/10.1016/j.mcpro.2022.100252">publication</a>.</p>
+</section>
 <section id="q-how-can-i-contribute-to-riana" class="level4">
 <h4 class="anchored" data-anchor-id="q-how-can-i-contribute-to-riana">Q: How can I contribute to RIANA?</h4>
 <p>A: Contact us at [edward.lau@cuanschutz.edu]</p>

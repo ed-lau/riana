@@ -27,6 +27,7 @@ params:
   rp: 5.52              # fornasiero model parameter (r)
   depth: 1             # minimum number of data points
   aa: K                 # which amino acid carries heavy label; only relevant if label_type is aa
+  mass_defect: D        # which isotope mass defect to use (D, C13, SILAC)
 
 # Number of threads
 threads:

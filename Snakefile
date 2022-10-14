@@ -2,33 +2,8 @@
 Snakefile for multiple fractions
 
 Example command:
-snakemake -c -s Snakefile -d out/snakemake_test --configfile config_ipsc_o18.yaml
+snakemake -c -s ./Snakefile -d out/snakemake_test --configfile config_template.yaml
 
-Single fractions:
-rule copy_files:
-    input:
-        mzml = lambda wildcards: config["data"][wildcards.timepoint]
-    output:
-        # dir="out/snakemake/{timepoint}",
-        linked_mzml=temp("out/snakemake/{timepoint}/mzml/input.mzml.gz")
-    shell:
-        "cp {input.mzml} {output.linked_mzml}" # should change to symlink instead probably
-
-rule comet:
-    input: "out/snakemake/{timepoint}/mzml/input.mzml.gz" # lambda wildcards: config["data"][wildcards.timepoint]
-    output:
-        pin="out/snakemake/{timepoint}/comet.pin"
-    log: "out/snakemake/{timepoint}/comet.log"
-    threads: config["threads"]["comet"]
-    benchmark: "out/snakemake/{timepoint}/comet.benchmark.txt"
-    params:
-        comet=config["paths"]["comet"],
-        comet_params=config["paths"]["comet_params"],
-        fasta=config["paths"]["fasta"]
-    shell:
-        "{params.comet} -P{params.comet_params} -D{params.fasta} {input} 1>> {log}; "
-        "outname=$(basename {input} | cut -f 1 -d '.'); "
-        "mv $(dirname {input})/${{outname}}.pin {output.pin}"
 """
 
 rule all:
@@ -63,11 +38,12 @@ rule riana_integrate:
         riana="{timepoint}_riana.txt"
     params:
         iso=config["params"]["isotopomers"],
-        mass_tol=config["params"]["mass_tol"]
+        mass_tol=config["params"]["mass_tol"],
+        mass_defect=config["params"]["mass_defect"]
     threads: config["threads"]["riana"]
     shell:
         "riana integrate {input.mzml} "
-        "{input.pin} "
+        "{input.pin} -d {params.mass_defect}"
         "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o {output} -s {wildcards.timepoint} "
         "-t {threads}"
 
@@ -89,6 +65,6 @@ rule riana_fit:
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
-        "--aa {params.aa}"
+        "--aa {params.aa} "
         "--kr {params.kr} --rp {params.rp} "
         "-t {threads} -r {params.ria} -l {params.label_type}"

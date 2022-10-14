@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>RIANA - Quick Start</title>
+<title>RIANA v0.7.0 - Quick Start</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -56,10 +56,10 @@ ul.task-list{list-style: none;}
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA - Quick Start">
+<meta property="og:title" content="RIANA v0.7.0 - Quick Start">
 <meta property="og:description" content="Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.">
-<meta property="og:site-name" content="RIANA">
-<meta name="twitter:title" content="RIANA - Quick Start">
+<meta property="og:site-name" content="RIANA v0.7.0">
+<meta name="twitter:title" content="RIANA v0.7.0 - Quick Start">
 <meta name="twitter:description" content="Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
@@ -73,7 +73,7 @@ ul.task-list{list-style: none;}
     <nav class="navbar navbar-expand-lg navbar-dark ">
       <div class="navbar-container container-fluid">
       <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA</span>
+    <span class="navbar-title">RIANA v0.7.0</span>
   </a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
@@ -116,6 +116,7 @@ ul.task-list{list-style: none;}
   <li><a href="#via-snakemake" id="toc-via-snakemake" class="nav-link" data-scroll-target="#via-snakemake">Via Snakemake</a></li>
   <li><a href="#manual-runs" id="toc-manual-runs" class="nav-link" data-scroll-target="#manual-runs">Manual Runs</a></li>
   </ul></li>
+  <li><a href="#output" id="toc-output" class="nav-link" data-scroll-target="#output">Output</a></li>
   </ul>
 <div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
     </div>
@@ -150,51 +151,72 @@ ul.task-list{list-style: none;}
 <p>To test that the installation can load test data files in tests/data:</p>
 <p><code>$ pip install tox</code></p>
 <p><code>$ tox</code></p>
-<p>To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result to the home directory:</p>
+<p>To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and write the results to a specified <code>out/test/</code> directory</p>
 <p><code>$ python -m riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt -q 0.1 -i 0,1,2,3,4,5 -o out/test/</code></p>
 </section>
 <section id="processing-datasets" class="level2">
 <h2 class="anchored" data-anchor-id="processing-datasets">Processing Datasets</h2>
 <section id="via-snakemake" class="level3">
 <h3 class="anchored" data-anchor-id="via-snakemake">Via Snakemake</h3>
-<p>RIANA comes with a <code>Snakemake</code> pipeline which is the recommended way to run RIANA. To configure, edit the provided <code>config_template.yaml</code> file to specify the location of Comet and Percolator executables. Then run Snakemake, e.g.,:</p>
-<p><code>$ snakemake --configfile ./{snakemake.yaml} -d {out_dir} --cores 8</code></p>
+<p>RIANA comes with a <code>Snakemake</code> pipeline which is the recommended way to run RIANA. To configure, edit the provided <code>config_template.yaml</code> to specify the location of Comet and Percolator executables. Then run Snakemake with the provided <code>Snakefile</code>, e.g.,:</p>
+<p><code>$ snakemake -c -s ./Snakefile -d out/snakemake_test --configfile ./config_template.yaml</code></p>
 <p>Refer to <code>Snakemake</code> documentations for details on configuring snake files.</p>
+<div class="callout-tip callout callout-style-default callout-captioned">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-caption-container flex-fill">
+Curve plotting
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Note that the provided <code>Snakefile</code> settings do not automatically output plotted curves or pre-integration intensity files by default. To output these files, edit the <code>Snakefile</code> to add <code>-w</code> and <code>p</code> to the shell commands under the integrate and fit rules, respectively.</p>
+</div>
+</div>
 <p>Below is the <code>config_template.yaml</code>:</p>
 <pre><code># Config
 
 # Data location
 data:
-  time0: /path/to/time0/folder
-  time1: /path/to/time1/folder
-  time3: /path/to/time3/folder
-  time6: /path/to/time6/folder
+  time0: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_0/mzml
+  time1: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_1/mzml
+  time2: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_2/mzml
+  time3: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_3/mzml
+  time6: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_6/mzml
+  time7: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_7/mzml
+  time9: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_9/mzml
+  time13: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_13/mzml
+  time16: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_16/mzml
+  time21: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_21/mzml
+  time24: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_24/mzml
+  time31: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_31/mzml
 
 # Paths to the comet executable, the comet params file, the database, and the percolator executable
-# The Snakefile assumes riana can be executed in the shell by riana
 paths:
-  comet: /path/to/comet_source_2020013/comet.exe
-  comet_params: /path/to/params/comet.params
-  fasta: /path/tp/database.fas
-  percolator: /path/to/percolator
+  comet: /Applications/comet_2020013/comet_source_2020013/comet.exe
+  comet_params: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/params/Comet2020_Hs_Sp_Trypsin.params
+  fasta: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/databases/2021-04-27-reviewed-contam-UP000000589.fas
+  percolator: /Applications/crux-4.0.Darwin.x86_64/bin/crux percolator
 
-# Integration and fitting parameters
+# Integratin and fitting parameters
 params:
-  model: simple     # fitting model (simple, guan, fornasiero)
+  model: fornasiero     # fitting model (simple, guan, fornasiero)
   label_type: hw        # labeling type (aa or hw)
   isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
-  mass_tol: 15         # mass tolerance in ppm for integration (e.g., 25)
-  ria_max: 1          # final precursor ria
-  kp: 10              # guan model parameter (kp) or fornasiero model parameter (b)
+  ria_max: 0.045          # final precursor ria
+  kp: 1.8              # guan model parameter (kp) or fornasiero model parameter (b)
   kr: 0.15              # fornasiero model parameter (a)
   rp: 5.52              # fornasiero model parameter (r)
-  depth: 1             # minimum number of data points
+  depth: 11             # minimum number of data points
+  aa: K                 # which amino acid carries heavy label; only relevant if label_type is aa
 
 # Number of threads
 threads:
-  comet: 8
-  riana: 4
-  fitcurve: 12</code></pre>
+  comet: 6
+  riana: 3
+  fitcurve: 12
+</code></pre>
 </section>
 <section id="manual-runs" class="level3">
 <h3 class="anchored" data-anchor-id="manual-runs">Manual Runs</h3>
@@ -226,7 +248,8 @@ threads:
 <li><code>--protein T</code></li>
 <li><code>--decoy-prefix DECOY_</code></li>
 </ul></li>
-<li><p>Run RIANA <code>integrate</code> <em>for each experimental time point separately</em></p></li>
+<li><p>Run RIANA <code>integrate</code> <em>for each experimental time point separately</em>.</p></li>
+<li><p>Run RIANA <code>fit</code></p></li>
 </ul>
 <div class="callout-tip callout callout-style-default callout-captioned">
 <div class="callout-header d-flex align-content-center">
@@ -241,9 +264,22 @@ Specifying paths
 <p>Note that the <code>mzml_path</code> argument should point to the directory where all mzML fractions (fraction1.mzML, fraction2.mzML, etc.) for each labeling time point are located, whereas the <code>id_path</code> argument should point to a <code>percolator.target.psms.txt</code> file from the output of searching and post-processing all the mzML files in that labeling time point together</p>
 </div>
 </div>
-
-
 </section>
+</section>
+<section id="output" class="level2">
+<h2 class="anchored" data-anchor-id="output">Output</h2>
+<p>RIANA <code>integrate</code> outputs a <code>{sample}_riana.txt</code> file for each sample, which contains the Percolator output appended with additional columns, e.g., <code>m0</code>, <code>m6</code>, <code>m12</code>, which contains the integrated areas of each isotopomer of each peptide over a retention time range in the mass spectrometry data. The output columns depend on the isotopomer indices specified.</p>
+<p>In addition, the <code>{sample}_riana_intensities.txt</code> files contain the individual intensity data of each isotopomer in each retention time point prior to integration.</p>
+<p>RIANA <code>fit</code> outputs a <code>riana_fit_peptides.csv</code> file which contains the best-fit k, R<sup>2</sup>, and <em>d</em>k for each peptide-charge combination.</p>
+<p>If <code>--plotcurve</code> is set, RIANA additional outputs a graphical representation of each fitted curve:</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="images/output.png" class="img-fluid figure-img"></p>
+<p></p><figcaption class="figure-caption">Fitted Curve</figcaption><p></p>
+</figure>
+</div>
+
+
 </section>
 
 </main> <!-- /main -->
