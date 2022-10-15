@@ -54,13 +54,14 @@ ul.task-list{list-style: none;}
   }
 }</script>
 
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="styles.css">
 <meta property="og:title" content="RIANA v0.7.0 - Documentations">
-<meta property="og:description" content="RIANA has two components, integrate and fit (experimental). The integrate component can read in mass spectrometry data files (.">
+<meta property="og:description" content="RIANA has two components, integrate and fit (experimental), which can be individually called using riana integrate and riana fit.">
 <meta property="og:site-name" content="RIANA v0.7.0">
 <meta name="twitter:title" content="RIANA v0.7.0 - Documentations">
-<meta name="twitter:description" content="RIANA has two components, integrate and fit (experimental). The integrate component can read in mass spectrometry data files (.">
+<meta name="twitter:description" content="RIANA has two components, integrate and fit (experimental), which can be individually called using riana integrate and riana fit.">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
 <meta name="twitter:card" content="summary_large_image">
@@ -110,7 +111,11 @@ ul.task-list{list-style: none;}
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#basics" id="toc-basics" class="nav-link active" data-scroll-target="#basics">Basics</a></li>
+  <li><a href="#basics" id="toc-basics" class="nav-link active" data-scroll-target="#basics">Basics</a>
+  <ul class="collapse">
+  <li><a href="#integrate" id="toc-integrate" class="nav-link" data-scroll-target="#integrate">Integrate</a></li>
+  <li><a href="#fit" id="toc-fit" class="nav-link" data-scroll-target="#fit">Fit</a></li>
+  </ul></li>
   <li><a href="#all-options" id="toc-all-options" class="nav-link" data-scroll-target="#all-options">All Options</a>
   <ul class="collapse">
   <li><a href="#riana-integrate" id="toc-riana-integrate" class="nav-link" data-scroll-target="#riana-integrate">RIANA integrate</a></li>
@@ -120,7 +125,7 @@ ul.task-list{list-style: none;}
 <div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
+<main class="content page-columns page-full" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
@@ -138,10 +143,30 @@ ul.task-list{list-style: none;}
 
 </header>
 
-<section id="basics" class="level2">
+<section id="basics" class="level2 page-columns page-full">
 <h2 class="anchored" data-anchor-id="basics">Basics</h2>
-<p>RIANA has two components, <code>integrate</code> and <code>fit</code> (experimental). The <code>integrate</code> component can read in mass spectrometry data files (.mzML), perform data base search and filtering using <code>Comet</code>/<code>Percolator</code>, then integrate the isotopomer peak intensity over retention time in a particular labeling time point.</p>
-<p>The <code>fit</code> component takes in the integration results from multiple mass spectrometry experiments, and fit the relative isotope abundance data across labeling time points to a one- or two- pool kinetic model.</p>
+<p>RIANA has two components, integrate and fit (experimental), which can be individually called using <code>riana integrate</code> and <code>riana fit</code>. For the help message of each component, type <code>riana integrate -h</code> and <code>riana fit -h</code>.</p>
+<section id="integrate" class="level3">
+<h3 class="anchored" data-anchor-id="integrate">Integrate</h3>
+<p>The <code>integrate</code> component reads in mass spectrometry data files (.mzML) and the corresponding Percolator search result. The Percolator results cna be supplied directly to RIANA or generated automatically from the mass spectrometry data files using the included Snakemake ppeline).</p>
+<p>RIANA reads and filters the search result files based on the <code>-q</code> argument for Percolator adjusted P values and the <code>-u</code> flag for protein-unique peptides. For each qualifying peptide-charge concatamer, RIANA then calculates the accurate mass and m/z of the unlabeled (m0) isotopomer, as well as each of the successive isotopomers specified in the <code>-i</code> argument.</p>
+<p>RIANA then reads the corresponding mass spectrometry file and locate the scans from which the peptide was identified, plus a retention time (rt) window <code>-r</code> and retrieve the intensity over rt of each isotopomer. The areas-under-curve of each extracted ion chromatogram is then integrated usign the trapezoid method and written into the output file.</p>
+<p>The intensity over rt data prior to integration can also be saved directly using the <code>-w</code> flag. This will create a large file (up to 10s of Gbs) for each experimental time point.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="images/integration.png" class="img-fluid figure-img"></p>
+<p></p><figcaption class="figure-caption">Retrieved chromatograms of isotopomers m0-m6 for a peptide. Note the gradual decrease of the relative intensity of the m0 peak (lightest in color) as labeling proceeds (from left to right)</figcaption><p></p>
+</figure>
+</div>
+</section>
+<section id="fit" class="level3 page-columns page-full">
+<h3 class="anchored" data-anchor-id="fit">Fit</h3>
+<p>The <code>fit</code> component takes in the integration results from multiple mass spectrometry experiments, and fits the relative isotope abundance data across labeling time points to a specified kinetic model.</p>
+<p>Three models ar ecurrently supported. In the <code>simple</code> model, the relative isotope abundance over labeling time behavior of a peptide is described by an exponential decay equation with one parameter (<span class="math inline">\(k\)</span>):</p>
+<p><span class="math display">\[ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot 1 - e^{-k t} \]</span></p>
+<p>where <span class="math inline">\(A_{t=0}\)</span> is the initial relative abundance of the m0 peak over the m<sub>i</sub> peaks, and is set to 1 in amino acid labeling experiments. <span class="math inline">\(A_{t\rightarrow \infty}\)</span> is calculated based on the plateau relative isotope abundance, which is based on the number of labeling sites in a peptide and the precursor plateau enrichment. The latter is supplied through the <code>-r</code> argument in <code>riana fit</code>.</p>
+<div class="page-columns page-full"><p> </p><div class="no-row-height column-margin column-container"><span class="aside">Guan et al.&nbsp;2012 <a href="https://pubmed.ncbi.nlm.nih.gov/22444387/">PMID: 22444387</a></span><span class="aside">Fornasiero et al.&nbsp;2018 <a href="https://pubmed.ncbi.nlm.nih.gov/30315172/">PMID: 30315172</a></span></div></div>
+<p>The Guan and Fornasiero models are described in their respective publications.</p>
 <div class="callout-tip callout callout-style-default callout-captioned">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -155,6 +180,7 @@ Current fitting limitations
 <p>Currently RIANA only calculates fractional synthesis of new peptides based on the decrease of the unlabeled (m0) over all specified isotopomers (m0 - m<sub>i</sub>). Future updates will allows specification of numerators and denominators in calculating fractional synthesis for more flexible experimental designs.</p>
 </div>
 </div>
+</section>
 </section>
 <section id="all-options" class="level2">
 <h2 class="anchored" data-anchor-id="all-options">All Options</h2>
@@ -219,7 +245,7 @@ optional arguments:
                         fits only peptides identified in at least this many samples [default: 6]
   -r RIA, --ria RIA     final isotope enrichment levels, if known [default: 0.5]
   -o OUT, --out OUT     path to the output directory [default: riana]
-  -p, --plotcurve       plot fitted curves
+  -p, --plotcurves      plot fitted curves
   -t THREAD, --thread THREAD
                         number of threads for concurrency [default: 1]
 

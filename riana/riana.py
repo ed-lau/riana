@@ -156,7 +156,7 @@ def main():
     parser_fit.add_argument('-o', '--out', help='path to the output directory [default: riana]',
                             default='riana')
 
-    parser_fit.add_argument('-p', '--plotcurve',
+    parser_fit.add_argument('-p', '--plotcurves',
                             action='store_true',
                             help='plot fitted curves')
 
