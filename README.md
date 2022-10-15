@@ -17,21 +17,7 @@ Launch riana as a module (Usage/Help):
 	
 	$ python -m riana
 
-Alternatively as a console entry point:
-
-    $ riana
-    
-To test that the installation can load test data files in tests/data:
-
-    $ pip install tox
-    $ tox
-
-To run the RIANA test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and print the result
-to the home directory:
-
-    $ python -m riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt -q 0.1 -i 0,1,2,3,4,5 -o out/test/
-
-
+See the [documentations](https://ed-lau.github.io/riana/) for instructions to process a test data file.
 
 ### Dependencies
 
@@ -60,6 +46,6 @@ See also the list of [contributors](https://github.com/Molecular-Proteomics/rian
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/Molecular-Proteomics/riana/blob/master/LICENSE.md) file for details
+This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/ed-lau/riana/blob/master/LICENSE.md) file for details
 
 
