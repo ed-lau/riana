@@ -83,7 +83,7 @@ def main():
                                   type=int,
                                   default=50)
 
-    parser_fit.add_argument('-d', '--mass_defect',
+    parser_integrate.add_argument('-D', '--mass_defect',
                             type=str,
                             choices=['D', 'C13', 'SILAC'],
                             default='D',
