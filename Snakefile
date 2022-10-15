@@ -43,7 +43,7 @@ rule riana_integrate:
     threads: config["threads"]["riana"]
     shell:
         "riana integrate {input.mzml} "
-        "{input.pin} -D {params.mass_defect}"
+        "{input.pin} -D {params.mass_defect} "
         "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o {output} -s {wildcards.timepoint} "
         "-t {threads}"
 

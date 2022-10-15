@@ -57,8 +57,10 @@ ul.task-list{list-style: none;}
 
 <link rel="stylesheet" href="styles.css">
 <meta property="og:title" content="RIANA v0.7.0 - Documentations">
+<meta property="og:description" content="RIANA has two components, integrate and fit (experimental). The integrate component can read in mass spectrometry data files (.">
 <meta property="og:site-name" content="RIANA v0.7.0">
 <meta name="twitter:title" content="RIANA v0.7.0 - Documentations">
+<meta name="twitter:description" content="RIANA has two components, integrate and fit (experimental). The integrate component can read in mass spectrometry data files (.">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
 <meta name="twitter:card" content="summary_large_image">
@@ -108,7 +110,8 @@ ul.task-list{list-style: none;}
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#all-options" id="toc-all-options" class="nav-link active" data-scroll-target="#all-options">All Options</a>
+  <li><a href="#basics" id="toc-basics" class="nav-link active" data-scroll-target="#basics">Basics</a></li>
+  <li><a href="#all-options" id="toc-all-options" class="nav-link" data-scroll-target="#all-options">All Options</a>
   <ul class="collapse">
   <li><a href="#riana-integrate" id="toc-riana-integrate" class="nav-link" data-scroll-target="#riana-integrate">RIANA integrate</a></li>
   <li><a href="#riana-fit" id="toc-riana-fit" class="nav-link" data-scroll-target="#riana-fit">RIANA fit</a></li>
@@ -135,6 +138,24 @@ ul.task-list{list-style: none;}
 
 </header>
 
+<section id="basics" class="level2">
+<h2 class="anchored" data-anchor-id="basics">Basics</h2>
+<p>RIANA has two components, <code>integrate</code> and <code>fit</code> (experimental). The <code>integrate</code> component can read in mass spectrometry data files (.mzML), perform data base search and filtering using <code>Comet</code>/<code>Percolator</code>, then integrate the isotopomer peak intensity over retention time in a particular labeling time point.</p>
+<p>The <code>fit</code> component takes in the integration results from multiple mass spectrometry experiments, and fit the relative isotope abundance data across labeling time points to a one- or two- pool kinetic model.</p>
+<div class="callout-tip callout callout-style-default callout-captioned">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-caption-container flex-fill">
+Current fitting limitations
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Currently RIANA only calculates fractional synthesis of new peptides based on the decrease of the unlabeled (m0) over all specified isotopomers (m0 - m<sub>i</sub>). Future updates will allows specification of numerators and denominators in calculating fractional synthesis for more flexible experimental designs.</p>
+</div>
+</div>
+</section>
 <section id="all-options" class="level2">
 <h2 class="anchored" data-anchor-id="all-options">All Options</h2>
 <section id="riana-integrate" class="level3">

@@ -175,46 +175,42 @@ Curve plotting
 </div>
 </div>
 <p>Below is the <code>config_template.yaml</code>:</p>
-<pre><code># Config
+<pre class="{snakemake}"><code># Config
 
-# Data location
+# Data location. Add as many lines as needed, sample names should be named after
+# labeling time points (e.g., time12 for 12 days/12 hours of experiment)
 data:
-  time0: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_0/mzml
-  time1: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_1/mzml
-  time2: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_2/mzml
-  time3: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_3/mzml
-  time6: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_6/mzml
-  time7: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_7/mzml
-  time9: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_9/mzml
-  time13: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_13/mzml
-  time16: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_16/mzml
-  time21: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_21/mzml
-  time24: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_24/mzml
-  time31: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/data/hw_heart/hw_h_31/mzml
+  time0: /path/to/time0/folder
+  time1: /path/to/time1/folder
+  time3: /path/to/time3/folder
+  time6: /path/to/time6/folder
 
 # Paths to the comet executable, the comet params file, the database, and the percolator executable
+# The Snakefile assumes riana can be executed in the shell by riana
 paths:
-  comet: /Applications/comet_2020013/comet_source_2020013/comet.exe
-  comet_params: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/params/Comet2020_Hs_Sp_Trypsin.params
-  fasta: /Volumes/Ginkgo_Data/Data/Turnover_LiverpoolHKLM/databases/2021-04-27-reviewed-contam-UP000000589.fas
-  percolator: /Applications/crux-4.0.Darwin.x86_64/bin/crux percolator
+  comet: /path/to/comet_source_2020013/comet.exe
+  comet_params: /path/to/params/comet.params
+  fasta: /path/tp/database.fas
+  percolator: /path/to/percolator
 
-# Integratin and fitting parameters
+# Integration and fitting parameters
 params:
-  model: fornasiero     # fitting model (simple, guan, fornasiero)
+  model: simple     # fitting model (simple, guan, fornasiero)
   label_type: hw        # labeling type (aa or hw)
-  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy lysine)
-  ria_max: 0.045          # final precursor ria
-  kp: 1.8              # guan model parameter (kp) or fornasiero model parameter (b)
+  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy aa)
+  mass_tol: 15         # mass tolerance in ppm for integration (e.g., 25)
+  ria_max: 1          # final precursor ria
+  kp: 10              # guan model parameter (kp) or fornasiero model parameter (b)
   kr: 0.15              # fornasiero model parameter (a)
   rp: 5.52              # fornasiero model parameter (r)
-  depth: 11             # minimum number of data points
+  depth: 1             # minimum number of data points
   aa: K                 # which amino acid carries heavy label; only relevant if label_type is aa
+  mass_defect: D        # which isotope mass defect to use (D, C13, SILAC)
 
 # Number of threads
 threads:
-  comet: 6
-  riana: 3
+  comet: 8
+  riana: 4
   fitcurve: 12
 </code></pre>
 </section>
