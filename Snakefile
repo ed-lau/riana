@@ -43,7 +43,7 @@ rule riana_integrate:
     threads: config["threads"]["riana"]
     shell:
         "riana integrate {input.mzml} "
-        "{input.pin} -d {params.mass_defect}"
+        "{input.pin} -D {params.mass_defect}"
         "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o {output} -s {wildcards.timepoint} "
         "-t {threads}"
 
@@ -65,6 +65,5 @@ rule riana_fit:
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
-        "--aa {params.aa} "
-        "--kr {params.kr} --rp {params.rp} "
+        "--aa {params.aa} --kr {params.kr} --rp {params.rp} "
         "-t {threads} -r {params.ria} -l {params.label_type}"
