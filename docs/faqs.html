@@ -109,7 +109,12 @@ ul.task-list{list-style: none;}
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#faqs" id="toc-faqs" class="nav-link active" data-scroll-target="#faqs">FAQs</a></li>
+  <li><a href="#faqs" id="toc-faqs" class="nav-link active" data-scroll-target="#faqs">FAQs</a>
+  <ul class="collapse">
+  <li><a href="#integrate" id="toc-integrate" class="nav-link" data-scroll-target="#integrate">Integrate</a></li>
+  <li><a href="#fit" id="toc-fit" class="nav-link" data-scroll-target="#fit">Fit</a></li>
+  <li><a href="#general" id="toc-general" class="nav-link" data-scroll-target="#general">General</a></li>
+  </ul></li>
   </ul>
 <div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
     </div>
@@ -134,10 +139,18 @@ ul.task-list{list-style: none;}
 
 <section id="faqs" class="level2">
 <h2 class="anchored" data-anchor-id="faqs">FAQs</h2>
-<section id="q-how-do-i-retrieve-half-life-information-on-the-peptide-and-protein" class="level4">
-<h4 class="anchored" data-anchor-id="q-how-do-i-retrieve-half-life-information-on-the-peptide-and-protein">Q: How do I retrieve half-life information on the peptide and protein?</h4>
-<p>A: The half-life of a peptide or protein can be calculated from the output <code>k</code> parameter using the equation:</p>
-<p><span class="math display">\[ t_{1/2} = ln(2)/k \]</span></p>
+<section id="integrate" class="level3">
+<h3 class="anchored" data-anchor-id="integrate">Integrate</h3>
+<section id="q-what-does-the--d-argument-do-for-the-integrate-function" class="level4">
+<h4 class="anchored" data-anchor-id="q-what-does-the--d-argument-do-for-the-integrate-function">Q: What does the <code>-D</code> argument do for the integrate function?</h4>
+<p>A: The <code>-D</code> flag specifies the accurate mass difference between each unit isotopomer and can be set to <code>D</code>, <code>C13</code>, or <code>SILAC</code>, which will dictate the mass difference across each successive peak to be 1.0063 (mass difference of deuterium and protium), 1.003 (mass difference of <sup>13</sup>C and <sup>12</sup>C), and 1.001 (custom SILAC mass), respectively. This is set so that RIANA can find the correct accurate mass for integration when multiple atom centers are added. E.g., if deuterium labeled amino acids are used, e.g., D<sup>3</sup>-leucine, the argument should be set to <code>-D D</code> and the integrated isotopomer argument set to <code>-i 0, 3</code>. Alternatively if <sup>13</sup>C<sub>6</sub>-lysines, the arguments should be <code>-D C13</code> and <code>i 0,6</code>.</p>
+</section>
+</section>
+<section id="fit" class="level3">
+<h3 class="anchored" data-anchor-id="fit">Fit</h3>
+<section id="q-what-are-the-kinetic-models-being-specified-by-the-different-fit-options" class="level4">
+<h4 class="anchored" data-anchor-id="q-what-are-the-kinetic-models-being-specified-by-the-different-fit-options">Q: What are the kinetic models being specified by the different fit options?</h4>
+<p>A: Coming soon.</p>
 </section>
 <section id="q-how-are-the-plotted-curves-separated-to-the-curves_fast_fit-curves_mid_fit-and-curve_slow_fit-directories" class="level4">
 <h4 class="anchored" data-anchor-id="q-how-are-the-plotted-curves-separated-to-the-curves_fast_fit-curves_mid_fit-and-curve_slow_fit-directories">Q: How are the plotted curves separated to the curves_fast_fit, curves_mid_fit, and curve_slow_fit directories?</h4>
@@ -147,11 +160,20 @@ ul.task-list{list-style: none;}
 <h4 class="anchored" data-anchor-id="q-does-riana-fit-perform-protein-level-curve-fitting">Q: Does RIANA fit perform protein level curve fitting?</h4>
 <p>A: RIANA currently performs curve fitting at the peptide level only. Users can perform protein-level curve fitting using the <code>{sample}_riana.txt</code> integration result files. Alternatively, protein-level rate constants can be derived by taking a median or harmonic mean of the peptide-level rate constants with similar results, as we showed in our recent <a href="https://doi.org/10.1016/j.mcpro.2022.100252">publication</a>.</p>
 </section>
+<section id="q-how-do-i-retrieve-half-life-information-on-the-peptide-and-protein" class="level4">
+<h4 class="anchored" data-anchor-id="q-how-do-i-retrieve-half-life-information-on-the-peptide-and-protein">Q: How do I retrieve half-life information on the peptide and protein?</h4>
+<p>A: The half-life of a peptide or protein can be calculated from the output <code>k</code> parameter using the equation:</p>
+<p><span class="math display">\[ t_{1/2} = ln(2)/k \]</span></p>
+</section>
+</section>
+<section id="general" class="level3">
+<h3 class="anchored" data-anchor-id="general">General</h3>
 <section id="q-how-can-i-contribute-to-riana" class="level4">
 <h4 class="anchored" data-anchor-id="q-how-can-i-contribute-to-riana">Q: How can I contribute to RIANA?</h4>
 <p>A: Contact us at [edward.lau@cuanschutz.edu]</p>
 
 
+</section>
 </section>
 </section>
 

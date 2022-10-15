@@ -1,6 +1,7 @@
 # Config
 
-# Data location
+# Data location. Add as many lines as needed, sample names should be named after
+# labeling time points (e.g., time12 for 12 days/12 hours of experiment)
 data:
   time0: /path/to/time0/folder
   time1: /path/to/time1/folder
