@@ -1,5 +1,10 @@
 ## CHANGES
 ---
+## Update v.0.7.1
+* Added parameter for mass defect -D to command line argument for riana integrate. See documentation for detail
+* Added the flag -p to the command line argument for riana fit, which toggles plotting fitted curves
+* Added the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities
+
 
 ## Update v.0.7.0
 * RIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting

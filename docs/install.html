@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>RIANA v0.7.0 - Quick Start</title>
+<title>RIANA v0.7.1 - Quick Start</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -56,10 +56,10 @@ ul.task-list{list-style: none;}
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA v0.7.0 - Quick Start">
+<meta property="og:title" content="RIANA v0.7.1 - Quick Start">
 <meta property="og:description" content="Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.">
-<meta property="og:site-name" content="RIANA v0.7.0">
-<meta name="twitter:title" content="RIANA v0.7.0 - Quick Start">
+<meta property="og:site-name" content="RIANA v0.7.1">
+<meta name="twitter:title" content="RIANA v0.7.1 - Quick Start">
 <meta name="twitter:description" content="Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
@@ -73,7 +73,7 @@ ul.task-list{list-style: none;}
     <nav class="navbar navbar-expand-lg navbar-dark ">
       <div class="navbar-container container-fluid">
       <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA v0.7.0</span>
+    <span class="navbar-title">RIANA v0.7.1</span>
   </a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
@@ -267,11 +267,11 @@ Specifying paths
 <p>RIANA <code>integrate</code> outputs a <code>{sample}_riana.txt</code> file for each sample, which contains the Percolator output appended with additional columns, e.g., <code>m0</code>, <code>m6</code>, <code>m12</code>, which contains the integrated areas of each isotopomer of each peptide over a retention time range in the mass spectrometry data. The output columns depend on the isotopomer indices specified.</p>
 <p>In addition, the <code>{sample}_riana_intensities.txt</code> files contain the individual intensity data of each isotopomer in each retention time point prior to integration.</p>
 <p>RIANA <code>fit</code> outputs a <code>riana_fit_peptides.csv</code> file which contains the best-fit k, R<sup>2</sup>, and <em>d</em>k for each peptide-charge combination.</p>
-<p>If <code>--plotcurve</code> is set, RIANA additional outputs a graphical representation of each fitted curve:</p>
+<p>If the flag <code>--plotcurves</code> is set, RIANA additional outputs a graphical representation of each fitted curve:</p>
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
 <p><img src="images/output.png" class="img-fluid figure-img"></p>
-<p></p><figcaption class="figure-caption">Fitted Curve</figcaption><p></p>
+<p></p><figcaption class="figure-caption">Best fit kinetic curve for a particular peptide across multiple labeling time points.</figcaption><p></p>
 </figure>
 </div>
 

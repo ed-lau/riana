@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>RIANA v0.7.0 - RIANA - Relative Isotope Abundance Analyzer</title>
+<title>RIANA v0.7.1 - RIANA - Relative Isotope Abundance Analyzer</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -56,10 +56,10 @@ ul.task-list{list-style: none;}
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA v0.7.0 - RIANA - Relative Isotope Abundance Analyzer">
+<meta property="og:title" content="RIANA v0.7.1 - RIANA - Relative Isotope Abundance Analyzer">
 <meta property="og:description" content="Edward Lau Lab, University of Colorado School of Medicine">
-<meta property="og:site-name" content="RIANA v0.7.0">
-<meta name="twitter:title" content="RIANA v0.7.0 - RIANA - Relative Isotope Abundance Analyzer">
+<meta property="og:site-name" content="RIANA v0.7.1">
+<meta name="twitter:title" content="RIANA v0.7.1 - RIANA - Relative Isotope Abundance Analyzer">
 <meta name="twitter:description" content="Edward Lau Lab, University of Colorado School of Medicine">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
@@ -73,7 +73,7 @@ ul.task-list{list-style: none;}
     <nav class="navbar navbar-expand-lg navbar-dark ">
       <div class="navbar-container container-fluid">
       <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA v0.7.0</span>
+    <span class="navbar-title">RIANA v0.7.1</span>
   </a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
@@ -154,13 +154,12 @@ ul.task-list{list-style: none;}
 
 <div class="no-row-height column-margin column-container"><div class="">
 <p><strong>Latest Updates</strong></p>
-<p>v0.7.0</p>
+<p>v.0.7.1</p>
 <hr>
 <ul>
-<li>RIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting</li>
-<li>Added native support to perform curve-fitting and output best-fit curve plots</li>
-<li>Added support for one-pool, two-compartment (Guan et al.) and three-exponent (Fornasiero et al.) models</li>
-<li>Match between runs is temporarily disabled to support the Snakemake workflow and will return in a later version.</li>
+<li>Added parameter for mass defect -D to command line argument for riana integrate. See documentation for detail</li>
+<li>Added the flag -p to the command line argument for riana fit, which toggles plotting fitted curves</li>
+<li>Added the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities</li>
 </ul>
 <blockquote class="blockquote">
 <p>See <a href="./change.html">Change Log</a> for details.</p>
