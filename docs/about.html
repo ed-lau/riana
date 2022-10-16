@@ -162,11 +162,14 @@ ul.task-list{list-style: none;}
 <section id="fit" class="level3 page-columns page-full">
 <h3 class="anchored" data-anchor-id="fit">Fit</h3>
 <p>The <code>fit</code> component takes in the integration results from multiple mass spectrometry experiments, and fits the relative isotope abundance data across labeling time points to a specified kinetic model.</p>
-<p>Three models ar ecurrently supported. In the <code>simple</code> model, the relative isotope abundance over labeling time behavior of a peptide is described by an exponential decay equation with one parameter (<span class="math inline">\(k\)</span>):</p>
+<p>Three models ar ecurrently supported. In the <code>simple</code> model, the fraction of new protein over labeling time behavior of a peptide is described by an exponential decay equation with one parameter (<span class="math inline">\(k\)</span>):</p>
 <p><span class="math display">\[ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot 1 - e^{-k t} \]</span></p>
 <p>where <span class="math inline">\(A_{t=0}\)</span> is the initial relative abundance of the m0 peak over the m<sub>i</sub> peaks, and is set to 1 in amino acid labeling experiments. <span class="math inline">\(A_{t\rightarrow \infty}\)</span> is calculated based on the plateau relative isotope abundance, which is based on the number of labeling sites in a peptide and the precursor plateau enrichment. The latter is supplied through the <code>-r</code> argument in <code>riana fit</code>.</p>
-<div class="page-columns page-full"><p> </p><div class="no-row-height column-margin column-container"><span class="aside">Guan et al.&nbsp;2012 <a href="https://pubmed.ncbi.nlm.nih.gov/22444387/">PMID: 22444387</a></span><span class="aside">Fornasiero et al.&nbsp;2018 <a href="https://pubmed.ncbi.nlm.nih.gov/30315172/">PMID: 30315172</a></span></div></div>
-<p>The Guan and Fornasiero models are described in their respective publications.</p>
+<div class="page-columns page-full"><p></p><div class="no-row-height column-margin column-container"><span class="aside">Guan et al.&nbsp;2012 <a href="https://pubmed.ncbi.nlm.nih.gov/22444387/">PMID: 22444387</a></span></div></div>
+<p>The two-compartment model is implemented as in Guan et al.&nbsp;2012. The fraction of new protein over labeling time behavior of a peptide is described by a two-exponent model with the protein turnover rate constant (<span class="math inline">\(k\)</span>) as well as the precursor availability rate constant (<span class="math inline">\(k_p\)</span>):</p>
+<p><span class="math display">\[ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot \frac{1 - ( e^{-kt}k_p - e^{-k_pt}k)}{k_p - k } \]</span></p>
+<div class="page-columns page-full"><p></p><div class="no-row-height column-margin column-container"><span class="aside">Fornasiero et al.&nbsp;2018 <a href="https://pubmed.ncbi.nlm.nih.gov/30315172/">PMID: 30315172</a></span></div></div>
+<p>The Fornasiero model two-compartment, three-exponent model additionally attempts to account for the effect of precursor reutilization from proteome-wide protein degradation. The two additional parameters <code>--kr</code> and <code>--rp</code> must be provided to denote the reutilization rate constant and the proportion of protein-bound vs.&nbsp;free precursors. Details are described in the original publication.</p>
 <div class="callout-tip callout callout-style-default callout-captioned">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">

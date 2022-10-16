@@ -141,8 +141,8 @@ ul.task-list{list-style: none;}
 <h2 class="anchored" data-anchor-id="faqs">FAQs</h2>
 <section id="integrate" class="level3">
 <h3 class="anchored" data-anchor-id="integrate">Integrate</h3>
-<section id="q-what-does-the--d-argument-do-for-the-integrate-function" class="level4">
-<h4 class="anchored" data-anchor-id="q-what-does-the--d-argument-do-for-the-integrate-function">Q: What does the <code>-D</code> argument do for the integrate function?</h4>
+<section id="q-what-does-the--d---mass_defect-argument-do-for-the-integrate-function" class="level4">
+<h4 class="anchored" data-anchor-id="q-what-does-the--d---mass_defect-argument-do-for-the-integrate-function">Q: What does the <code>-D --mass_defect</code> argument do for the integrate function?</h4>
 <p>A: The <code>-D</code> flag specifies the accurate mass difference between each unit isotopomer and can be set to <code>D</code>, <code>C13</code>, or <code>SILAC</code>, which will dictate the mass difference across each successive peak to be 1.0063 (mass difference of deuterium and protium), 1.003 (mass difference of <sup>13</sup>C and <sup>12</sup>C), and 1.001 (custom SILAC mass), respectively. This is set so that RIANA can find the correct accurate mass for integration when multiple atom centers are added. E.g., if deuterium labeled amino acids are used, e.g., D<sup>3</sup>-leucine, the argument should be set to <code>-D D</code> and the integrated isotopomer argument set to <code>-i 0, 3</code>. Alternatively if <sup>13</sup>C<sub>6</sub>-lysines, the arguments should be <code>-D C13</code> and <code>i 0,6</code>.</p>
 </section>
 </section>
@@ -150,7 +150,11 @@ ul.task-list{list-style: none;}
 <h3 class="anchored" data-anchor-id="fit">Fit</h3>
 <section id="q-what-are-the-kinetic-models-being-specified-by-the-different-fit-options" class="level4">
 <h4 class="anchored" data-anchor-id="q-what-are-the-kinetic-models-being-specified-by-the-different-fit-options">Q: What are the kinetic models being specified by the different fit options?</h4>
-<p>A: See the <a href="./about.html">Documentation</a> page for details.</p>
+<p>A: The <code>simple</code>, <code>guan</code>, and <code>fornasiero</code> options for the model argument refer to a simple exponential (one-pool) model, a two-compartment model, and a two-compartment model that includes label reutilization. See the <a href="./about.html">Documentation</a> page for details.</p>
+</section>
+<section id="q-what-does-the--l---label-argument-do" class="level4">
+<h4 class="anchored" data-anchor-id="q-what-does-the--l---label-argument-do">Q: What does the <code>-l --label</code> argument do?</h4>
+<p>A: The <code>--label</code> argument determines how the fraction of new proteins at a particular labeling time point is calculated from the relative abundance of isotopomers. The option <code>aa</code> assumes that the first peaks of light or heavy amino acids are used for calculations (e.g., m0, m6 for <sup>13</sup>C<sub>6</sub>-lysine) and hence the initial pre-label fraction of the light peak (m0) is assumed to be 1. The option <code>hw</code> assumes a heavy water type labeling experiment where the entire isotopomer cluster of the peptide is integrated (e.g., m0, m1, m2, m3, m4, m5), and hence the pre-labeling fraction of the m0 peak is calculated from peptide relative isotopomer abundance based on naturally occurring isotopes.</p>
 </section>
 <section id="q-how-are-the-plotted-curves-separated-to-the-curves_fast_fit-curves_mid_fit-and-curve_slow_fit-directories" class="level4">
 <h4 class="anchored" data-anchor-id="q-how-are-the-plotted-curves-separated-to-the-curves_fast_fit-curves_mid_fit-and-curve_slow_fit-directories">Q: How are the plotted curves separated to the curves_fast_fit, curves_mid_fit, and curve_slow_fit directories?</h4>
