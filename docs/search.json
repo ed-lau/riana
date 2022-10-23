@@ -67,7 +67,7 @@
     "href": "index.html#about-riana",
     "title": "RIANA - Relative Isotope Abundance Analyzer",
     "section": "About RIANA",
-    "text": "About RIANA\nRIANA (Relative Isotope Abundance Analyzer) is a software to automate the analysis of mass spectrometry- based protein turnover measurement experiments.\nRIANA is written to be flexible to accommodate different protein stable isotope labels, including heavy water (D2O) and SILAC (e.g., 13C6-lysine or other amino acids) experiments.\nRIANA supports a Snakemake pipeline that uses other existing tools in the community, requiring only mass spectrometry data files (.mzML) as input to perform database search, post-processing, peak integration, and output of best-fit kinetic rate constants.\n\n\n\nRIANA Workflow"
+    "text": "About RIANA\nRIANA (Relative Isotope Abundance Analyzer) is a software to automate the analysis of mass spectrometry- based protein turnover measurement experiments.\nRIANA is written to be flexible to accommodate different protein stable isotope labels, including heavy water (D2O) and SILAC (e.g., 13C6-lysine or other amino acids) experiments.\nRIANA supports a Snakemake pipeline that uses other existing tools in the community, requiring only mass spectrometry data files (.mzML) as input to perform database search, post-processing, peak integration, and output of best-fit kinetic rate constants.\n\n\n\nWorkflow"
   },
   {
     "objectID": "index.html#downloads",
