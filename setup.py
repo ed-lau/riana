@@ -16,7 +16,7 @@ setup(
    long_description=long_description,
    long_description_content_type='text/markdown',
 
-   url='https://github.com/Molecular-Proteomics/riana',
+   url='https://github.com/ed-lau/riana',
 
    author='Edward Lau',
    author_email='edward.lau@cuanschutz.edu',
@@ -63,7 +63,7 @@ setup(
        },
 
    project_urls={
-        'Source': 'https://github.com/Molecular-Proteomics/riana',
+        'Source': 'https://github.com/ed-lau/riana',
         'Edward Lau Lab': 'https://www.laulab.net',
     },
 

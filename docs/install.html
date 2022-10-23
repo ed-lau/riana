@@ -15,6 +15,69 @@ span.underline{text-decoration: underline;}
 div.column{display: inline-block; vertical-align: top; width: 50%;}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
 </style>
 
 
@@ -143,23 +206,23 @@ ul.task-list{list-style: none;}
 <h2 class="anchored" data-anchor-id="installing-riana">Installing RIANA</h2>
 <p>Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.</p>
 <p>Riana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.</p>
-<p><code>$ pip install riana</code></p>
+<pre><code>$ pip install riana</code></pre>
 <p>Launch riana as a module (Usage/Help):</p>
-<p><code>$ python -m riana</code></p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> riana</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Alternatively as a console entry point:</p>
-<p><code>$ riana</code></p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> riana</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>To test that the installation can load test data files in tests/data:</p>
-<p><code>$ pip install tox</code></p>
-<p><code>$ tox</code></p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> pip install tox</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> tox</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and write the results to a specified <code>out/test/</code> directory</p>
-<p><code>$ python -m riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt -q 0.1 -i 0,1,2,3,4,5 -o out/test/</code></p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt <span class="at">-q</span> 0.1 <span class="at">-i</span> 0,1,2,3,4,5 <span class="at">-o</span> out/test/</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="processing-datasets" class="level2">
 <h2 class="anchored" data-anchor-id="processing-datasets">Processing Datasets</h2>
 <section id="via-snakemake" class="level3">
 <h3 class="anchored" data-anchor-id="via-snakemake">Via Snakemake</h3>
 <p>RIANA comes with a <code>Snakemake</code> pipeline which is the recommended way to run RIANA. To configure, edit the provided <code>config_template.yaml</code> to specify the location of Comet and Percolator executables. Then run Snakemake with the provided <code>Snakefile</code>, e.g.,:</p>
-<p><code>$ snakemake -c -s ./Snakefile -d out/snakemake_test --configfile ./config_template.yaml</code></p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> snakemake <span class="at">-c</span> <span class="at">-s</span> ./Snakefile <span class="at">-d</span> out/snakemake_test <span class="at">--configfile</span> ./config_template.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Refer to <code>Snakemake</code> documentations for details on configuring snake files.</p>
 <div class="callout-tip callout callout-style-default callout-captioned">
 <div class="callout-header d-flex align-content-center">
@@ -175,44 +238,43 @@ Curve plotting
 </div>
 </div>
 <p>Below is the <code>config_template.yaml</code>:</p>
-<pre class="{snakemake}"><code># Config
-
-# Data location. Add as many lines as needed, sample names should be named after
-# labeling time points (e.g., time12 for 12 days/12 hours of experiment)
-data:
-  time0: /path/to/time0/folder
-  time1: /path/to/time1/folder
-  time3: /path/to/time3/folder
-  time6: /path/to/time6/folder
-
-# Paths to the comet executable, the comet params file, the database, and the percolator executable
-# The Snakefile assumes riana can be executed in the shell by riana
-paths:
-  comet: /path/to/comet_source_2020013/comet.exe
-  comet_params: /path/to/params/comet.params
-  fasta: /path/tp/database.fas
-  percolator: /path/to/percolator
-
-# Integration and fitting parameters
-params:
-  model: simple     # fitting model (simple, guan, fornasiero)
-  label_type: hw        # labeling type (aa or hw)
-  isotopomers: 0,1,2,3,4,5   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy aa)
-  mass_tol: 15         # mass tolerance in ppm for integration (e.g., 25)
-  ria_max: 1          # final precursor ria
-  kp: 10              # guan model parameter (kp) or fornasiero model parameter (b)
-  kr: 0.15              # fornasiero model parameter (a)
-  rp: 5.52              # fornasiero model parameter (r)
-  depth: 1             # minimum number of data points
-  aa: K                 # which amino acid carries heavy label; only relevant if label_type is aa
-  mass_defect: D        # which isotope mass defect to use (D, C13, SILAC)
-
-# Number of threads
-threads:
-  comet: 8
-  riana: 4
-  fitcurve: 12
-</code></pre>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Config</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Data location. Add as many lines as needed, sample names should be named after</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># labeling time points (e.g., time12 for 12 days/12 hours of experiment)</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time0</span><span class="kw">:</span><span class="at"> /path/to/time0/folder</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time1</span><span class="kw">:</span><span class="at"> /path/to/time1/folder</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time3</span><span class="kw">:</span><span class="at"> /path/to/time3/folder</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time6</span><span class="kw">:</span><span class="at"> /path/to/time6/folder</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Paths to the comet executable, the comet params file, the database, and the percolator executable</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="co"># The Snakefile assumes riana can be executed in the shell by riana</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="fu">paths</span><span class="kw">:</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet</span><span class="kw">:</span><span class="at"> /path/to/comet_source_2020013/comet.exe</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet_params</span><span class="kw">:</span><span class="at"> /path/to/params/comet.params</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fasta</span><span class="kw">:</span><span class="at"> /path/tp/database.fas</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">percolator</span><span class="kw">:</span><span class="at"> /path/to/percolator</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Integration and fitting parameters</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="fu">params</span><span class="kw">:</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">model</span><span class="kw">:</span><span class="at"> simple</span><span class="co">     # fitting model (simple, guan, fornasiero)</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">label_type</span><span class="kw">:</span><span class="at"> hw</span><span class="co">        # labeling type (aa or hw)</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">isotopomers</span><span class="kw">:</span><span class="at"> 0,1,2,3,4,5</span><span class="co">   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy aa)</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mass_tol</span><span class="kw">:</span><span class="at"> </span><span class="dv">15</span><span class="co">         # mass tolerance in ppm for integration (e.g., 25)</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ria_max</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">          # final precursor ria</span></span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kp</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span><span class="co">              # guan model parameter (kp) or fornasiero model parameter (b)</span></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.15</span><span class="co">              # fornasiero model parameter (a)</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rp</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.52</span><span class="co">              # fornasiero model parameter (r)</span></span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">depth</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">             # minimum number of data points</span></span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">aa</span><span class="kw">:</span><span class="at"> K</span><span class="co">                 # which amino acid carries heavy label; only relevant if label_type is aa</span></span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mass_defect</span><span class="kw">:</span><span class="at"> D</span><span class="co">        # which isotope mass defect to use (D, C13, SILAC)</span></span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of threads</span></span>
+<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a><span class="fu">threads</span><span class="kw">:</span></span>
+<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">riana</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fitcurve</span><span class="kw">:</span><span class="at"> </span><span class="dv">12</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="manual-runs" class="level3">
 <h3 class="anchored" data-anchor-id="manual-runs">Manual Runs</h3>
@@ -379,7 +441,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 </div> <!-- /content -->
 <footer class="footer">
   <div class="nav-footer">
-    <div class="nav-footer-left">© Copyright 2021–2022 Lau Lab Colorado</div>   
+    <div class="nav-footer-left">© Copyright 2021–2022 <a href="https://laulab.net">Lau Lab Colorado</a></div>   
     <div class="nav-footer-right">This page is built with <a href="https://quarto.org/">Quarto</a>.</div>
   </div>
 </footer>

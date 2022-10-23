@@ -41,7 +41,7 @@ Please contact us if you wish to contribute, and submit pull requests to us.
 
 * **Edward Lau, PhD** - *Code/design* - [ed-lau](https://github.com/ed-lau)
 
-See also the list of [contributors](https://github.com/Molecular-Proteomics/riana/graphs/contributors) who participated in this project.
+See also the list of [contributors](https://github.com/ed-lau/riana/graphs/contributors) who participated in this project.
 
 
 ## License
