@@ -15,6 +15,69 @@ span.underline{text-decoration: underline;}
 div.column{display: inline-block; vertical-align: top; width: 50%;}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
 </style>
 
 
@@ -189,70 +252,68 @@ Current fitting limitations
 <h2 class="anchored" data-anchor-id="all-options">All Options</h2>
 <section id="riana-integrate" class="level3">
 <h3 class="anchored" data-anchor-id="riana-integrate">RIANA integrate</h3>
-<pre><code>riana integrate -h
-usage: riana integrate [-h] [-s SAMPLE] [-i ISO] [-u] [-t THREAD] [-o OUT] [-q Q_VALUE] 
-[-r R_TIME] [-m MASS_TOL] mzml_path id_path
-
-positional arguments:
-  mzml_path             &lt;required&gt; path to folder containing the mzml files
-  id_path               &lt;required&gt; path to the percolator output psms.txt file
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -s SAMPLE, --sample SAMPLE
-                        sample name to override mzml folder name, must include numbers, e.g., time1
-  -i ISO, --iso ISO     isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]
-  -u, --unique          integrate unique peptides only
-  -t THREAD, --thread THREAD
-                        number of threads for concurrency [default: 1]
-  -o OUT, --out OUT     path to the output directory [default: riana]
-  -q Q_VALUE, --q_value Q_VALUE
-                        integrate only peptides with q value below this threshold [default: 1e-2]
-  -r R_TIME, --r_time R_TIME
-                        retention time (in minutes, both directions) tolerance for integration
-  -w, --write_intensities
-                        also write pre-integration intensities into a result file
-  -m MASS_TOL, --mass_tol MASS_TOL
-                        &lt;integer&gt; mass tolerance in ppm for integration [default 50 ppm]
-  -D {D,C13,SILAC}, --mass_defect {D,C13,SILAC}
-                        mass defect type [default: D]
-
-</code></pre>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">riana</span> integrate <span class="at">-h</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">usage:</span> riana integrate [-h] [-s SAMPLE] [-i ISO] [-u] [-t THREAD] [-o OUT] [-q Q_VALUE] </span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">[-r</span> R_TIME] [-m MASS_TOL] mzml_path id_path</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">positional</span> arguments:</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="ex">mzml_path</span>             <span class="op">&lt;</span>required<span class="op">&gt;</span> path to folder containing the mzml files</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="ex">id_path</span>               <span class="op">&lt;</span>required<span class="op">&gt;</span> path to the percolator output psms.txt file</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="ex">optional</span> arguments:</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-h,</span> <span class="at">--help</span>            show this help message and exit</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-s</span> SAMPLE, <span class="at">--sample</span> SAMPLE</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">sample</span> name to override mzml folder name, must include numbers, e.g., time1</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-i</span> ISO, <span class="at">--iso</span> ISO     isotopes to do, separated by commas, e.g., 0,1,2,3,4,5 [default: 0,6]</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-u,</span> <span class="at">--unique</span>          integrate unique peptides only</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-t</span> THREAD, <span class="at">--thread</span> THREAD</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">number</span> of threads for concurrency [default: 1]</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-o</span> OUT, <span class="at">--out</span> OUT     path to the output directory [default: riana]</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-q</span> Q_VALUE, <span class="at">--q_value</span> Q_VALUE</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">integrate</span> only peptides with q value below this threshold [default: 1e-2]</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-r</span> R_TIME, <span class="at">--r_time</span> R_TIME</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">retention</span> time <span class="er">(in</span> <span class="ex">minutes,</span> both directions<span class="kw">)</span> <span class="ex">tolerance</span> for integration</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-w,</span> <span class="at">--write_intensities</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">also</span> write pre-integration intensities into a result file</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-m</span> MASS_TOL, <span class="at">--mass_tol</span> MASS_TOL</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>                        <span class="op">&lt;</span>integer<span class="op">&gt;</span> mass <span class="ex">tolerance</span> in ppm for integration [default 50 ppm]</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-D</span> <span class="dt">{D</span><span class="op">,</span><span class="dt">C13</span><span class="op">,</span><span class="dt">SILAC}</span>, <span class="at">--mass_defect</span> <span class="dt">{D</span><span class="op">,</span><span class="dt">C13</span><span class="op">,</span><span class="dt">SILAC}</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">mass</span> defect type [default: D]</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="riana-fit" class="level3">
 <h3 class="anchored" data-anchor-id="riana-fit">RIANA fit</h3>
-<pre><code>riana fit -h
-usage: __main__.py fit [-h] [-m {simple,guan,fornasiero}] [-l {aa,hw,o18}] [-a AA] [--kp KP] 
-[--kr KR] [--rp RP] [-q Q_VALUE] [-d DEPTH] [-r RIA] [-o OUT] [-p] [-t THREAD] riana_path [riana_path ...]
-
-positional arguments:
-  riana_path            &lt;required&gt; paths to one or more integrate out text files 
-                        (note: the sample field must include numericals corresponding 
-                        to time units (e.g., time0, time 6)
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -m {simple,guan,fornasiero}, --model {simple,guan,fornasiero}
-                        kinetic models for fitting, currently only the simple exponential model 
-                        is implemented [default: simple]
-  -l {aa,hw,o18}, --label {aa,hw,o18}
-                        labeling type [default: hw]
-  -a AA, --aa AA        which amino acid residue is label carrying [default: K]
-  --kp KP               for two-compartment models, the precursor rate constant [default: 0.5]
-  --kr KR               for the fornasiero model, the reutilization rate constant [default: 0.05]
-  --rp RP               for the fornasiero model, the ratio of protein bound to free precursors 
-                        [default: 10]
-  -q Q_VALUE, --q_value Q_VALUE
-                        fits only peptide data points with q value below this threshold [default: 1e-2]
-  -d DEPTH, --depth DEPTH
-                        fits only peptides identified in at least this many samples [default: 6]
-  -r RIA, --ria RIA     final isotope enrichment levels, if known [default: 0.5]
-  -o OUT, --out OUT     path to the output directory [default: riana]
-  -p, --plotcurves      plot fitted curves
-  -t THREAD, --thread THREAD
-                        number of threads for concurrency [default: 1]
-
-</code></pre>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">riana</span> fit <span class="at">-h</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">usage:</span> __main__.py fit [-h] [-m <span class="dt">{simple</span><span class="op">,</span><span class="dt">guan</span><span class="op">,</span><span class="dt">fornasiero}</span>] [-l <span class="dt">{aa</span><span class="op">,</span><span class="dt">hw</span><span class="op">,</span><span class="dt">o18}</span>] [-a AA] [--kp KP] </span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="ex">[--kr</span> KR] [--rp RP] [-q Q_VALUE] [-d DEPTH] [-r RIA] [-o OUT] [-p] [-t THREAD] riana_path [riana_path ...]</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">positional</span> arguments:</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="ex">riana_path</span>            <span class="op">&lt;</span>required<span class="op">&gt;</span> paths to one or more integrate out text files </span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>                        <span class="kw">(</span><span class="ex">note:</span> the sample field must include numericals corresponding </span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">to</span> time units <span class="er">(</span><span class="ex">e.g.,</span> time0, time 6<span class="kw">)</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="ex">optional</span> arguments:</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-h,</span> <span class="at">--help</span>            show this help message and exit</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-m</span> <span class="dt">{simple</span><span class="op">,</span><span class="dt">guan</span><span class="op">,</span><span class="dt">fornasiero}</span>, <span class="at">--model</span> <span class="dt">{simple</span><span class="op">,</span><span class="dt">guan</span><span class="op">,</span><span class="dt">fornasiero}</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">kinetic</span> models for fitting, currently only the simple exponential model </span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">is</span> implemented [default: simple]</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-l</span> <span class="dt">{aa</span><span class="op">,</span><span class="dt">hw</span><span class="op">,</span><span class="dt">o18}</span>, <span class="at">--label</span> <span class="dt">{aa</span><span class="op">,</span><span class="dt">hw</span><span class="op">,</span><span class="dt">o18}</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">labeling</span> type [default: hw]</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-a</span> AA, <span class="at">--aa</span> AA        which amino acid residue is label carrying [default: K]</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  <span class="ex">--kp</span> KP               for two-compartment models, the precursor rate constant [default: 0.5]</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="ex">--kr</span> KR               for the fornasiero model, the reutilization rate constant [default: 0.05]</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  <span class="ex">--rp</span> RP               for the fornasiero model, the ratio of protein bound to free precursors </span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">[default:</span> 10]</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-q</span> Q_VALUE, <span class="at">--q_value</span> Q_VALUE</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">fits</span> only peptide data points with q value below this threshold [default: 1e-2]</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-d</span> DEPTH, <span class="at">--depth</span> DEPTH</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">fits</span> only peptides identified in at least this many samples [default: 6]</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-r</span> RIA, <span class="at">--ria</span> RIA     final isotope enrichment levels, if known [default: 0.5]</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-o</span> OUT, <span class="at">--out</span> OUT     path to the output directory [default: riana]</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-p,</span> <span class="at">--plotcurves</span>      plot fitted curves</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>  <span class="ex">-t</span> THREAD, <span class="at">--thread</span> THREAD</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>                        <span class="ex">number</span> of threads for concurrency [default: 1]</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
