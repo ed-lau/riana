@@ -19,7 +19,7 @@ Launch riana as a module (Usage/Help):
 ```bash
 $ python -m riana
 ```
-`
+
 See the [documentations](https://ed-lau.github.io/riana/) for instructions to process a test data file.
 
 ### Dependencies
