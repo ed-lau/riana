@@ -11,12 +11,15 @@ Install Python 3.7+ and pip. See instructions on Python website for specific ins
 
 Riana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.
 
-    $ pip install riana
+```bash
+$ pip install riana
+```
 
 Launch riana as a module (Usage/Help):
-	
-	$ python -m riana
-
+```bash
+$ python -m riana
+```
+`
 See the [documentations](https://ed-lau.github.io/riana/) for instructions to process a test data file.
 
 ### Dependencies
