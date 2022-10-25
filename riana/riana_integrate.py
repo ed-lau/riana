@@ -15,12 +15,12 @@ import numpy as np
 import pandas as pd
 import tqdm
 
-from riana import constants, params, __version__
+from riana import constants, __version__
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
 
 
-def integrate_all(args):
+def integrate_all(args) -> None:
     """
     Improved process to integrate for isotope abundance analysis.
     Idea is to loop through the mzML only once - get all the peptides to be integrated first
@@ -326,7 +326,9 @@ def integrate_all(args):
         save_path = os.path.join(directory_to_write, current_sample + '_riana_intensities.txt')
         overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
 
-    return sys.exit(os.EX_OK)
+    tqdm.tqdm.write('Completed.')
+
+    return None
 
 
 def get_isotopomer_intensity(index: int,

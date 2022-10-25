@@ -3,7 +3,7 @@
 """ Main. """
 
 import argparse
-from riana import integrate, fitcurve, __version__
+from riana import riana_integrate, riana_fit, __version__
 
 
 #
@@ -14,10 +14,14 @@ def main():
 
     # Main command
     parser = argparse.ArgumentParser(description='Riana integrates the relative abundance of'
-                                                 ' isotopomers')
+                                                 ' isotopomers in mass spectrometry data and performs'
+                                                 'kinetics modeling',
+                                        epilog='For more information, see GitHub repository at '
+                                               'https://github.com/ed-lau/riana',
+                                     )
 
     parser.add_argument('-v', '--version', action='version',
-                        version='%(prog)s {version}'.format(version=__version__))
+                        version='riana {version}'.format(version=__version__))
 
     # Sub-commands
     subparsers = parser.add_subparsers(help='Type riana function -h for individual help messages',
@@ -26,8 +30,9 @@ def main():
                                        )
 
     parser_integrate = subparsers.add_parser('integrate',
-                                             aliases=['int'],
-                                             help='Integrates isotopomer abundance over retention time')
+                                             help='Integrates isotopomer abundance over retention time',
+                                            )
+
     parser_fit = subparsers.add_parser('fit',
                                        help='Fit to kinetic models *under development*')
     #
@@ -66,6 +71,7 @@ def main():
 
     parser_integrate.add_argument('-q', '--q_value',
                                   help='integrate only peptides with q value below this threshold [default: 1e-2]',
+                                  metavar="FDR",
                                   type=float,
                                   default=1e-2)
 
@@ -89,7 +95,7 @@ def main():
                             default='D',
                             help='mass defect type [default: D]')
 
-    parser_integrate.set_defaults(func=integrate.integrate_all)
+    parser_integrate.set_defaults(func=riana_integrate.integrate_all)
 
     #
     # Arguments for fit subcommand
@@ -140,13 +146,14 @@ def main():
 
     parser_fit.add_argument('-q', '--q_value',
                             help='fits only peptide data points with q value below this threshold [default: 1e-2]',
+                            metavar="FDR",
                             type=float,
                             default=1e-2)
 
     parser_fit.add_argument('-d', '--depth',
                             help='fits only peptides identified in at least this many samples [default: 6]',
                             type=int,
-                            default=6)
+                            default=3)
 
     parser_fit.add_argument('-r', '--ria',
                             help='final isotope enrichment levels, if known [default: 0.5]',
@@ -165,7 +172,7 @@ def main():
                             type=int,
                             default=1)
 
-    parser_fit.set_defaults(func=fitcurve.fit_all)
+    parser_fit.set_defaults(func=riana_fit.fit_all)
 
     # Print help message if no arguments are given
     import sys
