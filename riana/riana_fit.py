@@ -15,6 +15,9 @@ from functools import partial
 import matplotlib.pyplot as plt
 
 from riana import accmass, constants, models, params, __version__
+from riana.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def strip_concat(sequence: str,
@@ -158,31 +161,9 @@ def fit_all(args):
         num_threads = 1  # os.cpu_count() * 4
 
 
-
-    #
-    # logging
-    #
-    fit_log = logging.getLogger('riana.fit')
-    fit_log.setLevel(logging.DEBUG)
-
-    # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(outdir, 'riana_fit.log'))
-    fh.setLevel(logging.INFO)
-
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.ERROR)
-
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-
-    # add the handlers to the logger
-    fit_log.addHandler(fh)
-    fit_log.addHandler(ch)
-    fit_log.info(args)
-    fit_log.info(__version__)
+    # Get logging
+    logger.info(args)
+    logger.info(__version__)
 
     #
     # read the integration output files in
@@ -332,7 +313,7 @@ def fit_all(args):
     out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'))
 
     num_peps_fitted = out_df[out_df['R_squared'] >= 0.9].shape[0]
-    fit_log.info(f'There are {num_peps_fitted} concats with R2 ≥ 0.9')
+    logger.info(f'There are {num_peps_fitted} concats with R2 ≥ 0.9')
 
     return sys.exit(os.EX_OK)
 
@@ -364,8 +345,8 @@ def fit_one(loop_index,
     seq = concat_list[loop_index]
     y = filtered_integrated_df.loc[filtered_integrated_df['concat'] == seq].copy()
 
-    fit_log = logging.getLogger('riana.fit')
-    fit_log.info(f'Fitting peptide {seq} with data shape {y.shape}')
+
+    logger.info(f'Fitting peptide {seq} with data shape {y.shape}')
 
     '''
     2021-11-22 Get t, mi from subset dataframe
@@ -385,7 +366,7 @@ def fit_one(loop_index,
     y['colsums'] = y.loc[:, y.columns.str.match('^m[0-9]+$')].sum(axis=1)   # sums all m* columns
     y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
 
-    fit_log.info(y[['sample', 'mi']])
+    logger.info(y[['sample', 'mi']])
     t = np.array([float(re.sub('[^0-9.]', '', time)) for time in y['sample']])
     mi = np.array(y['mi'].tolist())
 
@@ -399,8 +380,8 @@ def fit_one(loop_index,
     a_max = a_0 * np.power((1 - ria_max), num_labeling_sites)
     fs = calculate_fs(a=mi, a_0=a_0, a_max=a_max)
 
-    fit_log.info(f'concat: {stripped}, n: {num_labeling_sites}, a_0: {a_0}, a_max: {a_max}')
-    fit_log.info([t, fs])
+    logger.info(f'concat: {stripped}, n: {num_labeling_sites}, a_0: {a_0}, a_max: {a_max}')
+    logger.info([t, fs])
 
     # TODO: 2021-11-21 remove t/fs data poionts where fs is nan for any reason
     null_result = {seq: [np.nan, np.nan, np.nan, t, fs]}
@@ -440,6 +421,6 @@ def fit_one(loop_index,
 
     r_squared = np.nan if ss_tot == 0 else 1. - (ss_res / ss_tot)
 
-    fit_log.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
+    logger.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
 
     return {seq: [popt[0], r_squared, sd, t, fs]}

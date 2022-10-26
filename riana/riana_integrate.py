@@ -10,14 +10,19 @@ import re
 import os
 import sys
 from functools import partial
+import scipy.signal
 
 import numpy as np
 import pandas as pd
 import tqdm
 
-from riana import constants, __version__
+from .__init__ import __version__
+from riana import constants
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
+from riana.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def integrate_all(args) -> None:
@@ -31,165 +36,28 @@ def integrate_all(args) -> None:
 
     """
 
-    #
-    # Handle command line arguments
-    #
+    # ---- Get the logger ----
+    logger.info(args)
+    logger.info(__version__)
 
-    # Use the sample name if supplied, otherwise use the basename of the mzml
-    if args.sample is None:
-        current_sample = os.path.basename(os.path.normpath(args.mzml_path))
-    else:
-        current_sample = args.sample
-
-    # File out
-    path_to_write = os.path.join(args.out)
-    directory_to_write = os.path.dirname(path_to_write)
-    if directory_to_write:
-        os.makedirs(directory_to_write, exist_ok=True)
-
-    # Logging
-    main_log = logging.getLogger('riana')
-    main_log.setLevel(logging.DEBUG)
-
-    # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(directory_to_write, f'riana_integrate_{current_sample}.log'))
-    fh.setLevel(logging.INFO)
-
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.ERROR)
-
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-
-    # add the handlers to the logger
-    main_log.addHandler(fh)
-    main_log.addHandler(ch)
-
-    main_log.info(args)
-    main_log.info(__version__)
-
-    #
-    # Integrates only peptides matched to one protein
-    #
-    unique_pep = args.unique
-
-    #
-    # Convert the to-do isotopomer list option into a list of integers
-    #
-    iso_to_do = []
-
-    for char in args.iso.split(','):
-
-        try:
-            char = int(char)
-
-            # Only doing down to mz + 15.
-            if char <= 15:
-                iso_to_do.append(int(char))
-
-        except ValueError or TypeError:
-            pass
-
-    if not iso_to_do:
-        sys.exit('Error: Invalid isotopomer list given.')
-
-    iso_to_do = list(set(iso_to_do))
-    iso_to_do.sort()
-
-    #
-    # Percolator q value threshold for peptides and proteins
-    #
-    if args.q_value:
-
-        try:
-            q_threshold = float(args.q_value)
-
-        except ValueError or TypeError:
-            main_log.warning('Invalid Q value given - using default value.')
-            q_threshold = float(1e-2)
-
-    #
-    # Retention time cutoff peptides and proteins
-    #
-    if args.r_time:
-
-        try:
-            rt_tolerance = float(args.r_time)
-
-        except ValueError or TypeError:
-            main_log.warning('Invalid retention time tolerance given - using default value.')
-            rt_tolerance = float(1.0)
-    else:
-        rt_tolerance = float(1.0)
-
-    #
-    # MS1 mass tolerance for integration
-    #
-    if args.mass_tol:
-        try:
-            mass_tolerance = float(args.mass_tol) * 1e-6
-
-        except ValueError or TypeError:
-            main_log.warning('Invalid mass tolerance given - using default value.')
-            mass_tolerance = float(100) * 1e-6
-    else:
-        mass_tolerance = float(100) * 1e-6
-
-    #
-    # Parallelism
-    #
-    if args.thread:
-        try:
-            num_threads = max(os.cpu_count() * 4, int(args.thread))
-
-        except ValueError or TypeError:
-            main_log.warning('Invalid thread count. Using default.')
-            num_threads = 1  # os.cpu_count() * 4
-
-    else:
-        num_threads = 1  # os.cpu_count() * 4
-
-    #
-    # Read files in
-    #
-
-    # This is the directory that holds the entire project
-    #20211109 project = ReadDirectory(dir_loc)
-
-    # Get the master peptide ID list
+    # ---- Read in the Percolator file ----
     mzid = ReadPercolator(path=args.id_path,  # project=project,
-                          sample=current_sample,
-                          directory_to_write=directory_to_write,
+                          sample=args.sample,
+                          directory_to_write=args.out,
                           #percolator_subdirectory=args.percolator
                           )
 
-    mzid.read_psms()
 
-    # TODO: should remove mbr from the main integration function and move to a different script
-    # 20211109 mzid.make_master_match_list(  # lysine_filter=0,
-    #   peptide_q=q_threshold,
-    #    unique_only=unique_pep,
-    #    min_fraction=params.min_fraction_mbr)
-
-    # Each subdirectory is a sample
-    # 20211109 samples = project.samples
-    # Create the grand total out file
-    # 20211109 master_df = pd.DataFrame()
-
-    # 20211109 for current_sample in tqdm.tqdm(samples, desc='Processing Sample', total=len(samples)):
-
-    sample_loc = os.path.normpath(args.mzml_path)   # os.path.join(project.path, current_sample, 'mzml')
-    assert os.path.isdir(sample_loc), '[error] mzml path not a valid directory'
+    # ---- Read in the mzML file ----
+    # sample_loc = os.path.normpath(args.mzml_path)   # os.path.join(project.path, current_sample, 'mzml')
+    # assert os.path.isdir(sample_loc), '[error] mzml path not a valid directory'
 
     # These are not necessary since there is only one sample/percolator per run now
-    mzid.get_current_sample_psms(current_sample=current_sample)
+    mzid.get_current_sample_psms(current_sample=args.sample)
     mzid.get_current_sample_mzid_indices()
 
     #2021-11-04 account for mzml and mzML
-    mzml_files = [f for f in os.listdir(sample_loc) if re.match('^.*.mz[Mm][Ll]', f)]
+    mzml_files = [f for f in os.listdir(args.mzml_path) if re.match('^.*.mz[Mm][Ll]', f)]
 
     # Sort the mzML files by names
     # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
@@ -210,7 +78,7 @@ def integrate_all(args) -> None:
     for idx in mzid.indices:
 
         # Progress message
-        main_log.info('Doing mzml: {0} ({1} of {2})'.format(
+        logger.info('Doing mzml: {0} ({1} of {2})'.format(
             mzml_files[idx],
             str(idx + 1),
             str(len(mzid.indices))))
@@ -218,15 +86,15 @@ def integrate_all(args) -> None:
         # Make a subset dataframe with the current file index (fraction) being considered
         mzid.get_current_fraction_psms(idx)
         mzid.filter_current_fraction_psms(  # lysine_filter=0,
-            peptide_q=q_threshold,
-            unique_only=unique_pep,
+            peptide_q=args.q_value,
+            unique_only=args.unique,
             use_soft_threshold=False,   # 20211109 True
             # match_across_runs=False,  # args.mbr
         )
 
         # Read the mzml file of hte current fraction
         try:
-            mzml = Mzml(os.path.join(sample_loc, mzml_files[idx]))
+            mzml = Mzml(os.path.join(args.mzml_path, mzml_files[idx]))
 
         except OSError as e:
             sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
@@ -246,12 +114,13 @@ def integrate_all(args) -> None:
 
         get_isotopomer_intensity_partial = partial(get_isotopomer_intensity,
                                                    id_=mzid.curr_frac_filtered_id_df.copy(),
-                                                   iso_to_do=iso_to_do,
+                                                   iso_to_do=args.iso,
                                                    mzml=mzml,
-                                                   rt_tolerance=rt_tolerance,
-                                                   mass_tolerance=mass_tolerance,
+                                                   rt_tolerance=args.r_time,
+                                                   mass_tolerance=args.mass_tol,
                                                    use_range=True,
                                                    mass_defect=args.mass_defect,
+                                                   smoothing=args.smoothing,
                                                    )
 
         # Single threaded loop
@@ -265,10 +134,10 @@ def integrate_all(args) -> None:
         # For parallelism, use concurrent.futures instead of multiprocessing for higher speed
         # '''
         from concurrent import futures
-        with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
+        with futures.ThreadPoolExecutor(max_workers=args.thread) as ex:
             intensities_results = list(tqdm.tqdm(ex.map(get_isotopomer_intensity_partial, loop_),
                                                  total=max(loop_),
-                                                 desc=f'Extracting isotopomer intensities in sample: {current_sample}'
+                                                 desc=f'Extracting isotopomer intensities in sample: {args.sample}'
                                                       f' file: {mzml_files[idx]}'))
         # '''
 
@@ -289,15 +158,12 @@ def integrate_all(args) -> None:
         # Now perform integration
         integrated_peaks = []
         for int_res in tqdm.tqdm(intensities_results,
-                                 desc=f'Integrating peaks in sample: {current_sample} file: {mzml_files[idx]}'
+                                 desc=f'Integrating peaks in sample: {args.sample} file: {mzml_files[idx]}'
                                  ):
             iso_areas = [int_res['pep_id'][0]]
 
-            # TODO: smooth
-            # for m in ['m' + str(iso) for iso in iso_to_do]:
-            #    res3[m] = scipy.signal.savgol_filter(res3[m], 9, 3)
 
-            for m in ['m' + str(iso) for iso in iso_to_do]:
+            for m in ['m' + str(iso) for iso in args.iso]:
 
                 iso_area = np.trapz(int_res[m], x=int_res['rt'])
                 iso_areas.append(iso_area)
@@ -306,7 +172,7 @@ def integrate_all(args) -> None:
         #
         # convert the integrated values into a data frame
         #
-        df_columns = ['pep_id'] + ['m' + str(iso) for iso in iso_to_do]
+        df_columns = ['pep_id'] + ['m' + str(iso) for iso in args.iso]
 
         integrated_df = pd.DataFrame(integrated_peaks, columns=df_columns)
         id_integrated_df = pd.merge(mzid.curr_frac_filtered_id_df, integrated_df, on='pep_id', how='left')
@@ -319,11 +185,11 @@ def integrate_all(args) -> None:
             overall_integrated_df = overall_integrated_df.append(id_integrated_df, ignore_index=True)
 
     # write the integrated and intensities results
-    save_path = os.path.join(directory_to_write, current_sample + '_riana.txt')
+    save_path = os.path.join(args.out, args.sample + '_riana.txt')
     overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
 
     if args.write_intensities:
-        save_path = os.path.join(directory_to_write, current_sample + '_riana_intensities.txt')
+        save_path = os.path.join(args.out, args.sample + '_riana_intensities.txt')
         overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
 
     tqdm.tqdm.write('Completed.')
@@ -335,10 +201,11 @@ def get_isotopomer_intensity(index: int,
                              id_: pd.DataFrame,
                              iso_to_do: list,
                              rt_tolerance: float,
-                             mass_tolerance: float,
+                             mass_tolerance: int,
                              mzml,
                              use_range: True,
                              mass_defect: str = 'D',
+                             smoothing: int = None,
                              ) -> list:
     """
     get all isotopomer mass intensities from ms1 scans within range for one peptide for integration
@@ -347,10 +214,11 @@ def get_isotopomer_intensity(index: int,
     :param id_: protein identification dataframe
     :param iso_to_do: list of isotopomers
     :param rt_tolerance: retention time range in minutes
-    :param mass_tolerance: relative mass tolerance (already converted from ppm) e.g., 50e-6
+    :param mass_tolerance: relative mass tolerance (to be converted to ppm) e.g., 50
     :param mzml: mzml file object
     :param use_range: boolean whether to use all PSM scans for each peptide for RT determination
     :param mass_defect: whether to use deuterium or c13 for mass defect
+    :param smoothing: int number of scans to smooth over
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
@@ -363,6 +231,8 @@ def get_isotopomer_intensity(index: int,
         iso_added_mass = constants.SILAC_MASSDIFF
     elif mass_defect == "C13":
         iso_added_mass = constants.C13_MASSDIFF
+    else:
+        raise ValueError(f'Invalid mass defect: {mass_defect}')
 
     # get peptide mass, scan number, and charge
     peptide_mass = float(id_.loc[index, 'peptide mass'])
@@ -408,7 +278,10 @@ def get_isotopomer_intensity(index: int,
 
             # set upper and lower mass tolerance bounds
             prec_iso_am = peptide_prec + (iso * iso_added_mass / charge)
-            delta_mass = prec_iso_am*mass_tolerance/2
+
+            mass_tolerance_ppm = float(mass_tolerance) * 1e-6
+
+            delta_mass = prec_iso_am * mass_tolerance_ppm /2
 
             # sum intensities within range
             matching_int = np.sum(spec[np.abs(spec[:, 0] - prec_iso_am) <= delta_mass, 1])
@@ -419,10 +292,12 @@ def get_isotopomer_intensity(index: int,
             ]
             )
 
+
     if not intensity_over_time:
         raise Exception(f'No intensity profile for peptide {peptide_prec}'
                         f' min {min_scan} {peptide_rt_lower} max {max_scan} {peptide_rt_upper}'
                         f' scans {nearby_ms1_scans} iso {iso_to_do}')
+
 
     # integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(np.array(intensity_over_time),
     #                                                                                   iso_to_do=iso_to_do)
@@ -436,6 +311,16 @@ def get_isotopomer_intensity(index: int,
     intensity_out['ID'] = index
     intensity_out['pep_id'] = id_.loc[index, 'pep_id']
     intensity_out['concat'] = id_.loc[index, 'concat']
+
+
+    # Smoothing with Savitzky-Golay filter
+    if smoothing is not None:
+        for m in ['m' + str(iso) for iso in iso_to_do]:
+            if np.sum(intensity_out[m]) > 0:
+                intensity_out[m] = scipy.signal.savgol_filter(x=intensity_out[m],
+                                                              window_length=smoothing,
+                                                              polyorder=1,
+                                                              mode='nearest')
 
     return intensity_out # [integrated, intensity_out]
 

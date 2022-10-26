@@ -14,6 +14,9 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
 from sklearn.metrics import r2_score
 
+from riana.logger import get_logger
+
+logger = get_logger(__name__)
 
 class ReadPercolator(object):
     """
@@ -40,8 +43,6 @@ class ReadPercolator(object):
         # 20211109 self.percolator_subdirectory = percolator_subdirectory
         self.sample = sample
 
-        # logging
-        self.logger = logging.getLogger('riana.read_id')
 
         # 20211109 match between run logs
         # self.match_logger = logging.getLogger('riana.match_across_run')
@@ -62,6 +63,8 @@ class ReadPercolator(object):
         self.indices = []
         self.fraction_id_df = pd.DataFrame()
 
+        self.read_psms()
+
     def read_psms(self):
         """
         Reads in the Percolator tab delimited file and return a pandas data frame
@@ -76,7 +79,7 @@ class ReadPercolator(object):
         # 20211109 sample_loc = os.path.join(self.path, sample, self.percolator_subdirectory)
         # 20211109 assert os.path.isdir(sample_loc), '[error] project sample subdirectory not valid'
 
-        self.logger.info('Reading Percolator file at {0}'.format(self.path)) # 20211109 sample_loc))
+        logger.info('Reading Percolator file at {0}'.format(self.path.name)) # 20211109 sample_loc))
 
         # Opening the Percolator tab delimited target.psms.file
         # List all files in the percolator directory ending with target.psms.txt.
@@ -104,7 +107,7 @@ class ReadPercolator(object):
 
         # Try reading the standalone percolator psms file
         except (pd.errors.ParserError, KeyError) as e:
-            self.logger.info("Standalone Percolator file detected")
+            logger.info("Standalone Percolator file detected")
 
             with open(os.path.join(self.path), 'r') as f:  # 20211109 sample_loc, id_files[0]
                 f_ln = f.readlines()
@@ -164,7 +167,7 @@ class ReadPercolator(object):
         id_df.loc[:, 'sample'] = self.sample
         id_df['concat'] = id_df['sequence'].map(str) + '_' + id_df['charge'].map(str)
 
-        self.logger.info('Percolator file for {0} has size {1}'.format(self.sample,
+        logger.info('Percolator file for {0} has size {1}'.format(self.sample,
                                                                        id_df.shape))
 
         # 20211109 all_psms = all_psms.append(id_df, sort=False)
@@ -191,7 +194,7 @@ class ReadPercolator(object):
 
         # check if the master peptide ID list has been read first
         if self.master_id_df.empty:
-            self.logger.error('Peptide ID list has not been read yet')
+            logger.error('Peptide ID list has not been read yet')
             raise Exception
 
         else:
