@@ -44,7 +44,7 @@ rule riana_integrate:
     shell:
         "riana integrate {input.mzml} "
         "{input.pin} -D {params.mass_defect} "
-        "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o . -s {wildcards.timepoint} "
+        "-i {params.iso} -q 0.05 -r 0.33 -m {params.mass_tol} -o . -s {wildcards.timepoint} "
         "-t {threads}"
 
 rule riana_fit:

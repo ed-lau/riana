@@ -224,6 +224,7 @@ def main():
                             type=str,
                             default='K',
                             help='which amino acid residue is label carrying [default: K]',
+                            # TODO: add a check for valid amino acid; also need to support multiple amino acids
                             )
 
     parser_fit.add_argument('--kp',

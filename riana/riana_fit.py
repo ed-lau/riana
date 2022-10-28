@@ -421,6 +421,6 @@ def fit_one(loop_index,
 
     r_squared = np.nan if ss_tot == 0 else 1. - (ss_res / ss_tot)
 
-    logger.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
+    # logger.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
 
     return {seq: [popt[0], r_squared, sd, t, fs]}

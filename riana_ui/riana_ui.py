@@ -5,8 +5,8 @@
 import sys
 from typing import NamedTuple
 import tkinter as tk
-from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM
-from ttkthemes import ThemedTk
+from tkinter import ttk
+import sv_ttk
 import queue
 import threading
 import logging
@@ -68,26 +68,27 @@ class Application(tk.Tk):
         self.notebook.add(self.Frame2, text='Model')
         self.notebook.add(self.Frame3, text='Plot')
 
-        self.notebook.pack(fill=BOTH, expand=True)
+        self.notebook.pack(fill='both', expand=True)
 
         # ttk theme options
         style = ttk.Style()
         style.theme_use('aqua')
-        # style.configure("TButton", padding=6, relief="flat",
-        #                 background="#ccc")
-        # style.map("TButton", background=[('active', 'white')])
-        # style.configure("TFrame",
-        #                 background="#121212",
-        #                 foreground="#121212",
-        #                 borderwidth=0,
-        #                 relief=FLAT)
-
-        # style.configure("TLabel", background="#ccc")
+        # # style.configure("TButton", padding=6, relief="flat",
+        # #                 background="#ccc")
+        # # style.map("TButton", background=[('active', 'white')])
+        # # style.configure("TFrame",
+        # #                 background="#121212",
+        # #                 foreground="#121212",
+        # #                 borderwidth=0,
+        # #                 relief=FLAT)
         #
-        style.configure("TNotebook", background="#111111")
-        # style.configure("TNotebook.Tab", background="#ccc")
-        style.map("TNotebook.Tab", background=[('active', 'white')])
-        # style.configure("TEntry", background="#ccc")
+        # # style.configure("TLabel", background="#ccc")
+        # #
+        # style.configure("TNotebook", background="#111111")
+        # # style.configure("TNotebook.Tab", background="#ccc")
+        # style.map("TNotebook.Tab", background=[('active', 'white')])
+        # # style.configure("TEntry", background="#ccc")
+        # sv_ttk.use_dark_theme()
 
 
 

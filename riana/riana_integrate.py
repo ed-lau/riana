@@ -43,20 +43,10 @@ def integrate_all(args) -> None:
     # ---- Read in the Percolator file ----
     mzid = ReadPercolator(path=args.id_path,  # project=project,
                           sample=args.sample,
-                          directory_to_write=args.out,
-                          #percolator_subdirectory=args.percolator
                           )
 
-
+    print(mzid.indices)
     # ---- Read in the mzML file ----
-    # sample_loc = os.path.normpath(args.mzml_path)   # os.path.join(project.path, current_sample, 'mzml')
-    # assert os.path.isdir(sample_loc), '[error] mzml path not a valid directory'
-
-    # These are not necessary since there is only one sample/percolator per run now
-    mzid.get_current_sample_psms(current_sample=args.sample)
-    mzid.get_current_sample_mzid_indices()
-
-    #2021-11-04 account for mzml and mzML
     mzml_files = [f for f in os.listdir(args.mzml_path) if re.match('^.*.mz[Mm][Ll]', f)]
 
     # Sort the mzML files by names
@@ -109,7 +99,6 @@ def integrate_all(args) -> None:
         #
         # TODO: to accommodate multiple PSMs per concat, this should loop through a concat list.
         loop_ = range(len(mzid.curr_frac_filtered_id_df))
-
         assert len(loop_) > 0, 'No qualified peptide after filtering'
 
         get_isotopomer_intensity_partial = partial(get_isotopomer_intensity,

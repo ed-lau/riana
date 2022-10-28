@@ -38,8 +38,7 @@ setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate you support Python 3. These classifiers are *not*
         # checked by 'pip install'. See instead 'python_requires' below.
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3 :: Only',
     ],
 
@@ -47,14 +46,14 @@ setup(
 
    packages=find_packages(),
 
-   python_requires='>=3.6, <4',
+   python_requires='>=3.9, <4',
 
    install_requires=['pymzml>=2,<3',
                      'scipy>=1,<2',
                      'pandas>=1,<2',
                      'matplotlib>=3,<4',
                      'tqdm>=4,<5',
-                     'scikit-learn>=0.20,<=1'], #external packages as dependencies
+                     'scikit-learn>=1'], #external packages as dependencies
 
    entry_points={
            'console_scripts': [
