@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 from riana import accmass, constants, models, params, __version__
 from riana.logger import get_logger
 
-logger = get_logger(__name__)
 
 
 def strip_concat(sequence: str,
@@ -122,6 +121,9 @@ def fit_all(args):
     #
     # parse arguments
     #
+
+    # get the logger
+    logger = get_logger(__name__, args.out)
 
     riana_list = args.riana_path        # list of integration output
     model_pars = {'k_p': args.kp,

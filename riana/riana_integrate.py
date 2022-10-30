@@ -22,9 +22,6 @@ from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
 from riana.logger import get_logger
 
-logger = get_logger(__name__)
-
-
 def integrate_all(args) -> None:
     """
     Improved process to integrate for isotope abundance analysis.
@@ -37,12 +34,15 @@ def integrate_all(args) -> None:
     """
 
     # ---- Get the logger ----
+
+    logger = get_logger(__name__, args.out)
     logger.info(args)
     logger.info(__version__)
 
     # ---- Read in the Percolator file ----
-    mzid = ReadPercolator(path=args.id_path,  # project=project,
+    mzid = ReadPercolator(path=args.id_path,
                           sample=args.sample,
+                          logger=logger,
                           )
 
     print(mzid.indices)

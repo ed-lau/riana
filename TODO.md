@@ -11,3 +11,10 @@ Short term:
 Mid term:
 - smoothing function
 - write tests for match between run functions
+
+
+TODO: mass error correction
+TODO: isotope correction
+TODO: sparse array usage
+TODO: mbr
+TODO: GUI

@@ -14,9 +14,6 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
 from sklearn.metrics import r2_score
 
-from riana.logger import get_logger
-
-logger = get_logger(__name__)
 
 class ReadPercolator(object):
     """
@@ -27,6 +24,7 @@ class ReadPercolator(object):
     def __init__(self,
                  path: str,
                  sample,
+                 logger: logging.Logger,
 
                  ):
         """
@@ -36,6 +34,7 @@ class ReadPercolator(object):
         """
 
         self.path = path  # 20211109 project.path
+        self.logger = logger
         # 20211109 self.samples = project.samples
         # 20211109 self.percolator_subdirectory = percolator_subdirectory
         self.sample = sample
@@ -54,6 +53,8 @@ class ReadPercolator(object):
         self.indices = []
         self.get_current_sample_mzid_indices() # Get the indices of the fractions
 
+
+
     def read_psms(self):
         """
         Reads in the Percolator tab delimited file and return a pandas data frame
@@ -68,7 +69,7 @@ class ReadPercolator(object):
         # 20211109 sample_loc = os.path.join(self.path, sample, self.percolator_subdirectory)
         # 20211109 assert os.path.isdir(sample_loc), '[error] project sample subdirectory not valid'
 
-        logger.info('Reading Percolator file at {0}'.format(self.path.name)) # 20211109 sample_loc))
+        self.logger.info('Reading Percolator file at {0}'.format(self.path.name)) # 20211109 sample_loc))
 
         # Opening the Percolator tab delimited target.psms.file
         # List all files in the percolator directory ending with target.psms.txt.
@@ -91,7 +92,7 @@ class ReadPercolator(object):
 
             # 2021-12-21 calculate peptide mass because the crux peptide mass column does not include cysteine IAA mass
             self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq) for seq in self.id_df['sequence']]
-            logger.info(f'Crux Percolator file detected through the presence of spectrum precursor '
+            self.logger.info(f'Crux Percolator file detected through the presence of spectrum precursor '
                         f'm/z column with length {test_col}')
 
         except OSError as e:
@@ -99,7 +100,7 @@ class ReadPercolator(object):
 
         # Try reading the Standalone Percolator psms file
         except (pd.errors.ParserError, KeyError) as e:
-            logger.info("Standalone Percolator file detected")
+            self.logger.info("Standalone Percolator file detected")
 
             with open(os.path.join(self.path), 'r') as f:  # 20211109 sample_loc, id_files[0]
                 f_ln = f.readlines()
@@ -159,7 +160,7 @@ class ReadPercolator(object):
         self.id_df.loc[:, 'sample'] = self.sample
         self.id_df['concat'] = self.id_df['sequence'].map(str) + '_' + self.id_df['charge'].map(str)
 
-        logger.info('Percolator file for {0} has size {1}'.format(self.sample,
+        self.logger.info('Percolator file for {0} has size {1}'.format(self.sample,
                                                                        self.id_df.shape))
 
         # 20211109 all_psms = all_psms.append(id_df, sort=False)
