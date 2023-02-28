@@ -4,7 +4,7 @@
 
 import os
 import argparse
-from riana import riana_integrate, riana_fit, __version__
+from riana import riana_integrate, riana_fit, riana_preprocess, __version__
 from typing import List
 
 
@@ -79,6 +79,15 @@ class CheckQValue(argparse.Action):
             raise argparse.ArgumentTypeError("%r for q_value not in range [0.0, 1.0]" % (values,))
         setattr(namespace, self.dest, values)
 
+# Check that each character in the -aa argument is a valid amino acid
+class CheckAminoAcids(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        aa_list = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']
+        for aa in values:
+            if aa not in aa_list:
+                raise argparse.ArgumentTypeError("Amino acid %r not recognised" % (aa,))
+        setattr(namespace, self.dest, values)
+
 
 # ---- Code for running main with parsed arguments from command line ----
 def main():
@@ -100,6 +109,13 @@ def main():
                                        description='Riana has the following sub-commands:',
                                        )
 
+    parser_preprocess = subparsers.add_parser('preprocess',
+                                          help='Preprocesses Percolator input files',
+                                          description='Preprocesses Percolator input files',
+                                          epilog='For more information, see GitHub repository at '
+                                                 'https://github.com/ed-lau/riana',
+                                            )
+
     parser_integrate = subparsers.add_parser('integrate',
                                              help='Integrates isotopomer abundance over retention time',
                                              description='Integrates isotopomer abundance over retention time',
@@ -109,6 +125,21 @@ def main():
 
     parser_fit = subparsers.add_parser('fit',
                                        help='Fit to kinetic models *under development*')
+
+    #
+    # Arguments for preprocess sub-command
+    #
+
+    parser_preprocess.add_argument('id_files',
+                                   type=argparse.FileType('r'),
+                                   nargs='+',
+                                   help='<required> path to Percolator input file(s)')
+
+    parser_preprocess.add_argument('-o', '--out',
+                                   help= 'path to output directory',
+                                   default = '.')
+
+    parser_preprocess.set_defaults(func=riana_preprocess.main)
     #
     # Arguments for integrate subcommand
     #
@@ -224,7 +255,7 @@ def main():
                             type=str,
                             default='K',
                             help='which amino acid residue is label carrying [default: K]',
-                            # TODO: add a check for valid amino acid; also need to support multiple amino acids
+                            action=CheckAminoAcids,
                             )
 
     parser_fit.add_argument('--kp',

@@ -45,14 +45,51 @@ def integrate_all(args) -> None:
                           logger=logger,
                           )
 
-    print(mzid.indices)
-    # ---- Read in the mzML file ----
-    mzml_files = [f for f in os.listdir(args.mzml_path) if re.match('^.*.mz[Mm][Ll]', f)]
 
-    # Sort the mzML files by names
-    # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
-    # TODO: check whether Percolator uses nat sort and implement if so
-    mzml_files.sort()
+    # 2022-10-31 RIANA will now attempt to read the percolator.log.txt file for fraction (file_idx) mzML assignment
+    log_path = os.path.join(os.path.dirname(args.id_path.name),
+                            'percolator.log.txt')
+
+    # If the log file exists, use it to read the assignment
+    if os.path.exists(log_path):
+        logger.warning(f'Percolator log file exists at {log_path} '
+                       f'and will be used for index assignment.')
+
+        with open(log_path, 'r') as f:
+            lines = f.readlines()
+
+        mzml_files = {}
+        for line in lines:
+            percolator_indices = 'INFO: Assigning index ([0-9]*) to (.*)\.'
+            pattern = re.findall(percolator_indices, line)
+            if len(pattern) == 1:
+                idx, pathname = pattern[0]
+                dirname, filename = os.path.split(pathname)
+                mzml_files[int(idx)] = re.sub('\.pep\.xml', '', filename)
+                # TODO: will probably have to account for .pin or other input to Percolator
+
+    # If the log file does not exist, assign index naively based on sort
+    else:
+        logger.warning(f'Percolator log file not found at {log_path}; '
+                       f'mzml files will be sorted for index assignment.')
+        # Check that the number of mzMLs in the mzML folder is the same as the maximum of the ID file's file_idx column.
+        # Note this will throw an error if not every fraction results in at least some ID, but we will ignore for now.
+
+        # ---- Read in the mzML file ----
+
+        mzml_file_list = [f for f in os.listdir(args.mzml_path) if re.match('^.*.mz[Mm][Ll]', f)]
+        # Sort the mzML files by names
+        # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
+        # But we will ignore for now
+        mzml_file_list.sort()
+
+        # Make dictionary of idx, filename from enumerate
+        mzml_files = {}
+        for idx, filename in enumerate(mzml_file_list):
+            mzml_files[idx] = re.sub('.mz[Mm][Ll](\.gz)?', '', filename)
+
+    # Print mzml files to log
+    logger.info(f'mzml file orders: {mzml_files}')
 
     # Throw an error if there is no mzML file in the mzml directory
     assert len(mzml_files) != 0, '[error] no mzml files in the specified directory'
@@ -82,17 +119,19 @@ def integrate_all(args) -> None:
             # match_across_runs=False,  # args.mbr
         )
 
-        # Read the mzml file of hte current fraction
+        # --- Read the mzML file of the current fraction into a dictionary and create MS1/MS2 indices ----
+        if os.path.exists(os.path.join(args.mzml_path, mzml_files[idx] + '.mzML')):
+            mzml_path = os.path.join(args.mzml_path, mzml_files[idx] + '.mzML')
+        elif os.path.exists(os.path.join(args.mzml_path, mzml_files[idx] + '.mzML.gz')):
+            mzml_path = os.path.join(args.mzml_path, mzml_files[idx] + '.mzML.gz')
+        else:
+            raise FileNotFoundError(f'Could not find mzML file for index {idx} at {args.mzml_path}')
         try:
-            mzml = Mzml(os.path.join(args.mzml_path, mzml_files[idx]))
+            mzml = Mzml(mzml_path)
 
         except OSError as e:
             sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
 
-        #
-        # read the spectra into dictionary and also create MS1/MS2 indices
-        #
-        mzml.parse_mzml()
 
         #
         # get peak intensity for each isotopomer in each spectrum ID in each peptide

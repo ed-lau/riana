@@ -58,6 +58,7 @@ def calculate_a0(sequence: str,
         sequence = strip_concat(sequence)
         res_atoms = accmass.count_atoms(sequence)
         a0 = np.product([np.power(constants.iso_abundances[i], res_atoms[i]) for i, v in enumerate(res_atoms)])
+        # TODO: this should calculate the full isotopic distribution
         return a0
 
 
@@ -80,7 +81,8 @@ def calculate_label_n(sequence: str,
 
     # if amino acid labeling, return number of labeled residues
     if label == 'aa':
-        return sequence.count(aa_res)
+        # return the sum of each residue in the aa_res
+        return sum([sequence.count(i) for i in aa_res])
 
     # if d2o, return the number of labeling site in heavy water labeling
     elif label == 'hw':
@@ -170,9 +172,7 @@ def fit_all(args):
     #
     # read the integration output files in
     #
-    rdf = pd.DataFrame()
-    for in_file in riana_list:
-        rdf = rdf.append(pd.read_table(in_file))
+    rdf = pd.concat(pd.read_table(in_file) for in_file in riana_list)
 
     # filter by percolator q-value
     rdf_filtered = rdf[rdf['percolator q-value'] < q_threshold]
@@ -186,11 +186,9 @@ def fit_all(args):
     #   that contain at least X number of data points.
     rdf_filtered = rdf_filtered.groupby(['concat', 'file_idx']).filter(lambda x: x['sample'].nunique() >= t_threshold)
 
-
     # TODO: catch when no peptide reaches the time or q threshold
     if rdf_filtered.shape[0] == 0:
         raise ValueError('No qualifying peptides for fitting. Check q-value or depth threshold.')
-    # TODO: add lysine filter for amino acid labeling
 
     # get the maximum time in this data set
     max_time = np.max([float(re.sub('[^0-9]', '', time)) for time in rdf_filtered['sample']])
@@ -219,6 +217,7 @@ def fit_all(args):
 
     for res in tqdm.tqdm(results, desc=f'Combining results'):
         out_dict = out_dict | res
+        # Note this works in python 3.9, but not in 3.8
 
     if args.plotcurves:
         for res in tqdm.tqdm(results, desc=f'Plotting curves'):
@@ -347,7 +346,7 @@ def fit_one(loop_index,
     seq = concat_list[loop_index]
     y = filtered_integrated_df.loc[filtered_integrated_df['concat'] == seq].copy()
 
-
+    logger = logging.getLogger('riana_fit')
     logger.info(f'Fitting peptide {seq} with data shape {y.shape}')
 
     '''
@@ -387,6 +386,7 @@ def fit_one(loop_index,
 
     # TODO: 2021-11-21 remove t/fs data poionts where fs is nan for any reason
     null_result = {seq: [np.nan, np.nan, np.nan, t, fs]}
+
     # if there is no labeling site, skip
     if num_labeling_sites == 0:
         return null_result
@@ -423,6 +423,6 @@ def fit_one(loop_index,
 
     r_squared = np.nan if ss_tot == 0 else 1. - (ss_res / ss_tot)
 
-    # logger.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
+    logger.info(f'Best fit k_deg: {popt[0]}, sd: {sd}, residuals: {residuals}, R2: {r_squared}')
 
     return {seq: [popt[0], r_squared, sd, t, fs]}

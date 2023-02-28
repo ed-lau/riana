@@ -26,6 +26,8 @@ class Mzml(object):
         self.logger = logging.getLogger('riana.mzml')
         self.logger.info('Reading mzML at {0}'.format(self.path))
 
+        self.parse_mzml()
+
     def __repr__(self):
         """ repr """
         return str(self.path)

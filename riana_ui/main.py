@@ -15,9 +15,9 @@ import tqdm
 
 from riana import __version__
 from riana import riana_integrate
-from .riana_ui_integrate import Frame1
-from .riana_ui_model import Frame2
-from .riana_ui_plot import Frame3
+from riana_ui.riana_ui_integrate import Frame1
+from riana_ui.riana_ui_model import Frame2
+from riana_ui.riana_ui_plot import Frame3
 
 
 class TextHandler():
