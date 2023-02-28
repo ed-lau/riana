@@ -60,7 +60,7 @@ class Mzml(object):
 
         self.msdata = msdata
         self.rt_idx = np.array(rt_idx, dtype=np.float64)
-        self.scan_idx = np.array(scan_numbers, dtype=np.int)
+        self.scan_idx = np.array(scan_numbers, dtype=np.int64)
 
         self.logger.info(
             'Parsed {0} spectra from file {1}'.format(
