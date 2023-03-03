@@ -66,11 +66,11 @@ setup(
         'Edward Lau Lab': 'https://www.laulab.net',
     },
 
-   data_files=[('tests',
-                 [os.path.join('tests', 'data', 'sample1', 'percolator.target.mzid'),
-                  os.path.join('tests', 'data', 'sample1', 'percolator.target.psms.txt'),
-                  os.path.join('tests', 'data', 'sample1', '20180216_BSA.mzML.gz'),
-                  ]),
-                ],
+   # data_files=[('tests',
+   #               [os.path.join('tests', 'data', 'sample1', 'percolator.target.mzid'),
+   #                os.path.join('tests', 'data', 'sample1', 'percolator.target.psms.txt'),
+   #                os.path.join('tests', 'data', 'sample1', '20180216_BSA.mzML.gz'),
+   #                ]),
+   #              ],
 
 )
