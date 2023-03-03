@@ -7,4 +7,5 @@ include *.md
 include LICENSE.md
 
 # Include the data files
-recursive-include tests/data/ *
+# recursive-include tests/data/sample1 *
+# recursive-include tests/data/fit *
