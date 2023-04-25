@@ -3,6 +3,7 @@
 # RIANA GUI
 
 from typing import NamedTuple
+import os
 import threading
 import sys
 import tkinter as tk
@@ -11,7 +12,9 @@ from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM
 import queue
 from riana import riana_integrate
 import pandas as pd
+import pandastable
 from pandastable import Table, TableModel, config
+from typing import List
 
 class IntegrationVars(NamedTuple):
     """ Variables for integration. """
@@ -26,7 +29,8 @@ class IntegrationVars(NamedTuple):
     thread: int
     write_intensities: bool
     sample: str
-    iso: str
+    iso: List[int]
+    smoothing: int
 
 
 class TextRedirector(object):
@@ -38,11 +42,13 @@ class TextRedirector(object):
 
         self.widget.configure(state="normal")
         #self.widget.delete("1.0", "end-1l")  # delete previous text
-        self.widget.delete("1.0", "end")  # delete previous text
+        #self.widget.delete("1.0", "end")  # delete previous text
         self.widget.insert("end", str, (self.tag,))
         self.widget.configure(state="disabled")
         # Autoscroll to the bottom
         self.widget.yview("end")
+    def flush(self):
+        pass
 
 class Frame1(ttk.Frame):
     """ RIANA integrate """
@@ -55,11 +61,10 @@ class Frame1(ttk.Frame):
         self.labelA = ttk.Label(self, text="Step 1: RIANA Integrate")
         self.labelA.pack()
 
-
         # Mimicking argparse options (move this to frame1 later)
         self.id_path = None
         self.mzml_path = None
-        self.out = 'out'
+        self.output_file = 'out'
 
         self.unique = tk.BooleanVar()
 
@@ -80,11 +85,14 @@ class Frame1(ttk.Frame):
         self.mass_defect_options: list[str] = ['D', 'C13', 'SILAC']
 
         self.thread = 4
-        self.write_intensities = False
+        self.write_intensities = True
 
         self.iso = tk.StringVar()
         self.iso.set('0,6')
 
+        self.smoothing = tk.IntVar()
+        self.smoothing.set(3)
+        self.smoothing_options: list[int] = [3, 5, 7, 9]
 
         self.create_tab1_widgets()
 
@@ -133,7 +141,7 @@ class Frame1(ttk.Frame):
         right_frame.pack(side="right", fill=BOTH, expand=True)
 
         # ---- Section separator ----
-        ttk.Label(left_frame, text="Select Input Files").pack()
+        ttk.Label(left_frame, text="Select I/O Paths").pack()
         ttk.Separator(left_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w',)
 
         # ---- Select Percolator ID file ----
@@ -148,11 +156,20 @@ class Frame1(ttk.Frame):
         # ---- Select path to mzML files ----
         self.select_mzml = ttk.Button(left_frame,
                                       text="Select Path to mzML files",
-                                      command=self.browse_mzml,
+                                      command=self.mzml_dialog,
                                       width=20,
                                       state="normal"
                                       )
         self.select_mzml.pack(side="top")
+
+        # ---- Select output folder ----
+        self.select_output = ttk.Button(left_frame,
+                                        text="Select Output Folder",
+                                        command=self.output_folder_dialog,
+                                        width=20,
+                                        state="normal"
+                                        )
+        self.select_output.pack(side="top")
 
 
         # ---- Section separator ----
@@ -245,6 +262,19 @@ class Frame1(ttk.Frame):
                                                  )
         self.select_mass_defect.pack(side="top")
 
+        # ---- Select smoothing ----
+        self.smoothing_label = ttk.Label(left_frame,
+                                        text=f'Smoothing:',
+                                        )
+        self.smoothing_label.pack()
+        self.select_smoothing = ttk.OptionMenu(left_frame,
+                                                    self.smoothing,
+                                                    self.smoothing_options[0],
+                                                    *self.smoothing_options,
+                                                    )
+        self.select_smoothing.pack(side="top")
+
+
         # link to RIANA integrate
         self.run_button = ttk.Button(left_frame,
                                      text="Run RIANA Integrate",
@@ -274,13 +304,13 @@ class Frame1(ttk.Frame):
 
 
         # Redirect console output to GUI
-        # sys.stdout = TextRedirector(self.output, "stdout")
-        # sys.stderr = TextRedirector(self.output, "stderr")
+        sys.stdout = TextRedirector(self.output, "stdout")
+        sys.stderr = TextRedirector(self.output, "stderr")
 
         # Quit button
-        # self.quit = ttk.Button(left_frame, text="Quit RIANA",
-        #                       command=self.master.destroy)
-        # self.quit.pack(side="bottom")
+        self.quit = ttk.Button(left_frame, text="Quit RIANA",
+                               command=self.master.destroy)
+        self.quit.pack(side="bottom")
 
         # ---- Section separator ----
         ttk.Label(right_frame, text="Results").pack()
@@ -292,8 +322,56 @@ class Frame1(ttk.Frame):
                                      width=400,
                                      height=300,
                                      )
-        self.result_view.pack(fill=BOTH, expand=1)
-        df = TableModel.getSampleData()
+        # self.result_view.pack(fill=BOTH, expand=1)
+
+
+
+
+
+        self.load_result_table()
+        # ---- Using tree view ----
+
+        # self.result_tree = ttk.Treeview(right_frame,
+        #                                 columns = df.columns,
+        #                                 show='headings',
+        #                                 height=300,
+        #                                 )
+        #
+        # df_col = df.columns
+        #
+        # # all the column name are generated dynamically.
+        # self.result_tree["columns"] = df_col
+        # counter = len(df)
+        #
+        # # generating for loop to create columns and give heading to them through df_col var.
+        # for x in range(len(df_col)):
+        #     self.result_tree.column(x, width=100)
+        #     self.result_tree.heading(x, text=df_col[x])
+        #     # generating for loop to print values of dataframe in treeview column.
+        # for i in range(counter):
+        #     self.result_tree.insert('', 'end', values=df.iloc[i, :].tolist())
+        #
+        # self.tree_scroll = ttk.Scrollbar(right_frame,
+        #
+        #                                     orient="vertical",
+        #                                     command=self.result_tree.yview)
+        #
+        # self.result_tree.configure(yscrollcommand=self.tree_scroll.set)
+        # self.tree_scroll.pack(side="right", fill="y")
+        # self.result_tree.pack()
+
+
+    # ---- Functions ----
+    def load_result_table(self):
+
+        try:  # try to read in data from RIANA integrate
+            output_file_path = os.path.join(self.output_file, self.sample.get() + '_riana.txt')
+            print(output_file_path)
+            self.output.insert(END, f"Reading in data from {output_file_path}\n")
+            df = pd.read_csv(output_file_path, sep='\t')
+        except:  # if not, read in sample data
+            df = TableModel.getSampleData()
+
         self.result_table = Table(self.result_view,
                                   dataframe=df,
                                   showtoolbar=False,
@@ -323,64 +401,40 @@ class Frame1(ttk.Frame):
         self.result_table.rowheader.bgcolor = '#ECECEC'
         self.result_table.rowheader.textcolor = 'black'
 
-
-        # ---- Using tree view
-        self.result_tree = ttk.Treeview(right_frame,
-                                        columns = df.columns,
-                                        show='headings',
-                                        height=300,
-                                        )
-
-        df_col = df.columns
-
-        # all the column name are generated dynamically.
-        self.result_tree["columns"] = df_col
-        counter = len(df)
-
-        # generating for loop to create columns and give heading to them through df_col var.
-        for x in range(len(df_col)):
-            self.result_tree.column(x, width=100)
-            self.result_tree.heading(x, text=df_col[x])
-            # generating for loop to print values of dataframe in treeview column.
-        for i in range(counter):
-            self.result_tree.insert('', 'end', values=df.iloc[i, :].tolist())
-
-
-        self.tree_scroll = ttk.Scrollbar(right_frame,
-
-                                            orient="vertical",
-                                            command=self.result_tree.yview)
-
-        self.result_tree.configure(yscrollcommand=self.tree_scroll.set)
-        self.tree_scroll.pack(side="right", fill="y")
-        self.result_tree.pack()
-
-
-
     # percolator file dialog
     def percolator_file_dialog(self):
 
-        self.id_path = filedialog.askopenfilename(initialdir="/",
+        self.id_path = filedialog.askopenfile(initialdir="/",
                                              title="Select A File")
         # filetypes = #(("jpeg files","*.jpg"), ("all files","*.*")) )
-        self.output.insert(END, self.id_path)
-        print(self.id_path)
+        self.output.insert(END, self.id_path.name)
 
         # enable button
         if self.id_path is not None and self.mzml_path is not None:
             self.run_button["state"] = "normal"
 
+        # self.result_view.pack_forget()
+
     # mzml folder dialog
-    def browse_mzml(self):
+    def mzml_dialog(self):
+        """ Returns a selected directoryname. """
         self.mzml_path = filedialog.askdirectory()
         # self.label = ttk.Label(self)
         # self.label.pack()
         # self.label.configure(text = self.mzml)
         self.output.insert(END, self.mzml_path)
+        print(self.mzml_path)
 
         # enable button
         if self.id_path is not None and self.mzml_path is not None:
             self.run_button["state"] = "normal"
+
+    # output folder dialog
+    def output_folder_dialog(self):
+        """ Returns a selected directoryname. """
+        self.output_file = filedialog.askdirectory()
+        self.output.insert(END, self.output_file)
+        print(self.output_file)
 
     # dummy progress bar
     def progress(self):
@@ -399,7 +453,7 @@ class Frame1(ttk.Frame):
         integration_vars = IntegrationVars(
             id_path=self.id_path,
             mzml_path=self.mzml_path,
-            out=self.out,
+            out=self.output_file,
             unique=self.unique.get(),
             q_value=self.q_value.get(),
             r_time=self.r_time.get(),
@@ -408,8 +462,12 @@ class Frame1(ttk.Frame):
             thread=self.thread,
             write_intensities=self.write_intensities,
             sample=self.sample.get(),
-            iso=self.iso.get(),
+            iso=[int(_) for _ in (self.iso.get().split(','))],
+            smoothing=self.smoothing.get(),
         )
+
+        # Clear the result view when the button is pressed
+        self.result_view.pack_forget()
 
         IntegrationThreadedTask(self.queue, integration_vars).start()
 
@@ -419,11 +477,34 @@ class Frame1(ttk.Frame):
         self.run_button["state"] = "disabled"
         self.status_label["text"] = "Status: Running..."
 
+
+
     def process_queue(self):
+        """
+        Handle messages from task worker thread
+        :return:
+        """
+        integration_vars = IntegrationVars(
+            id_path=self.id_path,
+            mzml_path=self.mzml_path,
+            out=self.output_file,
+            unique=self.unique.get(),
+            q_value=self.q_value.get(),
+            r_time=self.r_time.get(),
+            mass_tol=self.mass_tol.get(),
+            mass_defect=self.mass_defect.get(),
+            thread=self.thread,
+            write_intensities=self.write_intensities,
+            sample=self.sample.get(),
+            iso=[int(_) for _ in (self.iso.get().split(','))],
+            smoothing=self.smoothing.get(),
+        )
+
         try:
             msg = self.queue.get_nowait()
             # Show result of the task if needed
             self.prog_bar.stop()
+            self.prog_bar.destroy()
             self.output.insert(END, msg)
             # with open(os.path.join(self.out, 'tmt.log'), 'r') as f:
             #     self.output.insert(INSERT, f.read())
@@ -431,24 +512,60 @@ class Frame1(ttk.Frame):
             self.queue.task_done()
             self.run_button["text"] = "Integrate"
             self.run_button["state"] = "normal"
-            # self.status_label["text"] = "Status: Finished"
+            self.status_label["text"] = "Status: Finished"
+            self.queue.join()
+
+            # refresh the file handle in the filedialog
+            self.id_path = open(self.id_path.name, 'r')
+
+            # Update the result view
+            self.master.after(100, self.process_queue)
+            self.load_result_table()
+            self.result_view.pack(fill=BOTH, expand=1)
 
         except queue.Empty:
             self.master.after(100, self.process_queue)
-            # re-enable button
+            self.queue.join()
+            # re-enable button after 1 second
+
+        # Kill thread if there is an error
+        # except Exception as e:
+        #     self.prog_bar.stop()
+        #     self.output.insert(END, e)
+        #     self.queue.task_done()
+        #     self.run_button["text"] = "Integrate"
+        #     self.run_button["state"] = "normal"
+        #     self.status_label["text"] = "Status: Error"
+
 
 
 class IntegrationThreadedTask(threading.Thread):
+    """
+    Threaded task
+    """
     def __init__(self, queue, args):
         super().__init__()
         self.queue = queue
         self.args = args
+        self.ex = None  # Raise exception from thread
 
     def run(self):
-        riana_integrate.integrate_all(self.args)  # Simulate long running process
-        self.queue.put("Task finished")
+        try:
+            riana_integrate.integrate_all(self.args)
+            self.queue.put("Task finished")
+            self.queue.join()
 
-        #
-        # read_res = pd.read_csv(os.path.join(self.out, self.sample.get()) + '_riana.txt')
-        # print(read_res.head())
+        except Exception as e:
+            self.queue.put("Error: " + str(e))
+            self.ex = e
+            self.queue.join()
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self.ex is not None:
+            raise self.ex
+
+
+
+
+
 

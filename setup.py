@@ -66,6 +66,8 @@ setup(
         'Edward Lau Lab': 'https://www.laulab.net',
     },
 
+   data_files = [('', ['LICENSE.md', 'riana_ui/images/riana_logo.png'])],
+
    # data_files=[('tests',
    #               [os.path.join('tests', 'data', 'sample1', 'percolator.target.mzid'),
    #                os.path.join('tests', 'data', 'sample1', 'percolator.target.psms.txt'),

@@ -5,12 +5,13 @@
 import sys
 from typing import NamedTuple
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM
 import sv_ttk
 import queue
 import threading
 import logging
 import tqdm
+from PIL import Image, ImageTk
 
 
 from riana import __version__
@@ -39,9 +40,17 @@ class Menubar(tk.Menu):
 
     def open_about(self):
         top = tk.Toplevel(self)
-        top.geometry("250x250")
+        top.geometry("250x550")
         top.title("About RIANA")
-        ttk.Label(top, text=f'RIANA {__version__}', font=('Mistral 18 bold')).place(x=50, y=50)
+        ttk.Label(top, text=f'RIANA {__version__}', font=('Mistral 18 bold')).place(x=60, y=50)
+        ttk.Label(top, text=f'by', font=('Mistral 18 bold')).place(x=60, y=100)
+        ttk.Label(top, text=f'Lau Lab Colorado', font=('Mistral 18 bold')).place(x=60, y=150)
+
+        riana_logo = ImageTk.PhotoImage(file='riana_ui/images/riana_logo.png', size=(100, 100))
+        # riana_logo.resize((100, 100), Image.ANTIALIAS)
+        ttk.Label(top, image=riana_logo).pack()
+        # panel.pack(side="bottom", fill="both", expand="yes")
+
 
     def quit(self):
         sys.exit(0)

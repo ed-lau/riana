@@ -7,3 +7,4 @@ include *.md
 include LICENSE.md
 
 # Include the data files
+include riana_ui/images/*.png

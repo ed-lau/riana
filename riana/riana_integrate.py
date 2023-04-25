@@ -20,7 +20,7 @@ from .__init__ import __version__
 from riana import constants
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
-from riana.logger import get_logger
+from riana.logger import get_logger #, remove_logger
 
 def integrate_all(args) -> None:
     """
@@ -221,6 +221,9 @@ def integrate_all(args) -> None:
         overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
 
     tqdm.tqdm.write('Completed.')
+
+    # Remove logging handlers
+    # remove_logger(logger)
 
     return None
 
