@@ -163,7 +163,7 @@ def main():
 
     parser_integrate.add_argument('-i', '--iso',
                                   help='isotopomer(s) to integrate',
-                                  default='0 6',
+                                  default=[0, 6],
                                   nargs='+',
                                   type=int,
                                   choices=range(0, 21),

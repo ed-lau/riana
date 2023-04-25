@@ -11,6 +11,8 @@ import queue
 import threading
 import logging
 import tqdm
+import requests
+from io import BytesIO
 from PIL import Image, ImageTk
 
 
@@ -40,13 +42,18 @@ class Menubar(tk.Menu):
 
     def open_about(self):
         top = tk.Toplevel(self)
-        top.geometry("250x550")
+        top.geometry("250x500")
         top.title("About RIANA")
         ttk.Label(top, text=f'RIANA {__version__}', font=('Mistral 18 bold')).place(x=60, y=50)
         ttk.Label(top, text=f'by', font=('Mistral 18 bold')).place(x=60, y=100)
         ttk.Label(top, text=f'Lau Lab Colorado', font=('Mistral 18 bold')).place(x=60, y=150)
 
-        riana_logo = ImageTk.PhotoImage(file='riana_ui/images/riana_logo.png', size=(100, 100))
+        # Display logo
+        logo_url = "https://ed-lau.github.io/riana/images/jellyfish.png"
+        response = requests.get(logo_url)
+        img_data = response.content
+
+        riana_logo = ImageTk.PhotoImage(Image.open(BytesIO(img_data)), size=(100, 100))
         # riana_logo.resize((100, 100), Image.ANTIALIAS)
         ttk.Label(top, image=riana_logo).pack()
         # panel.pack(side="bottom", fill="both", expand="yes")
@@ -63,8 +70,8 @@ class Application(tk.Tk):
         super().__init__()
 
         self.title(f'RIANA {__version__}')
-        self.geometry('1200x700')
-        self.minsize('700', '700')
+        self.geometry('1200x1200')
+        self.minsize('800', '800')
 
         # Create the main frame and notebook layout
         self.notebook = ttk.Notebook(self)

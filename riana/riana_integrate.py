@@ -173,7 +173,7 @@ def integrate_all(args) -> None:
         #
         # append the raw intensities data frame
         #
-        intensities_df = pd.DataFrame().append([res for res in intensities_results], ignore_index=True)
+        intensities_df = pd.DataFrame().concat([res for res in intensities_results], ignore_index=True)
         intensities_df['file'] = mzml_files[idx]
         intensities_df['idx'] = idx
         # id_intensities_df = intensities_dfpd.merge(intensities_df, mzid.curr_frac_filtered_id_df, on='pep_id', how='left')
@@ -210,20 +210,31 @@ def integrate_all(args) -> None:
         if len(overall_integrated_df.index) == 0:
             overall_integrated_df = id_integrated_df
         else:
-            overall_integrated_df = overall_integrated_df.append(id_integrated_df, ignore_index=True)
+            overall_integrated_df = overall_integrated_df.concat(id_integrated_df, ignore_index=True)
 
     # write the integrated and intensities results
     save_path = os.path.join(args.out, args.sample + '_riana.txt')
     overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
 
+    # Make a smaller intensities file
     if args.write_intensities:
-        save_path = os.path.join(args.out, args.sample + '_riana_intensities.txt')
-        overall_intensities_df.to_csv(path_or_buf=save_path, sep='\t')
+        # print('foo')
+        # print(overall_intensities_df)
+        # overall_intensities_df.to_csv(path_or_buf=os.path.join(args.out, args.sample + '_riana_intensities.txt'),
+        #                               sep='\t')
+
+
+        overall_intensities_out_df = overall_intensities_df.round(decimals=3).groupby(['pep_id', 'file',
+                                                                     'concat', 'idx', 'ID']).agg(list).reset_index().copy()
+
+        # print(overall_intensities_out_df)
+        overall_intensities_out_df.to_csv(path_or_buf=os.path.join(args.out, args.sample + '_riana_intensities_summarized.txt'), sep='\t')
 
     tqdm.tqdm.write('Completed.')
 
     # Remove logging handlers
     # remove_logger(logger)
+    logger.handlers.clear()
 
     return None
 
@@ -346,12 +357,13 @@ def get_isotopomer_intensity(index: int,
 
     # Smoothing with Savitzky-Golay filter
     if smoothing is not None:
-        for m in ['m' + str(iso) for iso in iso_to_do]:
-            if np.sum(intensity_out[m]) > 0:
-                intensity_out[m] = scipy.signal.savgol_filter(x=intensity_out[m],
-                                                              window_length=smoothing,
-                                                              polyorder=1,
-                                                              mode='nearest')
+        if smoothing > 0:
+            for m in ['m' + str(iso) for iso in iso_to_do]:
+                if np.sum(intensity_out[m]) > 0:
+                    intensity_out[m] = scipy.signal.savgol_filter(x=intensity_out[m],
+                                                                  window_length=smoothing,
+                                                                  polyorder=1,
+                                                                  mode='nearest')
 
     return intensity_out # [integrated, intensity_out]
 

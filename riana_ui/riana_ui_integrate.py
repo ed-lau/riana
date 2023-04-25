@@ -6,15 +6,21 @@ from typing import NamedTuple
 import os
 import threading
 import sys
+import ast
 import tkinter as tk
 import tqdm
-from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM
+from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM, X
 import queue
 from riana import riana_integrate
 import pandas as pd
+import numpy as np
 import pandastable
 from pandastable import Table, TableModel, config
-from typing import List
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
+NavigationToolbar2Tk)
+from riana import constants
 
 class IntegrationVars(NamedTuple):
     """ Variables for integration. """
@@ -29,7 +35,7 @@ class IntegrationVars(NamedTuple):
     thread: int
     write_intensities: bool
     sample: str
-    iso: List[int]
+    iso: list[int]
     smoothing: int
 
 
@@ -81,20 +87,31 @@ class Frame1(ttk.Frame):
         self.mass_tol.set(25)
 
         self.mass_defect = tk.StringVar()
-        self.mass_defect.set('D')
-        self.mass_defect_options: list[str] = ['D', 'C13', 'SILAC']
+        self.mass_defect.set('C13')
+        self.mass_defect_options: list[str] = ['C13', 'D', 'SILAC']
+        self.mass_defect_display: list[str] = [f'C13: {constants.C13_MASSDIFF}',
+                                               f'Deuterium: {constants.D_MASSDIFF}',
+                                               f'SILAC K/R: {constants.SILAC_MASSDIFF}']
 
         self.thread = 4
         self.write_intensities = True
 
         self.iso = tk.StringVar()
-        self.iso.set('0,6')
+        self.iso.set('0,1,2,3,4,5')
 
         self.smoothing = tk.IntVar()
-        self.smoothing.set(3)
-        self.smoothing_options: list[int] = [3, 5, 7, 9]
+        self.smoothing.set(0)
+        self.smoothing_options: list[int] = [0, 3, 5, 7, 9]
+        self.smoothing_display: list[str] = ['None', '3', '5', '7', '9']
 
         self.create_tab1_widgets()
+
+        # For plotting intensities
+        # self.intensities_df_subset = None
+        self.canvas = None
+        self.toolbar = None
+        self.trace_plot = None
+        self.fig = None
 
     def update_q_value(self,
                        value: float):
@@ -117,6 +134,13 @@ class Frame1(ttk.Frame):
         print(self.sample.get().rstrip())
 
     def update_isotopomers(self, value):
+        # Check the value is a list of numbers separated by spaces
+        # try:
+        #     self.iso.set([int(_) for _ in self.iso.get().split(',')])
+        # except ValueError:
+        #     self.iso.set([0])
+
+
         print(self.iso.get())
 
     def create_tab1_widgets(self):
@@ -208,12 +232,13 @@ class Frame1(ttk.Frame):
         self.q_value_label.pack()
         self.select_q_value = ttk.Scale(left_frame,
                                         from_=0.0,
-                                        to=0.1,
+                                        to=1,
                                         orient=tk.HORIZONTAL,
                                         variable=self.q_value,
                                         command=self.update_q_value,
-                                        length=200,
+                                        length=180,
                                         )
+        self.select_q_value.set(0.1)
         self.select_q_value.pack(side="top")
 
         # ---- Select retention time threshold
@@ -223,11 +248,11 @@ class Frame1(ttk.Frame):
         self.r_time_label.pack()
         self.select_r_time = ttk.Scale(left_frame,
                                         from_=0.1,
-                                        to=10.0,
+                                        to=3.0,
                                         orient=tk.HORIZONTAL,
                                         variable=self.r_time,
                                         command=self.update_r_time,
-                                        length=200,
+                                        length=180,
                                         )
         self.select_r_time.pack(side="top")
 
@@ -256,9 +281,9 @@ class Frame1(ttk.Frame):
                                         )
         self.mass_defect_label.pack()
         self.select_mass_defect = ttk.OptionMenu(left_frame,
-                                                    self.mass_defect,
-                                                    self.mass_defect_options[0],
-                                                    *self.mass_defect_options,
+                                                 self.mass_defect,
+                                                 self.mass_defect_options[0],
+                                                 *self.mass_defect_display,
                                                  )
         self.select_mass_defect.pack(side="top")
 
@@ -295,7 +320,7 @@ class Frame1(ttk.Frame):
                               height=5,
                               )
         self.output.pack()
-        self.output.insert(END, "Output will be displayed here")
+        self.output.insert(END, "Output will be displayed here\n")
 
         self.status_label = ttk.Label(right_frame,
                                       text="Status: Idle",
@@ -308,9 +333,9 @@ class Frame1(ttk.Frame):
         sys.stderr = TextRedirector(self.output, "stderr")
 
         # Quit button
-        self.quit = ttk.Button(left_frame, text="Quit RIANA",
-                               command=self.master.destroy)
-        self.quit.pack(side="bottom")
+        # self.quit = ttk.Button(left_frame, text="Quit RIANA",
+        #                        command=self.master.destroy)
+        # self.quit.pack(side="bottom")
 
         # ---- Section separator ----
         ttk.Label(right_frame, text="Results").pack()
@@ -322,13 +347,24 @@ class Frame1(ttk.Frame):
                                      width=400,
                                      height=300,
                                      )
-        # self.result_view.pack(fill=BOTH, expand=1)
-
-
-
-
-
+        self.result_view.pack(fill=BOTH, expand=1)
         self.load_result_table()
+        self.result_view.pack_forget()
+
+        # ---- Inspect view from selected row on the data ----
+        self.inspect_view = ttk.Frame(right_frame,
+                                     width=400,
+                                     height=200,
+                                     )
+        # self.inspect_view.pack(fill=BOTH, expand=1)
+
+        self.inspect_text = ttk.Label(self.inspect_view, text='')
+        # self.inspect_text.pack()
+
+
+
+
+
         # ---- Using tree view ----
 
         # self.result_tree = ttk.Treeview(right_frame,
@@ -368,7 +404,13 @@ class Frame1(ttk.Frame):
             output_file_path = os.path.join(self.output_file, self.sample.get() + '_riana.txt')
             print(output_file_path)
             self.output.insert(END, f"Reading in data from {output_file_path}\n")
-            df = pd.read_csv(output_file_path, sep='\t')
+            df = pd.read_csv(output_file_path, sep='\t', index_col=0)
+
+            # Open the intensities data frame so we can display the data traces
+            intensity_file_path = os.path.join(self.output_file, self.sample.get() + '_riana_intensities_summarized.txt')
+            intensities_df = pd.read_csv(intensity_file_path, sep='\t', index_col=0)
+
+
         except:  # if not, read in sample data
             df = TableModel.getSampleData()
 
@@ -401,11 +443,106 @@ class Frame1(ttk.Frame):
         self.result_table.rowheader.bgcolor = '#ECECEC'
         self.result_table.rowheader.textcolor = 'black'
 
+        def handle_left_click(event):
+            rowclicked_single = self.result_table.get_row_clicked(event)
+            print(rowclicked_single)
+
+            # Clear the canvas
+
+            try:
+                self.canvas.get_tk_widget().pack_forget()
+                for item in self.canvas.get_tk_widget().find_all():
+                    self.canvas.get_tk_widget().delete(item)
+                self.toolbar.pack_forget()
+            except AttributeError:
+                pass
+
+
+            self.result_table.setSelectedRow(rowclicked_single)
+            self.result_table.redraw()
+
+            # Refresh the inspect view every time there is a new selection
+            self.inspect_view.pack_forget()
+            self.inspect_view.pack(fill=BOTH, expand=1)
+            self.trace_plot = None
+
+            # Get the selected row data
+            selected_data = self.result_table.getSelectedRowData()
+            print(selected_data['pep_id'])
+
+            # Filter the intensities data by the selected pep_id
+            intensities_df_subset = intensities_df[intensities_df['pep_id'] == selected_data['pep_id'].values[0]]
+            print(intensities_df_subset['rt'].values[0])
+            print(intensities_df_subset['m0'].values[0])
+
+
+
+            # Display the text on the interface
+            out_text= f'Row: {self.result_table.getSelectedRow()}, ' \
+                      f'pep_id: {selected_data["pep_id"].values[0]}, ' \
+                      f'Peptide: {selected_data["sequence"].values[0]}+{selected_data["charge"].values[0]}, ' \
+                      f'Protein: {selected_data["protein id"].values[0]} ' \
+                      # f'Retention time: {intensities_df_subset["rt"].values[0]}, ' \
+                      #  f'Mass: {intensities_df_subset["m0"].values[0]}'
+            self.inspect_text.config(text=out_text)
+            self.inspect_text.pack()
+
+            # Display the graph on the interface
+            self.fig = Figure(figsize=(5, 3), dpi=100)
+            self.trace_plot = self.fig.add_subplot(111)
+            self.trace_plot.set_xlabel('Retention time (min)')
+            self.trace_plot.set_ylabel('Intensity')
+            self.trace_plot.set_title(f'Chromatographic trace {selected_data["sequence"].values[0]}+{selected_data["charge"].values[0]}')
+            self.trace_plot.grid()
+
+            # Turn the literal string into a list of floats
+            rt = ast.literal_eval(intensities_df_subset['rt'].values[0])
+            rt = [float(i) for i in rt]
+            print(rt)
+
+            # Get every isotopomer from the column names of the intensities df for plotting
+            isotopomers = []
+            for col in intensities_df_subset.columns:
+                if col.startswith('m'):
+                    isotopomers.append(col)
+
+            colors = plt.cm.rainbow(np.linspace(0, 1, len(isotopomers)))
+
+            # Loop through isotopomers and create a line plot for each
+            for i, isotop in enumerate(isotopomers):
+                m_trace = ast.literal_eval(intensities_df_subset[isotop].values[0])
+                m_trace = [float(i) for i in m_trace]
+                print(m_trace)
+
+                self.trace_plot.scatter(x=rt,
+                                        y=m_trace,
+                                        s=5,
+                                        label=isotop,
+                                        color=colors[i],
+                                        marker='o',
+                                        linestyle='-',)
+                self.trace_plot.plot(rt, m_trace)
+
+            self.trace_plot.legend(loc='upper right')
+
+            self.canvas = FigureCanvasTkAgg(self.fig, master=self.inspect_view)
+            self.canvas.draw()
+            self.toolbar = NavigationToolbar2Tk(self.canvas, self.inspect_view)
+            self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=1)
+            self.toolbar.update()
+            self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=1)
+
+
+        self.result_table.bind("<Button-1>", handle_left_click)
+
+
+
+
     # percolator file dialog
     def percolator_file_dialog(self):
 
-        self.id_path = filedialog.askopenfile(initialdir="/",
-                                             title="Select A File")
+        self.id_path = filedialog.askopenfile(initialdir='./tests/data/sample1',
+                                             title="Select The Percolator File")
         # filetypes = #(("jpeg files","*.jpg"), ("all files","*.*")) )
         self.output.insert(END, self.id_path.name)
 
@@ -418,7 +555,7 @@ class Frame1(ttk.Frame):
     # mzml folder dialog
     def mzml_dialog(self):
         """ Returns a selected directoryname. """
-        self.mzml_path = filedialog.askdirectory()
+        self.mzml_path = filedialog.askdirectory(initialdir='./tests/data/sample1')
         # self.label = ttk.Label(self)
         # self.label.pack()
         # self.label.configure(text = self.mzml)
@@ -432,7 +569,9 @@ class Frame1(ttk.Frame):
     # output folder dialog
     def output_folder_dialog(self):
         """ Returns a selected directoryname. """
-        self.output_file = filedialog.askdirectory()
+        self.output_file = filedialog.askdirectory(initialdir='./out/ui_test/',
+                                                   title='Select output folder',
+                                                   )
         self.output.insert(END, self.output_file)
         print(self.output_file)
 
@@ -442,7 +581,7 @@ class Frame1(ttk.Frame):
             self.master, orient="horizontal",
             length=400, mode="indeterminate"
         )
-        self.prog_bar.pack(side=BOTTOM)
+        self.prog_bar.pack(side=BOTTOM, fill=X)
 
     # start pytmt
     def run_riana_integrate(self):
@@ -462,12 +601,13 @@ class Frame1(ttk.Frame):
             thread=self.thread,
             write_intensities=self.write_intensities,
             sample=self.sample.get(),
-            iso=[int(_) for _ in (self.iso.get().split(','))],
+            iso=[int(i) for i in (self.iso.get().split(','))],
             smoothing=self.smoothing.get(),
         )
 
         # Clear the result view when the button is pressed
         self.result_view.pack_forget()
+        self.inspect_view.pack_forget()
 
         IntegrationThreadedTask(self.queue, integration_vars).start()
 
@@ -484,21 +624,7 @@ class Frame1(ttk.Frame):
         Handle messages from task worker thread
         :return:
         """
-        integration_vars = IntegrationVars(
-            id_path=self.id_path,
-            mzml_path=self.mzml_path,
-            out=self.output_file,
-            unique=self.unique.get(),
-            q_value=self.q_value.get(),
-            r_time=self.r_time.get(),
-            mass_tol=self.mass_tol.get(),
-            mass_defect=self.mass_defect.get(),
-            thread=self.thread,
-            write_intensities=self.write_intensities,
-            sample=self.sample.get(),
-            iso=[int(_) for _ in (self.iso.get().split(','))],
-            smoothing=self.smoothing.get(),
-        )
+
 
         try:
             msg = self.queue.get_nowait()
