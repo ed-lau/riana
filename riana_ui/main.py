@@ -78,11 +78,11 @@ class Application(tk.Tk):
 
         self.Frame1 = Frame1(self.notebook)
         self.Frame2 = Frame2(self.notebook)
-        self.Frame3 = Frame3(self.notebook)
+        #self.Frame3 = Frame3(self.notebook)
 
         self.notebook.add(self.Frame1, text='Integrate')
         self.notebook.add(self.Frame2, text='Model')
-        self.notebook.add(self.Frame3, text='Plot')
+        #self.notebook.add(self.Frame3, text='Plot')
 
         self.notebook.pack(fill='both', expand=True)
 

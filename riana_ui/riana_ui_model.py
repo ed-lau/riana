@@ -3,14 +3,14 @@
 # RIANA GUI
 
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM, X
 
 
 class Frame2(ttk.Frame):
     def __init__(self, container):
         super().__init__(container)
 
-        self.labelB = ttk.Label(self, text="This is on Frame Two")
+        self.labelB = ttk.Label(self, text="Step 3: RIANA Model")
         self.labelB.pack()
 
         self.riana_path = None
@@ -50,6 +50,19 @@ class Frame2(ttk.Frame):
                                             )
         self.select_riana_integration_files.pack(side="top")
 
+        # ---- Select output folder ----
+        self.select_model_output = ttk.Button(tab2_left_frame,
+                                        text="Select Output Folder",
+                                        command=self.model_output_folder_dialog,
+                                        width=20,
+                                        state="normal"
+                                        )
+        self.select_model_output.pack(side="top")
+
+        # ---- Section separator ----
+        ttk.Label(tab2_left_frame, text="Integrate Options").pack()
+        ttk.Separator(tab2_left_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w')
+
         # ---- Display output ----
         self.tab2_output = tk.Text(tab2_right_frame,
                               width=400,
@@ -72,8 +85,8 @@ class Frame2(ttk.Frame):
     # RIANA integration files dialog
     def riana_files_dialog(self):
 
-        self.riana_path = filedialog.askopenfilenames(initialdir="/",
-                                             title="Select one or more RIANA integration files",)
+        self.riana_path = filedialog.askopenfilenames(initialdir="./tests/local/fit/",
+                                                      title="Select one or more RIANA integration files",)
         # filetypes = #(("jpeg files","*.jpg"), ("all files","*.*")) )
         self.tab2_output.insert('end', self.riana_path)
         print(self.riana_path)
@@ -82,3 +95,11 @@ class Frame2(ttk.Frame):
         # if self.id_path is not None and self.mzml_path is not None:
         #     self.run_button["state"] = "normal"
 
+    # output folder dialog
+    def model_output_folder_dialog(self):
+        """ Returns a selected directory name. """
+        self.model_output_file = filedialog.askdirectory(initialdir='./out/ui_test/',
+                                                   title='Select output folder',
+                                                   )
+        self.tab2_output.insert(END, self.model_output_file)
+        print(self.model_output_file)

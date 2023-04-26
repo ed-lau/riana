@@ -74,7 +74,21 @@
     "href": "index.html#downloads",
     "title": "RIANA - Relative Isotope Abundance Analyzer",
     "section": "Downloads",
-    "text": "Downloads\n\n\nLatest Updates\nv.0.7.1\n\n\nAdded parameter for mass defect -D to command line argument for riana integrate. See documentation for detail\nAdded the flag -p to the command line argument for riana fit, which toggles plotting fitted curves\nAdded the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities\n\n\nSee Change Log for details.\n\nThe latest version and source code of RIANA can be found on github: https://github.com/ed-lau/riana.\nSee the Quick Start and Documentation for instructions."
+    "text": "Downloads\n\n\nLatest Updates\n\nv.0.7.2\n\nIncluded additional Snakemake options in the config files\nBug fixes\nThe argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8\n\n\n\nv.0.7.1\n\nAdded parameter for mass defect -D to command line argument for riana integrate. See documentation for detail\nAdded the flag -p to the command line argument for riana fit, which toggles plotting fitted curves\nAdded the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities\n\n\nSee Change Log for details.\n\n\nThe latest version and source code of RIANA can be found on github: https://github.com/ed-lau/riana.\nSee the Quick Start and Documentation for instructions."
+  },
+  {
+    "objectID": "index.html#v.0.7.2",
+    "href": "index.html#v.0.7.2",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "v.0.7.2",
+    "text": "v.0.7.2\n\nIncluded additional Snakemake options in the config files\nBug fixes\nThe argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8"
+  },
+  {
+    "objectID": "index.html#v.0.7.1",
+    "href": "index.html#v.0.7.1",
+    "title": "RIANA - Relative Isotope Abundance Analyzer",
+    "section": "v.0.7.1",
+    "text": "v.0.7.1\n\nAdded parameter for mass defect -D to command line argument for riana integrate. See documentation for detail\nAdded the flag -p to the command line argument for riana fit, which toggles plotting fitted curves\nAdded the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities\n\n\nSee Change Log for details."
   },
   {
     "objectID": "index.html#contributors",

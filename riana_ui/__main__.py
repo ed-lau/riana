@@ -2,6 +2,6 @@
 
 """riana.__main__: executed when riana directory is called as script."""
 
-from .riana_ui import main
+from .main import main
 
 main()

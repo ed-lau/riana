@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Edward Lau">
-<meta name="dcterms.date" content="2022-10-31">
+<meta name="dcterms.date" content="2023-04-25">
 <meta name="keywords" content="Protein turnover, Proteomics, Mass spectrometry">
 <meta name="description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 
@@ -62,7 +62,7 @@ ul.task-list{list-style: none;}
 <link rel="stylesheet" href="styles.css">
 <meta property="og:title" content="RIANA v0.7.1 - RIANA - Relative Isotope Abundance Analyzer">
 <meta property="og:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
-<meta property="og:image" content="https://github.com/ed-lau/jcast/images/jellyfish.png">
+<meta property="og:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
 <meta property="og:site-name" content="RIANA v0.7.1">
 <meta property="og:image:height" content="1034">
 <meta property="og:image:width" content="2550">
@@ -153,7 +153,7 @@ ul.task-list{list-style: none;}
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 31, 2022</p>
+      <p class="date">April 25, 2023</p>
     </div>
   </div>
     
@@ -172,7 +172,7 @@ ul.task-list{list-style: none;}
 <li><a href="https://laulab.net">Edward Lau Lab</a>, University of Colorado School of Medicine</li>
 <li><a href="https://maggielab.org">Maggie Lam Lab</a>, University of Colorado School of Medicine</li>
 </ul>
-<p><img src="images/jellyfish.png" class="img-fluid"></p>
+<p><img src="images/riana_logo.png" class="img-fluid"></p>
 <section id="about-riana" class="level2">
 <h2 class="anchored" data-anchor-id="about-riana">About RIANA</h2>
 <p>RIANA (<strong>R</strong>elative <strong>I</strong>sotope <strong>A</strong>bundance A<strong>na</strong>lyzer) is a software to automate the analysis of mass spectrometry- based protein turnover measurement experiments.</p>
@@ -190,8 +190,16 @@ ul.task-list{list-style: none;}
 
 <div class="no-row-height column-margin column-container"><div class="">
 <p><strong>Latest Updates</strong></p>
-<p>v.0.7.1</p>
-<hr>
+<section id="v.0.7.2" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.7.2">v.0.7.2</h2>
+<ul>
+<li>Included additional Snakemake options in the config files</li>
+<li>Bug fixes</li>
+<li>The argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8</li>
+</ul>
+</section>
+<section id="v.0.7.1" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.7.1">v.0.7.1</h2>
 <ul>
 <li>Added parameter for mass defect -D to command line argument for riana integrate. See documentation for detail</li>
 <li>Added the flag -p to the command line argument for riana fit, which toggles plotting fitted curves</li>
@@ -200,6 +208,7 @@ ul.task-list{list-style: none;}
 <blockquote class="blockquote">
 <p>See <a href="./change.html">Change Log</a> for details.</p>
 </blockquote>
+</section>
 </div></div><p>The latest version and source code of RIANA can be found on github: <a href="https://github.com/ed-lau/riana" class="uri">https://github.com/ed-lau/riana</a>.</p>
 <p>See the <a href="./install.html">Quick Start</a> and <a href="./about.html">Documentation</a> for instructions.</p>
 </section>
