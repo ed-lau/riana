@@ -1,11 +1,11 @@
-# Path: riana/riana_ui.py
+# Path: riana/main.py
 # -*- coding: utf-8 -*-
 # RIANA GUI
 
 import sys
 from typing import NamedTuple
 import tkinter as tk
-from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM
+from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM, scrolledtext, Canvas, PhotoImage, NW, N, S, E, W
 import sv_ttk
 import queue
 import threading
@@ -20,11 +20,9 @@ from riana import __version__
 from riana import riana_integrate
 from riana_ui.riana_ui_integrate import Frame1
 from riana_ui.riana_ui_model import Frame2
-from riana_ui.riana_ui_plot import Frame3
 
-
-class TextHandler():
-    pass
+from console import TextRedirector
+from rx.scheduler import ThreadPoolScheduler
 
 
 class Menubar(tk.Menu):
@@ -52,8 +50,12 @@ class Menubar(tk.Menu):
         logo_url = "https://ed-lau.github.io/riana/images/jellyfish.png"
         response = requests.get(logo_url)
         img_data = response.content
-
         riana_logo = ImageTk.PhotoImage(Image.open(BytesIO(img_data)), size=(100, 100))
+        canvas = Canvas(self, width=300, height=300)
+        canvas.pack()
+        canvas.create_image(20, 20, anchor=NW, image=riana_logo)
+
+
         # riana_logo.resize((100, 100), Image.ANTIALIAS)
         ttk.Label(top, image=riana_logo).pack()
         # panel.pack(side="bottom", fill="both", expand="yes")
@@ -73,18 +75,50 @@ class Application(tk.Tk):
         self.geometry('1200x1200')
         self.minsize('800', '800')
 
+        # ---- Pool scheduler ----
+        self.pool_scheduler = ThreadPoolScheduler(2)  # thread pool with 1 worker thread
+
+
+        # ---- Console ----
+        self.console = scrolledtext.ScrolledText(self,
+                                                 width=400,
+                                                 height=5,
+                                                 )
+
+
+        self.console.insert(END, "Console:\n")
+        self.status_label = ttk.Label(self,
+                                      text="Status: Idle",
+                                      )
+
+        # Redirect console output to GUI
+        sys.stdout = TextRedirector(self.console, "stdout")
+        sys.stderr = TextRedirector(self.console, "stderr")
+
         # Create the main frame and notebook layout
         self.notebook = ttk.Notebook(self)
 
         self.Frame1 = Frame1(self.notebook)
         self.Frame2 = Frame2(self.notebook)
-        #self.Frame3 = Frame3(self.notebook)
 
         self.notebook.add(self.Frame1, text='Integrate')
         self.notebook.add(self.Frame2, text='Model')
-        #self.notebook.add(self.Frame3, text='Plot')
 
         self.notebook.pack(fill='both', expand=True)
+        # ---- Section separator ----
+        # ttk.Label(self, text="Debug Console").pack()
+        # ttk.Separator(self, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w')
+        self.console.pack()
+        self.status_label.pack()
+
+
+
+        # ---- Display console output ----
+
+
+
+
+
 
         # ttk theme options
         style = ttk.Style()

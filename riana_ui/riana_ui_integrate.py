@@ -4,23 +4,23 @@
 
 from typing import NamedTuple
 import os
-import threading
 import sys
 import ast
 import tkinter as tk
 import tqdm
 from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM, X
-import queue
 from riana import riana_integrate
 import pandas as pd
 import numpy as np
-import pandastable
 from pandastable import Table, TableModel, config
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
-NavigationToolbar2Tk)
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from riana import constants
+
+import rx
+
+from console import TextRedirector
 
 class IntegrationVars(NamedTuple):
     """ Variables for integration. """
@@ -37,24 +37,9 @@ class IntegrationVars(NamedTuple):
     sample: str
     iso: list[int]
     smoothing: int
+    gui: bool
 
 
-class TextRedirector(object):
-    def __init__(self, widget, tag="stdout"):
-        self.widget = widget
-        self.tag = tag
-
-    def write(self, str):
-
-        self.widget.configure(state="normal")
-        #self.widget.delete("1.0", "end-1l")  # delete previous text
-        #self.widget.delete("1.0", "end")  # delete previous text
-        self.widget.insert("end", str, (self.tag,))
-        self.widget.configure(state="disabled")
-        # Autoscroll to the bottom
-        self.widget.yview("end")
-    def flush(self):
-        pass
 
 class Frame1(ttk.Frame):
     """ RIANA integrate """
@@ -89,12 +74,10 @@ class Frame1(ttk.Frame):
         self.mass_defect = tk.StringVar()
         self.mass_defect.set('C13')
         self.mass_defect_options: list[str] = ['C13', 'D', 'SILAC']
-        self.mass_defect_display: list[str] = [f'C13: {constants.C13_MASSDIFF}',
-                                               f'Deuterium: {constants.D_MASSDIFF}',
-                                               f'SILAC K/R: {constants.SILAC_MASSDIFF}']
+        # self.mass_defect_display: list[str] = [f'C13: {constants.C13_MASSDIFF}',
+        #                                        f'Deuterium: {constants.D_MASSDIFF}',
+        #                                        f'SILAC K/R: {constants.SILAC_MASSDIFF}']
 
-        self.thread = 4
-        self.write_intensities = True
 
         self.iso = tk.StringVar()
         self.iso.set('0,1,2,3,4,5')
@@ -102,7 +85,7 @@ class Frame1(ttk.Frame):
         self.smoothing = tk.IntVar()
         self.smoothing.set(0)
         self.smoothing_options: list[int] = [0, 3, 5, 7, 9]
-        self.smoothing_display: list[str] = ['None', '3', '5', '7', '9']
+        # self.smoothing_display: list[str] = ['None', '3', '5', '7', '9']
 
         self.create_tab1_widgets()
 
@@ -111,7 +94,11 @@ class Frame1(ttk.Frame):
         self.canvas = None
         self.toolbar = None
         self.trace_plot = None
+        self.bar_plot = None
         self.fig = None
+
+        # sys.stdout = TextRedirector(self.master.master.console, "stdout")
+        # sys.stderr = TextRedirector(self.master.master.console, "stderr")
 
     def update_q_value(self,
                        value: float):
@@ -153,7 +140,7 @@ class Frame1(ttk.Frame):
                                     #borderwidth=1,
                                     text="Input",
                                     )
-        left_frame.pack(side=LEFT, fill=BOTH, expand=True)
+        left_frame.pack(side=LEFT, fill=BOTH, expand=False)
 
         right_frame = ttk.LabelFrame(self,
                                      width=650,
@@ -283,7 +270,7 @@ class Frame1(ttk.Frame):
         self.select_mass_defect = ttk.OptionMenu(left_frame,
                                                  self.mass_defect,
                                                  self.mass_defect_options[0],
-                                                 *self.mass_defect_display,
+                                                 *self.mass_defect_options,
                                                  )
         self.select_mass_defect.pack(side="top")
 
@@ -301,41 +288,27 @@ class Frame1(ttk.Frame):
 
 
         # link to RIANA integrate
-        self.run_button = ttk.Button(left_frame,
+        self.integrate_run_button = ttk.Button(left_frame,
                                      text="Run RIANA Integrate",
-                                     command=self.run_riana_integrate,
+                                     command=self.handle_integrate_button,
                                      width=20,
                                      state="disabled"
                                      )
-        self.run_button.pack(side=BOTTOM)
+        self.integrate_run_button.pack(side=BOTTOM)
 
-        # ---- Section separator ----
-        ttk.Label(right_frame, text="Console").pack()
-        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w')
+        self.cancel_button = ttk.Button(left_frame,
+                                        text="Cancel",
+                                        command=self.handle_cancel_button,
+                                        width=20,
+                                        state="disabled"
+                                        )
+        self.cancel_button.pack(side=BOTTOM)
 
-
-        # ---- Display output ----
-        self.output = tk.Text(right_frame,
-                              width=400,
-                              height=5,
-                              )
-        self.output.pack()
-        self.output.insert(END, "Output will be displayed here\n")
-
-        self.status_label = ttk.Label(right_frame,
-                                      text="Status: Idle",
-                                      )
-        self.status_label.pack()
+        # sys.stdout = TextRedirector(self.master.master.console, "stdout")
+        # sys.stderr = TextRedirector(self.master.master.console, "stderr")
 
 
-        # Redirect console output to GUI
-        sys.stdout = TextRedirector(self.output, "stdout")
-        sys.stderr = TextRedirector(self.output, "stderr")
 
-        # Quit button
-        # self.quit = ttk.Button(left_frame, text="Quit RIANA",
-        #                        command=self.master.destroy)
-        # self.quit.pack(side="bottom")
 
         # ---- Section separator ----
         ttk.Label(right_frame, text="Results").pack()
@@ -343,23 +316,23 @@ class Frame1(ttk.Frame):
 
         # ---- Using pandastable ----
 
-        self.result_view = ttk.Frame(right_frame,
-                                     width=400,
+        self.integration_result_view = ttk.Frame(right_frame,
+                                     width=600,
                                      height=300,
                                      )
-        self.result_view.pack(fill=BOTH, expand=1)
-        self.load_result_table()
-        self.result_view.pack_forget()
+        self.integration_result_view.pack(fill=BOTH, expand=1)
+        # self.load_result_table()
+        self.integration_result_view.pack_forget()
 
         # ---- Inspect view from selected row on the data ----
         self.inspect_view = ttk.Frame(right_frame,
-                                     width=400,
+                                     width=600,
                                      height=200,
                                      )
         # self.inspect_view.pack(fill=BOTH, expand=1)
 
         self.inspect_text = ttk.Label(self.inspect_view, text='')
-        # self.inspect_text.pack()
+        self.inspect_text.pack()
 
 
 
@@ -402,8 +375,8 @@ class Frame1(ttk.Frame):
 
         try:  # try to read in data from RIANA integrate
             output_file_path = os.path.join(self.output_file, self.sample.get() + '_riana.txt')
-            print(output_file_path)
-            self.output.insert(END, f"Reading in data from {output_file_path}\n")
+            # print(output_file_path)
+            self.master.master.console.insert(END, f"Reading in data from {output_file_path}\n")
             df = pd.read_csv(output_file_path, sep='\t', index_col=0)
 
             # Open the intensities data frame so we can display the data traces
@@ -414,7 +387,7 @@ class Frame1(ttk.Frame):
         except:  # if not, read in sample data
             df = TableModel.getSampleData()
 
-        self.result_table = Table(self.result_view,
+        self.result_table = Table(self.integration_result_view,
                                   dataframe=df,
                                   showtoolbar=False,
                                   showstatusbar=False,
@@ -445,7 +418,7 @@ class Frame1(ttk.Frame):
 
         def handle_left_click(event):
             rowclicked_single = self.result_table.get_row_clicked(event)
-            print(rowclicked_single)
+            # print(rowclicked_single)
 
             # Clear the canvas
 
@@ -457,7 +430,6 @@ class Frame1(ttk.Frame):
             except AttributeError:
                 pass
 
-
             self.result_table.setSelectedRow(rowclicked_single)
             self.result_table.redraw()
 
@@ -468,13 +440,12 @@ class Frame1(ttk.Frame):
 
             # Get the selected row data
             selected_data = self.result_table.getSelectedRowData()
-            print(selected_data['pep_id'])
+            # print(selected_data['pep_id'])
 
             # Filter the intensities data by the selected pep_id
             intensities_df_subset = intensities_df[intensities_df['pep_id'] == selected_data['pep_id'].values[0]]
-            print(intensities_df_subset['rt'].values[0])
-            print(intensities_df_subset['m0'].values[0])
-
+            # print(intensities_df_subset['rt'].values[0])
+            # print(intensities_df_subset['m0'].values[0])
 
 
             # Display the text on the interface
@@ -487,18 +458,21 @@ class Frame1(ttk.Frame):
             self.inspect_text.config(text=out_text)
             self.inspect_text.pack()
 
-            # Display the graph on the interface
+            # Display the graphs on the interface
             self.fig = Figure(figsize=(5, 3), dpi=100)
-            self.trace_plot = self.fig.add_subplot(111)
+            self.fig.suptitle(f'{selected_data["sequence"].values[0]}+{selected_data["charge"].values[0]}')
+
+            # Produce the chromatographic trace
+            self.trace_plot = self.fig.add_subplot(121)
             self.trace_plot.set_xlabel('Retention time (min)')
             self.trace_plot.set_ylabel('Intensity')
-            self.trace_plot.set_title(f'Chromatographic trace {selected_data["sequence"].values[0]}+{selected_data["charge"].values[0]}')
+            self.trace_plot.set_title(f'Chromatogram')
             self.trace_plot.grid()
 
             # Turn the literal string into a list of floats
             rt = ast.literal_eval(intensities_df_subset['rt'].values[0])
             rt = [float(i) for i in rt]
-            print(rt)
+            # print(rt)
 
             # Get every isotopomer from the column names of the intensities df for plotting
             isotopomers = []
@@ -512,7 +486,7 @@ class Frame1(ttk.Frame):
             for i, isotop in enumerate(isotopomers):
                 m_trace = ast.literal_eval(intensities_df_subset[isotop].values[0])
                 m_trace = [float(i) for i in m_trace]
-                print(m_trace)
+                # print(m_trace)
 
                 self.trace_plot.scatter(x=rt,
                                         y=m_trace,
@@ -521,17 +495,33 @@ class Frame1(ttk.Frame):
                                         color=colors[i],
                                         marker='o',
                                         linestyle='-',)
-                self.trace_plot.plot(rt, m_trace)
+                self.trace_plot.plot(rt, m_trace, color=colors[i], linewidth=0.5)
 
             self.trace_plot.legend(loc='upper right')
 
+            # Produce the isotopomer profile
+            self.bar_plot = self.fig.add_subplot(122)
+            self.bar_plot.set_xlabel('Isotopomer')
+            self.bar_plot.set_ylabel('Intensity')
+            self.bar_plot.set_title(f'Isotope Envelope')
+            # self.bar_plot.grid()
+
+            for i, isotop in enumerate(isotopomers):
+                self.bar_plot.bar(x=isotop,
+                                  height=selected_data[isotop].values[0],
+                                  label=isotop,
+                                  width=0.1,
+                                  color=colors[i])
+
+            self.bar_plot.legend(loc='upper right')
+
+            # Display the plots on the interface
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.inspect_view)
             self.canvas.draw()
             self.toolbar = NavigationToolbar2Tk(self.canvas, self.inspect_view)
             self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=1)
             self.toolbar.update()
             self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=1)
-
 
         self.result_table.bind("<Button-1>", handle_left_click)
 
@@ -544,13 +534,12 @@ class Frame1(ttk.Frame):
         self.id_path = filedialog.askopenfile(initialdir='./tests/data/sample1',
                                              title="Select The Percolator File")
         # filetypes = #(("jpeg files","*.jpg"), ("all files","*.*")) )
-        self.output.insert(END, self.id_path.name)
+        self.master.master.console.insert(END, self.id_path.name)
 
-        # enable button
+        # Enable integrate button
         if self.id_path is not None and self.mzml_path is not None:
-            self.run_button["state"] = "normal"
+            self.integrate_run_button["state"] = "normal"
 
-        # self.result_view.pack_forget()
 
     # mzml folder dialog
     def mzml_dialog(self):
@@ -559,12 +548,12 @@ class Frame1(ttk.Frame):
         # self.label = ttk.Label(self)
         # self.label.pack()
         # self.label.configure(text = self.mzml)
-        self.output.insert(END, self.mzml_path)
-        print(self.mzml_path)
+        self.master.master.console.insert(END, self.mzml_path)
+        # print(self.mzml_path)
 
         # enable button
         if self.id_path is not None and self.mzml_path is not None:
-            self.run_button["state"] = "normal"
+            self.integrate_run_button["state"] = "normal"
 
     # output folder dialog
     def output_folder_dialog(self):
@@ -572,7 +561,7 @@ class Frame1(ttk.Frame):
         self.output_file = filedialog.askdirectory(initialdir='./out/ui_test/',
                                                    title='Select output folder',
                                                    )
-        self.output.insert(END, self.output_file)
+        self.master.master.console.insert(END, self.output_file)
         print(self.output_file)
 
     # dummy progress bar
@@ -583,11 +572,55 @@ class Frame1(ttk.Frame):
         )
         self.prog_bar.pack(side=BOTTOM, fill=X)
 
-    # start pytmt
-    def run_riana_integrate(self):
+    def handle_integrate_button(self):
+        """
+        Handle the model button click, run integration
+        :return:
+        """
+        rx.empty().subscribe(
+            on_completed=self.on_click,
+            scheduler=self.master.master.pool_scheduler
+        )
+
+    def handle_cancel_button(self):
+        """
+        Cancel integration
+        :return:
+        """
+        pass
+        # # self.master.master.pool_scheduler
+        # self.integrate_run_button["text"] = "Run"
+        # self.integrate_run_button["state"] = "normal"
+        # self.master.tab(1, state='normal')
+        # self.master.master.status_label["text"] = "Status: Idle"
+
+
+    def on_click(self):
+        """
+        Handle the model button click, run integration
+        :return:
+        """
+
+        print("Console - Clicked")
+        self.master.master.console.insert(END, "Clicked")
+
         self.progress()
         self.prog_bar.start()
-        self.queue = queue.Queue()
+
+        # Clear the result view when the button is pressed
+        self.integration_result_view.pack_forget()
+        self.inspect_view.pack_forget()
+
+        # Disable all buttones
+        self.integrate_run_button["text"] = "Running..."
+        self.integrate_run_button["state"] = "disabled"
+        self.cancel_button["state"] = "normal"
+
+        self.master.tab(1, state='disabled')
+        # self.master.Frame2.leftmodel_run_button["text"] = "Running..."
+        # self.master.Frame2.model_run_button["state"] = "disabled"
+
+        self.master.master.status_label["text"] = "Status: Running..."
 
         integration_vars = IntegrationVars(
             id_path=self.id_path,
@@ -598,99 +631,47 @@ class Frame1(ttk.Frame):
             r_time=self.r_time.get(),
             mass_tol=self.mass_tol.get(),
             mass_defect=self.mass_defect.get(),
-            thread=self.thread,
-            write_intensities=self.write_intensities,
+            thread=1,
+            write_intensities=True,
             sample=self.sample.get(),
             iso=[int(i) for i in (self.iso.get().split(','))],
             smoothing=self.smoothing.get(),
+            gui=True,
         )
 
-        # Clear the result view when the button is pressed
-        self.result_view.pack_forget()
-        self.inspect_view.pack_forget()
+        print("Integration variables: ", integration_vars)
 
-        IntegrationThreadedTask(self.queue, integration_vars).start()
+        riana_integrate.integrate_all(integration_vars)
 
-        self.master.after(100, self.process_queue)
-        # disable button
-        self.run_button["text"] = "Running..."
-        self.run_button["state"] = "disabled"
-        self.status_label["text"] = "Status: Running..."
+        print('Done')
 
+        # if you want a callback on the main thread:
+        self.master.master.after(5, self.on_task_complete)
 
-
-    def process_queue(self):
+    def on_task_complete(self):
         """
-        Handle messages from task worker thread
+        After the model run is complete, stop the progress bar and update the status
         :return:
         """
+        print("Task complete")
 
+        self.prog_bar.stop()
+        self.prog_bar.destroy()
 
-        try:
-            msg = self.queue.get_nowait()
-            # Show result of the task if needed
-            self.prog_bar.stop()
-            self.prog_bar.destroy()
-            self.output.insert(END, msg)
-            # with open(os.path.join(self.out, 'tmt.log'), 'r') as f:
-            #     self.output.insert(INSERT, f.read())
+        # self.queue.task_done()
+        self.integrate_run_button["text"] = "Integrate"
+        self.integrate_run_button["state"] = "normal"
+        self.cancel_button["state"] = "disabled"
+        self.master.tab(1, state='normal')
 
-            self.queue.task_done()
-            self.run_button["text"] = "Integrate"
-            self.run_button["state"] = "normal"
-            self.status_label["text"] = "Status: Finished"
-            self.queue.join()
+        self.master.master.status_label["text"] = "Status: Finished"
 
-            # refresh the file handle in the filedialog
-            self.id_path = open(self.id_path.name, 'r')
+        # refresh the file handle in the filedialog
+        self.id_path = open(self.id_path.name, 'r')
 
-            # Update the result view
-            self.master.after(100, self.process_queue)
-            self.load_result_table()
-            self.result_view.pack(fill=BOTH, expand=1)
-
-        except queue.Empty:
-            self.master.after(100, self.process_queue)
-            self.queue.join()
-            # re-enable button after 1 second
-
-        # Kill thread if there is an error
-        # except Exception as e:
-        #     self.prog_bar.stop()
-        #     self.output.insert(END, e)
-        #     self.queue.task_done()
-        #     self.run_button["text"] = "Integrate"
-        #     self.run_button["state"] = "normal"
-        #     self.status_label["text"] = "Status: Error"
-
-
-
-class IntegrationThreadedTask(threading.Thread):
-    """
-    Threaded task
-    """
-    def __init__(self, queue, args):
-        super().__init__()
-        self.queue = queue
-        self.args = args
-        self.ex = None  # Raise exception from thread
-
-    def run(self):
-        try:
-            riana_integrate.integrate_all(self.args)
-            self.queue.put("Task finished")
-            self.queue.join()
-
-        except Exception as e:
-            self.queue.put("Error: " + str(e))
-            self.ex = e
-            self.queue.join()
-    def join(self, timeout=None):
-        super().join(timeout)
-        if self.ex is not None:
-            raise self.ex
-
-
+        # Update the result view
+        self.load_result_table()
+        self.integration_result_view.pack(fill=BOTH, expand=1)
 
 
 

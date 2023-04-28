@@ -183,7 +183,7 @@ def main():
                                   )
 
     parser_integrate.add_argument('-o', '--out',
-                                  help='path to the output directory [default: riana]',
+                                  help='path to the output directory [default: .]',
                                   action=CheckReadableDir,
                                   default='.',
                                   )
@@ -254,7 +254,7 @@ def main():
     parser_fit.add_argument('-a', '--aa',
                             type=str,
                             default='K',
-                            help='which amino acid residue is label carrying [default: K]',
+                            help='which amino acid residue(s) are label carrying, e.g., KR [default: K]',
                             action=CheckAminoAcids,
                             )
 
@@ -291,8 +291,8 @@ def main():
                             type=float,
                             default=0.5)
 
-    parser_fit.add_argument('-o', '--out', help='path to the output directory [default: riana]',
-                            default='riana')
+    parser_fit.add_argument('-o', '--out', help='path to the output directory [default: .]',
+                            default='.')
 
     parser_fit.add_argument('-p', '--plotcurves',
                             action='store_true',

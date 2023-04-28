@@ -39,7 +39,6 @@ def strip_concat(sequence: str,
 
     return sequence
 
-
 def calculate_a0(sequence: str,
                  label: str,
                  ) -> float:
@@ -111,7 +110,7 @@ def calculate_fs(a, a_0, a_max):
         return (a-a_0)/(a_max-a_0)
 
 
-def fit_all(args):
+def fit_all(args) -> None:
     """
     Performs kinetic curve-fitting of integration output using a kinetics model
     returns a csv file containing the peptide concatamer, k_deg, sd, and r2
@@ -175,7 +174,8 @@ def fit_all(args):
     rdf = pd.concat(pd.read_table(in_file) for in_file in riana_list)
 
     # filter by percolator q-value
-    rdf_filtered = rdf[rdf['percolator q-value'] < q_threshold]
+    rdf_filtered = rdf[rdf['percolator q-value'] < q_threshold].copy()
+    print(rdf_filtered)
 
     # filter by number of time points
     # concats = rdf_filtered.groupby('concat')['sample'].nunique()
@@ -184,7 +184,7 @@ def fit_all(args):
 
     # TODO: 2021-12-17 we should filter the concat dataframe here to take only time series from fractions
     #   that contain at least X number of data points.
-    rdf_filtered = rdf_filtered.groupby(['concat', 'file_idx']).filter(lambda x: x['sample'].nunique() >= t_threshold)
+    rdf_filtered = rdf_filtered.groupby(['concat', 'file_idx']).filter(lambda x: x['sample'].nunique() >= t_threshold).copy()
 
     # TODO: catch when no peptide reaches the time or q threshold
     if rdf_filtered.shape[0] == 0:
@@ -194,7 +194,7 @@ def fit_all(args):
     max_time = np.max([float(re.sub('[^0-9]', '', time)) for time in rdf_filtered['sample']])
 
     # create loop of concat indices for concurrent.futures
-    loop_ = range(len(rdf_filtered.concat.unique()))
+    loop_ = range(200) # range(len(rdf_filtered.concat.unique()))
     fit_one_partial = partial(fit_one,
                               concat_list=rdf_filtered.concat.unique(),
                               label=label_,
@@ -205,25 +205,41 @@ def fit_all(args):
                               model_pars=model_pars,
                               )
 
+    # Single threaded loop
+    # '''
+    if hasattr(args, "gui"):
+        logger.info('Running from GUI, using single thread.')
+        out_dict = {}
+        for i in tqdm.tqdm(loop_, miniters=len(loop_)/100):
+            out_dict = out_dict | fit_one_partial(i)
+
+    # '''
+
     # parallel loops using concurrent.futures
-    from concurrent import futures
-    with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
-        results = list(tqdm.tqdm(ex.map(fit_one_partial, loop_),
-                                 total=max(loop_),
-                                 desc=f'Fitting peptides to model - {args.model}:'))
+    # '''
+    else:
+        logger.info(f'Running from command line, using {num_threads} threads.')
+        from concurrent import futures
 
-    # collect all the dicts, plot out graphs and output final file
-    out_dict = {}
+        with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
+            results = list(tqdm.tqdm(ex.map(fit_one_partial, loop_),
+                                     total=max(loop_),
+                                     desc=f'Fitting peptides to model - {args.model}:'))
 
-    for res in tqdm.tqdm(results, desc=f'Combining results'):
-        out_dict = out_dict | res
-        # Note this works in python 3.9, but not in 3.8
+        # Collect all the dicts, plot out graphs and output final file
+        out_dict = {}
 
+        for res in tqdm.tqdm(results, desc=f'Combining results'):
+            out_dict = out_dict | res
+            #Note this works in python 3.9, but not in 3.8
+        # '''
+
+    # Plot the individual curves
     if args.plotcurves:
-        for res in tqdm.tqdm(results, desc=f'Plotting curves'):
+        for seq, value in tqdm.tqdm(out_dict.items(), desc=f'Plotting curves'):
 
-            seq = list(res.keys())[0]
-            k_deg, r_squared, sd, t, fs = list(res.values())[0]
+            #seq = list(res.keys())[0]
+            k_deg, r_squared, sd, t, fs = value # list(res.values())[0]
 
             # do not plot and record result if k_deg is nan
             if np.isnan(k_deg):
@@ -236,52 +252,17 @@ def fit_all(args):
             if protein.count(',') > 0:
                 first_protein = first_protein + ' (multi)'
 
-            # create plot
-            fig, ax = plt.subplots()
-            plt.plot(t, fs, '.', label='Fractional synthesis')
-
-            # 2021-11-20 create clipped t,fs series for fs values out of [-0.2, 1.2] and display them as 'x'
-            t_clipped = t[(fs < -0.2) | (fs > 1.2)]
-            fs_clipped = fs[(fs < -0.2) | (fs > 1.2)]
-            fs_clipped = fs_clipped.clip(min=-0.2, max=1.2)
-            if len(t_clipped) > 0:
-                plt.plot(t_clipped, fs_clipped, 'rx')
-
-            plt.plot(np.array(range(0, int(np.max(t))+1)),
-                     model(t=np.array(range(0, int(np.max(t))+1)),
-                           k_deg=k_deg,
-                           a_0=0.,
-                           a_max=1.,
-                           **model_pars,
-                           ),
-                     'r-', label=f'k_deg={np.round(k_deg, 3)}'
-                     )
-
-            plt.plot(np.array(range(0, int(np.max(t))+1)),
-                     model(t=np.array(range(0, int(np.max(t))+1)),
-                           k_deg=k_deg + sd,
-                           a_0=0.,
-                           a_max=1.,
-                           **model_pars,
-                           ),
-                     'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
-                     )
-
-            plt.plot(np.array(range(0, int(np.max(t))+1)),
-                     model(t=np.array(range(0, int(np.max(t))+1)),
-                           k_deg=k_deg ** 2 / (k_deg + sd),
-                           a_0=0.,
-                           a_max=1.,
-                           **model_pars,
-                           ),
-                     'r--', label=f'Lower={np.round(k_deg ** 2 / (k_deg + sd), 3)}'
-                     )
-            plt.xlabel('t')
-            plt.ylabel('fs')
-            plt.title(f'Protein: {first_protein} Sequence: {seq} R2: {np.round(r_squared, 3)}')
-            plt.legend()
-            plt.xlim([-1, max_time+1])
-            plt.ylim([-0.2, 1.2])
+            fig = models.plot_model(protein=first_protein,
+                                    peptide=seq,
+                                    k_deg=k_deg,
+                                    r_squared=r_squared,
+                                    sd=sd,
+                                    t=t,
+                                    fs=fs,
+                                    start_time=0,
+                                    end_time=max_time,
+                                    model=model,
+                                    model_pars=model_pars)
 
             if k_deg < 0.01:
                 speed = "slow"
@@ -305,18 +286,42 @@ def fit_all(args):
             plt.close(fig)
             # gc.collect()
 
+    logger.info("Loop finished")
 
     out_df = pd.DataFrame.from_dict(out_dict, orient='index', columns=['k_deg', 'R_squared', 'sd', 't', 'fs'])
+    print(out_df)
+    # Turn the list columns (t, fs) into aggregates separated by commas, first by expanding the lists
+    out_df_2 = out_df.drop(columns=['k_deg', 'R_squared', 'sd']).explode(['t', 'fs']).copy()
+    out_df_2.index.name = 'concat'
 
-    # add back the kinetic parameters
-    out_df = out_df.assign(kp=args.kp, kr=args.kr, rp=args.rp, ria_max=args.ria)
+    # Then group by concat and aggregate the lists into a single string
+    out_df_2['t'] = pd.to_numeric(out_df_2['t'], downcast='float')
+    out_df_2['fs'] = pd.to_numeric(out_df_2['fs'], downcast='float')
 
-    out_df.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'))
+    out_df_2 = out_df_2.round(3).copy()
+    print(out_df_2)
+    out_df_2 = out_df_2.groupby('concat').agg(pd.Series.tolist).copy()
+    print(out_df_2)
+    # Merge back to the data frame with k_deg, R_squared, sd
+    out_df_2 = out_df_2.merge(out_df[['k_deg', 'R_squared', 'sd']], left_index=True, right_index=True, how='left').copy()
 
-    num_peps_fitted = out_df[out_df['R_squared'] >= 0.9].shape[0]
+    # Merge with the original dataframe to get the protein id
+    right_merge = rdf_filtered[['concat', 'protein id']].copy().drop_duplicates(subset=['concat']).set_index('concat')
+    out_df_2 = out_df_2.merge(right_merge, left_index=True, right_index=True, how='left').copy()
+    print(out_df_2)
+    # Add back the kinetic parameters
+    # TODO: save the kinetic parameters in a separate file
+    out_df_2 = out_df_2.assign(kp=args.kp, kr=args.kr, rp=args.rp, ria_max=args.ria)
+
+    out_df_2.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'), sep='\t')
+
+    num_peps_fitted = out_df_2[out_df_2['R_squared'] >= 0.9].shape[0]
     logger.info(f'There are {num_peps_fitted} concats with R2 ≥ 0.9')
 
-    return sys.exit(os.EX_OK)
+    # Remove logger
+    logger.handlers.clear()
+
+    return None # sys.exit(os.EX_OK)
 
 
 def fit_one(loop_index,
@@ -327,7 +332,7 @@ def fit_one(loop_index,
             model_: callable,
             aa_res: str,
             model_pars: dict,
-            ):
+            ) -> dict:
     """
 
     :param loop_index:
@@ -342,9 +347,11 @@ def fit_one(loop_index,
     """
 
 
-    # create subset dataframe with current concat
+    # create subset dataframe with current concat, taking only unique sample, file_idx pairs
     seq = concat_list[loop_index]
-    y = filtered_integrated_df.loc[filtered_integrated_df['concat'] == seq].copy()
+    y = filtered_integrated_df.loc[filtered_integrated_df['concat'] == seq].drop_duplicates(subset=['sample', 'file_idx']).copy()
+    print(seq)
+    print(y)
 
     logger = logging.getLogger('riana_fit')
     logger.info(f'Fitting peptide {seq} with data shape {y.shape}')
@@ -368,6 +375,7 @@ def fit_one(loop_index,
     y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
 
     logger.info(y[['sample', 'mi']])
+    print(y[['sample', 'mi']])
     t = np.array([float(re.sub('[^0-9.]', '', time)) for time in y['sample']])
     mi = np.array(y['mi'].tolist())
 

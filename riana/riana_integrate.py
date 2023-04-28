@@ -35,6 +35,7 @@ def integrate_all(args) -> None:
 
     # ---- Get the logger ----
 
+    print("Starting Integrate")
     logger = get_logger(__name__, args.out)
     logger.info(args)
     logger.info(__version__)
@@ -153,18 +154,31 @@ def integrate_all(args) -> None:
 
         # Single threaded loop
         # '''
-        # results = []
-        # for i in loop_:
-        #     print(i)
-        #     results += integrate_one_partial(i)
+        # if hasattr(args, "gui"):
+        #     logger.info('Running from GUI, using single thread.')
+        #     intensities_results = []
+        #     for i in loop_: # tqdm.tqdm(loop_, miniters=len(loop_)/100):
+        #         print(i)
+        #         print(get_isotopomer_intensity_partial(i))
+        #         intensities_results += get_isotopomer_intensity_partial(i)
+
         # '''
 
         # For parallelism, use concurrent.futures instead of multiprocessing for higher speed
         # '''
+
+        # If running from GUI, udpate tqdm less frequently
+        if hasattr(args, "gui"):
+            iterfreq = len(loop_) // 100
+        else:
+            iterfreq = 1
+
+        logger.info(f'Using {args.thread} threads.')
         from concurrent import futures
         with futures.ThreadPoolExecutor(max_workers=args.thread) as ex:
             intensities_results = list(tqdm.tqdm(ex.map(get_isotopomer_intensity_partial, loop_),
                                                  total=max(loop_),
+                                                 miniters=iterfreq,
                                                  desc=f'Extracting isotopomer intensities in sample: {args.sample}'
                                                       f' file: {mzml_files[idx]}'))
         # '''
@@ -173,19 +187,20 @@ def integrate_all(args) -> None:
         #
         # append the raw intensities data frame
         #
-        intensities_df = pd.DataFrame().concat([res for res in intensities_results], ignore_index=True)
+        intensities_df = pd.concat(intensities_results, ignore_index=True)
         intensities_df['file'] = mzml_files[idx]
         intensities_df['idx'] = idx
-        # id_intensities_df = intensities_dfpd.merge(intensities_df, mzid.curr_frac_filtered_id_df, on='pep_id', how='left')
 
         if len(overall_intensities_df.index) == 0:
-            overall_intensities_df = intensities_df
+            overall_intensities_df = intensities_df.copy()
         else:
-            overall_intensities_df = overall_intensities_df.append(intensities_df, ignore_index=True)
+            overall_intensities_df = pd.concat([overall_intensities_df, intensities_df], ignore_index=True)
 
-        # Now perform integration
+
+        # Perform integration
         integrated_peaks = []
         for int_res in tqdm.tqdm(intensities_results,
+                                 miniters=iterfreq,
                                  desc=f'Integrating peaks in sample: {args.sample} file: {mzml_files[idx]}'
                                  ):
             iso_areas = [int_res['pep_id'][0]]
@@ -208,9 +223,10 @@ def integrate_all(args) -> None:
 
         # bind rows of the current result to the sample master
         if len(overall_integrated_df.index) == 0:
-            overall_integrated_df = id_integrated_df
+            overall_integrated_df = id_integrated_df.copy()
         else:
-            overall_integrated_df = overall_integrated_df.concat(id_integrated_df, ignore_index=True)
+            overall_integrated_df = pd.concat([overall_integrated_df, id_integrated_df], ignore_index=True)
+
 
     # write the integrated and intensities results
     save_path = os.path.join(args.out, args.sample + '_riana.txt')
@@ -218,17 +234,16 @@ def integrate_all(args) -> None:
 
     # Make a smaller intensities file
     if args.write_intensities:
-        # print('foo')
-        # print(overall_intensities_df)
+
         # overall_intensities_df.to_csv(path_or_buf=os.path.join(args.out, args.sample + '_riana_intensities.txt'),
         #                               sep='\t')
-
 
         overall_intensities_out_df = overall_intensities_df.round(decimals=3).groupby(['pep_id', 'file',
                                                                      'concat', 'idx', 'ID']).agg(list).reset_index().copy()
 
         # print(overall_intensities_out_df)
         overall_intensities_out_df.to_csv(path_or_buf=os.path.join(args.out, args.sample + '_riana_intensities_summarized.txt'), sep='\t')
+
 
     tqdm.tqdm.write('Completed.')
 

@@ -3,7 +3,8 @@
 """ kinetic models for curve fitting """
 
 import numpy as np
-
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 def one_exponent(t,
                  k_deg: float,
@@ -89,3 +90,92 @@ def two_compartment_fornasiero(t,
         ((1. - big_a) * tau2 * (1. - np.exp(k_deg * t - k2 * t)) / (tau2 - (1. / k_deg)))
 
     return a_0 + (a_max-a_0) * (1. - np.exp(-k_deg * t) * x)
+
+
+def plot_model(protein,
+               peptide,
+               k_deg,
+               r_squared,
+               sd,
+               t_series,
+               fs_series,
+               start_time: int = 0,
+               end_time: int = 1,
+               model_to_use: callable = one_exponent,
+               **model_pars,
+
+               ) -> Figure:
+    """
+    This function plots the fractional synthesis data and the fitted model.
+    :param protein:
+    :param peptide:
+    :param k_deg:
+    :param r_squared:
+    :param sd:
+    :param t_series:
+    :param fs_series:
+    :param start_time:
+    :param end_time:
+    :param model_to_use:
+    :param model_pars:
+
+    :return:
+    """
+
+    # create plot
+    fig = Figure(figsize=(5, 3), dpi=100)
+
+    # fig.suptitle('')
+
+
+    # Produce the fitting trace
+    fit_plot = fig.add_subplot(111)
+    fit_plot.set_xlabel('Time')
+    fit_plot.set_ylabel('Fractional synthesis')
+    fit_plot.set_title(f'Protein: {protein} Sequence: {peptide} R2: {np.round(r_squared, 3)}')
+    fit_plot.grid()
+
+    fit_plot.plot(t_series, fs_series, '.', label='Fractional synthesis')
+
+    # 2021-11-20 create clipped t,fs series for fs values out of [-0.2, 1.2] and display them as 'x'
+    t_clipped = t_series[(fs_series < -0.2) | (fs_series > 1.2)]
+    fs_clipped = fs_series[(fs_series < -0.2) | (fs_series > 1.2)]
+    fs_clipped = fs_clipped.clip(min=-0.2, max=1.2)
+    if len(t_clipped) > 0:
+        plt.plot(t_clipped, fs_clipped, 'rx')
+
+    fit_plot.plot(np.array(range(0, int(np.max(t_series)) + 1)),
+             model_to_use(t=np.array(range(0, int(np.max(t_series)) + 1)),
+                   k_deg=k_deg,
+                   a_0=0.,
+                   a_max=1.,
+                   **model_pars,
+                   ),
+             'r-', label=f'k_deg={np.round(k_deg, 3)}'
+             )
+
+    fit_plot.plot(np.array(range(0, int(np.max(t_series)) + 1)),
+             model_to_use(t=np.array(range(0, int(np.max(t_series)) + 1)),
+                   k_deg=k_deg + sd,
+                   a_0=0.,
+                   a_max=1.,
+                   **model_pars,
+                   ),
+             'r--', label=f'Upper={np.round(k_deg + sd, 3)}'
+             )
+
+    fit_plot.plot(np.array(range(0, int(np.max(t_series)) + 1)),
+             model_to_use(t=np.array(range(0, int(np.max(t_series)) + 1)),
+                   k_deg=k_deg ** 2 / (k_deg + sd),
+                   a_0=0.,
+                   a_max=1.,
+                   **model_pars,
+                   ),
+             'r--', label=f'Lower={np.round(k_deg ** 2 / (k_deg + sd), 3)}'
+             )
+
+    fit_plot.legend()
+    fit_plot.set_xlim([start_time-1, end_time+1])
+    fit_plot.set_ylim([-0.2, 1.2])
+
+    return fig
