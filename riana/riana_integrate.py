@@ -96,7 +96,9 @@ def integrate_all(args) -> None:
     assert len(mzml_files) != 0, '[error] no mzml files in the specified directory'
     # Check that the number of mzMLs in the mzML folder is the same as the maximum of the ID file's file_idx column.
     # Note this will break if the last fraction does not contain at least some ID, but we will ignore for now.
-    assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
+    # assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
+
+    assert len(mzml_files) == len(mzid.indices), '[error] number of mzml files not matching id list'
 
     # create overall result files
     overall_integrated_df = pd.DataFrame()   # all integrated isotopomer peak areas

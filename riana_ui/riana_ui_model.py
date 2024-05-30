@@ -3,7 +3,7 @@
 # RIANA GUI
 
 import tkinter as tk
-from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM, X
+from tkinter import ttk, filedialog, FLAT, BOTH, LEFT, TOP, END, BOTTOM, X, StringVar, IntVar, DoubleVar
 from riana import riana_fit, models
 from typing import NamedTuple
 import sys
@@ -43,12 +43,69 @@ class Frame2(ttk.Frame):
         self.riana_path = None
         self.model_output_path = None
 
+        self.model = StringVar()
+        self.model_options = ["simple", "guan", "fornasiero"]
+        self.model.set("simple")
+
+        self.label_type = StringVar()
+        self.label_type_options = ['aa', 'hw', 'o18']
+        self.label_type.set("aa")
+
+        self.kp = DoubleVar()
+        self.kp.set(0.5)
+
+        self.kr = DoubleVar()
+        self.kr.set(0.05)
+
+        self.rp = DoubleVar()
+        self.rp.set(10)
+
+        self.final_ria = tk.DoubleVar()
+        self.final_ria.set(0.1)
+
+        self.q_value = tk.DoubleVar()
+        self.q_value.set(0.01)
+
+        self.aa = StringVar()
+        self.aa.set("K")
+
         self.create_tab2_widgets()
 
         # sys.stdout = TextRedirector(self.master.master.console, "stdout")
         # sys.stderr = TextRedirector(self.master.master.console, "stderr")
 
 
+    def handle_model_selection(self, value):
+        # disable kp, kr, rp if simple model is selected
+        self.kp_entry.config(state='normal')
+        self.kr_entry.config(state='normal')
+        self.rp_entry.config(state='normal')
+
+        if self.model.get() == "simple":
+            self.kp_entry.config(state='disabled')
+            self.kr_entry.config(state='disabled')
+            self.rp_entry.config(state='disabled')
+
+        elif self.model.get() == 'guan':
+            self.kp_entry.config(state='normal')
+            self.kr_entry.config(state='disabled')
+            self.rp_entry.config(state='disabled')
+
+    def handle_kr_selection(self, value):
+
+        try:
+            float(self.kr.get())
+        except ValueError:
+            self.kr.set(0.05)
+            return
+
+        if self.kr.get() > 1:
+            self.kr.set(1)
+        elif self.kr.get() < 0:
+            self.kr.set(0)
+
+        print(self.kr.get())
+        self.kr_label_text.set(f'kr: {self.kr.get()}')
 
     def create_tab2_widgets(self):
         # Create left and right frames
@@ -61,14 +118,14 @@ class Frame2(ttk.Frame):
                                     )
         tab2_left_frame.pack(side='left', fill='both', expand=False)
 
-        tab2_right_frame = ttk.LabelFrame(self,
+        self.tab2_right_frame = ttk.LabelFrame(self,
                                      width=650,
                                      height=400,
                                      relief='flat',
                                      # borderwidth=1,
                                      text="Output",
                                      )
-        tab2_right_frame.pack(side="right", fill='both', expand=True)
+        self.tab2_right_frame.pack(side="right", fill='both', expand=True)
 
         # ---- Section separator ----
         ttk.Label(tab2_left_frame, text="Select Input File(s)").pack()
@@ -96,6 +153,105 @@ class Frame2(ttk.Frame):
         ttk.Label(tab2_left_frame, text="Model Options").pack()
         ttk.Separator(tab2_left_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w')
 
+        # ---- Select model to use ----
+        self.model_label = ttk.Label(tab2_left_frame,
+                                       text=f'Model to use: {self.model.get()}',
+                                       )
+        self.model_label.pack()
+        self.model_entry = ttk.OptionMenu(tab2_left_frame,
+                                           self.model,
+                                           self.model.get(),
+                                          *self.model_options,
+                                           command=self.handle_model_selection
+
+                                        )
+        self.model_entry.pack(side="top")
+
+        # ---- Select label type ----
+        self.label_type_label = ttk.Label(tab2_left_frame,
+                                        text=f'Label type: {self.label_type.get()}',
+                                        )
+        self.label_type_label.pack()
+        self.label_type_entry = ttk.OptionMenu(tab2_left_frame,
+                                             self.label_type,
+                                                self.label_type.get(),
+                                               *self.label_type_options,
+                                               # command=self.handle_label_type_selection
+                                                )
+        self.label_type_entry.pack(side="top")
+
+        # ---- Select aa ----
+        self.aa_label = ttk.Label(tab2_left_frame,
+                                        text=f'aa: {self.aa.get()}',
+                                        )
+        self.aa_label.pack()
+        self.aa_entry = ttk.Entry(tab2_left_frame,
+                                                textvariable=self.aa,
+                                                width=10,
+                                                )
+        self.aa_entry.pack(side="top")
+
+        # ---- Select kp ----
+        self.kp_label = ttk.Label(tab2_left_frame,
+                                        text=f'kp: {self.kp.get()}',
+                                        )
+        self.kp_label.pack()
+        self.kp_entry = ttk.Entry(tab2_left_frame,
+                                                textvariable=self.kp,
+                                                width=10,
+                                                )
+        self.kp_entry.pack(side="top")
+
+        # ---- Select kr ----
+        self.kr_label_text = StringVar()
+        self.kr_label_text.set(f'kr: {self.kr.get()}')
+        self.kr_label = ttk.Label(tab2_left_frame,
+                                        text=self.kr_label_text.get(),
+                                        )
+        self.kr_label.pack()
+        self.kr_entry = ttk.Entry(tab2_left_frame,
+                                                textvariable=self.kr,
+                                                width=10,
+                                  # command=self.handle_kr_selection,
+                                                )
+        self.kr_entry.bind('<KeyRelease>', self.handle_kr_selection)
+        self.kr_entry.pack(side="top")
+
+        # ---- Select rp ----
+        self.rp_label = ttk.Label(tab2_left_frame,
+                                        text=f'rp: {self.rp.get()}',
+                                        )
+        self.rp_label.pack()
+        self.rp_entry = ttk.Entry(tab2_left_frame,
+                                                textvariable=self.rp,
+                                                width=10,
+                                                )
+        self.rp_entry.pack(side="top")
+
+        # ---- Select final ria ----
+        self.final_ria_label = ttk.Label(tab2_left_frame,
+                                        text=f'final ria: {self.final_ria.get()}',
+                                        )
+        self.final_ria_label.pack()
+        self.final_ria_entry = ttk.Entry(tab2_left_frame,
+                                                textvariable=self.final_ria,
+                                                width=10,
+                                                )
+        self.final_ria_entry.pack(side="top")
+
+        # ---- Select q-value ----
+        self.q_value_label = ttk.Label(tab2_left_frame,
+                                        text=f'q-value: {self.q_value.get()}',
+                                        )
+        self.q_value_label.pack()
+        self.q_value_entry = ttk.Entry(tab2_left_frame,
+                                                textvariable=self.q_value,
+                                                width=10,
+                                                )
+        self.q_value_entry.pack(side="top")
+
+
+
         # link to RIANA model
         self.model_run_button = ttk.Button(tab2_left_frame,
                                      text="Run RIANA Model",
@@ -109,17 +265,24 @@ class Frame2(ttk.Frame):
 
 
 
-
-        ttk.Separator(tab2_right_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w', )
+        ttk.Label(self.tab2_right_frame, text="Input").pack()
+        ttk.Separator(self.tab2_right_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w', )
         # self.select_riana_integration_files.bind("<Button-1>", self.print_selected_files)
+        self.input_frame = ttk.Frame(self.tab2_right_frame,
+                                        width=600,
+                                        height=300,
+                                        )
+        self.input_frame.pack()
 
         # ---- Section separator ----
-        ttk.Label(tab2_right_frame, text="Results").pack()
-        ttk.Separator(tab2_right_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w')
+        ttk.Label(self.tab2_right_frame, text="Results").pack()
+        ttk.Separator(self.tab2_right_frame, orient='horizontal').pack(fill='x', pady=5, padx=5, anchor='w')
+
+
 
         # ---- Using pandastable ----
 
-        self.model_result_view = ttk.Frame(tab2_right_frame,
+        self.model_result_view = ttk.Frame(self.tab2_right_frame,
                                      width=600,
                                      height=300,
                                      )
@@ -128,7 +291,7 @@ class Frame2(ttk.Frame):
         self.model_result_view.pack_forget()
 
         # ---- Inspect view from selected row on the data ----
-        self.model_inspect_view = ttk.Frame(tab2_right_frame,
+        self.model_inspect_view = ttk.Frame(self.tab2_right_frame,
                                      width=600,
                                      height=200,
                                      )
@@ -155,6 +318,11 @@ class Frame2(ttk.Frame):
         # enable button
         if self.riana_path is not None and self.model_output_path is not None:
              self.model_run_button["state"] = "normal"
+
+        # For each file, create a new label in the right frame to display the name, as well as a button to remove it
+        for each_path in self.riana_path:
+            ttk.Label(self.input_frame, text=each_path).pack(side="top", anchor="w")
+
 
     # output folder dialog
     def model_output_folder_dialog(self):
@@ -204,8 +372,8 @@ class Frame2(ttk.Frame):
 
         modeling_vars = ModelingVars(
             riana_path=self.riana_path,
-            model='simple',
-            label='hw',
+            model=self.model.get(),
+            label=self.label_type.get(),
             aa='KR',
             kp=0.5,
             kr=0.05,
@@ -262,7 +430,7 @@ class Frame2(ttk.Frame):
         :return:
         """
         try:  # try to read in data from RIANA fit
-            fitted_file_path = os.path.join(self.model_output_path, 'riana_fit_peptides.csv')
+            fitted_file_path = os.path.join(self.model_output_path, 'riana_fit_peptides.txt')
             # print(output_file_path)
             self.master.master.console.insert(END, f"Reading in data from {fitted_file_path}\n")
             df = pd.read_csv(fitted_file_path, sep='\t', index_col='concat').reset_index()
@@ -355,7 +523,7 @@ class Frame2(ttk.Frame):
                                     t_series=tp,
                                     fs_series=fs,
                                     start_time=0,
-                                    end_time=32,
+                                    end_time=np.max(tp),
                                     model_to_use=models.one_exponent,
                                     model_pars={'k_p': 1,
                                                 'k_r': 1,

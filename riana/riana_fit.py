@@ -16,98 +16,8 @@ import matplotlib.pyplot as plt
 
 from riana import accmass, constants, models, params, __version__
 from riana.logger import get_logger
-
-
-
-def strip_concat(sequence: str,
-                 ) -> str:
-    """
-    Cleans up concat sequences (peptide_charge) and remove modifications
-    to return peptide string for labeling site calculations
-
-    :param sequence:    concat sequence containing charge and modificaitons
-    :return:
-    """
-    # 2021-05-18 strip all N-terminal n from Comet
-    sequence = re.sub('^n', '', sequence)
-
-    # Strip all modifications
-    sequence = re.sub('\\[.*?\\]', '', sequence)
-
-    # Strip the underscore and charge
-    sequence = re.sub('_[0-9]+', '', sequence)
-
-    return sequence
-
-def calculate_a0(sequence: str,
-                 label: str,
-                 ) -> float:
-    """
-    Calculates the initial isotope enrichment of a peptide prior to heavy water labeling
-
-    :param sequence:    str: concat sequences
-    :param label:       str: aa, hw, or o18, if aa, return 1 assuming no heavy prior to labeling
-    :return:            float: mi at time 0
-    """
-
-    if label == 'aa':
-        return 1
-
-    else:
-        sequence = strip_concat(sequence)
-        res_atoms = accmass.count_atoms(sequence)
-        a0 = np.product([np.power(constants.iso_abundances[i], res_atoms[i]) for i, v in enumerate(res_atoms)])
-        # TODO: this should calculate the full isotopic distribution
-        return a0
-
-
-def calculate_label_n(sequence: str,
-                      label: str,
-                      aa_res: str = 'K',
-                      ) -> float:
-    """
-    Calculates labeling sites of the peptide sequence in heavy water
-    or amino acid labeling
-
-    :param sequence:    the peptide sequence
-    :param label:       aa, hw, or o18; if aa, only return the labelable residues
-    :param aa_res:       the amino acid being labeled
-    :return:
-    """
-
-    # strip modification site and charge from concat sequence
-    sequence = strip_concat(sequence)
-
-    # if amino acid labeling, return number of labeled residues
-    if label == 'aa':
-        # return the sum of each residue in the aa_res
-        return sum([sequence.count(i) for i in aa_res])
-
-    # if d2o, return the number of labeling site in heavy water labeling
-    elif label == 'hw':
-        return sum([constants.label_hydrogens.get(char) for char in sequence])
-
-    # else if o18, return the number of labeling sites for o18
-    else:
-        return sum([constants.label_oxygens.get(char) for char in sequence]) - 1.
-
-
-def calculate_fs(a, a_0, a_max):
-    """
-    Calculates fractional synthesis based on a_t, a_0 (initial), and a_max (asymptote)
-
-    :param a:       mi at a particular time
-    :param a_0:     initial mi value before label onset
-    :param a_max:   final mi value at plateau based on labeling site and precursor RIA
-    :return:
-    """
-
-    # catch errors from no ria or no labeling site
-    if a_max - a_0 == 0:
-        # repeat an array of 0 if the input is an ndarray, otherwise return 0
-        return np.repeat(0, len(a)) if isinstance(a, np.ndarray) else 0
-    else:
-        return (a-a_0)/(a_max-a_0)
+from riana.utils import strip_concat
+from riana.fsynthesis import calculate_label_n, calculate_fs_m0, calculate_fs_fine_structure
 
 
 def fit_all(args) -> None:
@@ -194,7 +104,7 @@ def fit_all(args) -> None:
     max_time = np.max([float(re.sub('[^0-9]', '', time)) for time in rdf_filtered['sample']])
 
     # create loop of concat indices for concurrent.futures
-    loop_ = range(200) # range(len(rdf_filtered.concat.unique()))
+    loop_ = range(len(rdf_filtered.concat.unique())) # range(200) #
     fit_one_partial = partial(fit_one,
                               concat_list=rdf_filtered.concat.unique(),
                               label=label_,
@@ -202,6 +112,7 @@ def fit_all(args) -> None:
                               ria_max=ria_max,
                               model_=model,
                               aa_res=aa_res,
+                              fs_fine_structure=args.fs,
                               model_pars=model_pars,
                               )
 
@@ -257,8 +168,8 @@ def fit_all(args) -> None:
                                     k_deg=k_deg,
                                     r_squared=r_squared,
                                     sd=sd,
-                                    t=t,
-                                    fs=fs,
+                                    t_series=t,
+                                    fs_series=fs,
                                     start_time=0,
                                     end_time=max_time,
                                     model=model,
@@ -313,7 +224,7 @@ def fit_all(args) -> None:
     # TODO: save the kinetic parameters in a separate file
     out_df_2 = out_df_2.assign(kp=args.kp, kr=args.kr, rp=args.rp, ria_max=args.ria)
 
-    out_df_2.to_csv(os.path.join(outdir, 'riana_fit_peptides.csv'), sep='\t')
+    out_df_2.to_csv(os.path.join(outdir, 'riana_fit_peptides.txt'), sep='\t')
 
     num_peps_fitted = out_df_2[out_df_2['R_squared'] >= 0.9].shape[0]
     logger.info(f'There are {num_peps_fitted} concats with R2 ≥ 0.9')
@@ -331,18 +242,20 @@ def fit_one(loop_index,
             ria_max: float,
             model_: callable,
             aa_res: str,
+            fs_fine_structure: bool,
             model_pars: dict,
             ) -> dict:
     """
 
-    :param loop_index:
+    :param loop_index:                  index of concat_list to fit
     :param concat_list:                 list of concatamer
     :param label:                       label type, determines how mi is calculated. currently must be aa, hw, or o18
-    :param filtered_integrated_df:
-    :param ria_max:
-    :param model_:
+    :param filtered_integrated_df:      dataframe of integrated data
+    :param ria_max:                     maximum ria
+    :param model_:                      model function
     :param aa_res:                      which amino acid residue is labeled, e.g., K
-    :param model_pars:
+    :param fs_fine_structure:           whether to use fine structure for fs
+    :param model_pars:                  dictionary of model parameters
     :return:
     """
 
@@ -371,13 +284,8 @@ def fit_one(loop_index,
     #   unless time is 0 and then filter for data series length again according to the data depth
     #   filter.
 
-    y['colsums'] = y.loc[:, y.columns.str.match('^m[0-9]+$')].sum(axis=1)   # sums all m* columns
-    y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
-
-    logger.info(y[['sample', 'mi']])
-    print(y[['sample', 'mi']])
     t = np.array([float(re.sub('[^0-9.]', '', time)) for time in y['sample']])
-    mi = np.array(y['mi'].tolist())
+
 
     # calculate a_0, a_max, and fractional synthesis
     stripped = strip_concat(seq)
@@ -385,17 +293,69 @@ def fit_one(loop_index,
                                            label=label,
                                            aa_res=aa_res)
 
-    a_0 = calculate_a0(seq, label=label)
-    a_max = a_0 * np.power((1 - ria_max), num_labeling_sites)
-    fs = calculate_fs(a=mi, a_0=a_0, a_max=a_max)
+    # if label is hw or hw_cell, use the heavy water labeling dictionary
+    if (label == 'hw' or label == 'hw_cell' or label == 'o18') and fs_fine_structure is not None:
 
-    logger.info(f'concat: {stripped}, n: {num_labeling_sites}, a_0: {a_0}, a_max: {a_max}')
+        if fs_fine_structure == "m0_m1":
+            y = y.assign(mi=(y.m0 / y.m1).where(y.m0 != 0, 0))
+
+        elif fs_fine_structure == "m0_m2":
+            y = y.assign(mi=(y.m0 / y.m2).where(y.m0 != 0, 0))
+
+        elif fs_fine_structure == "m0_m3":
+            y = y.assign(mi=(y.m0 / y.m3).where(y.m0 != 0, 0))
+
+        elif fs_fine_structure == "m1_m2":
+            y = y.assign(mi=(y.m1 / y.m2).where(y.m1 != 0, 0))
+
+        elif fs_fine_structure == "m1_m3":
+            y = y.assign(mi=(y.m1 / y.m3).where(y.m1 != 0, 0))
+
+        elif fs_fine_structure == "m0_mA":
+            y = y.assign(mi=(y.m0 / (y.m0 + y.m1 + y.m2 + y.m3 + y.m4 + y.m5)).where(y.m0 != 0, 0))
+
+        elif fs_fine_structure == "m1_mA":
+            y = y.assign(mi=(y.m1 / (y.m0 + y.m1 + y.m2 + y.m3 + y.m4 + y.m5)).where(y.m1 != 0, 0))
+
+        elif fs_fine_structure == "Auto":
+            if num_labeling_sites < 15:
+                y = y.assign(mi=(y.m0 / y.m1).where(y.m0 != 0, 0))
+            elif num_labeling_sites > 35:
+                y = y.assign(mi=(y.m1 / y.m3).where(y.m1 != 0, 0))
+            else:
+                y = y.assign(mi=(y.m0 / y.m2).where(y.m0 != 0, 0))
+
+        mi = np.array(y['mi'].tolist())
+
+        # Use the fine structure calculator with an artificial element to calculate FS in HW labeling
+        fs = calculate_fs_fine_structure(a=mi,
+                                         seq=seq,
+                                         label=label,
+                                         ria_max=ria_max,
+                                         formula=fs_fine_structure,
+                                         )
+
+    else:
+        # Use m0/mA to calculate FS if label is aa or if fine structure is not used
+        y['colsums'] = y.loc[:, y.columns.str.match('^m[0-9]+$')].sum(axis=1)  # sums all m* columns
+        y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
+        mi = np.array(y['mi'].tolist())
+        logger.info(y[['sample', 'mi']])
+        print(y[['sample', 'mi']])
+
+        fs = calculate_fs_m0(a=mi,
+                             seq=seq,
+                             label=label,
+                             ria_max=ria_max,
+                             num_labeling_sites=num_labeling_sites)
+
+    logger.info(f'concat: {stripped}, n: {num_labeling_sites}')
     logger.info([t, fs])
 
-    # TODO: 2021-11-21 remove t/fs data poionts where fs is nan for any reason
+    # TODO: 2021-11-21 remove t/fs data points where fs is nan for any reason
     null_result = {seq: [np.nan, np.nan, np.nan, t, fs]}
 
-    # if there is no labeling site, skip
+    # if there is no labeling site, skip curve fitting because there is no isotopic labeling
     if num_labeling_sites == 0:
         return null_result
 

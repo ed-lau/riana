@@ -1,6 +1,10 @@
 ## CHANGES
 ---
 
+## Update v.0.8.0
+* Added support for automatic isotopomer selection. To use this feature, run `riana/riana.py` with `--fs Auto`.
+* Added experimental support for in vitro heavy water labeling. To use this feature, run `riana/riana.py` with `--label hw_cell`.
+
 ## Update v.0.7.3
 * Added graphical user interface (GUI) for RIANA. To use the GUI, run `riana/riana_ui.py` in the command line.
 

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from riana import constants
-
+from scipy.signal import find_peaks
 import rx
 
 from console import TextRedirector
@@ -94,6 +94,7 @@ class Frame1(ttk.Frame):
         self.canvas = None
         self.toolbar = None
         self.trace_plot = None
+        self.trace_plot_2 = None
         self.bar_plot = None
         self.fig = None
 
@@ -437,6 +438,7 @@ class Frame1(ttk.Frame):
             self.inspect_view.pack_forget()
             self.inspect_view.pack(fill=BOTH, expand=1)
             self.trace_plot = None
+            self.trace_plot_2 = None
 
             # Get the selected row data
             selected_data = self.result_table.getSelectedRowData()
@@ -463,16 +465,23 @@ class Frame1(ttk.Frame):
             self.fig.suptitle(f'{selected_data["sequence"].values[0]}+{selected_data["charge"].values[0]}')
 
             # Produce the chromatographic trace
-            self.trace_plot = self.fig.add_subplot(121)
+            self.trace_plot = self.fig.add_subplot(131)
             self.trace_plot.set_xlabel('Retention time (min)')
             self.trace_plot.set_ylabel('Intensity')
             self.trace_plot.set_title(f'Chromatogram')
             self.trace_plot.grid()
 
+            # Produce the chromatographic trace for peak finding
+            self.trace_plot_2 = self.fig.add_subplot(132)
+            self.trace_plot_2.set_xlabel('Retention time (min)')
+            self.trace_plot_2.set_ylabel('Intensity')
+            self.trace_plot_2.set_title(f'Chromatogram/Peak Finding')
+            self.trace_plot_2.grid()
+
             # Turn the literal string into a list of floats
             rt = ast.literal_eval(intensities_df_subset['rt'].values[0])
             rt = [float(i) for i in rt]
-            # print(rt)
+            print(rt)
 
             # Get every isotopomer from the column names of the intensities df for plotting
             isotopomers = []
@@ -486,7 +495,7 @@ class Frame1(ttk.Frame):
             for i, isotop in enumerate(isotopomers):
                 m_trace = ast.literal_eval(intensities_df_subset[isotop].values[0])
                 m_trace = [float(i) for i in m_trace]
-                # print(m_trace)
+                print(m_trace)
 
                 self.trace_plot.scatter(x=rt,
                                         y=m_trace,
@@ -497,10 +506,27 @@ class Frame1(ttk.Frame):
                                         linestyle='-',)
                 self.trace_plot.plot(rt, m_trace, color=colors[i], linewidth=0.5)
 
+                # Peak finding
+                peaks, properties = find_peaks(m_trace, prominence=0.1, width=1)
+                print(peaks)
+                self.trace_plot_2.scatter(x=rt,
+                                        y=m_trace,
+                                        s=5,
+                                        label=isotop,
+                                        color=colors[i],
+                                        marker='o',
+                                        linestyle='-', )
+                self.trace_plot_2.plot(np.array(rt)[peaks], np.array(m_trace)[peaks], "x", color=colors[i], linewidth=0.5)
+                self.trace_plot_2.vlines(x=np.array(rt)[peaks], ymin= np.array(m_trace)[peaks] - properties["prominences"],
+                                            ymax= np.array(m_trace)[peaks], color=colors[i], linewidth=0.5)
+                self.trace_plot_2.plot(rt, m_trace, color=colors[i], linewidth=0.5)
+
             self.trace_plot.legend(loc='upper right')
+            self.trace_plot_2.legend(loc='upper right')
+
 
             # Produce the isotopomer profile
-            self.bar_plot = self.fig.add_subplot(122)
+            self.bar_plot = self.fig.add_subplot(133)
             self.bar_plot.set_xlabel('Isotopomer')
             self.bar_plot.set_ylabel('Intensity')
             self.bar_plot.set_title(f'Isotope Envelope')

@@ -7,7 +7,7 @@ snakemake -c -s ./Snakefile -d out/snakemake_test --configfile config_template.y
 """
 
 rule all:
-    input: "riana_fit_peptides.csv"
+    input: "riana_fit_peptides.txt"
 
 rule comet:
     input: mzml = lambda wildcards: config["data"][wildcards.timepoint]
@@ -23,7 +23,7 @@ rule comet:
         fasta=config["paths"]["fasta"]
     shell: #
         """
-        {params.comet} -P{params.comet_params} -D{params.fasta} {input}/*.mzML.gz 1>> {log}
+        {params.comet} -P{params.comet_params} -D{params.fasta} {input}/*.mzML 1>> {log}
         {params.percolator} --protein T {input}/*.pep.xml --decoy-prefix DECOY_ \\
          --overwrite T --output-dir {wildcards.timepoint}/percolator \\
          --spectral-counting-fdr 0.01 --maxiter 15 1>> {log} 2>>{log}
@@ -44,14 +44,14 @@ rule riana_integrate:
     shell:
         "riana integrate {input.mzml} "
         "{input.pin} -D {params.mass_defect} "
-        "-i {params.iso} -q 0.05 -r 0.33 -m {params.mass_tol} -o . -s {wildcards.timepoint} "
+        "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o . -s {wildcards.timepoint} "
         "-t {threads}"
 
 rule riana_fit:
     input:
         integrated=expand("{timepoint}_riana.txt", timepoint=config["data"])
     output:
-        riana="riana_fit_peptides.csv"
+        riana="riana_fit_peptides.txt"
     params:
         ria=config["params"]["ria_max"],
         kp=config["params"]["kp"],
@@ -65,5 +65,5 @@ rule riana_fit:
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
-        "--aa {params.aa} --kr {params.kr} --rp {params.rp} "
+        "--aa {params.aa} --kr {params.kr} --rp {params.rp}  " # --fs m1_mA --fs Auto
         "-t {threads} -r {params.ria} -l {params.label_type}"

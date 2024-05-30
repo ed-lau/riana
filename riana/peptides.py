@@ -96,13 +96,14 @@ class ReadPercolator(object):
                         f'm/z column with length {test_col}')
 
         except OSError as e:
-            sys.exit('Failed to load mzid file. ' + str(e.errno))
+            sys.exit('Failed to load percolator file. ' + str(e.errno))
 
         # Try reading the Standalone Percolator psms file
         except (pd.errors.ParserError, KeyError) as e:
             self.logger.info("Standalone Percolator file detected")
 
-            with open(os.path.join(self.path), 'r') as f:  # 20211109 sample_loc, id_files[0]
+            # read lines with the TextIOWrapper self.path
+            with self.path as f:  # 20211109 sample_loc, id_files[0]
                 f_ln = f.readlines()
 
             # The percolator output has different number of columns per row because proteins are separated by tabs
@@ -128,21 +129,26 @@ class ReadPercolator(object):
             self.id_df['protein id'] = [','.join(ln.rstrip().split('\t')[5:]) for ln in f_ln[1:]]
 
             # Split the PSMId column to create file_idx, scan, and charge.
-            self.id_df['charge'] = [psm.split('_')[-2] for psm in self.id_df['PSMId']]
+            # 2023-08-07 This now takes only the MSFragger output format which is in the format filename.scan.scan.charge_index
+            self.id_df['charge'] = [psm.split('.')[-1] for psm in self.id_df['PSMId']]
+            self.id_df['charge'] = [psm.split('_')[-2] for psm in self.id_df['charge']]
             self.id_df['charge'] = self.id_df['charge'].astype(int)
-            self.id_df['scan'] = [psm.split('_')[-3] for psm in self.id_df['PSMId']]
+            self.id_df['scan'] = [psm.split('.')[-2] for psm in self.id_df['PSMId']]
             self.id_df['scan'] = self.id_df['scan'].astype(int)
+
             # The file name is the underscore('_') split until the last 3 parts, then rejoined by underscore
             # in case there are underscores in the filename. We then remove everything
             # We then remove all directories to get base name
-            self.id_df['file_name'] = [os.path.basename('_'.join(psm.split('_')[:-3])) for psm in self.id_df['PSMId']]
+
+            # 2023-09-13 Changed for MSFragger output
+            self.id_df['file_name'] = [os.path.basename('_'.join(psm.split('.')[:-3])) for psm in self.id_df['PSMId']]
 
             # Get the sorted file names, hopefully this is the same index as the Crux Percolator output
             # TODO: Read the Percolator log file to get actual index and use file names to open the mzml instead
             sorted_index = sorted(set(self.id_df['file_name']))
             self.id_df['file_idx'] = self.id_df['file_name'].apply(sorted_index.index)
 
-            self.d_df = self.id_df[['file_idx',
+            self.id_df = self.id_df[['file_idx',
                            'scan',
                            'charge',
                            'spectrum precursor m/z',
@@ -176,6 +182,7 @@ class ReadPercolator(object):
 
         :return:
         """
+
         self.indices = list(set(self.id_df['file_idx']))
 
         return True

@@ -71,7 +71,7 @@ mod_atoms = {
 # Commerford, Carsten, and Cronkite 1983 Table 1
 # Number of labelable hydrogen atoms per amino acids
 # Relative specific activity * H/mole
-label_hydrogens = {
+label_deuterium_commerford = {
     'A': 4.00,
     'C': 1.62,
     'D': 1.89,
@@ -93,6 +93,31 @@ label_hydrogens = {
     'W': 0.08,
     'Y': 0.42,
 }
+
+# Labelable hydrogen average, learned from differential evolution algorithm in AC16 complete labeling experiments
+label_deuterium_de = {
+    'A': 1.99,
+    'C': 0.25,
+    'D': 2.70,
+    'E': 2.34,
+    'F': 0.12,
+    'G': 0.86,
+    'H': 0.19,
+    'I': 0.77,
+    'K': 0.09,
+    'L': 0.89,
+    'M': 0.13,
+    'N': 1.01,
+    'P': 1.49,
+    'Q': 0.15,
+    'R': 0.11,
+    'S': 0.40,
+    'T': 0.09,
+    'V': 0.20,
+    'W': 0.14,
+    'Y': 0.12,
+}
+
 
 # Number of oxygen labels should be 1-#aa plus an extra 1 for every S or T
 label_oxygens = {

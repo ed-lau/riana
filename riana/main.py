@@ -247,7 +247,7 @@ def main():
 
     parser_fit.add_argument('-l', '--label',
                             type=str,
-                            choices=['aa', 'hw', 'o18'],
+                            choices=['aa', 'hw', 'o18', 'hw_cell'],
                             default='hw',
                             help='labeling type [default: hw]')
 
@@ -297,6 +297,12 @@ def main():
     parser_fit.add_argument('-p', '--plotcurves',
                             action='store_true',
                             help='plot fitted curves')
+
+    parser_fit.add_argument('-f', '--fs',
+                            type=str,
+                            choices=['m0_m1', 'm0_m2', 'm0_m3', 'm0_mA', 'm1_m3', 'm1_m2', 'm1_mA', 'Auto'],
+                            default=None,
+                            help='calculate fractional synthesis using fine structure isotopomers')
 
     parser_fit.add_argument('-t', '--thread',
                             help='number of threads for concurrency [default: 1]',
