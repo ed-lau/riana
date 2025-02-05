@@ -23,7 +23,7 @@ rule comet:
         fasta=config["paths"]["fasta"]
     shell: #
         """
-        {params.comet} -P{params.comet_params} -D{params.fasta} {input}/*.mzML 1>> {log}
+        {params.comet} -P{params.comet_params} -D{params.fasta} {input}/*.mzML* 1>> {log}
         {params.percolator} --protein T {input}/*.pep.xml --decoy-prefix DECOY_ \\
          --overwrite T --output-dir {wildcards.timepoint}/percolator \\
          --spectral-counting-fdr 0.01 --maxiter 15 1>> {log} 2>>{log}
@@ -65,5 +65,5 @@ rule riana_fit:
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
-        "--aa {params.aa} --kr {params.kr} --rp {params.rp}  " # --fs m1_mA --fs Auto
+        "--aa {params.aa} --kr {params.kr} --rp {params.rp} --fs m0_mA " # --fs m1_mA --fs Auto
         "-t {threads} -r {params.ria} -l {params.label_type}"

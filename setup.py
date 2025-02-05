@@ -10,7 +10,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
    name='riana',
-   version='0.8.0',
+   version='0.8.1',
    description='riana integrates the relative abundance of isotopomers in mass spectra',
 
    long_description=long_description,
@@ -49,8 +49,8 @@ setup(
    python_requires='>=3.9, <4',
 
    install_requires=['pymzml>=2,<3',
-                     'scipy>=1,<2',
-                     'pandas>=1,<2',
+                     'scipy>=1',
+                     'pandas>=2',
                      'matplotlib>=3,<4',
                      'tqdm>=4,<5',
                      'scikit-learn>=1'], #external packages as dependencies

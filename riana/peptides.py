@@ -103,7 +103,7 @@ class ReadPercolator(object):
             self.logger.info("Standalone Percolator file detected")
 
             # read lines with the TextIOWrapper self.path
-            with self.path as f:  # 20211109 sample_loc, id_files[0]
+            with open(self.path.name, 'r') as f:
                 f_ln = f.readlines()
 
             # The percolator output has different number of columns per row because proteins are separated by tabs
