@@ -6,8 +6,12 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="author" content="Edward Lau">
+<meta name="dcterms.date" content="2025-05-01">
+<meta name="keywords" content="Protein turnover, Proteomics, Mass spectrometry">
+<meta name="description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 
-<title>JCAST v0.3.5 - JCAST - Junction Centric Alternative Splicing Translator</title>
+<title>RIANA v0.8.1 - RIANA - Relative Isotope Abundance Analyzer</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -19,12 +23,12 @@ ul.task-list{list-style: none;}
 
 
 <script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
 <script src="site_libs/clipboard/clipboard.min.js"></script>
 <script src="site_libs/quarto-search/autocomplete.umd.js"></script>
 <script src="site_libs/quarto-search/fuse.min.js"></script>
 <script src="site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="./">
-<link href="./install.html" rel="next">
 <script src="site_libs/quarto-html/quarto.js"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
@@ -35,11 +39,11 @@ ul.task-list{list-style: none;}
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
-  "location": "sidebar",
+  "location": "navbar",
   "copy-button": false,
   "collapse-after": 3,
-  "panel-placement": "start",
-  "type": "textbox",
+  "panel-placement": "end",
+  "type": "overlay",
   "limit": 20,
   "language": {
     "search-no-results-text": "No results",
@@ -56,147 +60,186 @@ ul.task-list{list-style: none;}
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="JCAST v0.3.5 - JCAST - Junction Centric Alternative Splicing Translator">
-<meta property="og:description" content="Lau Lab Colorado">
-<meta property="og:site-name" content="JCAST v0.3.5">
-<meta name="twitter:title" content="JCAST v0.3.5 - JCAST - Junction Centric Alternative Splicing Translator">
-<meta name="twitter:description" content="Lau Lab Colorado">
-<meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
+<meta property="og:title" content="RIANA v0.8.1 - RIANA - Relative Isotope Abundance Analyzer">
+<meta property="og:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
+<meta property="og:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
+<meta property="og:site-name" content="RIANA v0.8.1">
+<meta property="og:image:height" content="1034">
+<meta property="og:image:width" content="2550">
+<meta property="og:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
+<meta name="twitter:title" content="RIANA v0.8.1 - RIANA - Relative Isotope Abundance Analyzer">
+<meta name="twitter:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
+<meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
 <meta name="twitter:creator" content="@LauLabColorado">
-<meta name="twitter:image-height" content="643">
-<meta name="twitter:image-width" content="1313">
+<meta name="twitter:image-height" content="1034">
+<meta name="twitter:image-width" content="2550">
+<meta name="twitter:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
 <meta name="twitter:card" content="summary_large_image">
 </head>
 
-<body class="nav-sidebar docked slimcontent">
+<body class="nav-fixed">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-  <nav class="quarto-secondary-nav" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
-    <div class="container-fluid d-flex justify-content-between">
-      <h1 class="quarto-secondary-nav-title">JCAST - Junction Centric Alternative Splicing Translator</h1>
-      <button type="button" class="quarto-btn-toggle btn" aria-label="Show secondary navigation">
-        <i class="bi bi-chevron-right"></i>
-      </button>
-    </div>
-  </nav>
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">RIANA v0.8.1</span>
+  </a>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./index.html" aria-current="page">Home</a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./install.html">Quick Start</a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./about.html">Documentation</a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./change.html">Change Log</a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./faqs.html">FAQs</a>
+  </li>  
+</ul>
+              <div id="quarto-search" class="" title="Search"></div>
+          </div> <!-- /navcollapse -->
+      </div> <!-- /container-fluid -->
+    </nav>
 </header>
 <!-- content -->
-<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
-  <nav id="quarto-sidebar" class="sidebar collapse sidebar-navigation docked overflow-auto">
-    <div class="pt-lg-2 mt-2 text-center sidebar-header">
-      <a href="./" class="sidebar-logo-link">
-      <img src="./images/jcast.png" alt="" class="sidebar-logo py-0 d-lg-inline d-none">
-      </a>
-      <div class="sidebar-tools-main">
-    <a href="https://github.com/ed-lau/jcast" title="GitHub repository" class="sidebar-tool px-1"><i class="bi bi-github"></i></a>
-</div>
-      </div>
-      <div class="mt-2 flex-shrink-0 align-items-center">
-        <div class="sidebar-search">
-        <div id="quarto-search" class="" title="Search"></div>
-        </div>
-      </div>
-    <div class="sidebar-menu-container"> 
-    <ul class="list-unstyled mt-1">
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./index.html" class="sidebar-item-text sidebar-link active">Home</a>
-  </div>
-</li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./install.html" class="sidebar-item-text sidebar-link">Quick Start</a>
-  </div>
-</li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./about.html" class="sidebar-item-text sidebar-link">Documentation</a>
-  </div>
-</li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./change.html" class="sidebar-item-text sidebar-link">Change Log</a>
-  </div>
-</li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./faqs.html" class="sidebar-item-text sidebar-link">FAQs</a>
-  </div>
-</li>
-    </ul>
-    </div>
-</nav>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
         <nav id="TOC" role="doc-toc">
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#about-jcast" id="toc-about-jcast" class="nav-link active" data-scroll-target="#about-jcast">About JCAST</a></li>
+  <li><a href="#about-riana" id="toc-about-riana" class="nav-link active" data-scroll-target="#about-riana">About RIANA</a></li>
   <li><a href="#downloads" id="toc-downloads" class="nav-link" data-scroll-target="#downloads">Downloads</a></li>
   <li><a href="#contributors" id="toc-contributors" class="nav-link" data-scroll-target="#contributors">Contributors</a></li>
   <li><a href="#citations" id="toc-citations" class="nav-link" data-scroll-target="#citations">Citations</a></li>
   </ul>
-<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/jcast/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
     </div>
 <!-- main -->
 <main class="content page-columns page-full" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title d-none d-lg-block">JCAST - Junction Centric Alternative Splicing Translator</h1>
+<h1 class="title">RIANA - Relative Isotope Abundance Analyzer</h1>
 </div>
 
+<div>
+  <div class="description">
+    RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.
+  </div>
+</div>
 
 
 <div class="quarto-title-meta">
 
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Edward Lau </p>
+          </div>
+  </div>
     
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">May 1, 2025</p>
+    </div>
+  </div>
     
   </div>
   
+<div>
+  <div class="abstract">
+    <div class="abstract-title">Abstract</div>
+    This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements.
+  </div>
+</div>
 
 </header>
 
-<p>Lau Lab Colorado</p>
-<section id="about-jcast" class="level2">
-<h2 class="anchored" data-anchor-id="about-jcast">About JCAST</h2>
-<p>JCAST (<strong>J</strong>unction <strong>C</strong>entric <strong>A</strong>lternative <strong>S</strong>plicing <strong>T</strong>ranslator) is a Python software that takes in splicing events from RNA sequencing data to create custom protein sequence databases for protein isoform analysis.</p>
-<p>JCAST attempts to create small protein sequence databases that contain only likely sequences in mass spectrometry experiment samples to avoid runaway database size inflation.</p>
-<p>To do so, JCAST likely translatable alternative splice junctions and performs one-frame in silico analysis, then joins the translated variant sequences with full-length canonical sequences.</p>
+<ul>
+<li><a href="https://laulab.net">Edward Lau Lab</a>, University of Colorado School of Medicine</li>
+<li><a href="https://maggielab.org">Maggie Lam Lab</a>, University of Colorado School of Medicine</li>
+</ul>
+<p><img src="images/riana_logo.png" class="img-fluid"></p>
+<section id="about-riana" class="level2">
+<h2 class="anchored" data-anchor-id="about-riana">About RIANA</h2>
+<p>RIANA (<strong>R</strong>elative <strong>I</strong>sotope <strong>A</strong>bundance A<strong>na</strong>lyzer) is a software to automate the analysis of mass spectrometry- based protein turnover measurement experiments.</p>
+<p>RIANA is written to be flexible to accommodate different protein stable isotope labels, including heavy water (D<sub>2</sub>O) and SILAC (e.g., <sup>13</sup>C<sub>6</sub>-lysine or other amino acids) experiments.</p>
+<p>RIANA supports a Snakemake pipeline that uses other existing tools in the community, requiring only mass spectrometry data files (.mzML) as input to perform database search, post-processing, peak integration, and output of best-fit kinetic rate constants.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="images/workflow.png" class="img-fluid figure-img"></p>
+<p></p><figcaption class="figure-caption">Workflow</figcaption><p></p>
+</figure>
+</div>
 </section>
 <section id="downloads" class="level2 page-columns page-full">
 <h2 class="anchored" data-anchor-id="downloads">Downloads</h2>
 
 <div class="no-row-height column-margin column-container"><div class="">
 <p><strong>Latest Updates</strong></p>
-<p>v0.3.5</p>
-<hr>
+<section id="v.0.8.1" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.8.1">v.0.8.1</h2>
 <ul>
-<li>Fixed an issue where a small number of slices were not translated.</li>
-<li>Fixed an issue where JCAST quits if the model flag is not set.</li>
+<li>Minor bug fixes</li>
+</ul>
+</section>
+<section id="v.0.8.0" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.8.0">v.0.8.0</h2>
+<ul>
+<li>Added support for automatic isotopomer selection. To use this feature, run <code>riana/riana.py</code> with <code>--fs Auto</code>.</li>
+<li>Added experimental support for in vitro heavy water labeling. To use this feature, run <code>riana/riana.py</code> with <code>--label hw_cell</code>.</li>
+</ul>
+</section>
+<section id="v.0.7.2" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.7.2">v.0.7.2</h2>
+<ul>
+<li>Included additional Snakemake options in the config files</li>
+<li>The argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8</li>
 </ul>
 <blockquote class="blockquote">
 <p>See <a href="./change.html">Change Log</a> for details.</p>
 </blockquote>
-</div></div><p>The latest version and source code of JCAST can be found on github: <a href="https://github.com/ed-lau/jcast" class="uri">https://github.com/ed-lau/jcast</a>.</p>
+</section>
+</div></div><p>The latest version and source code of RIANA can be found on github: <a href="https://github.com/ed-lau/riana" class="uri">https://github.com/ed-lau/riana</a>.</p>
 <p>See the <a href="./install.html">Quick Start</a> and <a href="./about.html">Documentation</a> for instructions.</p>
 </section>
 <section id="contributors" class="level2">
 <h2 class="anchored" data-anchor-id="contributors">Contributors</h2>
 <ul>
-<li>Edward Lau, PhD</li>
-<li>Maggie Lam, PhD</li>
-<li>R W LudWig, BSc</li>
+<li>Edward Lau, PhD - <a href="https://github.com/ed-lau">ed-lau</a></li>
+<li>Jordan Currie, MSc - <a href="https://github.com/jordancurrie">jordancurrie</a></li>
 </ul>
 </section>
 <section id="citations" class="level2">
 <h2 class="anchored" data-anchor-id="citations">Citations</h2>
-<p><strong>JCAST: Sample-Specific Protein Isoform Databases for Mass Spectrometry-based Proteomics Experiments.</strong> RW Ludwig, E Lau <em>Software Impacts</em> 10, 100163</p>
-<p><strong>Determining Alternative Protein Isoform Expression Using RNA Sequencing and Mass Spectrometry.</strong> Y Han, JM Wright, E Lau, MPY Lam <em>STAR Protocols</em> 1 (3), 100138</p>
-<p><strong>Splice-Junction-based Mapping of Alternative Isoforms in the Human Proteome.</strong> E Lau, Y Han, DR Williams, CT Thomas, R Shrestha, JC Wu, MPY Lam <em>Cell Reports</em> 29 (11), 3751-3765. e5</p>
+<p>If you use RIANA or the associated methods, please consider citing the following papers:</p>
+<p>Original publication, heavy water and SILAC comparison:</p>
+<ol type="1">
+<li><strong>Harmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult animals</strong> Hammond DE, Simpson DM, Franco C, Wright Muelas M, Wasters J, Ludwig RW, PRescott MC, Hurst JL, Beynon RJ, E Lau <em>Molecular &amp; Cellular Proteomics</em> 2022, 100252 <a href="https://doi.org/10.1016/j.mcpro.2022.100252">doi:10.1016/j.mcpro.2022.100252</a> Epub 2022 May 28. PMID: 35636728; PMCID: PMC9249856.</li>
+</ol>
+<p>Rule-based mass isotopomer selection method for heavy water:</p>
+<ol start="2" type="1">
+<li><strong>Improved Method to Determine Protein Turnover Rates with Heavy Water Labeling by Mass Isotopomer Ratio Selection</strong> Currie J, Ng DCM, Pandi B, Black A, Manda V, Durham C, Pavelka J, Lam MPY, Lau E. <em>Journal of Proteome Researcb</em> 2025 Apr 4;24(4):1992-2005. <a href="https://doi.org/10.1021/acs.jproteome.4c01012">doi: 10.1021/acs.jproteome.4c01012</a> Epub 2025 Mar 18. PMID: 40100644; PMCID: PMC11977540.</li>
+</ol>
+<p>Application of heavy water labeling to cell culture:</p>
+<ol start="3" type="1">
+<li><strong>Deuterium Labeling Enables Proteome Wide Turnover Kinetics Analysis in Cell Culture</strong> Alamillo L, Ng DCM, Currie J, Black A, Pandi B, Manda V, Pavelka J, Schaal P, Travers JG, McKinsey TA, Lam MPY, Lau E. <em>bioRxiv [Preprint]</em> 2025 Jan 31:2025.01.30.635596. <a href="https://doi.org/10.1101/2025.01.30.635596">doi: 10.1101/2025.01.30.635596</a> PMID: 39975278; PMCID: PMC11838351.</li>
+</ol>
 
 
 </section>
@@ -299,19 +342,10 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script>
-<nav class="page-navigation">
-  <div class="nav-page nav-page-previous">
-  </div>
-  <div class="nav-page nav-page-next">
-      <a href="./install.html" class="pagination-link">
-        <span class="nav-page-text">Quick Start</span> <i class="bi bi-arrow-right-short"></i>
-      </a>
-  </div>
-</nav>
 </div> <!-- /content -->
 <footer class="footer">
   <div class="nav-footer">
-    <div class="nav-footer-left">© Copyright 2022, Edward Lau</div>   
+    <div class="nav-footer-left">© Copyright 2021–2025 <a href="https://laulab.net">Lau Lab Colorado</a></div>   
     <div class="nav-footer-right">This page is built with <a href="https://quarto.org/">Quarto</a>.</div>
   </div>
 </footer>
