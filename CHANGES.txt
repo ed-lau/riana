@@ -1,5 +1,7 @@
 ## CHANGES
 ---
+## Update v.0.8.1
+* Minor bug fixes
 
 ## Update v.0.8.0
 * Added support for automatic isotopomer selection. To use this feature, run `riana/riana.py` with `--fs Auto`.
