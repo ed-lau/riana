@@ -6,12 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="author" content="Edward Lau">
-<meta name="dcterms.date" content="2023-04-25">
-<meta name="keywords" content="Protein turnover, Proteomics, Mass spectrometry">
-<meta name="description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 
-<title>RIANA v0.7.1 - Quick Start</title>
+<title>JCAST v0.3.5 - Quick Start</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -19,79 +15,17 @@ span.underline{text-decoration: underline;}
 div.column{display: inline-block; vertical-align: top; width: 50%;}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-    color: #aaaaaa;
-  }
-pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
-code span.al { color: #ff0000; font-weight: bold; } /* Alert */
-code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
-code span.at { color: #7d9029; } /* Attribute */
-code span.bn { color: #40a070; } /* BaseN */
-code span.bu { } /* BuiltIn */
-code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
-code span.ch { color: #4070a0; } /* Char */
-code span.cn { color: #880000; } /* Constant */
-code span.co { color: #60a0b0; font-style: italic; } /* Comment */
-code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
-code span.do { color: #ba2121; font-style: italic; } /* Documentation */
-code span.dt { color: #902000; } /* DataType */
-code span.dv { color: #40a070; } /* DecVal */
-code span.er { color: #ff0000; font-weight: bold; } /* Error */
-code span.ex { } /* Extension */
-code span.fl { color: #40a070; } /* Float */
-code span.fu { color: #06287e; } /* Function */
-code span.im { } /* Import */
-code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
-code span.kw { color: #007020; font-weight: bold; } /* Keyword */
-code span.op { color: #666666; } /* Operator */
-code span.ot { color: #007020; } /* Other */
-code span.pp { color: #bc7a00; } /* Preprocessor */
-code span.sc { color: #4070a0; } /* SpecialChar */
-code span.ss { color: #bb6688; } /* SpecialString */
-code span.st { color: #4070a0; } /* String */
-code span.va { color: #19177c; } /* Variable */
-code span.vs { color: #4070a0; } /* VerbatimString */
-code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
 </style>
 
 
 <script src="site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="site_libs/quarto-nav/headroom.min.js"></script>
 <script src="site_libs/clipboard/clipboard.min.js"></script>
 <script src="site_libs/quarto-search/autocomplete.umd.js"></script>
 <script src="site_libs/quarto-search/fuse.min.js"></script>
 <script src="site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="./">
+<link href="./about.html" rel="next">
+<link href="./index.html" rel="prev">
 <script src="site_libs/quarto-html/quarto.js"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
@@ -102,11 +36,11 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
-  "location": "navbar",
+  "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
-  "panel-placement": "end",
-  "type": "overlay",
+  "panel-placement": "start",
+  "type": "textbox",
   "limit": 20,
   "language": {
     "search-no-results-text": "No results",
@@ -123,253 +57,187 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA v0.7.1 - Quick Start">
-<meta property="og:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
-<meta property="og:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
-<meta property="og:site-name" content="RIANA v0.7.1">
-<meta property="og:image:height" content="1034">
-<meta property="og:image:width" content="2550">
-<meta property="og:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
-<meta name="twitter:title" content="RIANA v0.7.1 - Quick Start">
-<meta name="twitter:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
+<meta property="og:title" content="JCAST v0.3.5 - Quick Start">
+<meta property="og:description" content="Launch JCAST as a module (Usage/Help):">
+<meta property="og:site-name" content="JCAST v0.3.5">
+<meta name="twitter:title" content="JCAST v0.3.5 - Quick Start">
+<meta name="twitter:description" content="Launch JCAST as a module (Usage/Help):">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
-<meta name="twitter:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
+<meta name="twitter:image-height" content="643">
+<meta name="twitter:image-width" content="1313">
 <meta name="twitter:card" content="summary_large_image">
 </head>
 
-<body class="nav-fixed">
+<body class="nav-sidebar docked">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand-lg navbar-dark ">
-      <div class="navbar-container container-fluid">
-      <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA v0.7.1</span>
-  </a>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
-  <span class="navbar-toggler-icon"></span>
-</button>
-          <div class="collapse navbar-collapse" id="navbarCollapse">
-            <ul class="navbar-nav navbar-nav-scroll me-auto">
-  <li class="nav-item">
-    <a class="nav-link" href="./index.html">Home</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link active" href="./install.html" aria-current="page">Quick Start</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="./about.html">Documentation</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="./change.html">Change Log</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="./faqs.html">FAQs</a>
-  </li>  
-</ul>
-              <div id="quarto-search" class="" title="Search"></div>
-          </div> <!-- /navcollapse -->
-      </div> <!-- /container-fluid -->
-    </nav>
+  <nav class="quarto-secondary-nav" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+    <div class="container-fluid d-flex justify-content-between">
+      <h1 class="quarto-secondary-nav-title">Quick Start</h1>
+      <button type="button" class="quarto-btn-toggle btn" aria-label="Show secondary navigation">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </nav>
 </header>
 <!-- content -->
-<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
 <!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-center sidebar-header">
+      <a href="./" class="sidebar-logo-link">
+      <img src="./images/jcast.png" alt="" class="sidebar-logo py-0 d-lg-inline d-none">
+      </a>
+      <div class="sidebar-tools-main">
+    <a href="https://github.com/ed-lau/jcast" title="GitHub repository" class="sidebar-tool px-1"><i class="bi bi-github"></i></a>
+</div>
+      </div>
+      <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+      </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">Home</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./install.html" class="sidebar-item-text sidebar-link active">Quick Start</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./about.html" class="sidebar-item-text sidebar-link">Documentation</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./change.html" class="sidebar-item-text sidebar-link">Change Log</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./faqs.html" class="sidebar-item-text sidebar-link">FAQs</a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
         <nav id="TOC" role="doc-toc">
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#installing-riana" id="toc-installing-riana" class="nav-link active" data-scroll-target="#installing-riana">Installing RIANA</a></li>
-  <li><a href="#processing-datasets" id="toc-processing-datasets" class="nav-link" data-scroll-target="#processing-datasets">Processing Datasets</a>
+  <li><a href="#installing-jcast" id="toc-installing-jcast" class="nav-link active" data-scroll-target="#installing-jcast">Installing JCAST</a>
   <ul class="collapse">
-  <li><a href="#via-snakemake" id="toc-via-snakemake" class="nav-link" data-scroll-target="#via-snakemake">Via Snakemake</a></li>
-  <li><a href="#manual-runs" id="toc-manual-runs" class="nav-link" data-scroll-target="#manual-runs">Manual Runs</a></li>
+  <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
   </ul></li>
-  <li><a href="#output" id="toc-output" class="nav-link" data-scroll-target="#output">Output</a></li>
+  <li><a href="#running-jcast" id="toc-running-jcast" class="nav-link" data-scroll-target="#running-jcast">Running JCAST</a></li>
+  <li><a href="#example-usage" id="toc-example-usage" class="nav-link" data-scroll-target="#example-usage">Example Usage</a></li>
   </ul>
-<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/jcast/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Quick Start</h1>
+<h1 class="title d-none d-lg-block">Quick Start</h1>
 </div>
 
-<div>
-  <div class="description">
-    RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
 
-    <div>
-    <div class="quarto-title-meta-heading">Author</div>
-    <div class="quarto-title-meta-contents">
-             <p>Edward Lau </p>
-          </div>
-  </div>
     
-    <div>
-    <div class="quarto-title-meta-heading">Published</div>
-    <div class="quarto-title-meta-contents">
-      <p class="date">April 25, 2023</p>
-    </div>
-  </div>
     
   </div>
   
-<div>
-  <div class="abstract">
-    <div class="abstract-title">Abstract</div>
-    This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements.
-  </div>
-</div>
 
 </header>
 
-<section id="installing-riana" class="level2">
-<h2 class="anchored" data-anchor-id="installing-riana">Installing RIANA</h2>
+<section id="installing-jcast" class="level2">
+<h2 class="anchored" data-anchor-id="installing-jcast">Installing JCAST</h2>
+<section id="requirements" class="level3">
+<h3 class="anchored" data-anchor-id="requirements">Requirements</h3>
 <p>Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.</p>
-<p>Riana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.</p>
-<pre><code>$ pip install riana</code></pre>
-<p>Launch riana as a module (Usage/Help):</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> riana</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Alternatively as a console entry point:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> riana</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>To test that the installation can load test data files in tests/data:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> pip install tox</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> tox</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and write the results to a specified <code>out/test/</code> directory</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt <span class="at">-q</span> 0.1 <span class="at">-i</span> 0,1,2,3,4,5 <span class="at">-o</span> out/test/</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>JCAST can be installed from PyPI via pip. We recommend using a virtual environment.</p>
+<p><code>$ pip install jcast</code></p>
 </section>
-<section id="processing-datasets" class="level2">
-<h2 class="anchored" data-anchor-id="processing-datasets">Processing Datasets</h2>
-<section id="via-snakemake" class="level3">
-<h3 class="anchored" data-anchor-id="via-snakemake">Via Snakemake</h3>
-<p>RIANA comes with a <code>Snakemake</code> pipeline which is the recommended way to run RIANA. To configure, edit the provided <code>config_template.yaml</code> to specify the location of Comet and Percolator executables. Then run Snakemake with the provided <code>Snakefile</code>, e.g.,:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> snakemake <span class="at">-c</span> <span class="at">-s</span> ./Snakefile <span class="at">-d</span> out/snakemake_test <span class="at">--configfile</span> ./config_template.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Refer to <code>Snakemake</code> documentations for details on configuring snake files.</p>
-<div class="callout-tip callout callout-style-default callout-captioned">
+</section>
+<section id="running-jcast" class="level2">
+<h2 class="anchored" data-anchor-id="running-jcast">Running JCAST</h2>
+<p>Launch JCAST as a module (Usage/Help):</p>
+<p><code>$ python -m jcast</code></p>
+<p>Alternatively:</p>
+<p><code>$ jcast</code></p>
+<p>Example command:</p>
+<p><code>$ python -m jcast  data/encode_human_pancreas/ data/gtf/Homo_sapiens.GRCh38.89.gtf data/gtf/Homo_sapiens.GRCh38.89.gtf data/genome/Homo_sapiens.GRCh38.dna.primary_assembly.fa -o encode_human_pancreas -q 0 1 -r 1 -m -c</code></p>
+<p>To test that the installation can load test data files in tests/data (sample rMATS file and human chr 15 genome files)</p>
+<p><code>$ pip install tox  $ tox</code></p>
+<p>To run JCAST using the test files and print the results to Desktop</p>
+<p><code>$ python -m jcast {j}/tests/data/rmats {j}/tests/data/genome/Homo_sapiens.GRCh38.89.chromosome.15.gtf  {j}/tests/data/genome/Homo_sapiens.GRCh38.dna.chromosome.15.fa.gz -o ~/Desktop</code></p>
+<p>where {j} is replaced by the path to JCAST.</p>
+</section>
+<section id="example-usage" class="level2">
+<h2 class="anchored" data-anchor-id="example-usage">Example Usage</h2>
+<p>The following is an example using JCAST to generate custom databases from ENCODE public RNA-seq dataset to generate a cardiac-specific database with JCAST.</p>
+<section id="download-rna-seq-from-encode" class="level4">
+<h4 class="anchored" data-anchor-id="download-rna-seq-from-encode">Download RNA-Seq from ENCODE:</h4>
+<p>As an example, we will download the .fastq files from ENCODE adult human heart <a href="https://www.encodeproject.org/experiments/ENCSR436QDU/">dataset 1</a> and <a href="https://www.encodeproject.org/experiments/ENCSR391VGU/">dataset 2</a>.</p>
+</section>
+<section id="align-the-fastq-files-to-a-reference-genome" class="level4">
+<h4 class="anchored" data-anchor-id="align-the-fastq-files-to-a-reference-genome">Align the FASTQ files to a reference genome</h4>
+<p>Read alignment can be performed using STAR &gt;= v.2.5.0, e.g.,:</p>
+<pre><code>$ STAR --runThreadN 10 --genomeDir path/to/GRCh38/STARindex --sjdbGTFfile path/to/Homo_sapiens.gtf --sjdbOverhang 100 --readFilesIn ./ENCFF781VGS.fastq.gz ./ENCFF466ZAS.fastq.gz --readFilesCommand zcat --outSAMtype BAM SortedByCoordinate --outFileNamePrefix ./STAR_aligned/b1t1/
+$ STAR --runThreadN 10 --genomeDir path/to/GRCh38/STARindex --sjdbGTFfile path/to/Homo_sapiens.gtf --sjdbOverhang 100 --readFilesIn ./ENCFF731CDK.fastq.gz ./ENCFF429YOS.fastq.gz --readFilesCommand zcat --outSAMtype BAM SortedByCoordinate --outFileNamePrefix ./STAR_aligned/b2t1/</code></pre>
+<p>Note: Arguments including runThreadN and sjdbOverhang should be customized to suit your system and data files. Please refer to the STAR documentations for details.</p>
+</section>
+<section id="identify-transcript-splice-junctions" class="level4">
+<h4 class="anchored" data-anchor-id="identify-transcript-splice-junctions">Identify transcript splice junctions</h4>
+<p>Splice junctions can be found using <a href="http://rnaseq-mats.sourceforge.net">rMATS</a> with the .bam files following STAR. Please refer to the rMATS instructions for latest commands. The following example was tested using rmats-turbo-0.1 running in Docker and using rMATS v.4.1.0/Python 3.7. Support for <a href="https://ccb.jhu.edu/software/stringtie/">stringtie</a> assembled transcripts will be implemented in a future version.</p>
+</section>
+<section id="set-up-a-virtual-environment-for-rmats-turbo-0.1-in-python-2.7-only-if-needed" class="level4">
+<h4 class="anchored" data-anchor-id="set-up-a-virtual-environment-for-rmats-turbo-0.1-in-python-2.7-only-if-needed">Set up a Virtual Environment for rMATS turbo 0.1 in Python 2.7 (only if needed)</h4>
+</section>
+<section id="install-the-rmats-image" class="level4">
+<h4 class="anchored" data-anchor-id="install-the-rmats-image">Install the rMATS image</h4>
+<p>Follow instructions from rMATS and docker specific to your OS. E.g.:</p>
+<pre><code>$ sudo docker load -i rmats-turbo-0.1.tar</code></pre>
+</section>
+<section id="prepare-the-rmats-subdirectory" class="level4">
+<h4 class="anchored" data-anchor-id="prepare-the-rmats-subdirectory">Prepare the /rMATS subdirectory</h4>
+<p>Copy the individual .bam files from STAR into the rMATS subdirectory and rename them b1t1.bam, b1t2.bam, b2t1.bam, b2t2.bam, etc. Copy the GTF file from the Genomes folder as GRCm38.gtf. Write a b1.txt file with a text editor containing the following docker virtual directories:</p>
+<pre><code>/data/b1t1.bam,/data/b1t2.bam</code></pre>
+<p>Write a b2.txt file</p>
+<pre><code>/data/b2t1.bam,/data/b2t2.bam</code></pre>
+<p>Go back to the data directory and run the rMATS image. The -v flag mounts the host directory into the docker container at /data, which corresponds to the visual directories in the b1.txt and b2.txt files.</p>
+<pre><code>$ sudo docker run -v path/to/data/directory:/data rmats:turbo01 --b1 /data/b1.txt --b2 /data/b2.txt --gtf /data/GRCh38.gtf --od /data/output -t paired  --nthread 4 --readLength 101 --anchorLength 1</code></pre>
+<div class="callout-note callout callout-style-default callout-captioned">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
 <div class="callout-caption-container flex-fill">
-Curve plotting
+Note
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>Note that the provided <code>Snakefile</code> settings do not automatically output plotted curves or pre-integration intensity files by default. To output these files, edit the <code>Snakefile</code> to add <code>-w</code> and <code>p</code> to the shell commands under the integrate and fit rules, respectively.</p>
+<p>Note: Arguments including <code>nThread</code>, <code>readLength</code>, and <code>anchorLength</code> should be customized to suit your system and data files. Please refer to the <a href="https://github.com/Xinglab/rmats-turbo">rMATS</a> documentations for details.</p>
 </div>
 </div>
-<p>Below is the <code>config_template.yaml</code>:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Config</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Data location. Add as many lines as needed, sample names should be named after</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># labeling time points (e.g., time12 for 12 days/12 hours of experiment)</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time0</span><span class="kw">:</span><span class="at"> /path/to/time0/folder</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time1</span><span class="kw">:</span><span class="at"> /path/to/time1/folder</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time3</span><span class="kw">:</span><span class="at"> /path/to/time3/folder</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time6</span><span class="kw">:</span><span class="at"> /path/to/time6/folder</span></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Paths to the comet executable, the comet params file, the database, and the percolator executable</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="co"># The Snakefile assumes riana can be executed in the shell by riana</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="fu">paths</span><span class="kw">:</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet</span><span class="kw">:</span><span class="at"> /path/to/comet_source_2020013/comet.exe</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet_params</span><span class="kw">:</span><span class="at"> /path/to/params/comet.params</span></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fasta</span><span class="kw">:</span><span class="at"> /path/tp/database.fas</span></span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">percolator</span><span class="kw">:</span><span class="at"> /path/to/percolator</span></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Integration and fitting parameters</span></span>
-<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="fu">params</span><span class="kw">:</span></span>
-<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">model</span><span class="kw">:</span><span class="at"> simple</span><span class="co">     # fitting model (simple, guan, fornasiero)</span></span>
-<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">label_type</span><span class="kw">:</span><span class="at"> hw</span><span class="co">        # labeling type (aa or hw)</span></span>
-<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">isotopomers</span><span class="kw">:</span><span class="at"> 0,1,2,3,4,5</span><span class="co">   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy aa)</span></span>
-<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mass_tol</span><span class="kw">:</span><span class="at"> </span><span class="dv">15</span><span class="co">         # mass tolerance in ppm for integration (e.g., 25)</span></span>
-<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ria_max</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">          # final precursor ria</span></span>
-<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kp</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span><span class="co">              # guan model parameter (kp) or fornasiero model parameter (b)</span></span>
-<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.15</span><span class="co">              # fornasiero model parameter (a)</span></span>
-<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rp</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.52</span><span class="co">              # fornasiero model parameter (r)</span></span>
-<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">depth</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">             # minimum number of data points</span></span>
-<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">aa</span><span class="kw">:</span><span class="at"> K</span><span class="co">                 # which amino acid carries heavy label; only relevant if label_type is aa</span></span>
-<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mass_defect</span><span class="kw">:</span><span class="at"> D</span><span class="co">        # which isotope mass defect to use (D, C13, SILAC)</span></span>
-<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of threads</span></span>
-<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a><span class="fu">threads</span><span class="kw">:</span></span>
-<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
-<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">riana</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
-<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fitcurve</span><span class="kw">:</span><span class="at"> </span><span class="dv">12</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="manual-runs" class="level3">
-<h3 class="anchored" data-anchor-id="manual-runs">Manual Runs</h3>
-<p>Alternatively, RIANA can be directly called from command line given the paths to the folder of the mzML files and the Search/Percolator results. To run the turnover analysis pipeline manually, prepare the following expected input files:</p>
-<ul>
-<li><p>RIANA was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.</p></li>
-<li><p>The following workflow has been tested for both amino acid and heavy water labeling data gathered on a Q-Exactive instrument:</p></li>
-<li><p>Convert raw files to mzML, using pwiz 3.0 msconvert in command line, with the following option:</p>
-<ul>
-<li><code>--filter "peakPicking vendor"</code></li>
-</ul></li>
-<li><p>Download the latest Crux distribution</p></li>
-<li><p>Run Tide index with the following options:</p>
-<ul>
-<li><code>--digestion partial-digest</code></li>
-<li><code>--missed-cleavages</code></li>
-</ul></li>
-<li><p>Run Tide search <em>for each experimental time point separately</em> with the following options:</p>
-<ul>
-<li><code>--isotope-error 1,2</code> (for HW) or <code>6,12</code> (for AA)</li>
-<li><code>--compute-sp T</code></li>
-<li><code>--mz-bin-width 0.02</code></li>
-<li><code>--mz-bin-offset 0.0</code></li>
-<li><code>--precursor-window 20</code></li>
-<li><code>--precursor-window-type ppm</code></li>
-</ul></li>
-<li><p>Run Percolator with the following options:</p>
-<ul>
-<li><code>--protein T</code></li>
-<li><code>--decoy-prefix DECOY_</code></li>
-</ul></li>
-<li><p>Run RIANA <code>integrate</code> <em>for each experimental time point separately</em>.</p></li>
-<li><p>Run RIANA <code>fit</code></p></li>
-</ul>
-<div class="callout-tip callout callout-style-default callout-captioned">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-caption-container flex-fill">
-Specifying paths
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Note that the <code>mzml_path</code> argument should point to the directory where all mzML fractions (fraction1.mzML, fraction2.mzML, etc.) for each labeling time point are located, whereas the <code>id_path</code> argument should point to a <code>percolator.target.psms.txt</code> file from the output of searching and post-processing all the mzML files in that labeling time point together</p>
-</div>
-</div>
-</section>
-</section>
-<section id="output" class="level2">
-<h2 class="anchored" data-anchor-id="output">Output</h2>
-<p>RIANA <code>integrate</code> outputs a <code>{sample}_riana.txt</code> file for each sample, which contains the Percolator output appended with additional columns, e.g., <code>m0</code>, <code>m6</code>, <code>m12</code>, which contains the integrated areas of each isotopomer of each peptide over a retention time range in the mass spectrometry data. The output columns depend on the isotopomer indices specified.</p>
-<p>In addition, the <code>{sample}_riana_intensities.txt</code> files contain the individual intensity data of each isotopomer in each retention time point prior to integration.</p>
-<p>RIANA <code>fit</code> outputs a <code>riana_fit_peptides.csv</code> file which contains the best-fit k, R<sup>2</sup>, and <em>d</em>k for each peptide-charge combination.</p>
-<p>If the flag <code>--plotcurves</code> is set, RIANA additional outputs a graphical representation of each fitted curve:</p>
-<div class="quarto-figure quarto-figure-center">
-<figure class="figure">
-<p><img src="images/output.png" class="img-fluid figure-img"></p>
-<p></p><figcaption class="figure-caption">Best fit kinetic curve for a particular peptide across multiple labeling time points.</figcaption><p></p>
-</figure>
-</div>
+<p>Run the JCAST Python program specifying the path to the rMATS output directory, the genome sequence, as well as the GTF annotation file:</p>
+<pre><code>$ python -m jcast path/to/rMATS/output/encode_human_heart/ path/to/gtf/Homo_sapiens.GRCh38.89.gtf path/to/genome/Homo_sapiens.GRCh38.dna.primary_assembly.fa -o encode_human_heart</code></pre>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
@@ -470,10 +338,22 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="./index.html" class="pagination-link">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Home</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="./about.html" class="pagination-link">
+        <span class="nav-page-text">Documentation</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
 </div> <!-- /content -->
 <footer class="footer">
   <div class="nav-footer">
-    <div class="nav-footer-left">© Copyright 2021–2022 <a href="https://laulab.net">Lau Lab Colorado</a></div>   
+    <div class="nav-footer-left">© Copyright 2022, Edward Lau</div>   
     <div class="nav-footer-right">This page is built with <a href="https://quarto.org/">Quarto</a>.</div>
   </div>
 </footer>

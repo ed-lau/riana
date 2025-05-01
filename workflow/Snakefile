@@ -60,10 +60,11 @@ rule riana_fit:
         aa=config["params"]["aa"],
         depth=config["params"]["depth"],
         label_type=config["params"]["label_type"],
-        model=config["params"]["model"]
+        model=config["params"]["model"],
+        fs=config["params"]["fs"]
     threads: config["threads"]["fitcurve"]
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
-        "--aa {params.aa} --kr {params.kr} --rp {params.rp} --fs m0_mA " # --fs m1_mA --fs Auto
+        "--aa {params.aa} --kr {params.kr} --rp {params.rp} --fs {params.fs}" # --fs m1_mA --fs Auto
         "-t {threads} -r {params.ria} -l {params.label_type}"

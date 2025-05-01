@@ -40,7 +40,7 @@ scikit-learn==0.24.2
 Please contact us if you wish to contribute, and submit pull requests to us.
 
 
-## Authors
+## Contributors
 
 * **Edward Lau, PhD** - *Code/design* - [ed-lau](https://github.com/ed-lau)
 

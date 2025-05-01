@@ -6,12 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="author" content="Edward Lau">
-<meta name="dcterms.date" content="2023-04-25">
-<meta name="keywords" content="Protein turnover, Proteomics, Mass spectrometry">
-<meta name="description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 
-<title>RIANA v0.7.1 - Change Log</title>
+<title>JCAST v0.3.5 - Change Log</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -23,12 +19,13 @@ ul.task-list{list-style: none;}
 
 
 <script src="site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="site_libs/quarto-nav/headroom.min.js"></script>
 <script src="site_libs/clipboard/clipboard.min.js"></script>
 <script src="site_libs/quarto-search/autocomplete.umd.js"></script>
 <script src="site_libs/quarto-search/fuse.min.js"></script>
 <script src="site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="./">
+<link href="./faqs.html" rel="next">
+<link href="./about.html" rel="prev">
 <script src="site_libs/quarto-html/quarto.js"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
@@ -39,11 +36,11 @@ ul.task-list{list-style: none;}
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
-  "location": "navbar",
+  "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
-  "panel-placement": "end",
-  "type": "overlay",
+  "panel-placement": "start",
+  "type": "textbox",
   "limit": 20,
   "language": {
     "search-no-results-text": "No results",
@@ -60,177 +57,137 @@ ul.task-list{list-style: none;}
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="RIANA v0.7.1 - Change Log">
-<meta property="og:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
-<meta property="og:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
-<meta property="og:site-name" content="RIANA v0.7.1">
-<meta property="og:image:height" content="1034">
-<meta property="og:image:width" content="2550">
-<meta property="og:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
-<meta name="twitter:title" content="RIANA v0.7.1 - Change Log">
-<meta name="twitter:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
+<meta property="og:title" content="JCAST v0.3.5 - Change Log">
+<meta property="og:description" content="v0.3.5">
+<meta property="og:site-name" content="JCAST v0.3.5">
+<meta name="twitter:title" content="JCAST v0.3.5 - Change Log">
+<meta name="twitter:description" content="v0.3.5">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/jcast.png">
 <meta name="twitter:creator" content="@LauLabColorado">
-<meta name="twitter:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
+<meta name="twitter:image-height" content="643">
+<meta name="twitter:image-width" content="1313">
 <meta name="twitter:card" content="summary_large_image">
 </head>
 
-<body class="nav-fixed">
+<body class="nav-sidebar docked">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand-lg navbar-dark ">
-      <div class="navbar-container container-fluid">
-      <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">RIANA v0.7.1</span>
-  </a>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
-  <span class="navbar-toggler-icon"></span>
-</button>
-          <div class="collapse navbar-collapse" id="navbarCollapse">
-            <ul class="navbar-nav navbar-nav-scroll me-auto">
-  <li class="nav-item">
-    <a class="nav-link" href="./index.html">Home</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="./install.html">Quick Start</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="./about.html">Documentation</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link active" href="./change.html" aria-current="page">Change Log</a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="./faqs.html">FAQs</a>
-  </li>  
-</ul>
-              <div id="quarto-search" class="" title="Search"></div>
-          </div> <!-- /navcollapse -->
-      </div> <!-- /container-fluid -->
-    </nav>
+  <nav class="quarto-secondary-nav" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+    <div class="container-fluid d-flex justify-content-between">
+      <h1 class="quarto-secondary-nav-title">Change Log</h1>
+      <button type="button" class="quarto-btn-toggle btn" aria-label="Show secondary navigation">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </nav>
 </header>
 <!-- content -->
-<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
 <!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-center sidebar-header">
+      <a href="./" class="sidebar-logo-link">
+      <img src="./images/jcast.png" alt="" class="sidebar-logo py-0 d-lg-inline d-none">
+      </a>
+      <div class="sidebar-tools-main">
+    <a href="https://github.com/ed-lau/jcast" title="GitHub repository" class="sidebar-tool px-1"><i class="bi bi-github"></i></a>
+</div>
+      </div>
+      <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+      </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">Home</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./install.html" class="sidebar-item-text sidebar-link">Quick Start</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./about.html" class="sidebar-item-text sidebar-link">Documentation</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./change.html" class="sidebar-item-text sidebar-link active">Change Log</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./faqs.html" class="sidebar-item-text sidebar-link">FAQs</a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc">
-    <h2 id="toc-title">On this page</h2>
-   
-  <ul>
-  <li><a href="#update-v.0.7.1" id="toc-update-v.0.7.1" class="nav-link active" data-scroll-target="#update-v.0.7.1">Update v.0.7.1</a></li>
-  <li><a href="#update-v.0.7.0" id="toc-update-v.0.7.0" class="nav-link" data-scroll-target="#update-v.0.7.0">Update v.0.7.0</a></li>
-  <li><a href="#update-v.0.6.4" id="toc-update-v.0.6.4" class="nav-link" data-scroll-target="#update-v.0.6.4">Update v.0.6.4</a></li>
-  <li><a href="#update-v.0.6.3" id="toc-update-v.0.6.3" class="nav-link" data-scroll-target="#update-v.0.6.3">Update v.0.6.3</a></li>
-  <li><a href="#update-v.0.6.0" id="toc-update-v.0.6.0" class="nav-link" data-scroll-target="#update-v.0.6.0">Update v.0.6.0</a></li>
-  <li><a href="#update-v.0.5.0" id="toc-update-v.0.5.0" class="nav-link" data-scroll-target="#update-v.0.5.0">Update v.0.5.0</a></li>
-  <li><a href="#update-v.0.4.0" id="toc-update-v.0.4.0" class="nav-link" data-scroll-target="#update-v.0.4.0">Update v.0.4.0</a></li>
-  </ul>
-<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+        
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Change Log</h1>
+<h1 class="title d-none d-lg-block">Change Log</h1>
 </div>
 
-<div>
-  <div class="description">
-    RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
 
-    <div>
-    <div class="quarto-title-meta-heading">Author</div>
-    <div class="quarto-title-meta-contents">
-             <p>Edward Lau </p>
-          </div>
-  </div>
     
-    <div>
-    <div class="quarto-title-meta-heading">Published</div>
-    <div class="quarto-title-meta-contents">
-      <p class="date">April 25, 2023</p>
-    </div>
-  </div>
     
   </div>
   
-<div>
-  <div class="abstract">
-    <div class="abstract-title">Abstract</div>
-    This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements.
-  </div>
-</div>
 
 </header>
 
-<section id="update-v.0.7.1" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.7.1">Update v.0.7.1</h2>
+<p>v0.3.5</p>
+<hr>
 <ul>
-<li>Added parameter for mass defect -D to command line argument for riana integrate. See documentation for detail</li>
-<li>Added the flag -p to the command line argument for riana fit, which toggles plotting fitted curves</li>
-<li>Added the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities</li>
+<li>Fixed an issue where a small number of slices were not translated.</li>
+<li>Fixed an issue where JCAST quits if the model flag is not set.</li>
 </ul>
-</section>
-<section id="update-v.0.7.0" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.7.0">Update v.0.7.0</h2>
+<p>v0.3.2</p>
+<hr>
 <ul>
-<li>RIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting</li>
-<li>Added native support to perform curve-fitting and output best-fit curve plots</li>
-<li>Added support for one-pool, two-compartment (Guan et al.) and three-exponent (Fornasiero et al.) models</li>
-<li>Match between runs is temporarily disabled to support the Snakemake workflow and will return in a later version.</li>
+<li>The -q –qvalue option now works by including splice junctions within the specified range. To preserve the previous behavior, use -q 0.01 1. The default -q 0 1 disables filtering.</li>
+<li>The -c –canonical argument now defaults to False. To preserve prior behaviors, manually set the -c flag to translate canonical proteins detected in the RNA-seq experiments even if isoform translation failes</li>
+<li>The -c –canonical argument now will translate a canonical sequence even if a splice event has low skipped junction counts or falls outside of the specified fdr range</li>
+<li>JCAST now automatically models the likely translatable junction count threshold through the -m –model argument. Previously this was done manually then set as an integer (minimal read count) using the -r –read argument.</li>
+<li>The skipped junction counts used for modeling now consider the sum of all biological and technical replicates rather than the minimum</li>
 </ul>
-</section>
-<section id="update-v.0.6.4" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.6.4">Update v.0.6.4</h2>
+<p>v0.3.1</p>
+<hr>
 <ul>
-<li>Added support for standalone Percolator results for v.3.0.5.</li>
-<li>Organize the project in identical manner, include one psms.txt for target psms (output of Percolator -m tag) in each percolator folder.</li>
-<li>When using standalone Percolator dist, peptide masses are calculated de novo</li>
-<li>Toggle match between runs using –mbr or -b</li>
-<li>No longer writes results of individual fractions separately.</li>
+<li>Fixed issues where Gencode GTF files without transcript_biotype annotations could not be read</li>
+<li>Fixed issues of retrieving Uniprot canonical sequences from Ensembl transcript versions</li>
+<li>Compatibility with biopython&gt;=1.78</li>
 </ul>
-</section>
-<section id="update-v.0.6.3" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.6.3">Update v.0.6.3</h2>
+<p>v0.2.8</p>
+<hr>
 <ul>
-<li>Fixed an issue where mbr all-NaN slice causes an error</li>
-<li>Changed project directory structure so that mzml files have to be within an mzml subfolder and percolator files are in the percolator folder</li>
+<li>Fixed an issue where jcast is called twice from the direct cli entry point</li>
+<li>Added option to use longest coding sequence from GTF as canonical</li>
 </ul>
-</section>
-<section id="update-v.0.6.0" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.6.0">Update v.0.6.0</h2>
+<p>v0.2.6</p>
+<hr>
 <ul>
-<li>Started implementation of match between runs and restructured project for distribution via pip</li>
-</ul>
-</section>
-<section id="update-v.0.5.0" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.5.0">Update v.0.5.0</h2>
-<ul>
-<li>Updated to use pymzml 2.2.</li>
-<li>Multi-threading is now supported with the –thread argument.</li>
-<li>RIANA now loads all the spectra needed for integration into memory.</li>
-<li>Compared to v.0.4.0 there should now be a substantial speed gain and can finish a sizeable fraction (~1 Gb raw file) in 10 min.</li>
-<li>User-definable mass tolerance for MS1 integration is now supported via the –masstolerance argument [default 100 ppm].</li>
-</ul>
-</section>
-<section id="update-v.0.4.0" class="level2">
-<h2 class="anchored" data-anchor-id="update-v.0.4.0">Update v.0.4.0</h2>
-<ul>
-<li><p>Updated to use python 3.5+, up-to-date scipy and numpy, pymzml.</p></li>
-<li><p>Multi-fraction runs are now supported - the mzml files in the directory need to be the same as the order they appear in the Percolator indices (check the Percolator output log file if unsure). For the most cases this shouldn’t present a problem if the mzml directory contains exactly the same mzml files used for the database search, unless there is a difference in how the operating system order files on the search computer (e.g., file_10.mzml vs.&nbsp;file_2. mzml) or if one of the fractions contained no protein ID and Crux/Percolator decided to skip the file in its indexing.</p></li>
-<li><p>To support multi-fraction analysis, RIANA now takes in Percolator tab delimited files for protein ID rather than mzid. Mzid support will be added back in in a future version.</p></li>
+<li>Fixed an issue where some A5SS minus-strand transcripts had incorrect phases retrieved from gtf</li>
+<li>Fixed an issue where some transcripts using a secondary translation start sites are not trimmed</li>
 </ul>
 
 
-</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
@@ -330,10 +287,22 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="./about.html" class="pagination-link">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Documentation</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="./faqs.html" class="pagination-link">
+        <span class="nav-page-text">FAQs</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
 </div> <!-- /content -->
 <footer class="footer">
   <div class="nav-footer">
-    <div class="nav-footer-left">© Copyright 2021–2022 <a href="https://laulab.net">Lau Lab Colorado</a></div>   
+    <div class="nav-footer-left">© Copyright 2022, Edward Lau</div>   
     <div class="nav-footer-right">This page is built with <a href="https://quarto.org/">Quarto</a>.</div>
   </div>
 </footer>
