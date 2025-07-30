@@ -44,6 +44,7 @@ def integrate_all(args) -> None:
     # ---- Read in the Percolator file ----
     mzid = ReadPercolator(path=args.id_path,
                           sample=args.sample,
+                          _ignored_mods=args.ignored_mods,
                           logger=logger,
                           )
 
@@ -301,8 +302,15 @@ def get_isotopomer_intensity(index: int,
     # get peptide mass, scan number, and charge
     # peptide_mass = float(id_.loc[index, 'peptide mass'])
     # 2025-07-30 recalculate peptide mass from sequence, taking into account the _ignored_mods
-    peptide_mass = accmass.calculate_ion_mz(seq = id_.loc[index, 'sequence'],
-                                            ignored_mods = _ignored_mods)
+    # peptide_mass = accmass.calculate_ion_mz(seq = id_.loc[index, 'sequence'],
+    #                                        ignored_mods = _ignored_mods)
+
+    peptide_mass = id_.loc[index, 'peptide mass']
+
+    #print(f'Sequence is {id_.loc[index, "sequence"]}')
+    #print(f'Ignored mods are {_ignored_mods}')
+    #print(f'Calculated peptide mass is {peptide_mass}')
+    #print(f'Calculated peptide mass without ignored mods is {accmass.calculate_ion_mz(seq = id_.loc[index, "sequence"])}')
 
     charge = float(id_.loc[index, 'charge'])
 
@@ -346,6 +354,8 @@ def get_isotopomer_intensity(index: int,
 
             # calculate the precursor mass with the forced modification
             peptide_prec_shifted = peptide_prec + (_forced_mod / charge)
+            # print(f'List of forced mods: {_forced_mods}')
+            # print(f'Peptide precursor mass shifted by {_forced_mod} is {peptide_prec_shifted}')
 
             for iso in iso_to_do:
 

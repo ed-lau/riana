@@ -24,6 +24,7 @@ class ReadPercolator(object):
     def __init__(self,
                  path: str,
                  sample,
+                 _ignored_mods,
                  logger: logging.Logger,
 
                  ):
@@ -38,6 +39,7 @@ class ReadPercolator(object):
         # 20211109 self.samples = project.samples
         # 20211109 self.percolator_subdirectory = percolator_subdirectory
         self.sample = sample
+        self.ignored_mods = _ignored_mods
 
         self.id_df = pd.DataFrame()
         self.curr_sample_id_df = pd.DataFrame()
@@ -52,6 +54,8 @@ class ReadPercolator(object):
         self.read_psms() # Read the Percolator File
         self.indices = []
         self.get_current_sample_mzid_indices() # Get the indices of the fractions
+
+
 
 
 
@@ -91,7 +95,8 @@ class ReadPercolator(object):
             test_col = len(self.id_df['spectrum precursor m/z'])
 
             # 2021-12-21 calculate peptide mass because the crux peptide mass column does not include cysteine IAA mass
-            self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq) for seq in self.id_df['sequence']]
+            self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq, ignored_mods=self.ignored_mods
+                                                                   ) for seq in self.id_df['sequence']]
             self.logger.info(f'Crux Percolator file detected through the presence of spectrum precursor '
                         f'm/z column with length {test_col}')
 
@@ -127,7 +132,8 @@ class ReadPercolator(object):
             self.id_df['percolator score'] = 0
             self.id_df['spectrum neutral mass'] = 0
             self.id_df['distinct matches/spectrum'] = 0
-            self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq) for seq in self.id_df['sequence']]
+            self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq, ignored_mods=self.ignored_mods
+                                                                   ) for seq in self.id_df['sequence']]
 
             # Then read in the protein names and join them by comma instead of tab
             self.id_df['protein id'] = [','.join(ln.rstrip().split('\t')[5:]) for ln in f_ln[1:]]
