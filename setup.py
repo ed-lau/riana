@@ -10,7 +10,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
    name='riana',
-   version='0.8.1',
+   version='0.8.2',
    description='riana integrates the relative abundance of isotopomers in mass spectra',
 
    long_description=long_description,

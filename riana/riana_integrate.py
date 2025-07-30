@@ -21,6 +21,7 @@ from riana import constants
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
 from riana.logger import get_logger #, remove_logger
+from riana import accmass
 
 def integrate_all(args) -> None:
     """
@@ -150,8 +151,10 @@ def integrate_all(args) -> None:
                                                    rt_tolerance=args.r_time,
                                                    mass_tolerance=args.mass_tol,
                                                    use_range=True,
-                                                   mass_defect=args.mass_defect,
+                                                   mass_difference=args.mass_difference,  # 2025-07-30 Changed to mass difference specified directly by user
                                                    smoothing=args.smoothing,
+                                                   _ignored_mods=args.ignored_mods,
+                                                   _forced_mods=args.forced_mods,
                                                    )
 
         # Single threaded loop
@@ -246,7 +249,6 @@ def integrate_all(args) -> None:
         # print(overall_intensities_out_df)
         overall_intensities_out_df.to_csv(path_or_buf=os.path.join(args.out, args.sample + '_riana_intensities_summarized.txt'), sep='\t')
 
-
     tqdm.tqdm.write('Completed.')
 
     # Remove logging handlers
@@ -263,8 +265,10 @@ def get_isotopomer_intensity(index: int,
                              mass_tolerance: int,
                              mzml,
                              use_range: True,
-                             mass_defect: str = 'D',
+                             mass_difference: 1.003354835,
                              smoothing: int = None,
+                             _ignored_mods: list = [],
+                             _forced_mods: list = [],
                              ) -> list:
     """
     get all isotopomer mass intensities from ms1 scans within range for one peptide for integration
@@ -276,25 +280,36 @@ def get_isotopomer_intensity(index: int,
     :param mass_tolerance: relative mass tolerance (to be converted to ppm) e.g., 50
     :param mzml: mzml file object
     :param use_range: boolean whether to use all PSM scans for each peptide for RT determination
-    :param mass_defect: whether to use deuterium or c13 for mass defect
+    :param mass_difference: difference in mass between isotopomers, e.g., 1.003354835 for C13
     :param smoothing: int number of scans to smooth over
     :return: list of intensity over time [index, pep_id, m0, m1, m2, ...]
 
     """
 
+    # if _forced_mod is empty, add 0 to the list, if it is not empty, add 0 to the beginning of the list
+    if not _forced_mods:
+        _forced_mods = [0]
+    else:
+        _forced_mods = [0] + _forced_mods
+
     # determine the mass of protons and c13
     proton = constants.PROTON_MASS
-    if mass_defect == 'D':
-        iso_added_mass = constants.D_MASSDIFF  # see constants for details
-    elif mass_defect == 'SILAC':
-        iso_added_mass = constants.SILAC_MASSDIFF
-    elif mass_defect == "C13":
-        iso_added_mass = constants.C13_MASSDIFF
-    else:
-        raise ValueError(f'Invalid mass defect: {mass_defect}')
+    # if mass_defect == 'D':
+    #     iso_added_mass = constants.D_MASSDIFF  # see constants for details
+    # elif mass_defect == 'SILAC':
+    #     iso_added_mass = constants.SILAC_MASSDIFF
+    # elif mass_defect == "C13":
+    #     iso_added_mass = constants.C13_MASSDIFF
+    # else:
+    #     raise ValueError(f'Invalid mass defect: {mass_defect}')
+    # 2025-07-30 Changed to mass difference specified directly by user
+    iso_added_mass = mass_difference
 
     # get peptide mass, scan number, and charge
-    peptide_mass = float(id_.loc[index, 'peptide mass'])
+    # peptide_mass = float(id_.loc[index, 'peptide mass'])
+    # 2025-07-30 recalculate peptide mass from sequence, taking into account the _ignored_mods
+    peptide_mass = accmass.calculate_ion_mz(seq = id_.loc[index, 'sequence'],
+                                            ignored_mods = _ignored_mods)
 
     charge = float(id_.loc[index, 'charge'])
 
@@ -333,23 +348,28 @@ def get_isotopomer_intensity(index: int,
         except ValueError or IndexError:
             raise Exception('Scan does not correspond to MS1 data.')
 
-        for iso in iso_to_do:
+        # For each forced mod, loop through the isotopomers
+        for _forced_mod in _forced_mods:
+            # calculate the precursor mass with the forced modification
+            peptide_prec = peptide_prec + (_forced_mod / charge)
 
-            # set upper and lower mass tolerance bounds
-            prec_iso_am = peptide_prec + (iso * iso_added_mass / charge)
+            for iso in iso_to_do:
 
-            mass_tolerance_ppm = float(mass_tolerance) * 1e-6
+                # set upper and lower mass tolerance bounds
+                prec_iso_am = peptide_prec + (iso * iso_added_mass / charge)
 
-            delta_mass = prec_iso_am * mass_tolerance_ppm /2
+                mass_tolerance_ppm = float(mass_tolerance) * 1e-6
 
-            # sum intensities within range
-            matching_int = np.sum(spec[np.abs(spec[:, 0] - prec_iso_am) <= delta_mass, 1])
+                delta_mass = prec_iso_am * mass_tolerance_ppm /2
 
-            intensity_over_time.append([iso,
-                                        mzml.rt_idx[mzml.scan_idx == scan].item(),
-                                        matching_int,
-            ]
-            )
+                # sum intensities within range
+                matching_int = np.sum(spec[np.abs(spec[:, 0] - prec_iso_am) <= delta_mass, 1])
+
+                intensity_over_time.append([f"mod{_forced_mod}_iso{iso}",
+                                            mzml.rt_idx[mzml.scan_idx == scan].item(),
+                                            matching_int,
+                                            ]
+                                           )
 
 
     if not intensity_over_time:
@@ -362,9 +382,17 @@ def get_isotopomer_intensity(index: int,
     #                                                                                   iso_to_do=iso_to_do)
 
     # 2021-11-10 return intensities -- currently this is a pandas df which may be slower...
-    intensity_out = pd.DataFrame(intensity_over_time, columns=['iso', 'rt', 'int'])
-    intensity_out = intensity_out.pivot(index='rt', columns='iso', values='int')
-    intensity_out.columns = ['m' + str(iso) for iso in iso_to_do]
+    intensity_out = pd.DataFrame(intensity_over_time, columns=['mod_iso', 'rt', 'int'])
+    intensity_out['rt'] = intensity_out['rt'].round(6)
+
+    # 2021-11-10 pivot the dataframe to have mod_iso as columns and rt as index
+    intensity_out = intensity_out.pivot(index='rt',
+                                        columns='mod_iso',
+                                        values='int')
+
+    # 2021-11-10 add the forced mod names to the column names
+    intensity_out.columns = [f'[{mod}]_m{iso}' for mod in _forced_mods for iso in iso_to_do]
+
     intensity_out['rt'] = intensity_out.index
     intensity_out = intensity_out.reset_index(drop=True)
     intensity_out['ID'] = index
@@ -375,12 +403,15 @@ def get_isotopomer_intensity(index: int,
     # Smoothing with Savitzky-Golay filter
     if smoothing is not None:
         if smoothing > 0:
-            for m in ['m' + str(iso) for iso in iso_to_do]:
+            for m in [f'[{mod}]_m{iso}' for mod in _forced_mods for iso in iso_to_do]:
                 if np.sum(intensity_out[m]) > 0:
                     intensity_out[m] = scipy.signal.savgol_filter(x=intensity_out[m],
                                                                   window_length=smoothing,
                                                                   polyorder=1,
                                                                   mode='nearest')
+
+    # Remove [0]_ from the unmodified isotopomer in column names
+    intensity_out.columns = [col.replace('[0]_', '') for col in intensity_out.columns]
 
     return intensity_out # [integrated, intensity_out]
 

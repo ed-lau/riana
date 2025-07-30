@@ -28,6 +28,16 @@ class StoreUniqueSortedIsotopomers(argparse.Action):
         values.sort()
         setattr(namespace, self.dest, values)
 
+class StoreUniqueMods(argparse.Action):
+    """Checks that the list of arguments contains no duplicates, then stores"""
+    def __call__(self, parser, namespace, values: List[float], option_string=None):
+        if len(values) > len(set(values)):
+            raise argparse.ArgumentError(
+                self,
+                "You cannot specify the same value multiple times. "
+                + f"You provided {values}",
+            )
+        setattr(namespace, self.dest, values)
 
 class CheckSampleNameEndsWithNumber(argparse.Action):
     """ Check sample name contains a number then stores"""
@@ -218,11 +228,34 @@ def main():
                                   choices=range(3, 18, 2),
                                   )
 
-    parser_integrate.add_argument('-D', '--mass_defect',
-                                  type=str,
-                                  choices=['D', 'C13', 'SILAC'],
-                                  default='D',
-                                  help='mass defect type [default: D]')
+    parser_integrate.add_argument('-D', '--mass_difference',
+                                  type=float,
+                                  default=1.003354835,
+                                  help='mass difference between isotopomers [default: 1.003354835]')
+
+    parser_integrate.add_argument('-X', '--ignored_mods',
+                                  help='modification(s) to ignore in the search result for'
+                                       'calculating true peptide mass. This must match'
+                                       'the exact string in the search engine output'
+                                       'e.g., 6.02 for SILAC (default: [])',
+                                  default=[],
+                                  nargs='+',
+                                  type=float,
+                                  action=StoreUniqueMods,
+                                  )
+
+    parser_integrate.add_argument('-F', '--forced_mods',
+                                  help='modification(s) to always add to each peptide during integration'
+                                       'to create separate clusters of isotopomers'
+                                       'this is useful for SILAC experiments, e.g., 6.0201 for SILAC',
+                                  default=[],
+                                  nargs='+',
+                                  type=float,
+                                  action=StoreUniqueMods,
+                                  )
+
+
+
 
     parser_integrate.set_defaults(func=riana_integrate.integrate_all)
 
@@ -246,10 +279,12 @@ def main():
                             )
 
     parser_fit.add_argument('-l', '--label',
-                            type=str,
-                            choices=['aa', 'hw', 'o18', 'hw_cell'],
-                            default='hw',
-                            help='labeling type [default: hw]')
+                            type=int,
+                            choices=[1, 2, 3, 4],
+                            default=1,
+                            help='labeling types (1: Deuterium in vivo, 2: Deuterium in vitro, '
+                                 '3: Oxygen-18, 4: Amino acid labeling) '
+                                 ' [default: 1]')
 
     parser_fit.add_argument('-a', '--aa',
                             type=str,

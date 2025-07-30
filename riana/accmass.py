@@ -79,7 +79,8 @@ def _calc_atom_mass(atoms: list,
 
 def calculate_ion_mz(seq: str,
                      ion: str = 'M',
-                     charge: int = 0
+                     charge: int = 0,
+                     ignored_mods: list = [],
                      ) -> float:
     """
     given a peptide sequence and ion type, count the number of atoms, accounting for ion
@@ -107,7 +108,7 @@ def calculate_ion_mz(seq: str,
         raise ValueError('Modification contains string characters.')
 
     # 2021-11-22 exclude label mass from peptide mass calculation
-    mass += sum(m for m in mods if m not in params.label_mass)
+    mass += sum(m for m in mods if m not in ignored_mods)
 
     # 2021-05-18 strip all N-terminal n from Comet
     seq = re.sub('^n', '', seq)

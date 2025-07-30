@@ -9,34 +9,6 @@ Peptides
 iaa = True  # add iodoacetamide to all cysteine peptide mass automatically
 # deuterium_mass_defect = True  # Use the mass difference between 2H and H as isotopomer mass difference
 # silac_mass_defect = False  # Use a custom mass difference for SILAC experiments which contain a mix of 13C and 15N
-label_mass = [4.03,
-              6.02,
-              8.01,
-              8.05,
-              9.06,
-              10.01,
-              10.05,
-              12.04,
-              14.03,
-              16.03,
-              18.02,
-              20.02,
-              # 4 decimals
-              4.0251,
-              6.0201,
-              8.0142,
-              8.0502,
-              10.0083,
-              10.0452,
-              12.0393,
-              12.0403,
-              14.0334,
-              14.0343,
-              16.0284,
-              18.0225,
-              20.0165,
-              ]     # this is the label mass in amino acid
-# labeling; will be excluded from peptide mass calculation unlike other PTM masses
 
 """
 Curve-fitting

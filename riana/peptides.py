@@ -115,6 +115,10 @@ class ReadPercolator(object):
 
             # Create a sequence column for compatibility with Crux percolator
             self.id_df['sequence'] = [pep[2:-2] for pep in self.id_df['peptide']]
+
+            # Remove the trailing charge number in sequence
+            # self.id_df['sequence'] = self.id_df['sequence'].str.replace(r'\.\d+$', '', regex=True)
+
             # Create a flanking aa column for compatibility with Crux percolator
             self.id_df['flanking aa'] = [pep[0] + pep[-1] for pep in self.id_df['peptide']][1]
 

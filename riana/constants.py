@@ -19,9 +19,9 @@ PROTON_MASS = 1.007276466621  # proton mass, identical to scipy.constants.physic
 NEUTRON_MASS = 1.00866491595
 ELECTRON_MASS = 0.000548579907
 
-C13_MASSDIFF = 1.003354835  # mass difference of C13 - C12 = 1.003354835
-D_MASSDIFF = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
-SILAC_MASSDIFF = 1.001      # Average mass difference in SILAC (mixture of N15 or C13)
+# C13_MASSDIFF = 1.003354835  # mass difference of C13 - C12 = 1.003354835
+# D_MASSDIFF = 1.00627674589  # mass difference of deuterium - protium = 1.00627674589
+# SILAC_MASSDIFF = 1.001      # Average mass difference in SILAC (mixture of N15 or C13)
 
 # atomic masses.
 # TODO: check against scipy.constants and NIST
@@ -124,7 +124,7 @@ label_oxygens = {
     'A': 1.,
     'C': 1.,
     'D': 1.,
-    'E': 1.,
+    'E': 3.,
     'F': 1.,
     'G': 1.,
     'H': 1.,
@@ -132,12 +132,12 @@ label_oxygens = {
     'K': 1.,
     'L': 1.,
     'M': 1.,
-    'N': 1.,
+    'N': 2.,
     'P': 1.,
-    'Q': 1.,
+    'Q': 2.,
     'R': 1.,
-    'S': 2.,
-    'T': 2.,
+    'S': 1.,
+    'T': 1.,
     'V': 1.,
     'W': 1.,
     'Y': 1.,
@@ -154,3 +154,37 @@ iso_abundances = [0.9893,  # C12
                   0.99636,  # N14
                   0.9499,  # S32
                   ]
+
+"""
+Amino acid label mass
+# These are the label mass in amino acid labeling that can be excluded from peptide mass calculation
+# unlike other PTM masses, if speified in the args
+"""
+aa_label_mass = [4.03,
+                 6.02,
+                 8.01,
+                 8.05,
+                 9.06,
+                 10.01,
+                 10.05,
+                 12.04,
+                 14.03,
+                 16.03,
+                 18.02,
+                 20.02,
+                 # 4 decimals
+                 4.0251,
+                 6.0201,
+                 8.0142,
+                 8.0502,
+                 10.0083,
+                 10.0452,
+                 12.0393,
+                 12.0403,
+                 14.0334,
+                 14.0343,
+                 16.0284,
+                 18.0225,
+                 20.0165,
+                 ]
+

@@ -11,13 +11,13 @@ import numpy as np
 
 
 def calculate_a0(sequence: str,
-                 label: str,
+                 label: int,
                  ) -> float:
     """
     Calculates the initial isotope enrichment of a peptide prior to heavy water labeling
 
     :param sequence:    str: concat sequences
-    :param label:       str: aa, hw, hw_cell, or o18, if aa, return 1 assuming no heavy prior to labeling
+    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :return:            float: mi at time 0
     """
 
@@ -33,7 +33,7 @@ def calculate_a0(sequence: str,
 
 
 def calculate_label_n(sequence: str,
-                      label: str,
+                      label: int,
                       aa_res: str = 'K',
                       ) -> int:
     """
@@ -41,7 +41,7 @@ def calculate_label_n(sequence: str,
     or amino acid labeling
 
     :param sequence:    the peptide sequence
-    :param label:       aa, hw, o18, or hw_cell; if aa, only return the labelable residues
+    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :param aa_res:      the amino acid being labeled
     :return:
     """
@@ -50,26 +50,25 @@ def calculate_label_n(sequence: str,
     sequence = strip_concat(sequence)
 
     # if amino acid labeling, return number of labeled residues
-    if label == 'aa':
+    if label == 4:
         # return the sum of each residue in the aa_res
         return sum([sequence.count(i) for i in aa_res])
 
     # if heavy water (in vivo), return the number of labeling site in heavy water labeling in vivo
-    elif label == 'hw':
+    elif label == 1:
         return int(sum([constants.label_deuterium_commerford.get(char) for char in sequence]))
 
     # if heavy water cell, return the differential evolution best fit values
-    elif label == 'hw_cell':
+    elif label == 2:
         return int(sum([constants.label_deuterium_de.get(char) for char in sequence]))
 
     # else if o18, return the number of labeling sites for o18
-    elif label == 'o18':
+    elif label == 3:
         return int(sum([constants.label_oxygens.get(char) for char in sequence]) - 1)
-
 
 def calculate_fs_m0(a: np.ndarray,
                     seq: str,
-                    label: str,
+                    label: int,
                     ria_max: float,
                     num_labeling_sites: int,
                     ) -> float:
@@ -78,7 +77,7 @@ def calculate_fs_m0(a: np.ndarray,
 
     :param a:       m_i at a particular time
     :param seq:     the peptide sequence
-    :param label:   aa, hw, or o18
+    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :param ria_max: the precursor RIA
     :param num_labeling_sites: the number of labeling sites
 
@@ -100,7 +99,7 @@ def calculate_fs_m0(a: np.ndarray,
 
 def calculate_fs_fine_structure(a: np.ndarray,
                                 seq: str,
-                                label: str,
+                                label: int,
                                 ria_max: float,
                                 formula: str = 'm0_m1',
                                 ) -> float:
@@ -111,7 +110,7 @@ def calculate_fs_fine_structure(a: np.ndarray,
     accurate method of calculating fractional synthesis rates than the calculate_fs_m0 method.
     :param a:                   m_i at a particular time
     :param seq:                 the peptide sequence
-    :param label:               hw, hw_cell, or o18
+    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :param ria_max:             the precursor RIA
     :param formula:             the formula to calculate the fractional synthesis rate
     :return:                    the fractional synthesis rate

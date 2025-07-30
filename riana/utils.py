@@ -31,7 +31,7 @@ def strip_concat(sequence: str,
 
 def get_peptide_distribution(peptide: str,
                              deuterium_enrichment_level: float = None,
-                             label: str = 'hw',
+                             label: int = 1,
                              num_labeling_sites: int = 0,
                              ) -> IsoSpecPy.Iso:
 
@@ -40,13 +40,13 @@ def get_peptide_distribution(peptide: str,
 
     :param peptide:                     the peptide sequence
     :param deuterium_enrichment_level:  the deuterium enrichment level of the sample
-    :param label:                       the type of labeling, either 'hw'/'hw_cell' for heavy water or 'o18' for oxygen-18
+    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :param num_labeling_sites:          the number of labeling sites
     :return:                            IsoSpecPy Distribution of atom counts, isotope masses, and isotope probabilities
     """
 
     # Check that label must be one of hw, hw_cell, or o18
-    assert label in ['hw', 'hw_cell', 'o18'], 'Label must be one of hw, hw_cell, or o18'
+    assert label in [1, 2, 3], 'Label must be one of 1 (2H_in_vivo), 2 (2H_in_vitro), or 3 (18O)'
 
     if deuterium_enrichment_level is not None:
         assert 0 < deuterium_enrichment_level <= 1, 'Deuterium enrichment level must be greater than 0 and no greater than 1'
@@ -62,7 +62,7 @@ def get_peptide_distribution(peptide: str,
                                                                                                            "N": peptide_atoms[3],
                                                                                                            "S": peptide_atoms[4]})
 
-    if label == 'hw' or label == 'hw_cell':
+    if label == 1 or label == 2:
         # Subtract the number of labeling sites from hydrogen, extend the atom count list with accessible deuterium count
         atom_count_list[1] = atom_count_list[1] - num_labeling_sites
         atom_count_list.extend([num_labeling_sites])
@@ -79,7 +79,7 @@ def get_peptide_distribution(peptide: str,
             isotope_probability_list.extend([(1-deuterium_enrichment_level, deuterium_enrichment_level)])
             # TODO: include the background deuterium level here too?
 
-    elif label == 'o18':
+    elif label == 3:
         atom_count_list[2] = atom_count_list[2] - num_labeling_sites
         atom_count_list.extend([num_labeling_sites])
         # Extend the isotope mass list for O18, which is the same as O16

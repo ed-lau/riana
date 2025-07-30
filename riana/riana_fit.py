@@ -237,7 +237,7 @@ def fit_all(args) -> None:
 
 def fit_one(loop_index,
             concat_list: list,
-            label: str,
+            label: int,
             filtered_integrated_df: pd.DataFrame,
             ria_max: float,
             model_: callable,
@@ -249,7 +249,7 @@ def fit_one(loop_index,
 
     :param loop_index:                  index of concat_list to fit
     :param concat_list:                 list of concatamer
-    :param label:                       label type, determines how mi is calculated. currently must be aa, hw, or o18
+    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :param filtered_integrated_df:      dataframe of integrated data
     :param ria_max:                     maximum ria
     :param model_:                      model function
@@ -294,7 +294,7 @@ def fit_one(loop_index,
                                            aa_res=aa_res)
 
     # if label is hw or hw_cell, use the heavy water labeling dictionary
-    if (label == 'hw' or label == 'hw_cell' or label == 'o18') and fs_fine_structure is not None:
+    if (label == '1' or label == '2' or label == '3') and fs_fine_structure is not None:
 
         if fs_fine_structure == "m0_m1":
             y = y.assign(mi=(y.m0 / y.m1).where(y.m0 != 0, 0))
