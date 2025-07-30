@@ -188,7 +188,6 @@ def integrate_all(args) -> None:
                                                       f' file: {mzml_files[idx]}'))
         # '''
 
-
         #
         # append the raw intensities data frame
         #
@@ -201,7 +200,6 @@ def integrate_all(args) -> None:
         else:
             overall_intensities_df = pd.concat([overall_intensities_df, intensities_df], ignore_index=True)
 
-
         # Perform integration
         integrated_peaks = []
         for int_res in tqdm.tqdm(intensities_results,
@@ -210,8 +208,7 @@ def integrate_all(args) -> None:
                                  ):
             iso_areas = [int_res['pep_id'][0]]
 
-
-            for m in ['m' + str(iso) for iso in args.iso]:
+            for m in [f'[{mod}]_m{iso}' for mod in args.forced_mods for iso in args.iso]:
 
                 iso_area = np.trapz(int_res[m], x=int_res['rt'])
                 iso_areas.append(iso_area)
@@ -220,7 +217,9 @@ def integrate_all(args) -> None:
         #
         # convert the integrated values into a data frame
         #
-        df_columns = ['pep_id'] + ['m' + str(iso) for iso in args.iso]
+        df_columns = ['pep_id'] + [f'[{mod}]_m{iso}' for mod in args.forced_mods for iso in args.iso]
+        # Remove [0]_ from column names for unmodified isotopomers
+        df_columns = [re.sub(r'^\[0\]_', '', col) for col in df_columns]
 
         integrated_df = pd.DataFrame(integrated_peaks, columns=df_columns)
         id_integrated_df = pd.merge(mzid.curr_frac_filtered_id_df, integrated_df, on='pep_id', how='left')
@@ -286,12 +285,6 @@ def get_isotopomer_intensity(index: int,
 
     """
 
-    # if _forced_mod is empty, add 0 to the list, if it is not empty, add 0 to the beginning of the list
-    if not _forced_mods:
-        _forced_mods = [0]
-    else:
-        _forced_mods = [0] + _forced_mods
-
     # determine the mass of protons and c13
     proton = constants.PROTON_MASS
     # if mass_defect == 'D':
@@ -348,15 +341,16 @@ def get_isotopomer_intensity(index: int,
         except ValueError or IndexError:
             raise Exception('Scan does not correspond to MS1 data.')
 
-        # For each forced mod, loop through the isotopomers
+        # For each forced modification, loop through all the specified isotopomers
         for _forced_mod in _forced_mods:
+
             # calculate the precursor mass with the forced modification
-            peptide_prec = peptide_prec + (_forced_mod / charge)
+            peptide_prec_shifted = peptide_prec + (_forced_mod / charge)
 
             for iso in iso_to_do:
 
                 # set upper and lower mass tolerance bounds
-                prec_iso_am = peptide_prec + (iso * iso_added_mass / charge)
+                prec_iso_am = peptide_prec_shifted + (iso * iso_added_mass / charge)
 
                 mass_tolerance_ppm = float(mass_tolerance) * 1e-6
 
@@ -368,8 +362,7 @@ def get_isotopomer_intensity(index: int,
                 intensity_over_time.append([f"mod{_forced_mod}_iso{iso}",
                                             mzml.rt_idx[mzml.scan_idx == scan].item(),
                                             matching_int,
-                                            ]
-                                           )
+                                            ])
 
 
     if not intensity_over_time:
@@ -409,9 +402,6 @@ def get_isotopomer_intensity(index: int,
                                                                   window_length=smoothing,
                                                                   polyorder=1,
                                                                   mode='nearest')
-
-    # Remove [0]_ from the unmodified isotopomer in column names
-    intensity_out.columns = [col.replace('[0]_', '') for col in intensity_out.columns]
 
     return intensity_out # [integrated, intensity_out]
 

@@ -28,7 +28,7 @@ class StoreUniqueSortedIsotopomers(argparse.Action):
         values.sort()
         setattr(namespace, self.dest, values)
 
-class StoreUniqueMods(argparse.Action):
+class StoreUniqueIgnoredMods(argparse.Action):
     """Checks that the list of arguments contains no duplicates, then stores"""
     def __call__(self, parser, namespace, values: List[float], option_string=None):
         if len(values) > len(set(values)):
@@ -37,6 +37,27 @@ class StoreUniqueMods(argparse.Action):
                 "You cannot specify the same value multiple times. "
                 + f"You provided {values}",
             )
+        setattr(namespace, self.dest, values)
+
+class StoreUniqueForcedMods(argparse.Action):
+    """Checks that the list of arguments contains no duplicates
+    If forced_mods is empty, adds 0 to the list, then stores"""
+
+    def __call__(self, parser, namespace, values: List[float], option_string=None):
+        if len(values) > len(set(values)):
+            raise argparse.ArgumentError(
+                self,
+                "You cannot specify the same value multiple times. "
+                + f"You provided {values}",
+            )
+        # Sort the values
+        values.sort()
+        # If values are empty, add 0. Otherwise, add 0 to the front
+        if not values:
+            values = [0]
+        else:
+            values.insert(0, 0) # Add 0 to the front of the list
+
         setattr(namespace, self.dest, values)
 
 class CheckSampleNameEndsWithNumber(argparse.Action):
@@ -241,7 +262,7 @@ def main():
                                   default=[],
                                   nargs='+',
                                   type=float,
-                                  action=StoreUniqueMods,
+                                  action=StoreUniqueIgnoredMods,
                                   )
 
     parser_integrate.add_argument('-F', '--forced_mods',
@@ -251,7 +272,7 @@ def main():
                                   default=[],
                                   nargs='+',
                                   type=float,
-                                  action=StoreUniqueMods,
+                                  action=StoreUniqueForcedMods,
                                   )
 
 

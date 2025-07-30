@@ -9,7 +9,7 @@
   to always look for in the search result for calculating true peptide mass and is useful for amino acid labeling
   experiments. Currently, however riana -fit will only perform curve-fitting for unmodified peptides.
 * The mass defect argument has been replaced by '-D' '--mass_difference' and is now a float value that specifies
- the exact mass difference between each isotopomer, and defaults to 1.003354835 Da (C12 vs. C13)
+  the exact mass difference between each isotopomer, and defaults to 1.003354835 Da (C12 vs. C13)
 
 ## Update v.0.8.1
 * Minor bug fixes
