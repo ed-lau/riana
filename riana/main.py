@@ -239,8 +239,8 @@ def main():
     parser_integrate.add_argument('-m', '--mass_tol',
                                   help='<integer> mass tolerance in ppm for integration [default 50 ppm]',
                                   type=int,
-                                  choices=range(1, 101),
-                                  metavar='[1-100]',
+                                  choices=range(1, 501),
+                                  metavar='[1-500]',
                                   default=50)
 
     parser_integrate.add_argument('-S', '--smoothing',

@@ -1,7 +1,7 @@
 ## CHANGES
 ---
 
-## Update v.0.8.3
+## Update v.0.8.2
 * Added the '-X', '--ignored_mods' argument to `riana integrate` command line interface. It specifies modification(s)
   to ignore in the search result for calculating true peptide mass. This must match the exact string in the search
   engine output

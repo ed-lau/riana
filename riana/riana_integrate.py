@@ -209,7 +209,7 @@ def integrate_all(args) -> None:
                                  ):
             iso_areas = [int_res['pep_id'][0]]
 
-            for m in [f'[{mod}]_m{iso}' for mod in args.forced_mods for iso in args.iso]:
+            for m in [f'mod{mod}_iso{iso}' for mod in args.forced_mods for iso in args.iso]:
 
                 iso_area = np.trapz(int_res[m], x=int_res['rt'])
                 iso_areas.append(iso_area)
@@ -219,8 +219,8 @@ def integrate_all(args) -> None:
         # convert the integrated values into a data frame
         #
         df_columns = ['pep_id'] + [f'[{mod}]_m{iso}' for mod in args.forced_mods for iso in args.iso]
-        # Remove [0]_ from column names for unmodified isotopomers
-        df_columns = [re.sub(r'^\[0\]_', '', col) for col in df_columns]
+        # Remove mod0_ from column names for unmodified isotopomers
+        df_columns = [re.sub(r'^mod0_', '', col) for col in df_columns]
 
         integrated_df = pd.DataFrame(integrated_peaks, columns=df_columns)
         id_integrated_df = pd.merge(mzid.curr_frac_filtered_id_df, integrated_df, on='pep_id', how='left')
@@ -362,6 +362,9 @@ def get_isotopomer_intensity(index: int,
                 # set upper and lower mass tolerance bounds
                 prec_iso_am = peptide_prec_shifted + (iso * iso_added_mass / charge)
 
+                # print _forced_mod, iso and prec_iso_am
+                # print(f'Modification: {_forced_mod}, Isotopomer: {iso}, Precursor mass: {prec_iso_am}')
+
                 mass_tolerance_ppm = float(mass_tolerance) * 1e-6
 
                 delta_mass = prec_iso_am * mass_tolerance_ppm /2
@@ -393,8 +396,14 @@ def get_isotopomer_intensity(index: int,
                                         columns='mod_iso',
                                         values='int')
 
-    # 2021-11-10 add the forced mod names to the column names
-    intensity_out.columns = [f'[{mod}]_m{iso}' for mod in _forced_mods for iso in iso_to_do]
+    # After pivoting, the mod_iso columns become alphabetically sorted.
+    # Sort them based on the order of _forced_mods and iso_to_do
+    intensity_out = intensity_out[[f'mod{mod}_iso{iso}' for mod in _forced_mods for iso in iso_to_do]]
+
+
+    # print(intensity_out.columns)
+    # print([f'[{mod}]_m{iso}' for mod in _forced_mods for iso in iso_to_do])
+
 
     intensity_out['rt'] = intensity_out.index
     intensity_out = intensity_out.reset_index(drop=True)
@@ -406,7 +415,7 @@ def get_isotopomer_intensity(index: int,
     # Smoothing with Savitzky-Golay filter
     if smoothing is not None:
         if smoothing > 0:
-            for m in [f'[{mod}]_m{iso}' for mod in _forced_mods for iso in iso_to_do]:
+            for m in [f'mod{mod}_iso{iso}' for mod in _forced_mods for iso in iso_to_do]:
                 if np.sum(intensity_out[m]) > 0:
                     intensity_out[m] = scipy.signal.savgol_filter(x=intensity_out[m],
                                                                   window_length=smoothing,

@@ -297,33 +297,33 @@ def fit_one(loop_index,
     if (label == '1' or label == '2' or label == '3') and fs_fine_structure is not None:
 
         if fs_fine_structure == "m0_m1":
-            y = y.assign(mi=(y.m0 / y.m1).where(y.m0 != 0, 0))
+            y = y.assign(mi=(y.iso0 / y.iso1).where(y.iso0 != 0, 0))
 
         elif fs_fine_structure == "m0_m2":
-            y = y.assign(mi=(y.m0 / y.m2).where(y.m0 != 0, 0))
+            y = y.assign(mi=(y.iso0 / y.iso2).where(y.iso0 != 0, 0))
 
         elif fs_fine_structure == "m0_m3":
-            y = y.assign(mi=(y.m0 / y.m3).where(y.m0 != 0, 0))
+            y = y.assign(mi=(y.iso0 / y.iso3).where(y.iso0 != 0, 0))
 
         elif fs_fine_structure == "m1_m2":
-            y = y.assign(mi=(y.m1 / y.m2).where(y.m1 != 0, 0))
+            y = y.assign(mi=(y.iso1 / y.iso2).where(y.iso1 != 0, 0))
 
         elif fs_fine_structure == "m1_m3":
-            y = y.assign(mi=(y.m1 / y.m3).where(y.m1 != 0, 0))
+            y = y.assign(mi=(y.iso1 / y.iso3).where(y.iso1 != 0, 0))
 
         elif fs_fine_structure == "m0_mA":
-            y = y.assign(mi=(y.m0 / (y.m0 + y.m1 + y.m2 + y.m3 + y.m4 + y.m5)).where(y.m0 != 0, 0))
+            y = y.assign(mi=(y.iso0 / (y.iso0 + y.iso1 + y.iso2 + y.iso3 + y.iso4 + y.iso5)).where(y.iso0 != 0, 0))
 
         elif fs_fine_structure == "m1_mA":
-            y = y.assign(mi=(y.m1 / (y.m0 + y.m1 + y.m2 + y.m3 + y.m4 + y.m5)).where(y.m1 != 0, 0))
+            y = y.assign(mi=(y.iso1 / (y.iso0 + y.iso1 + y.iso2 + y.iso3 + y.iso4 + y.m5)).where(y.iso1 != 0, 0))
 
         elif fs_fine_structure == "Auto":
             if num_labeling_sites < 15:
-                y = y.assign(mi=(y.m0 / y.m1).where(y.m0 != 0, 0))
+                y = y.assign(mi=(y.iso0 / y.iso1).where(y.iso0 != 0, 0))
             elif num_labeling_sites > 35:
-                y = y.assign(mi=(y.m1 / y.m3).where(y.m1 != 0, 0))
+                y = y.assign(mi=(y.iso1 / y.iso3).where(y.iso1 != 0, 0))
             else:
-                y = y.assign(mi=(y.m0 / y.m2).where(y.m0 != 0, 0))
+                y = y.assign(mi=(y.iso0 / y.iso2).where(y.iso0 != 0, 0))
 
         mi = np.array(y['mi'].tolist())
 
@@ -338,7 +338,7 @@ def fit_one(loop_index,
     else:
         # Use m0/mA to calculate FS if label is aa or if fine structure is not used
         y['colsums'] = y.loc[:, y.columns.str.match('^m[0-9]+$')].sum(axis=1)  # sums all m* columns
-        y = y.assign(mi=(y.m0 / y.colsums).where(y.m0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
+        y = y.assign(mi=(y.iso0 / y.colsums).where(y.iso0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
         mi = np.array(y['mi'].tolist())
         logger.info(y[['sample', 'mi']])
         print(y[['sample', 'mi']])
