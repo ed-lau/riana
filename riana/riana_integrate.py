@@ -218,7 +218,7 @@ def integrate_all(args) -> None:
         #
         # convert the integrated values into a data frame
         #
-        df_columns = ['pep_id'] + [f'[{mod}]_m{iso}' for mod in args.forced_mods for iso in args.iso]
+        df_columns = ['pep_id'] + [f'mod{mod}_iso{iso}' for mod in args.forced_mods for iso in args.iso]
         # Remove mod0_ from column names for unmodified isotopomers
         df_columns = [re.sub(r'^mod0_', '', col) for col in df_columns]
 
