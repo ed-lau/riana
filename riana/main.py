@@ -269,7 +269,7 @@ def main():
                                   help='modification(s) to always add to each peptide during integration'
                                        'to create separate clusters of isotopomers'
                                        'this is useful for SILAC experiments, e.g., 6.0201 for SILAC',
-                                  default=[],
+                                  default=[0],
                                   nargs='+',
                                   type=float,
                                   action=StoreUniqueForcedMods,
