@@ -121,6 +121,10 @@ class ReadPercolator(object):
             # Create a sequence column for compatibility with Crux percolator
             self.id_df['sequence'] = [pep[2:-2] for pep in self.id_df['peptide']]
 
+            # 2025-10-02 The new Fragger format adds a charge to the peptide column before the flanking sequence
+            # If the -3 position is a digit, then it is a charge, remove it
+            self.id_df['sequence'] = [seq if not seq[-1].isdigit() else seq[:-1] for seq in self.id_df['sequence']]
+
             # Remove the trailing charge number in sequence
             # self.id_df['sequence'] = self.id_df['sequence'].str.replace(r'\.\d+$', '', regex=True)
 
@@ -174,6 +178,7 @@ class ReadPercolator(object):
                            ]]
 
         self.id_df.loc[:, 'sample'] = self.sample
+
         self.id_df['concat'] = self.id_df['sequence'].map(str) + '_' + self.id_df['charge'].map(str)
 
         self.logger.info('Percolator file for {0} has size {1}'.format(self.sample,
