@@ -315,7 +315,7 @@ def fit_one(loop_index,
             y = y.assign(mi=(y.iso0 / (y.iso0 + y.iso1 + y.iso2 + y.iso3 + y.iso4 + y.iso5)).where(y.iso0 != 0, 0))
 
         elif fs_fine_structure == "m1_mA":
-            y = y.assign(mi=(y.iso1 / (y.iso0 + y.iso1 + y.iso2 + y.iso3 + y.iso4 + y.m5)).where(y.iso1 != 0, 0))
+            y = y.assign(mi=(y.iso1 / (y.iso0 + y.iso1 + y.iso2 + y.iso3 + y.iso4 + y.iso5)).where(y.iso1 != 0, 0))
 
         elif fs_fine_structure == "Auto":
             if num_labeling_sites < 15:
