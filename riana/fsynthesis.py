@@ -27,7 +27,7 @@ def calculate_a0(sequence: str,
     else:
         sequence = strip_concat(sequence)
         res_atoms = accmass.count_atoms(sequence)
-        a0 = np.product([np.power(constants.iso_abundances[i], res_atoms[i]) for i, v in enumerate(res_atoms)])
+        a0 = np.prod([np.power(constants.iso_abundances[i], res_atoms[i]) for i, v in enumerate(res_atoms)])
         # TODO: this should calculate the full isotopic distribution
         return a0
 
@@ -197,11 +197,13 @@ def calculate_fs_fine_structure(a: np.ndarray,
             else:
                 fs_array.extend([mixed_envelop[0] / mixed_envelop[2]])
 
-    print(f'FS array: {fs_array}')
+    # print(f'FS array: {fs_array}')
+
     # Then do a reverse lookup of the empirical m_i to get fs.
     predicted_fs = np.array([find_nearest_fs(fs_array, a_i)/100 for a_i in a])
-    print(f'Input array: {a}')
-    print(f'Predicted FS: {predicted_fs}')
+    
+    # print(f'Input array: {a}')
+    # print(f'Predicted FS: {predicted_fs}')
 
     return predicted_fs
 

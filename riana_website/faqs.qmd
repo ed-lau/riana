@@ -1,0 +1,76 @@
+---
+title: "Frequently Asked Questions"
+format: html
+keywords: "Protein turnover, Proteomics, Mass spectrometry"
+abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+author: "Edward Lau"
+date: "`r Sys.Date()`"
+image-caption: "RIANA logo"
+image: "images/riana_logo.png"
+image-alt: "RIANA - Relative Isotope Abundance Analyzer"
+---
+
+## FAQs
+
+### Integrate
+
+#### Q: What does the `-D --mass_defect` argument do for the integrate function?
+
+A: The `-D` flag specifies the accurate mass difference between each unit isotopomer and can be set to `D`, `C13`, or
+`SILAC`, which will dictate the mass difference across each successive peak to be 1.0063 (mass difference of
+deuterium and protium), 1.003 (mass difference of ^13^C and ^12^C), and 1.001 (custom SILAC mass), respectively. This is
+set so that RIANA can find the correct accurate mass for integration when multiple atom centers are added. E.g., if
+deuterium labeled amino acids are used, e.g., D^3^-leucine, the argument should be set to `-D D` and the integrated
+isotopomer argument set to `-i 0, 3`. Alternatively if ^13^C~6~-lysines, the arguments should be `-D C13` and `i 0,6`.
+
+### Fit
+
+#### Q: What are the kinetic models being specified by the different fit options?
+
+A: The `simple`, `guan`, and `fornasiero` options for the model argument refer to a simple exponential (one-pool) model,
+a two-compartment model, and a two-compartment model that includes label reutilization.
+See the [Documentation](about.qmd) page for details.
+
+#### Q: What does the `-l --label` argument do?
+
+A: The `--label` argument determines how the fraction of new proteins at a particular labeling time point is calculated
+from the relative abundance of isotopomers. The option `aa` assumes that the first peaks of light or heavy amino acids
+are used for calculations (e.g., m0, m6 for ^13^C~6~-lysine) and hence the initial pre-label fraction of the light peak
+(m0) is assumed to be 1. The option `hw` assumes a heavy water type labeling experiment where the entire isotopomer
+cluster of the peptide is integrated (e.g., m0, m1, m2, m3, m4, m5), and hence the pre-labeling fraction of the m0 peak
+is calculated from peptide relative isotopomer abundance based on naturally occurring isotopes.
+
+**To perform cell culture analysis:** Use `-l hw_cell` to use the labeling sites calibrated for human AC6 cells (see Alamillo et al. bioRxiv 2025 for details). To alter the heavy water per-residue labeling sites for other cell types or organisms, modify the `params.py` file directly and run from the modified copy of RIANA.
+
+#### Q: How are the plotted curves separated to the curves_fast_fit, curves_mid_fit, and curve_slow_fit directories?
+
+A: The directories are intended to facilitate navigation only rather than a rigorous indication of data quality.
+Plots for fitted curves with k < 0.01 are in the "slow" directory, 0.01 <= k <= 1 in the "mid" directory, and
+1 < k in the "fast" directory. Plots for fitted curves with R^2^ >= 0.5 are in the "fit" directory, and those with
+R^2^ < 0.5 are in the "poor" directory.
+
+#### Q: Does RIANA fit perform protein level curve fitting?
+
+A: RIANA currently performs curve fitting at the peptide level only. Users can perform protein-level curve fitting
+using the `{sample}_riana.txt` integration result files. Alternatively, protein-level rate constants can be derived
+by taking a median or harmonic mean of the peptide-level rate constants with similar results, as we showed in our recent 
+[publication](https://doi.org/10.1016/j.mcpro.2022.100252).
+
+#### Q: How do I retrieve half-life information on the peptide and protein?
+
+A: The half-life of a peptide or protein can be calculated from the output `k` parameter using the equation:
+
+$$ t_{1/2} = ln(2)/k $$
+
+
+#### Q: How do I use limited mass isotopomers or rule-based mass isotopomer selection for fractional synthesis rate calculation?
+
+A: This can be  modified under `-f --fs`. The default option is m0/mA `m0_mA` and can be changed to `m0_m1` or `Auto` - please see Currie et al. J Proteome Res 2025 for details.
+
+
+### General
+
+#### Q: How can I contribute to RIANA?
+
+A: Contact us at [edward.lau@cuanschutz.edu]

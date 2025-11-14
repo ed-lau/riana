@@ -10,7 +10,7 @@
 <meta name="keywords" content="Protein turnover, Proteomics, Mass spectrometry">
 <meta name="description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 
-<title>Quick Start – RIANA v0.8.1</title>
+<title>RIANA - Relative Isotope Abundance Analyzer – RIANA v0.8.1</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -22,41 +22,6 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
-}
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -108,14 +73,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <link rel="stylesheet" href="styles.css">
-<meta property="og:title" content="Quick Start – RIANA v0.8.1">
+<meta property="og:title" content="RIANA - Relative Isotope Abundance Analyzer – RIANA v0.8.1">
 <meta property="og:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 <meta property="og:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
 <meta property="og:site_name" content="RIANA v0.8.1">
 <meta property="og:image:height" content="1034">
 <meta property="og:image:width" content="2550">
 <meta property="og:image:alt" content="RIANA - Relative Isotope Abundance Analyzer">
-<meta name="twitter:title" content="Quick Start – RIANA v0.8.1">
+<meta name="twitter:title" content="RIANA - Relative Isotope Abundance Analyzer – RIANA v0.8.1">
 <meta name="twitter:description" content="RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water.">
 <meta name="twitter:image" content="https://github.com/ed-lau/jcast/images/riana_logo.png">
 <meta name="twitter:creator" content="@LauLabColorado">
@@ -143,11 +108,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll me-auto">
   <li class="nav-item">
-    <a class="nav-link" href="./index.html"> 
+    <a class="nav-link active" href="./index.html" aria-current="page"> 
 <span class="menu-text">Home</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link active" href="./install.html" aria-current="page"> 
+    <a class="nav-link" href="./install.html"> 
 <span class="menu-text">Quick Start</span></a>
   </li>  
   <li class="nav-item">
@@ -180,23 +145,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#installing-riana" id="toc-installing-riana" class="nav-link active" data-scroll-target="#installing-riana">Installing RIANA</a></li>
-  <li><a href="#processing-data" id="toc-processing-data" class="nav-link" data-scroll-target="#processing-data">Processing Data</a>
-  <ul class="collapse">
-  <li><a href="#project-set-up" id="toc-project-set-up" class="nav-link" data-scroll-target="#project-set-up">Project set up</a></li>
-  <li><a href="#option-1-running-comet-percolator-and-riana-via-snakemake" id="toc-option-1-running-comet-percolator-and-riana-via-snakemake" class="nav-link" data-scroll-target="#option-1-running-comet-percolator-and-riana-via-snakemake">Option 1: Running Comet, Percolator, and RIANA via Snakemake</a></li>
-  <li><a href="#option-2-running-riana-manually" id="toc-option-2-running-riana-manually" class="nav-link" data-scroll-target="#option-2-running-riana-manually">Option 2: Running RIANA manually</a></li>
-  </ul></li>
-  <li><a href="#output" id="toc-output" class="nav-link" data-scroll-target="#output">Output</a></li>
+  <li><a href="#about-riana" id="toc-about-riana" class="nav-link active" data-scroll-target="#about-riana">About RIANA</a></li>
+  <li><a href="#downloads" id="toc-downloads" class="nav-link" data-scroll-target="#downloads">Downloads</a></li>
+  <li><a href="#contributors" id="toc-contributors" class="nav-link" data-scroll-target="#contributors">Contributors</a></li>
+  <li><a href="#citations" id="toc-citations" class="nav-link" data-scroll-target="#citations">Citations</a></li>
   </ul>
 <div class="toc-actions"><ul><li><a href="https://github.com/ed-lau/riana/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
+<main class="content page-columns page-full" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Quick Start</h1>
+<h1 class="title">RIANA - Relative Isotope Abundance Analyzer</h1>
 </div>
 
 <div>
@@ -242,182 +203,83 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<section id="installing-riana" class="level2">
-<h2 class="anchored" data-anchor-id="installing-riana">Installing RIANA</h2>
-<p>Install Python 3.7+ and pip. See instructions on Python website for specific instructions for your operating system.</p>
-<p>Riana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.</p>
-<pre><code>$ pip install riana</code></pre>
-<p>Launch riana as a module (Usage/Help):</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> riana</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Alternatively as a console entry point:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> riana</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>To test that the installation can load test data files in tests/data:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> pip install tox</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> tox</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>To run the Riana test dataset (a single fraction bovine serum albumin file from a Q-Exactive) and write the results to a specified <code>out/test/</code> directory</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt <span class="at">-q</span> 0.1 <span class="at">-i</span> 0,1,2,3,4,5 <span class="at">-o</span> out/test/</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="processing-data" class="level2">
-<h2 class="anchored" data-anchor-id="processing-data">Processing Data</h2>
-<section id="project-set-up" class="level3">
-<h3 class="anchored" data-anchor-id="project-set-up">Project set up</h3>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Mass spectrometry files
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>RIANA requires the input mass spectrometry files to be in the mzML format. If you are not familiar with mzML files or received raw mass spectrometry files in vendor-specific formats (e.g., Thermo .raw), you can convert them to mzML using various tools, such as the <code>msconvert</code> tool from the ProteoWizard suite. Please refer to the <a href="https://proteowizard.sourceforge.io/">ProteoWizard documentation</a> for details.</p>
-</div>
-</div>
-<p>Riana can be run either via Snakemake, or manually in command line.</p>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-File structure
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Several of the intermediate files like the mzMLs can be quite large especially with modern instruments. Set up the file directory in a logical way and with enough storage. For instance, for a labeling experiment with multiple time points, you can set up the following directory structure:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">├──</span> /path/to/experiment/</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── time0/</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   │   ├── fraction1.mzML</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   │   ├── fraction2.mzML</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── time1/</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   │   ├── fraction1.mzML</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   │   ├── fraction2.mzML</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── time3/</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   │   ├── fraction1.mzML</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   │   ├── fraction2.mzML</span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-</div>
-</section>
-<section id="option-1-running-comet-percolator-and-riana-via-snakemake" class="level3">
-<h3 class="anchored" data-anchor-id="option-1-running-comet-percolator-and-riana-via-snakemake">Option 1: Running Comet, Percolator, and RIANA via Snakemake</h3>
-<p>RIANA comes with a <code>Snakemake</code> pipeline which is the recommended way to run RIANA. To configure, edit the provided <code>config_template.yaml</code> to specify the location of Comet and Percolator executables. Then run Snakemake with the provided <code>Snakefile</code>, e.g.,:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> snakemake <span class="at">-c</span> <span class="at">-s</span> ./Snakefile <span class="at">-d</span> out/snakemake_test <span class="at">--configfile</span> ./config_template.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Refer to <code>Snakemake</code> documentations for details on configuring snake files.</p>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Curve plotting
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Note that the provided <code>Snakefile</code> settings do not automatically output plotted curves or pre-integration intensity files by default. To output these files, edit the <code>Snakefile</code> to add <code>-w</code> and <code>p</code> to the shell commands under the integrate and fit rules, respectively.</p>
-</div>
-</div>
-<p>Below is the <code>config_template.yaml</code>:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Config</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Data location. Add as many lines as needed, sample names should be named after</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co"># labeling time points (e.g., time12 for 12 days/12 hours of experiment)</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time0</span><span class="kw">:</span><span class="at"> /path/to/experiment/time0</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time1</span><span class="kw">:</span><span class="at"> /path/to/experiment/time1</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">time3</span><span class="kw">:</span><span class="at"> /path/to/experiment/time3</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  time6:/path/to/experiment/time6</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Paths to the comet executable, the comet params file, the database, and the percolator executable</span></span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="co"># The Snakefile assumes riana can be executed in the shell by riana</span></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="fu">paths</span><span class="kw">:</span></span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet</span><span class="kw">:</span><span class="at"> /path/to/comet_source_2020013/comet.exe</span></span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet_params</span><span class="kw">:</span><span class="at"> /path/to/params/comet.params</span></span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fasta</span><span class="kw">:</span><span class="at"> /path/tp/database.fas</span></span>
-<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">percolator</span><span class="kw">:</span><span class="at"> /path/to/percolator</span></span>
-<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Integration and fitting parameters</span></span>
-<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a><span class="fu">params</span><span class="kw">:</span></span>
-<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">model</span><span class="kw">:</span><span class="at"> simple</span><span class="co">     # fitting model (simple, guan, fornasiero)</span></span>
-<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">label_type</span><span class="kw">:</span><span class="at"> hw</span><span class="co">        # labeling type (aa or hw or hw_cell)</span></span>
-<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">isotopomers</span><span class="kw">:</span><span class="at"> 0,1,2,3,4,5</span><span class="co">   # isotopomer to integrate (0,1,2,3,4,5 for deuterium; 0,6 for heavy aa)</span></span>
-<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mass_tol</span><span class="kw">:</span><span class="at"> </span><span class="dv">15</span><span class="co">         # mass tolerance in ppm for integration (e.g., 25)</span></span>
-<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ria_max</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">          # final precursor ria</span></span>
-<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kp</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span><span class="co">              # guan model parameter (kp) or fornasiero model parameter (b)</span></span>
-<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.15</span><span class="co">              # fornasiero model parameter (a)</span></span>
-<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rp</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.52</span><span class="co">              # fornasiero model parameter (r)</span></span>
-<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">depth</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">             # minimum number of data points</span></span>
-<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">aa</span><span class="kw">:</span><span class="at"> K</span><span class="co">                 # which amino acid carries heavy label; only relevant if label_type is aa</span></span>
-<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mass_defect</span><span class="kw">:</span><span class="at"> D</span><span class="co">        # which isotope mass defect to use (D, C13, SILAC)</span></span>
-<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fs</span><span class="kw">:</span><span class="at"> m0_mA</span><span class="co">              # which mass isotopomer to use for heavy water labeling</span></span>
-<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of threads</span></span>
-<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a><span class="fu">threads</span><span class="kw">:</span></span>
-<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">comet</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
-<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">riana</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
-<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fitcurve</span><span class="kw">:</span><span class="at"> </span><span class="dv">12</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="option-2-running-riana-manually" class="level3">
-<h3 class="anchored" data-anchor-id="option-2-running-riana-manually">Option 2: Running RIANA manually</h3>
-<p>Alternatively, RIANA can be directly called from command line given the paths to the folder of the mzML files and the Search/Percolator results. To run the turnover analysis pipeline manually, prepare the following expected input files:</p>
 <ul>
-<li><p>RIANA was tested on the percolator output file from Crux Tide/Percolator or standalone Comet/Percolator.</p></li>
-<li><p>The following workflow has been tested for both amino acid and heavy water labeling data gathered on a Q-Exactive instrument:</p></li>
-<li><p>Convert raw files to mzML, using <code>pwiz 3.0 msconvert</code> in command line, with the following option:</p>
-<ul>
-<li><code>--filter "peakPicking vendor"</code></li>
-</ul></li>
-<li><p>Download the latest Crux distribution</p></li>
-<li><p>Run Tide index with the following options:</p>
-<ul>
-<li><code>--digestion partial-digest</code></li>
-<li><code>--missed-cleavages</code></li>
-</ul></li>
-<li><p>Run Tide search <em>for each experimental time point separately</em> with the following options:</p>
-<ul>
-<li><code>--isotope-error 1,2</code> (for HW) or <code>6,12</code> (for AA)</li>
-<li><code>--compute-sp T</code></li>
-<li><code>--mz-bin-width 0.02</code></li>
-<li><code>--mz-bin-offset 0.0</code></li>
-<li><code>--precursor-window 20</code></li>
-<li><code>--precursor-window-type ppm</code></li>
-</ul></li>
-<li><p>Run Percolator with the following options:</p>
-<ul>
-<li><code>--protein T</code></li>
-<li><code>--decoy-prefix DECOY_</code></li>
-</ul></li>
-<li><p>Run RIANA <code>integrate</code> <em>for each experimental time point separately</em>.</p></li>
-<li><p>Run RIANA <code>fit</code></p></li>
+<li><a href="https://laulab.net">Edward Lau Lab</a>, University of Colorado School of Medicine</li>
+<li><a href="https://maggielab.org">Maggie Lam Lab</a>, University of Colorado School of Medicine</li>
 </ul>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Specifying paths
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Note that the <code>mzml_path</code> argument should point to the directory where all mzML fractions (fraction1.mzML, fraction2.mzML, etc.) for each labeling time point are located, whereas the <code>id_path</code> argument should point to a <code>percolator.target.psms.txt</code> file from the output of searching and post-processing all the mzML files in that labeling time point together</p>
-</div>
-</div>
-</section>
-</section>
-<section id="output" class="level2">
-<h2 class="anchored" data-anchor-id="output">Output</h2>
-<p>RIANA <code>integrate</code> outputs a <code>{sample}_riana.txt</code> file for each sample, which contains the Percolator output appended with additional columns, e.g., <code>m0</code>, <code>m6</code>, <code>m12</code>, which contains the integrated areas of each isotopomer of each peptide over a retention time range in the mass spectrometry data. The output columns depend on the isotopomer indices specified.</p>
-<p>In addition, the <code>{sample}_riana_intensities.txt</code> files contain the individual intensity data of each isotopomer in each retention time point prior to integration.</p>
-<p>RIANA <code>fit</code> outputs a <code>riana_fit_peptides.csv</code> file which contains the best-fit k, R<sup>2</sup>, and <em>d</em>k for each peptide-charge combination.</p>
-<p>If the flag <code>--plotcurves</code> is set, RIANA additional outputs a graphical representation of each fitted curve:</p>
+<p><img src="images/riana_logo.png" class="img-fluid"></p>
+<section id="about-riana" class="level2">
+<h2 class="anchored" data-anchor-id="about-riana">About RIANA</h2>
+<p>RIANA (<strong>R</strong>elative <strong>I</strong>sotope <strong>A</strong>bundance A<strong>na</strong>lyzer) is a software to automate the analysis of mass spectrometry- based protein turnover measurement experiments.</p>
+<p>RIANA is written to be flexible to accommodate different protein stable isotope labels, including heavy water (D<sub>2</sub>O) and SILAC (e.g., <sup>13</sup>C<sub>6</sub>-lysine or other amino acids) experiments.</p>
+<p>RIANA supports a Snakemake pipeline that uses other existing tools in the community, requiring only mass spectrometry data files (.mzML) as input to perform database search, post-processing, peak integration, and output of best-fit kinetic rate constants.</p>
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
-<p><img src="images/output.png" class="img-fluid figure-img"></p>
-<figcaption>Best fit kinetic curve for a particular peptide across multiple labeling time points.</figcaption>
+<p><img src="images/workflow.png" class="img-fluid figure-img"></p>
+<figcaption>Workflow</figcaption>
 </figure>
 </div>
+</section>
+<section id="downloads" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="downloads">Downloads</h2>
+
+<div class="no-row-height column-margin column-container"><div class="">
+<p><strong>Latest Updates</strong></p>
+<section id="v.0.8.3" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.8.3">v.0.8.3</h2>
+<ul>
+<li>Minor bug fixes</li>
+</ul>
+</section>
+<section id="v.0.8.1" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.8.1">v.0.8.1</h2>
+<ul>
+<li>Minor bug fixes</li>
+</ul>
+</section>
+<section id="v.0.8.0" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.8.0">v.0.8.0</h2>
+<ul>
+<li>Added support for automatic isotopomer selection. To use this feature, run <code>riana/riana.py</code> with <code>--fs Auto</code>.</li>
+<li>Added experimental support for in vitro heavy water labeling. To use this feature, run <code>riana/riana.py</code> with <code>--label hw_cell</code>.</li>
+</ul>
+</section>
+<section id="v.0.7.2" class="level2">
+<h2 class="anchored" data-anchor-id="v.0.7.2">v.0.7.2</h2>
+<ul>
+<li>Included additional Snakemake options in the config files</li>
+<li>The argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8</li>
+</ul>
+<blockquote class="blockquote">
+<p>See <a href="./change.html">Change Log</a> for details.</p>
+</blockquote>
+</section>
+</div></div><p>The latest version and source code of RIANA can be found on github: <a href="https://github.com/ed-lau/riana" class="uri">https://github.com/ed-lau/riana</a>.</p>
+<p>See the <a href="./install.html">Quick Start</a> and <a href="./about.html">Documentation</a> for instructions.</p>
+</section>
+<section id="contributors" class="level2">
+<h2 class="anchored" data-anchor-id="contributors">Contributors</h2>
+<ul>
+<li>Edward Lau, PhD - <a href="https://github.com/ed-lau">ed-lau</a></li>
+<li>Maggie Lam, PhD - <a href="https://github.com/Maggie-Lam">Maggie-Lam</a></li>
+<li>Jordan Currie, MSc - <a href="https://github.com/jordancurrie">jordancurrie</a></li>
+</ul>
+</section>
+<section id="citations" class="level2">
+<h2 class="anchored" data-anchor-id="citations">Citations</h2>
+<p>If you use RIANA or the associated methods in your research, please consider citing the following papers:</p>
+<p>Original publication, heavy water and SILAC comparison:</p>
+<ol type="1">
+<li><strong>Harmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult animals</strong> Hammond DE, Simpson DM, Franco C, Wright Muelas M, Wasters J, Ludwig RW, PRescott MC, Hurst JL, Beynon RJ, E Lau <em>Molecular &amp; Cellular Proteomics</em> 2022, 100252 <a href="https://doi.org/10.1016/j.mcpro.2022.100252">doi:10.1016/j.mcpro.2022.100252</a> Epub 2022 May 28. PMID: 35636728; PMCID: PMC9249856.</li>
+</ol>
+<p>Rule-based mass isotopomer selection method for heavy water:</p>
+<ol start="2" type="1">
+<li><strong>Improved Method to Determine Protein Turnover Rates with Heavy Water Labeling by Mass Isotopomer Ratio Selection</strong> Currie J, Ng DCM, Pandi B, Black A, Manda V, Durham C, Pavelka J, Lam MPY, Lau E. <em>Journal of Proteome Research</em> 2025 Apr 4;24(4):1992-2005. <a href="https://doi.org/10.1021/acs.jproteome.4c01012">doi: 10.1021/acs.jproteome.4c01012</a> Epub 2025 Mar 18. PMID: 40100644; PMCID: PMC11977540.</li>
+</ol>
+<p>Application of heavy water labeling to cell culture:</p>
+<ol start="3" type="1">
+<li><strong>Deuterium Labeling Enables Proteome Wide Turnover Kinetics Analysis in Cell Culture</strong> Alamillo L, Ng DCM, Currie J, Black A, Pandi B, Manda V, Pavelka J, Schaal P, Travers JG, McKinsey TA, Lam MPY, Lau E. <em>Cell Rep Methods</em> 2025 Jul 21;5(7):101104. <a href="(https://doi.org/10.1016/j.crmeth.2025.101104)">doi: 10.1016/j.crmeth.2025.101104</a>. Epub 2025 Jul 10. PMID: 40645189; PMCID: PMC12296481.</li>
+</ol>
 
 
 </section>

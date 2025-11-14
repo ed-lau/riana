@@ -1,0 +1,95 @@
+---
+title: "RIANA - Relative Isotope Abundance Analyzer"
+format: html
+keywords: "Protein turnover, Proteomics, Mass spectrometry"
+abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+author: "Edward Lau"
+date: "`r Sys.Date()`"
+image-caption: "RIANA logo"
+image: "images/riana_logo.png"
+image-alt: "RIANA - Relative Isotope Abundance Analyzer"
+---
+
+- [Edward Lau Lab](https://laulab.net), University of Colorado School of Medicine
+- [Maggie Lam Lab](https://maggielab.org), University of Colorado School of Medicine
+
+
+![ ](images/riana_logo.png)
+
+
+## About RIANA
+
+RIANA (**R**elative **I**sotope **A**bundance A**na**lyzer) is a software to automate the analysis of mass spectrometry-
+based protein turnover measurement experiments.
+
+RIANA is written to be flexible to accommodate different protein stable isotope labels, including heavy water (D~2~O) and
+SILAC (e.g., ^13^C~6~-lysine or other amino acids) experiments.
+
+RIANA supports a Snakemake pipeline that uses other existing tools in the community, requiring only mass spectrometry
+data files (.mzML) as input to perform database search, post-processing, peak integration, and output of best-fit
+kinetic rate constants.
+
+![Workflow](images/workflow.png)
+
+
+## Downloads
+
+::: {.column-margin}
+**Latest Updates**
+
+v.0.8.3
+--
+* Minor bug fixes
+
+
+v.0.8.1
+--
+* Minor bug fixes
+
+v.0.8.0
+--
+* Added support for automatic isotopomer selection. To use this feature, run `riana/riana.py` with `--fs Auto`.
+* Added experimental support for in vitro heavy water labeling. To use this feature, run `riana/riana.py` with `--label hw_cell`.
+
+
+v.0.7.2
+--
+* Included additional Snakemake options in the config files
+* The argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8
+
+
+> See [Change Log](change.qmd) for details.
+
+:::
+The latest version and source code of RIANA can be found on github: <https://github.com/ed-lau/riana>.
+
+See the [Quick Start](install.qmd) and [Documentation](about.qmd) for instructions.
+
+
+
+
+## Contributors
+* Edward Lau, PhD - [ed-lau](https://github.com/ed-lau)
+* Maggie Lam, PhD - [Maggie-Lam](https://github.com/Maggie-Lam)
+* Jordan Currie, MSc - [jordancurrie](https://github.com/jordancurrie)
+
+
+## Citations
+
+If you use RIANA or the associated methods in your research, please consider citing the following papers:
+
+Original publication, heavy water and SILAC comparison:
+
+1. **Harmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult animals**
+Hammond DE, Simpson DM, Franco C, Wright Muelas M, Wasters J, Ludwig RW, PRescott MC, Hurst JL, Beynon RJ, E Lau *Molecular & Cellular Proteomics* 2022, 100252 [doi:10.1016/j.mcpro.2022.100252](https://doi.org/10.1016/j.mcpro.2022.100252) Epub 2022 May 28. PMID: 35636728; PMCID: PMC9249856.
+
+Rule-based mass isotopomer selection method for heavy water:
+
+2. **Improved Method to Determine Protein Turnover Rates with Heavy Water Labeling by Mass Isotopomer Ratio Selection**
+Currie J, Ng DCM, Pandi B, Black A, Manda V, Durham C, Pavelka J, Lam MPY, Lau E.  *Journal of Proteome Research* 2025 Apr 4;24(4):1992-2005. [doi: 10.1021/acs.jproteome.4c01012](https://doi.org/10.1021/acs.jproteome.4c01012) Epub 2025 Mar 18. PMID: 40100644; PMCID: PMC11977540.
+
+Application of heavy water labeling to cell culture:
+
+3. **Deuterium Labeling Enables Proteome Wide Turnover Kinetics Analysis in Cell Culture**
+Alamillo L, Ng DCM, Currie J, Black A, Pandi B, Manda V, Pavelka J, Schaal P, Travers JG, McKinsey TA, Lam MPY, Lau E.  *Cell Rep Methods* 2025 Jul 21;5(7):101104. [doi: 10.1016/j.crmeth.2025.101104]((https://doi.org/10.1016/j.crmeth.2025.101104)). Epub 2025 Jul 10. PMID: 40645189; PMCID: PMC12296481.

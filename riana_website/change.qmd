@@ -1,0 +1,79 @@
+---
+title: "Change Log"
+format: html
+keywords: "Protein turnover, Proteomics, Mass spectrometry"
+abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+author: "Edward Lau"
+date: "`r Sys.Date()`"
+image-caption: "RIANA logo"
+image: "images/riana_logo.png"
+image-alt: "RIANA - Relative Isotope Abundance Analyzer"
+---
+
+## Update v.0.8.3
+* Minor bug fixes
+* The isotopomer columns are now named iso0, iso1, etc. instead of m0, m1. This may affect compatibility.
+
+## Update v.0.8.1
+* Minor bug fixes
+
+## Update v.0.8.0
+* Added support for automatic isotopomer selection. To use this feature, run `riana/riana.py` with `--fs Auto`.
+* Added experimental support for in vitro heavy water labeling. To use this feature, run `riana/riana.py` with `--label hw_cell`.
+
+## Update v.0.7.3
+* Added graphical user interface (GUI) for RIANA. To use the GUI, run `riana/riana_ui.py` in the command line.
+
+## Update v.0.7.2
+* Included additional Snakemake options in the config files
+* The argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8
+
+## Update v.0.7.1
+* Added parameter for mass defect -D to command line argument for riana integrate. See documentation for detail
+* Added the flag -p to the command line argument for riana fit, which toggles plotting fitted curves
+* Added the fag -w to the command line argument for riana integrate, for writing out pre-integration intensities
+
+## Update v.0.7.0
+* RIANA now supports a Snakemake pipeline that performs protein database search, filtering, integration and fitting
+* Added native support to perform curve-fitting and output best-fit curve plots
+* Added support for one-pool, two-compartment (Guan et al.) and three-exponent (Fornasiero et al.) models
+* Match between runs is temporarily disabled to support the Snakemake workflow and will return in a later version.
+
+## Update v.0.6.4
+* Added support for standalone Percolator results for v.3.0.5.
+* Organize the project in identical manner, include one psms.txt for target psms (output of Percolator -m tag) in each percolator folder.
+* When using standalone Percolator dist, peptide masses are calculated de novo
+* Toggle match between runs using --mbr or -b
+* No longer writes results of individual fractions separately.
+
+## Update v.0.6.3
+* Fixed an issue where mbr all-NaN slice causes an error
+* Changed project directory structure so that mzml files have to be within an mzml subfolder and percolator files
+are in the percolator folder
+
+## Update v.0.6.0
+* Started implementation of match between runs and restructured project for distribution via pip
+
+## Update v.0.5.0
+
+* Updated to use pymzml 2.2.
+* Multi-threading is now supported with the --thread argument.
+* RIANA now loads all the spectra needed for integration into memory.
+* Compared to v.0.4.0 there should now be a substantial speed gain and can finish a sizeable fraction (~1 Gb raw file) in 10 min.
+* User-definable mass tolerance for MS1 integration is now supported via the --masstolerance argument [default 100 ppm].
+
+## Update v.0.4.0
+
+* Updated to use python 3.5+, up-to-date scipy and numpy, pymzml.
+
+* Multi-fraction runs are now supported - the mzml files in the directory need to be the same as the order they appear
+in the Percolator indices (check the Percolator output log file if unsure). For the most cases this shouldn't present a problem if
+the mzml directory contains exactly the same mzml files used for the database search, unless there is a difference
+in how the operating system order files on the search computer (e.g., file_10.mzml vs. file_2. mzml) or if one of the
+fractions contained no protein ID and Crux/Percolator decided to skip the file in its indexing.
+
+* To support multi-fraction analysis, RIANA now takes in Percolator tab delimited files for protein ID rather than mzid.
+Mzid support will be added back in in a future version.
+
+

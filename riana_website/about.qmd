@@ -1,0 +1,158 @@
+---
+title: "Documentations"
+format: html
+keywords: "Protein turnover, Proteomics, Mass spectrometry"
+abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+author: "Edward Lau"
+date: "`r Sys.Date()`"
+image-caption: "RIANA logo"
+image: "images/riana_logo.png"
+image-alt: "RIANA - Relative Isotope Abundance Analyzer"
+---
+
+## Basics
+
+RIANA has two components, integrate and fit (experimental), which can be individually called using `riana integrate`
+and `riana fit`. For the help message of each component, type `riana integrate -h` and `riana fit -h`.
+
+
+### Integrate
+The `integrate` component  reads in mass spectrometry data files (.mzML) and the corresponding Percolator search result.
+The Percolator results cna be supplied directly to RIANA or generated automatically from the mass spectrometry data files
+using the included Snakemake ppeline).
+
+RIANA reads and filters the search result files based on the `-q` argument for Percolator adjusted P values and the `-u`
+flag for protein-unique peptides. For each qualifying peptide-charge concatamer, RIANA then calculates the accurate mass
+and m/z of the unlabeled (m0) isotopomer, as well as each of the successive isotopomers specified in the `-i` argument.
+
+RIANA then reads the corresponding mass spectrometry file and locate the scans from which the peptide was identified,
+plus a retention time (rt) window `-r` and retrieve the intensity over rt of each isotopomer. The areas-under-curve of
+each extracted ion chromatogram is then integrated usign the trapezoid method and written into the output file.
+
+The intensity over rt data prior to integration can also be saved directly using the `-w` flag. This will create a large
+file (up to 10s of Gbs) for each experimental time point.
+
+![Retrieved chromatograms of isotopomers m0-m6 for a peptide. Note the gradual decrease of the relative intensity of
+the m0 peak (lightest in color) as labeling proceeds (from left to right) ](images/integration.png)
+
+### Fit
+The `fit` component takes in the integration results from multiple mass spectrometry experiments, and fits the relative
+ isotope abundance data across labeling time points to a specified kinetic model.
+
+Three models ar ecurrently supported. In the `simple` model, the fraction of new protein over labeling time behavior
+of a peptide is described by an exponential decay equation with one parameter ($k$):
+
+$$ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot 1 - e^{-k t} $$
+
+where $A_{t=0}$ is the initial relative abundance of the m0 peak over the m~i~ peaks, and is set to 1 in amino acid
+labeling experiments. $A_{t\rightarrow \infty}$ is calculated based on the plateau relative isotope abundance, which is based
+on the number of labeling sites in a peptide and the precursor plateau enrichment. The latter is supplied through
+the `-r` argument in `riana fit`.
+
+[Guan et al. 2012 [PMID: 22444387](https://pubmed.ncbi.nlm.nih.gov/22444387/)]{.aside}
+
+The two-compartment model is implemented as in Guan et al. 2012. The fraction of new protein over labeling time behavior
+of a peptide is described by a two-exponent model with the protein turnover rate constant ($k$) as well as the precursor
+availability rate constant ($k_p$):
+
+$$ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot \frac{1 - ( e^{-kt}k_p - e^{-k_pt}k)}{k_p - k } $$
+
+[Fornasiero et al. 2018 [PMID: 30315172](https://pubmed.ncbi.nlm.nih.gov/30315172/)]{.aside}
+
+The Fornasiero model two-compartment, three-exponent model additionally attempts to account for the effect of precursor
+ reutilization from proteome-wide protein degradation. The two additional parameters `--kr` and `--rp` must be provided
+ to denote the reutilization rate constant and the proportion of protein-bound vs. free precursors. Details are
+ described in the original publication.
+
+
+
+:::{.callout-tip}
+## Current fitting limitations
+
+Currently RIANA only calculates fractional synthesis of new peptides based on the decrease of the unlabeled (m0)
+over all specified isotopomers (m0 - m~i~). Future updates will allows specification of numerators and denominators
+in calculating fractional synthesis for more flexible experimental designs.
+
+:::
+
+## All Options
+
+### RIANA integrate
+
+```bash
+riana integrate -h
+usage: riana integrate [-h] [-s SAMPLE] [-i [0-20] [[0-20] ...]] [-u] [-t THREAD] [-o OUT] [-q FDR[0,1]] [-r R_TIME] [-w] [-m [1-100]] [-S {3,5,7,9,11,13,15,17}]
+                       [-D {D,C13,SILAC}]
+                       mzml_path id_path
+
+Integrates isotopomer abundance over retention time
+
+positional arguments:
+  mzml_path             <required> path to folder containing the mzml files
+  id_path               <required> path to the percolator output psms.txt file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -s SAMPLE, --sample SAMPLE
+                        sample name to override mzml folder name, must end with a number, e.g., time1
+  -i [0-20] [[0-20] ...], --iso [0-20] [[0-20] ...]
+                        isotopomer(s) to integrate
+  -u, --unique          integrate unique peptides only
+  -t THREAD, --thread THREAD
+                        number of threads for concurrency [default: 1]
+  -o OUT, --out OUT     path to the output directory [default: .]
+  -q FDR[0,1], --q_value FDR[0,1]
+                        integrate only peptides with q value below this threshold [default: 1e-2]
+  -r R_TIME, --r_time R_TIME
+                        retention time (in minutes, both directions) tolerance for integration
+  -w, --write_intensities
+                        also write pre-integration intensities into a result file
+  -m [1-100], --mass_tol [1-100]
+                        <integer> mass tolerance in ppm for integration [default 50 ppm]
+  -S {3,5,7,9,11,13,15,17}, --smoothing {3,5,7,9,11,13,15,17}
+                        smoothing window size for integration
+  -D {D,C13,SILAC}, --mass_defect {D,C13,SILAC}
+                        mass defect type [default: D]
+
+
+
+```
+
+### RIANA fit
+
+```bash
+ riana fit -h
+usage: riana fit [-h] [-m {simple,guan,fornasiero}] [-l {aa,hw,o18,hw_cell}] [-a AA] [--kp KP] [--kr KR] [--rp RP] [-q FDR[0,1]] [-d DEPTH] [-r RIA] [-o OUT] [-p]
+                 [-f {m0_m1,m0_m2,m0_m3,m0_mA,m1_m3,m1_m2,m1_mA,Auto}] [-t THREAD]
+                 riana_path [riana_path ...]
+
+positional arguments:
+  riana_path            <required> paths to one or more integrate out text files (note: the sample field must include numericals corresponding to time units (e.g., time0, time
+                        6)
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -m {simple,guan,fornasiero}, --model {simple,guan,fornasiero}
+                        kinetic models for fitting, currently only the simple exponential model is implemented [default: simple]
+  -l {aa,hw,o18,hw_cell}, --label {aa,hw,o18,hw_cell}
+                        labeling type [default: hw]
+  -a AA, --aa AA        which amino acid residue(s) are label carrying, e.g., KR [default: K]
+  --kp KP               for two-compartment models, the precursor rate constant [default: 0.5]
+  --kr KR               for the fornasiero model, the reutilization rate constant [default: 0.05]
+  --rp RP               for the fornasiero model, the ratio of protein bound to free precursors [default: 10]
+  -q FDR[0,1], --q_value FDR[0,1]
+                        fits only peptide data points with q value below this threshold [default: 1e-2]
+  -d DEPTH, --depth DEPTH
+                        fits only peptides identified in at least this many samples [default: 6]
+  -r RIA, --ria RIA     final isotope enrichment levels, if known [default: 0.5]
+  -o OUT, --out OUT     path to the output directory [default: .]
+  -p, --plotcurves      plot fitted curves
+  -f {m0_m1,m0_m2,m0_m3,m0_mA,m1_m3,m1_m2,m1_mA,Auto}, --fs {m0_m1,m0_m2,m0_m3,m0_mA,m1_m3,m1_m2,m1_mA,Auto}
+                        calculate fractional synthesis using fine structure isotopomers
+  -t THREAD, --thread THREAD
+                        number of threads for concurrency [default: 1]
+
+
+
+```

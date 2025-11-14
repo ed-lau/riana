@@ -1,0 +1,63 @@
+project:
+  type: website
+  output-dir: ../docs
+
+website:
+
+  page-navigation: true
+
+  title: "RIANA v0.8.1"
+  description: "Relative Isotope Abundance Analyzer"
+  site-url: "https://github.com/ed-lau/jcast"
+
+  repo-url: https://github.com/ed-lau/riana
+  repo-actions: [issue]
+
+  open-graph: true
+
+  twitter-card:
+    creator: "@LauLabColorado"
+    image: "images/riana_logo.png"
+
+  page-footer:
+    right: "This page is built with [Quarto](https://quarto.org/)."
+    left: "&copy; Copyright 2021–2025 [Lau Lab Colorado](https://laulab.net)"
+    #background: "#F7F9FB"
+
+  navbar:
+    background: primary
+    search: true
+    tools:
+      - icon: github
+        href: https://github.com/ed-lau/jcast
+        text: "GitHub repository"
+
+      - icon: twitter
+        href: https://twitter.com/LauLabColorado
+    left:
+      - text: "Home"
+        file: index.qmd
+      - text: "Quick Start"
+        file: install.qmd 
+      - text: "Documentation"
+        file: about.qmd 
+      - text: "Change Log"
+        file: change.qmd
+      - text: "FAQs"
+        file: faqs.qmd
+
+format:
+  html:
+    theme: flatly
+    css: styles.css
+    toc: true
+    code-copy: true
+    code-overflow: wrap
+    code-block-bg: true
+    code-block-border-left: true
+    fontsize: "medium"
+
+
+
+
+

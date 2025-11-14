@@ -85,7 +85,7 @@ def fit_all(args) -> None:
 
     # filter by percolator q-value
     rdf_filtered = rdf[rdf['percolator q-value'] < q_threshold].copy()
-    print(rdf_filtered)
+    # print(rdf_filtered)
 
     # filter by number of time points
     # concats = rdf_filtered.groupby('concat')['sample'].nunique()
@@ -200,7 +200,7 @@ def fit_all(args) -> None:
     logger.info("Loop finished")
 
     out_df = pd.DataFrame.from_dict(out_dict, orient='index', columns=['k_deg', 'R_squared', 'sd', 't', 'fs'])
-    print(out_df)
+
     # Turn the list columns (t, fs) into aggregates separated by commas, first by expanding the lists
     out_df_2 = out_df.drop(columns=['k_deg', 'R_squared', 'sd']).explode(['t', 'fs']).copy()
     out_df_2.index.name = 'concat'
@@ -210,16 +210,14 @@ def fit_all(args) -> None:
     out_df_2['fs'] = pd.to_numeric(out_df_2['fs'], downcast='float')
 
     out_df_2 = out_df_2.round(3).copy()
-    print(out_df_2)
     out_df_2 = out_df_2.groupby('concat').agg(pd.Series.tolist).copy()
-    print(out_df_2)
     # Merge back to the data frame with k_deg, R_squared, sd
     out_df_2 = out_df_2.merge(out_df[['k_deg', 'R_squared', 'sd']], left_index=True, right_index=True, how='left').copy()
 
     # Merge with the original dataframe to get the protein id
     right_merge = rdf_filtered[['concat', 'protein id']].copy().drop_duplicates(subset=['concat']).set_index('concat')
     out_df_2 = out_df_2.merge(right_merge, left_index=True, right_index=True, how='left').copy()
-    print(out_df_2)
+
     # Add back the kinetic parameters
     # TODO: save the kinetic parameters in a separate file
     out_df_2 = out_df_2.assign(kp=args.kp, kr=args.kr, rp=args.rp, ria_max=args.ria)
@@ -242,7 +240,7 @@ def fit_one(loop_index,
             ria_max: float,
             model_: callable,
             aa_res: str,
-            fs_fine_structure: bool,
+            fs_fine_structure: str,
             model_pars: dict,
             ) -> dict:
     """
@@ -263,11 +261,12 @@ def fit_one(loop_index,
     # create subset dataframe with current concat, taking only unique sample, file_idx pairs
     seq = concat_list[loop_index]
     y = filtered_integrated_df.loc[filtered_integrated_df['concat'] == seq].drop_duplicates(subset=['sample', 'file_idx']).copy()
-    print(seq)
-    print(y)
+    # print(seq)
+    # print(y)
 
     logger = logging.getLogger('riana_fit')
     logger.info(f'Fitting peptide {seq} with data shape {y.shape}')
+    logger.info('args.fine_structure: ' + str(fs_fine_structure))
 
     '''
     2021-11-22 Get t, mi from subset dataframe
@@ -294,7 +293,9 @@ def fit_one(loop_index,
                                            aa_res=aa_res)
 
     # if label is hw or hw_cell, use the heavy water labeling dictionary
-    if (label == '1' or label == '2' or label == '3') and fs_fine_structure is not None:
+    if (label == 1 or label == 2 or label == 3) and fs_fine_structure is not None:
+
+        logger.info('Using fine structure calculation for FS')
 
         if fs_fine_structure == "m0_m1":
             y = y.assign(mi=(y.iso0 / y.iso1).where(y.iso0 != 0, 0))
@@ -337,11 +338,12 @@ def fit_one(loop_index,
 
     else:
         # Use m0/mA to calculate FS if label is aa or if fine structure is not used
-        y['colsums'] = y.loc[:, y.columns.str.match('^m[0-9]+$')].sum(axis=1)  # sums all m* columns
+        y['colsums'] = y.loc[:, y.columns.str.match('^iso[0-9]+$')].sum(axis=1)  # sums all m* columns
         y = y.assign(mi=(y.iso0 / y.colsums).where(y.iso0 != 0, 0))  # avoid division by 0, if m0 is 0, return 0
         mi = np.array(y['mi'].tolist())
-        logger.info(y[['sample', 'mi']])
-        print(y[['sample', 'mi']])
+        logger.info("Using fallback m0/mA calculation for FS")
+        # logger.info("label:", label)
+        # logger.info("fs_fine_structure:", fs_fine_structure)
 
         fs = calculate_fs_m0(a=mi,
                              seq=seq,
