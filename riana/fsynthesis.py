@@ -42,7 +42,7 @@ def calculate_label_n(sequence: str,
 
     :param sequence:    the peptide sequence
     :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
-    :param aa_res:      the amino acid being labeled
+    :param aa_res:      the amino acid being labeled (for label=4 only)
     :return:
     """
 
@@ -197,13 +197,13 @@ def calculate_fs_fine_structure(a: np.ndarray,
             else:
                 fs_array.extend([mixed_envelop[0] / mixed_envelop[2]])
 
-    # print(f'FS array: {fs_array}')
+    #print(f'FS array: {fs_array}')
 
     # Then do a reverse lookup of the empirical m_i to get fs.
     predicted_fs = np.array([find_nearest_fs(fs_array, a_i)/100 for a_i in a])
     
-    # print(f'Input array: {a}')
-    # print(f'Predicted FS: {predicted_fs}')
+    #print(f'Input array: {a}')
+    #print(f'Predicted FS: {predicted_fs}')
 
     return predicted_fs
 

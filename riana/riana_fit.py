@@ -353,6 +353,9 @@ def fit_one(loop_index,
 
     logger.info(f'concat: {stripped}, n: {num_labeling_sites}')
     logger.info([t, fs])
+    # print t, fs as data frame for debugging
+    # df_debug = pd.DataFrame({'time': t, 'fs': fs})
+    # print(df_debug)
 
     # TODO: 2021-11-21 remove t/fs data points where fs is nan for any reason
     null_result = {seq: [np.nan, np.nan, np.nan, t, fs]}
