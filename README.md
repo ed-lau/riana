@@ -1,4 +1,5 @@
-[![DOI](https://zenodo.org/badge/{github_id}.svg)](https://zenodo.org/badge/latestdoi/{github_id})
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17613314.svg)](https://doi.org/10.5281/zenodo.17613314)
+
 
 # Riana.py - Relative Isotope Abundance Analyzer
 
