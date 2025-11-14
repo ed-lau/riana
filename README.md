@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/{github_id}.svg)](https://zenodo.org/badge/latestdoi/{github_id})
+
 # Riana.py - Relative Isotope Abundance Analyzer
 
 Riana (Relative Isotope Abundance Analyzer) takes in standard mass spectrometry spectra and spectral ID files,
