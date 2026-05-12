@@ -1,18 +1,25 @@
 # -*- coding: utf-8 -*-
 
-""" init. """
+""" Riana package. """
 
-from os.path import dirname, basename, isfile, join
-import glob
+__all__ = [
+    "accmass",
+    "constants",
+    "exceptions",
+    "fsynthesis",
+    "logger",
+    "main",
+    "models",
+    "params",
+    "peptides",
+    "project",
+    "riana_fit",
+    "riana_integrate",
+    "spectra",
+    "utils",
+]
 
-modules = glob.glob(join(dirname(__file__), "*.py"))
-modules = [ basename(f)[:-3] for f in modules if isfile(f)
-            and not f.endswith("__init__.py")
-            and not f.endswith("setup.py")
-            and not f.endswith("__main__.py")]
-__all__ = modules
-
-__version_info__ = ('0', '8', '3')
-__version__ = '.'.join(__version_info__)
+__version_info__ = ("0", "9", "0")
+__version__ = ".".join(__version_info__)
 
 

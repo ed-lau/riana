@@ -2,17 +2,14 @@
 
 """ Methods to parse individual peptides from percolator. """
 
-import pandas as pd
-import os
-import sys
 import logging
-import numpy as np
+import os
+import re
 
-from riana import accmass, params
+import pandas as pd
 
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import BaggingRegressor
-from sklearn.metrics import r2_score
+from riana import accmass
+from riana.exceptions import DataError
 
 
 class ReadPercolator(object):
@@ -73,121 +70,124 @@ class ReadPercolator(object):
         # 20211109 sample_loc = os.path.join(self.path, sample, self.percolator_subdirectory)
         # 20211109 assert os.path.isdir(sample_loc), '[error] project sample subdirectory not valid'
 
-        self.logger.info('Reading Percolator file at {0}'.format(self.path.name)) # 20211109 sample_loc))
+        self.logger.info('Reading Percolator file at {0}'.format(self.path.name))
 
-        # Opening the Percolator tab delimited target.psms.file
-        # List all files in the percolator directory ending with target.psms.txt.
-        # 20211109 id_files = [f for f in os.listdir(sample_loc) if f.endswith('target.psms.txt')]
-        # 20211109 assert len(id_files) <= 1, '[error] check percolator output directory has 1 *.target.psms.txt'
-
-        # If there is no percolator.target.psms.txt, read psms.txt
-        # 20211109 if len(id_files) == 0:
-        # 20211109     id_files = [f for f in os.listdir(sample_loc) if f.endswith('psms.txt') and
-        # 20211109                 not f.startswith('decoy')]
-        # 20211109    assert len(id_files) == 1, '[error] check percolator output directory has 1 psms.txt'
-
+        # Detect Crux vs standalone Percolator by header inspection — do not rely
+        # on an exception falling through pandas parsing.
         try:
-            # Read the Percolator psms file.
-            self.id_df = pd.read_csv(filepath_or_buffer=self.path,  # 20211109 os.path.join(sample_loc, id_files[0]),
-                                sep='\t')
+            with open(self.path.name, 'r') as f:
+                header_line = f.readline()
+        except OSError as e:
+            raise DataError(f'Failed to load percolator file {self.path}: {e}') from e
 
-            # Test for Crux Percolator file
-            test_col = len(self.id_df['spectrum precursor m/z'])
+        header_cols = header_line.rstrip('\n').split('\t')
+        is_crux = 'spectrum precursor m/z' in header_cols and 'sequence' in header_cols
+
+        if is_crux:
+            try:
+                self.id_df = pd.read_csv(filepath_or_buffer=self.path, sep='\t')
+            except OSError as e:
+                raise DataError(f'Failed to load percolator file {self.path}: {e}') from e
 
             # 2021-12-21 calculate peptide mass because the crux peptide mass column does not include cysteine IAA mass
-            self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq, ignored_mods=self.ignored_mods
-                                                                   ) for seq in self.id_df['sequence']]
-            self.logger.info(f'Crux Percolator file detected through the presence of spectrum precursor '
-                        f'm/z column with length {test_col}')
-
-        except OSError as e:
-            sys.exit('Failed to load percolator file. ' + str(e.errno))
-
-        # Try reading the Standalone Percolator psms file
-        except (pd.errors.ParserError, KeyError) as e:
-            self.logger.info("Standalone Percolator file detected")
-
-            # read lines with the TextIOWrapper self.path
-            with open(self.path.name, 'r') as f:
-                f_ln = f.readlines()
-
-            # The percolator output has different number of columns per row because proteins are separated by tabs
-            # Read the first half of the table without the protein IDs
-            self.id_df = pd.DataFrame([ln.split('\t')[0:5] for ln in f_ln[1:]])
-            self.id_df.columns = ['PSMId', 'score', 'percolator q-value', 'percolator PEP', 'peptide']
-            self.id_df['percolator q-value'] = self.id_df['percolator q-value'].astype(float)
-            self.id_df['percolator PEP'] = self.id_df['percolator PEP'].astype(float)
-
-            # Create a sequence column for compatibility with Crux percolator
-            self.id_df['sequence'] = [pep[2:-2] for pep in self.id_df['peptide']]
-
-            # 2025-10-02 The new Fragger format adds a charge to the peptide column before the flanking sequence
-            # If the -3 position is a digit, then it is a charge, remove it
-            self.id_df['sequence'] = [seq if not seq[-1].isdigit() else seq[:-1] for seq in self.id_df['sequence']]
-
-            # Remove the trailing charge number in sequence
-            # self.id_df['sequence'] = self.id_df['sequence'].str.replace(r'\.\d+$', '', regex=True)
-
-            # Create a flanking aa column for compatibility with Crux percolator
-            self.id_df['flanking aa'] = [pep[0] + pep[-1] for pep in self.id_df['peptide']][1]
-
-            # Create dummy columns for compatibility
-            self.id_df['spectrum precursor m/z'] = 0
-            self.id_df['percolator score'] = 0
-            self.id_df['spectrum neutral mass'] = 0
-            self.id_df['distinct matches/spectrum'] = 0
-            self.id_df['peptide mass'] = [accmass.calculate_ion_mz(seq, ignored_mods=self.ignored_mods
-                                                                   ) for seq in self.id_df['sequence']]
-
-            # Then read in the protein names and join them by comma instead of tab
-            self.id_df['protein id'] = [','.join(ln.rstrip().split('\t')[5:]) for ln in f_ln[1:]]
-
-            # Split the PSMId column to create file_idx, scan, and charge.
-            # 2023-08-07 This now takes only the MSFragger output format which is in the format filename.scan.scan.charge_index
-            self.id_df['charge'] = [psm.split('.')[-1] for psm in self.id_df['PSMId']]
-            self.id_df['charge'] = [psm.split('_')[-2] for psm in self.id_df['charge']]
-            self.id_df['charge'] = self.id_df['charge'].astype(int)
-            self.id_df['scan'] = [psm.split('.')[-2] for psm in self.id_df['PSMId']]
-            self.id_df['scan'] = self.id_df['scan'].astype(int)
-
-            # The file name is the underscore('_') split until the last 3 parts, then rejoined by underscore
-            # in case there are underscores in the filename. We then remove everything
-            # We then remove all directories to get base name
-
-            # 2023-09-13 Changed for MSFragger output
-            self.id_df['file_name'] = [os.path.basename('_'.join(psm.split('.')[:-3])) for psm in self.id_df['PSMId']]
-
-            # Get the sorted file names, hopefully this is the same index as the Crux Percolator output
-            # TODO: Read the Percolator log file to get actual index and use file names to open the mzml instead
-            sorted_index = sorted(set(self.id_df['file_name']))
-            self.id_df['file_idx'] = self.id_df['file_name'].apply(sorted_index.index)
-
-            self.id_df = self.id_df[['file_idx',
-                           'scan',
-                           'charge',
-                           'spectrum precursor m/z',
-                           'spectrum neutral mass',
-                           'peptide mass',
-                           'percolator score',
-                           'percolator q-value',
-                           'percolator PEP',
-                           'distinct matches/spectrum',
-                           'sequence',
-                           'protein id',
-                           'flanking aa',
-                           ]]
+            self.id_df['peptide mass'] = [
+                accmass.calculate_ion_mz(seq, ignored_mods=self.ignored_mods)
+                for seq in self.id_df['sequence']
+            ]
+            self.logger.info(
+                f'Crux Percolator file detected via header. '
+                f'Loaded {len(self.id_df)} rows.'
+            )
+        else:
+            self.logger.info('Standalone Percolator file detected via header.')
+            self._read_standalone_percolator()
 
         self.id_df.loc[:, 'sample'] = self.sample
-
         self.id_df['concat'] = self.id_df['sequence'].map(str) + '_' + self.id_df['charge'].map(str)
 
         self.logger.info('Percolator file for {0} has size {1}'.format(self.sample,
                                                                        self.id_df.shape))
 
-        # 20211109 all_psms = all_psms.append(id_df, sort=False)
-        # 20211109 self.logger.info('Master Percolator file has size {0}'.format(all_psms.shape))
-
         return True
+
+    def _read_standalone_percolator(self):
+        """Parse a standalone Percolator psms.txt (variable-column protein-id rows).
+
+        Expects MSFragger PSMId format ``filename.scan.scan.charge_index``.
+        """
+
+        with open(self.path.name, 'r') as f:
+            f_ln = f.readlines()
+
+        # The percolator output has different number of columns per row because proteins are separated by tabs.
+        # Read the first half of the table without the protein IDs.
+        self.id_df = pd.DataFrame([ln.split('\t')[0:5] for ln in f_ln[1:]])
+        self.id_df.columns = ['PSMId', 'score', 'percolator q-value', 'percolator PEP', 'peptide']
+        self.id_df['percolator q-value'] = self.id_df['percolator q-value'].astype(float)
+        self.id_df['percolator PEP'] = self.id_df['percolator PEP'].astype(float)
+
+        # Strip flanking residues from the peptide column: "X.SEQUENCE.Y" -> "SEQUENCE".
+        self.id_df['sequence'] = [pep[2:-2] for pep in self.id_df['peptide']]
+
+        # Some MSFragger pep.xml output ships a charge digit in the peptide column
+        # before the closing flanker; only strip it when the trailing token is a
+        # bare digit (i.e. "1"-"9"), to avoid mangling sequences ending in a
+        # modification annotation that happens to be numeric.
+        self.id_df['sequence'] = [
+            seq[:-1] if (len(seq) >= 2 and seq[-1].isdigit() and not seq[-2].isdigit())
+            else seq
+            for seq in self.id_df['sequence']
+        ]
+
+        self.id_df['flanking aa'] = [pep[0] + pep[-1] for pep in self.id_df['peptide']]
+
+        self.id_df['spectrum precursor m/z'] = 0
+        self.id_df['percolator score'] = 0
+        self.id_df['spectrum neutral mass'] = 0
+        self.id_df['distinct matches/spectrum'] = 0
+        self.id_df['peptide mass'] = [
+            accmass.calculate_ion_mz(seq, ignored_mods=self.ignored_mods)
+            for seq in self.id_df['sequence']
+        ]
+
+        self.id_df['protein id'] = [','.join(ln.rstrip().split('\t')[5:]) for ln in f_ln[1:]]
+
+        # PSMId format expected: "filename.scan.scan.charge_index"
+        # Parse via single regex against the documented format rather than
+        # repeated split/index gymnastics.
+        psmid_re = re.compile(r'^(?P<file>.+)\.(?P<scan>\d+)\.\d+\.(?P<charge>\d+)_\d+$')
+        parsed = self.id_df['PSMId'].astype(str).str.extract(psmid_re)
+        if parsed.isnull().any().any():
+            bad = self.id_df.loc[parsed.isnull().any(axis=1), 'PSMId'].head(3).tolist()
+            raise DataError(
+                'Standalone Percolator PSMId did not match expected MSFragger '
+                f"format 'filename.scan.scan.charge_index'. Examples: {bad}"
+            )
+
+        self.id_df['charge'] = parsed['charge'].astype(int)
+        self.id_df['scan'] = parsed['scan'].astype(int)
+        self.id_df['file_name'] = parsed['file'].apply(os.path.basename)
+
+        # TODO: read the Percolator log file to get the actual index assignment
+        # and use file names to open the mzml instead.
+        sorted_index = sorted(set(self.id_df['file_name']))
+        self.id_df['file_idx'] = self.id_df['file_name'].apply(sorted_index.index)
+
+        self.id_df = self.id_df[[
+            'file_idx',
+            'scan',
+            'charge',
+            'spectrum precursor m/z',
+            'spectrum neutral mass',
+            'peptide mass',
+            'percolator score',
+            'percolator q-value',
+            'percolator PEP',
+            'distinct matches/spectrum',
+            'sequence',
+            'protein id',
+            'flanking aa',
+        ]]
 
 
 
@@ -211,7 +211,11 @@ class ReadPercolator(object):
         :return:
         """
 
-        assert idx in list(set(self.id_df['file_idx']))
+        if idx not in set(self.id_df['file_idx']):
+            raise DataError(
+                f'Fraction index {idx} not present in Percolator output '
+                f'(known indices: {sorted(set(self.id_df["file_idx"]))}).'
+            )
 
         self.curr_frac_id_df = self.id_df.query('file_idx == @idx')
 

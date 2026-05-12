@@ -103,7 +103,7 @@ def calculate_ion_mz(seq: str,
 
     # First, strip all mass shifts and add them to the starting mass
     try:
-        mods = [float(mod[1:-1]) for mod in re.findall('\\[.*?]', seq)]
+        mods = [float(mod[1:-1]) for mod in re.findall(r'\[.*?]', seq)]
     except ValueError:
         raise ValueError('Modification contains string characters.')
 
@@ -111,10 +111,10 @@ def calculate_ion_mz(seq: str,
     mass += sum(m for m in mods if m not in ignored_mods)
 
     # 2021-05-18 strip all N-terminal n from Comet
-    seq = re.sub('^n', '', seq)
+    seq = re.sub(r'^n', '', seq)
 
     # Strip all modifications
-    stripped = re.sub('\\[.*?]', '', seq)
+    stripped = re.sub(r'\[.*?]', '', seq)
 
     res_atoms = _count_residue_atoms(stripped,
                                      iaa=params.iaa,  # add iodoacetamide to cysteine

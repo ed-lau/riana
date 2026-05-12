@@ -4,7 +4,7 @@
 
 import os
 import argparse
-from riana import riana_integrate, riana_fit, riana_preprocess, __version__
+from riana import riana_integrate, riana_fit, __version__
 from typing import List
 
 
@@ -140,13 +140,6 @@ def main():
                                        description='Riana has the following sub-commands:',
                                        )
 
-    parser_preprocess = subparsers.add_parser('preprocess',
-                                          help='Preprocesses Percolator input files',
-                                          description='Preprocesses Percolator input files',
-                                          epilog='For more information, see GitHub repository at '
-                                                 'https://github.com/ed-lau/riana',
-                                            )
-
     parser_integrate = subparsers.add_parser('integrate',
                                              help='Integrates isotopomer abundance over retention time',
                                              description='Integrates isotopomer abundance over retention time',
@@ -157,20 +150,6 @@ def main():
     parser_fit = subparsers.add_parser('fit',
                                        help='Fit to kinetic models *under development*')
 
-    #
-    # Arguments for preprocess sub-command
-    #
-
-    parser_preprocess.add_argument('id_files',
-                                   type=argparse.FileType('r'),
-                                   nargs='+',
-                                   help='<required> path to Percolator input file(s)')
-
-    parser_preprocess.add_argument('-o', '--out',
-                                   help= 'path to output directory',
-                                   default = '.')
-
-    parser_preprocess.set_defaults(func=riana_preprocess.main)
     #
     # Arguments for integrate subcommand
     #
@@ -237,7 +216,8 @@ def main():
                                   help='also write pre-integration intensities into a result file')
 
     parser_integrate.add_argument('-m', '--mass_tol',
-                                  help='<integer> mass tolerance in ppm for integration [default 50 ppm]',
+                                  help='<integer> mass tolerance half-width in ppm for integration '
+                                       '(integrate ±N ppm around the theoretical m/z) [default 50 ppm]',
                                   type=int,
                                   choices=range(1, 501),
                                   metavar='[1-500]',

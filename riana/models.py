@@ -142,7 +142,7 @@ def plot_model(protein,
     fs_clipped = fs_series[(fs_series < -0.2) | (fs_series > 1.2)]
     fs_clipped = fs_clipped.clip(min=-0.2, max=1.2)
     if len(t_clipped) > 0:
-        plt.plot(t_clipped, fs_clipped, 'rx')
+        fit_plot.plot(t_clipped, fs_clipped, 'rx')
 
     fit_plot.plot(np.array(range(0, int(np.max(t_series)) + 1)),
              model_to_use(t=np.array(range(0, int(np.max(t_series)) + 1)),

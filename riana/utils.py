@@ -18,13 +18,13 @@ def strip_concat(sequence: str,
     :return:
     """
     # 2021-05-18 strip all N-terminal n from Comet
-    sequence = re.sub('^n', '', sequence)
+    sequence = re.sub(r'^n', '', sequence)
 
     # Strip all modifications
-    sequence = re.sub('\\[.*?\\]', '', sequence)
+    sequence = re.sub(r'\[.*?\]', '', sequence)
 
     # Strip the underscore and charge
-    sequence = re.sub('_[0-9]+', '', sequence)
+    sequence = re.sub(r'_[0-9]+', '', sequence)
 
     return sequence
 

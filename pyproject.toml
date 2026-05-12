@@ -1,7 +1,61 @@
 [build-system]
-
-# These are the assumed default build requirements from pip:
-# https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
-
-requires = ["setuptools>=40.8.0", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "riana"
+dynamic = ["version"]
+description = "Riana integrates the relative abundance of isotopomers in mass spectrometry data and performs kinetics modeling."
+readme = "README.md"
+requires-python = ">=3.10,<4"
+license = { file = "LICENSE.md" }
+authors = [
+    { name = "Edward Lau", email = "edward.lau@cuanschutz.edu" }
+]
+keywords = ["scientific", "turnover", "kinetics", "proteomics", "mass-spectrometry"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "pymzml>=2,<3",
+    "scipy>=1",
+    "pandas>=2",
+    "matplotlib>=3,<4",
+    "numpy>=1.24",
+    "tqdm>=4,<5",
+    "scikit-learn>=1",
+    "IsoSpecPy>=2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+]
+
+[project.scripts]
+riana = "riana.main:main"
+
+[project.urls]
+Homepage = "https://ed-lau.github.io/riana/"
+Source = "https://github.com/ed-lau/riana"
+"Lau Lab" = "https://www.laulab.net"
+
+[tool.setuptools]
+packages = ["riana"]
+
+[tool.setuptools.dynamic]
+version = { attr = "riana.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

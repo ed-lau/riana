@@ -3,12 +3,9 @@
 """ Functions to integrate isotopomer peaks """
 
 
-import time
-
 import logging
 import re
 import os
-import sys
 from functools import partial
 import scipy.signal
 
@@ -18,9 +15,10 @@ import tqdm
 
 from .__init__ import __version__
 from riana import constants
+from riana.exceptions import DataError, IntegrationError
 from riana.peptides import ReadPercolator
 from riana.spectra import Mzml
-from riana.logger import get_logger #, remove_logger
+from riana.logger import get_logger
 from riana import accmass
 
 def integrate_all(args) -> None:
@@ -63,12 +61,12 @@ def integrate_all(args) -> None:
 
         mzml_files = {}
         for line in lines:
-            percolator_indices = 'INFO: Assigning index ([0-9]*) to (.*)\.'
+            percolator_indices = r'INFO: Assigning index ([0-9]*) to (.*)\.'
             pattern = re.findall(percolator_indices, line)
             if len(pattern) == 1:
                 idx, pathname = pattern[0]
                 dirname, filename = os.path.split(pathname)
-                mzml_files[int(idx)] = re.sub('\.pep\.xml', '', filename)
+                mzml_files[int(idx)] = re.sub(r'\.pep\.xml', '', filename)
                 # TODO: will probably have to account for .pin or other input to Percolator
 
     # If the log file does not exist, assign index naively based on sort
@@ -80,7 +78,7 @@ def integrate_all(args) -> None:
 
         # ---- Read in the mzML file ----
 
-        mzml_file_list = [f for f in os.listdir(args.mzml_path) if re.match('^.*.mz[Mm][Ll]', f)]
+        mzml_file_list = [f for f in os.listdir(args.mzml_path) if re.match(r'^.*\.mz[Mm][Ll]', f)]
         # Sort the mzML files by names
         # Note this may create a problem if the OS Percolator runs on has natural sorting (xxxx_2 before xxxx_10)
         # But we will ignore for now
@@ -89,18 +87,20 @@ def integrate_all(args) -> None:
         # Make dictionary of idx, filename from enumerate
         mzml_files = {}
         for idx, filename in enumerate(mzml_file_list):
-            mzml_files[idx] = re.sub('.mz[Mm][Ll](\.gz)?', '', filename)
+            mzml_files[idx] = re.sub(r'\.mz[Mm][Ll](\.gz)?', '', filename)
 
     # Print mzml files to log
     logger.info(f'mzml file orders: {mzml_files}')
 
     # Throw an error if there is no mzML file in the mzml directory
-    assert len(mzml_files) != 0, '[error] no mzml files in the specified directory'
-    # Check that the number of mzMLs in the mzML folder is the same as the maximum of the ID file's file_idx column.
-    # Note this will break if the last fraction does not contain at least some ID, but we will ignore for now.
-    # assert len(mzml_files) == max(mzid.indices) + 1, '[error] number of mzml files not matching id list'
+    if len(mzml_files) == 0:
+        raise DataError(f'No mzml files in the specified directory: {args.mzml_path}')
 
-    assert len(mzml_files) == len(mzid.indices), '[error] number of mzml files not matching id list'
+    if len(mzml_files) != len(mzid.indices):
+        raise DataError(
+            f'Number of mzml files ({len(mzml_files)}) does not match the number of '
+            f'file indices in the Percolator output ({len(mzid.indices)}).'
+        )
 
     # create overall result files
     overall_integrated_df = pd.DataFrame()   # all integrated isotopomer peak areas
@@ -135,7 +135,7 @@ def integrate_all(args) -> None:
             mzml = Mzml(mzml_path)
 
         except OSError as e:
-            sys.exit('[error] failed to load fraction mzml file. ' + str(e.errno))
+            raise DataError(f'Failed to load fraction mzml file {mzml_path}: {e}') from e
 
 
         #
@@ -143,7 +143,11 @@ def integrate_all(args) -> None:
         #
         # TODO: to accommodate multiple PSMs per concat, this should loop through a concat list.
         loop_ = range(len(mzid.curr_frac_filtered_id_df))
-        assert len(loop_) > 0, 'No qualified peptide after filtering'
+        if len(loop_) == 0:
+            raise DataError(
+                f'No qualified peptides remain after filtering in fraction {mzml_files[idx]}. '
+                'Try relaxing --q_value or --unique.'
+            )
 
         get_isotopomer_intensity_partial = partial(get_isotopomer_intensity,
                                                    id_=mzid.curr_frac_filtered_id_df.copy(),
@@ -183,7 +187,7 @@ def integrate_all(args) -> None:
         from concurrent import futures
         with futures.ThreadPoolExecutor(max_workers=args.thread) as ex:
             intensities_results = list(tqdm.tqdm(ex.map(get_isotopomer_intensity_partial, loop_),
-                                                 total=max(loop_),
+                                                 total=len(loop_),
                                                  miniters=iterfreq,
                                                  desc=f'Extracting isotopomer intensities in sample: {args.sample}'
                                                       f' file: {mzml_files[idx]}'))
@@ -211,7 +215,7 @@ def integrate_all(args) -> None:
 
             for m in [f'mod{mod}_iso{iso}' for mod in args.forced_mods for iso in args.iso]:
 
-                iso_area = np.trapz(int_res[m], x=int_res['rt'])
+                iso_area = np.trapezoid(int_res[m], x=int_res['rt'])
                 iso_areas.append(iso_area)
 
             integrated_peaks.append(iso_areas)
@@ -319,6 +323,10 @@ def get_isotopomer_intensity(index: int,
 
     intensity_over_time = []
 
+    # Defaults so the no-intensity error formatter below works regardless of which branch ran.
+    min_scan = max_scan = None
+    peptide_rt_lower = peptide_rt_upper = peptide_rt = None
+
     # choose nearby scans from the span of scans of all qualifying psms that match to the peptide-z concat
     if use_range:
         concat_id_ = id_[id_['concat'] == id_.loc[index, 'concat']]
@@ -333,10 +341,13 @@ def get_isotopomer_intensity(index: int,
 
     # If not use range, simply use the scan number from the psm as the center for +/- rt_tolerance
     else:
-        scan_number = int(id_.loc[index, 'scan']) # - 1
-        # get retention time from Percolator scan number # 2021-05-19 added -1
+        scan_number = int(id_.loc[index, 'scan'])
+        # get retention time from Percolator scan number
         peptide_rt = mzml.rt_idx[np.searchsorted(mzml.scan_idx, scan_number, side='left') - 1]
-        assert isinstance(peptide_rt.item(), float), '[error] cannot retrieve retention time from scan number'
+        if not isinstance(peptide_rt.item(), float):
+            raise IntegrationError(
+                f'Cannot retrieve retention time from scan number {scan_number}'
+            )
 
         nearby_ms1_scans = mzml.scan_idx[np.abs(mzml.rt_idx - peptide_rt) <= rt_tolerance]
 
@@ -346,8 +357,10 @@ def get_isotopomer_intensity(index: int,
         try:
             spec = mzml.msdata[np.array(np.where(mzml.scan_idx == scan)).item()]
 
-        except ValueError or IndexError:
-            raise Exception('Scan does not correspond to MS1 data.')
+        except (ValueError, IndexError) as e:
+            raise IntegrationError(
+                f'Scan {scan} does not correspond to MS1 data in {mzml.path}.'
+            ) from e
 
         # For each forced modification, loop through all the specified isotopomers
         for _forced_mod in _forced_mods:
@@ -359,15 +372,14 @@ def get_isotopomer_intensity(index: int,
 
             for iso in iso_to_do:
 
-                # set upper and lower mass tolerance bounds
+                # 0.9.0: -m N is now interpreted as ±N ppm half-width around the
+                # theoretical m/z (so the integrated mass window is 2*N ppm wide).
+                # Prior to 0.9.0 the code silently halved the requested ppm, so
+                # `-m 50` actually delivered a ±25 ppm half-width. See CHANGELOG.
                 prec_iso_am = peptide_prec_shifted + (iso * iso_added_mass / charge)
 
-                # print _forced_mod, iso and prec_iso_am
-                # print(f'Modification: {_forced_mod}, Isotopomer: {iso}, Precursor mass: {prec_iso_am}')
-
                 mass_tolerance_ppm = float(mass_tolerance) * 1e-6
-
-                delta_mass = prec_iso_am * mass_tolerance_ppm /2
+                delta_mass = prec_iso_am * mass_tolerance_ppm
 
                 # sum intensities within range
                 matching_int = np.sum(spec[np.abs(spec[:, 0] - prec_iso_am) <= delta_mass, 1])
@@ -379,9 +391,16 @@ def get_isotopomer_intensity(index: int,
 
 
     if not intensity_over_time:
-        raise Exception(f'No intensity profile for peptide {peptide_prec}'
-                        f' min {min_scan} {peptide_rt_lower} max {max_scan} {peptide_rt_upper}'
-                        f' scans {nearby_ms1_scans} iso {iso_to_do}')
+        if use_range:
+            raise IntegrationError(
+                f'No intensity profile for peptide {peptide_prec} '
+                f'(scans {min_scan}-{max_scan}, rt {peptide_rt_lower}-{peptide_rt_upper}, '
+                f'iso {iso_to_do}). Try widening --r_time or --mass_tol.'
+            )
+        raise IntegrationError(
+            f'No intensity profile for peptide {peptide_prec} '
+            f'(rt {peptide_rt}, iso {iso_to_do}). Try widening --r_time or --mass_tol.'
+        )
 
 
     # integrated = [index] + [(id_.loc[index, 'pep_id'])] + integrate_isotope_intensity(np.array(intensity_over_time),
@@ -445,8 +464,8 @@ def integrate_isotope_intensity(intensity_over_time: np.ndarray,
 
         if isotopomer_profile.size > 0:
 
-            # use np.trapz rather than scipy.integrate to integrate
-            iso_area = np.trapz(isotopomer_profile[:, 2], x=isotopomer_profile[:, 1])
+            # use np.trapezoid (renamed from np.trapz in NumPy 2.0) rather than scipy.integrate
+            iso_area = np.trapezoid(isotopomer_profile[:, 2], x=isotopomer_profile[:, 1])
 
         # if there is no isotopomer profile, set area to 0
         else:
@@ -455,6 +474,6 @@ def integrate_isotope_intensity(intensity_over_time: np.ndarray,
         iso_intensity.append(iso_area)
 
     if not iso_intensity:
-        raise Exception(f'No positive numerical value integrated for isotopmer {intensity_over_time}')
+        raise IntegrationError(f'No positive integrated value for isotopomer {intensity_over_time}.')
 
     return iso_intensity

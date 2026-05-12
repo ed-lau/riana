@@ -4,8 +4,6 @@
 import logging
 import re
 import os
-import sys
-import gc
 
 import tqdm
 import pandas as pd
@@ -14,7 +12,8 @@ from scipy import optimize
 from functools import partial
 import matplotlib.pyplot as plt
 
-from riana import accmass, constants, models, params, __version__
+from riana import models, params, __version__
+from riana.exceptions import ModelingError
 from riana.logger import get_logger
 from riana.utils import strip_concat
 from riana.fsynthesis import calculate_label_n, calculate_fs_m0, calculate_fs_fine_structure
@@ -58,7 +57,7 @@ def fit_all(args) -> None:
         model = models.two_compartment_fornasiero
 
     else:
-        raise Exception('Unknown kinetics model.')
+        raise ModelingError(f'Unknown kinetics model: {args.model!r}')
 
     # if not os.path.exists(outdir):
     #     os.makedirs(outdir)
@@ -67,11 +66,11 @@ def fit_all(args) -> None:
         try:
             num_threads = min(os.cpu_count() * 4, int(args.thread))
 
-        except ValueError or TypeError:
-            num_threads = 1  # os.cpu_count() * 4
+        except (ValueError, TypeError):
+            num_threads = 1
 
     else:
-        num_threads = 1  # os.cpu_count() * 4
+        num_threads = 1
 
 
     # Get logging
@@ -134,7 +133,7 @@ def fit_all(args) -> None:
 
         with futures.ThreadPoolExecutor(max_workers=num_threads) as ex:
             results = list(tqdm.tqdm(ex.map(fit_one_partial, loop_),
-                                     total=max(loop_),
+                                     total=len(loop_),
                                      desc=f'Fitting peptides to model - {args.model}:'))
 
         # Collect all the dicts, plot out graphs and output final file
@@ -159,7 +158,7 @@ def fit_all(args) -> None:
 
             # get first protein name
             protein = rdf_filtered[rdf_filtered.concat == seq]['protein id'].iloc[0]
-            first_protein = re.sub('(sp|tr)\|.+?\|(.+?)_(MOUSE|HUMAN|RAT).*', '\\2', protein)
+            first_protein = re.sub(r'(sp|tr)\|.+?\|(.+?)_(MOUSE|HUMAN|RAT).*', r'\2', protein)
             if protein.count(',') > 0:
                 first_protein = first_protein + ' (multi)'
 
@@ -172,8 +171,8 @@ def fit_all(args) -> None:
                                     fs_series=fs,
                                     start_time=0,
                                     end_time=max_time,
-                                    model=model,
-                                    model_pars=model_pars)
+                                    model_to_use=model,
+                                    **model_pars)
 
             if k_deg < 0.01:
                 speed = "slow"
