@@ -1,0 +1,14 @@
+{
+  "n_peptides": 1574,
+  "n_train": 1259,
+  "n_test": 315,
+  "train_r2": 0.8297508016138262,
+  "test_r2": 0.8649282733299447,
+  "args": {
+    "inputs": "tests/data/calibration_d2o_mixing/ac16/integrate_outputs/snakemake_reference",
+    "ground_truth": "tests/data/calibration_d2o_mixing/ac16/ground_truth.csv",
+    "n_iso": 4,
+    "random_state": 1337,
+    "r2_min": 0.95
+  }
+}

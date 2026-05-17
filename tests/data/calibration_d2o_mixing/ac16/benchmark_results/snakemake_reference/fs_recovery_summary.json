@@ -1,0 +1,45 @@
+{
+  "all_rows": {
+    "n": 14166,
+    "median_bias": -0.01664194639463834,
+    "median_fs_by_proportion": {
+      "0.0": -0.019194,
+      "12.5": 0.097572,
+      "25.0": 0.222498,
+      "37.5": 0.368426,
+      "50.0": 0.463098,
+      "62.5": 0.598834,
+      "75.0": 0.743186,
+      "87.5": 0.873072,
+      "100.0": 1.018593
+    },
+    "frac_fs_below_0": 0.08873358746293943,
+    "frac_fs_above_1": 0.07645065650148242
+  },
+  "diag_filtered": {
+    "n": 10311,
+    "exclude_proportions": [
+      0.0,
+      100.0
+    ],
+    "min_spep": 6,
+    "median_bias": -0.019065363895347076,
+    "median_fs_by_proportion": {
+      "12.5": 0.098591,
+      "25.0": 0.222833,
+      "37.5": 0.369227,
+      "50.0": 0.463569,
+      "62.5": 0.600704,
+      "75.0": 0.74343,
+      "87.5": 0.874076
+    }
+  },
+  "args": {
+    "inputs": "tests/data/calibration_d2o_mixing/ac16/integrate_outputs/snakemake_reference",
+    "ground_truth": "tests/data/calibration_d2o_mixing/ac16/ground_truth.csv",
+    "coefficients": "tests/data/calibration_d2o_mixing/ac16/benchmark_results/snakemake_reference/d2o_amino_acid_coefficients.csv",
+    "n_iso": 4,
+    "r2_min": 0.95,
+    "diag_min_spep": 6
+  }
+}

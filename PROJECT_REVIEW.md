@@ -121,9 +121,9 @@ calibration dataset, not by intuition.
 
 ## 3. Roadmap
 
-Sequencing: M1 has shipped (you're reading the 0.9.0 review). M2 runs in
-parallel with M1 (no code dependency between them). M3 is gated on M2's
-ground-truth tables existing.
+Sequencing: M1 has shipped (you're reading the 0.9.0 review). M2 has shipped
+its benchmark scaffolding and v0.9.0 baseline (see below). M3 is gated on M2's
+baseline numbers existing — they now do.
 
 ### M1 — Stabilization → 0.9.0 — DONE
 
@@ -131,7 +131,46 @@ Smallest viable bugfix release on the existing layout. Fixes B1–B13,
 modernizes packaging, adds CI. Behavior-preserving except for the
 documented mass-tolerance semantic correction. See `CHANGELOG.md`.
 
-### M2 — Calibration test dataset (acquisition + dual-ID processing)
+### M2 — Calibration test dataset (acquisition + dual-ID processing) — DONE
+
+**What shipped (2026-05-17).** Benchmark scaffolding lives in
+`tests/benchmark/`; calibration artifacts in
+`tests/data/calibration_d2o_mixing/{ac16,ipsc}/`. The approach diverged from
+the original plan below — there is no external ground truth for per-peptide
+isotope envelopes (no animal calibration curve), so "predicted vs observed
+m0/mA" is not directly scorable. Instead the benchmark ports NB87a
+(`data/notebook/87a_…IsoSpec_AC16.ipynb`): integrate output → per-peptide
+Spep via an IsoSpec forward model → per-AA non-negative regression →
+fractional-synthesis recovery vs the nominal mixing proportion. The escape
+from circularity is coefficient *stability* across N_ISO, smoothing, and cell
+line.
+
+Scripts: `build_ground_truth.py`, `bench_aa_coefficients.py`,
+`bench_fs_recovery.py`, `bench_n_iso_sweep.py`, `bench_smoothing.py`,
+`run_integrate_v0_9_0.py`, plus `_helpers/forward_model.py`. The
+aa-coefficient and N_ISO-sweep ports reproduce NB87a bit-exact (Δ ≤ 6e-7).
+
+v0.9.0 baseline (committed under `benchmark_results/v0.9.0/`):
+
+- AC16: 1512 peptides, coeff train/test R² 0.86/0.82, FS bias −0.017.
+- iPSC: 2964 peptides, coeff train/test R² 0.77/0.76, FS bias −0.018.
+- N_ISO sweep: test-R² peaks at N_ISO=4 for both lines.
+- Smoothing sweep: per-AA coefficients shift with window size (≤0.12 AC16,
+  ≤0.22 iPSC at S=9) but FS-recovery bias is insensitive to smoothing
+  (±0.002) — confirms §2c point 3 (SG distorts areas) while showing the
+  calibration verdict is robust.
+- Cross-line: AC16 vs iPSC coefficients differ by up to 0.54 (Met) — *not*
+  cleanly transferable; revisit before adopting a single frozen table.
+
+Deferred from M2: the mzTab→RIANA adapter (M3); a Zenodo deposit (raw `.raw`
+files are already citable on JPOST — `JPST002443` AC16, `JPST003556` iPSC —
+so no separate deposit is needed); `pseudotime_map.csv` and the fit-module
+benchmark (`riana fit` correctness work interacts with the M3 rewrite and is
+deferred to post-M3/M4). `integrate_outputs/` (~450 MB of `_riana.txt`) is
+gitignored — regenerable via `run_integrate_v0_9_0.py`.
+
+The original M2 plan is retained below for reference.
+
 
 Goal: a ground-truth benchmark dataset that survives every later
 milestone. MS data already exists (parallel project); the outstanding

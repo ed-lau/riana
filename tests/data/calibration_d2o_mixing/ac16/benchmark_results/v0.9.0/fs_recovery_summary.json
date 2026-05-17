@@ -1,0 +1,45 @@
+{
+  "all_rows": {
+    "n": 13608,
+    "median_bias": -0.014087097131243731,
+    "median_fs_by_proportion": {
+      "0.0": -0.018507,
+      "12.5": 0.099262,
+      "25.0": 0.224596,
+      "37.5": 0.370417,
+      "50.0": 0.464857,
+      "62.5": 0.602356,
+      "75.0": 0.746958,
+      "87.5": 0.875796,
+      "100.0": 1.020966
+    },
+    "frac_fs_below_0": 0.08649323927101706,
+    "frac_fs_above_1": 0.07987948265726043
+  },
+  "diag_filtered": {
+    "n": 9870,
+    "exclude_proportions": [
+      0.0,
+      100.0
+    ],
+    "min_spep": 6,
+    "median_bias": -0.016553293743040015,
+    "median_fs_by_proportion": {
+      "12.5": 0.100537,
+      "25.0": 0.225009,
+      "37.5": 0.370772,
+      "50.0": 0.465331,
+      "62.5": 0.603953,
+      "75.0": 0.748171,
+      "87.5": 0.877711
+    }
+  },
+  "args": {
+    "inputs": "tests/data/calibration_d2o_mixing/ac16/integrate_outputs/v0.9.0",
+    "ground_truth": "tests/data/calibration_d2o_mixing/ac16/ground_truth.csv",
+    "coefficients": "tests/data/calibration_d2o_mixing/ac16/benchmark_results/v0.9.0/d2o_amino_acid_coefficients.csv",
+    "n_iso": 4,
+    "r2_min": 0.95,
+    "diag_min_spep": 6
+  }
+}

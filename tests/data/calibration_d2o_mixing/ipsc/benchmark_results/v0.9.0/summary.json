@@ -1,0 +1,14 @@
+{
+  "n_peptides": 2964,
+  "n_train": 2371,
+  "n_test": 593,
+  "train_r2": 0.7730513780406455,
+  "test_r2": 0.7560445975107879,
+  "args": {
+    "inputs": "tests/data/calibration_d2o_mixing/ipsc/integrate_outputs/v0.9.0",
+    "ground_truth": "tests/data/calibration_d2o_mixing/ipsc/ground_truth.csv",
+    "n_iso": 4,
+    "random_state": 1337,
+    "r2_min": 0.95
+  }
+}

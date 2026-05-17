@@ -9,7 +9,10 @@ scripts/
 out/
 documentation/
 config/
-data/
+# repo-root personal experiment data only; tests/data/ fixtures are tracked
+/data/
+# calibration benchmark intermediate integrate outputs — ~450 MB, regenerable
+tests/data/calibration_d2o_mixing/*/integrate_outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

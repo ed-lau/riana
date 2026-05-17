@@ -1,0 +1,10 @@
+source_name,raw_filename,mzml_filename,riana_filename,nominal_proportion,raw_uri
+AC16_0,20230731_AC16_WL_0.raw,20230731_AC16_WL_0.mzML.gz,time0_riana.txt,0.0,https://storage.jpostdb.org/JPST002443/20230731_AC16_WL_0.raw
+AC16_12.5,20230731_AC16_WL_12_half.raw,20230731_AC16_WL_12_half.mzML.gz,time12.5_riana.txt,12.5,https://storage.jpostdb.org/JPST002443/20230731_AC16_WL_12_half.raw
+AC16_25,20230731_AC16_WL_25_230801125608.raw,20230731_AC16_WL_25_230801125608.mzML.gz,time25_riana.txt,25.0,https://storage.jpostdb.org/JPST002443/20230731_AC16_WL_25_230801125608.raw
+AC16_37.5,20230801_AC16_37_half.raw,20230801_AC16_37_half.mzML.gz,time37.5_riana.txt,37.5,https://storage.jpostdb.org/JPST002443/20230801_AC16_37_half.raw
+AC16_50,20230801_AC16_WL_50.raw,20230801_AC16_WL_50.mzML.gz,time50_riana.txt,50.0,https://storage.jpostdb.org/JPST002443/20230801_AC16_WL_50.raw
+AC16_62.5,20230801_AC16_WL_62_half.raw,20230801_AC16_WL_62_half.mzML.gz,time62.5_riana.txt,62.5,https://storage.jpostdb.org/JPST002443/20230801_AC16_WL_62_half.raw
+AC16_75,20230801_AC16_WL_75.raw,20230801_AC16_WL_75.mzML.gz,time75_riana.txt,75.0,https://storage.jpostdb.org/JPST002443/20230801_AC16_WL_75.raw
+AC16_87.5,20230801_AC16_WL_87_half.raw,20230801_AC16_WL_87_half.mzML.gz,time87.5_riana.txt,87.5,https://storage.jpostdb.org/JPST002443/20230801_AC16_WL_87_half.raw
+AC16_100,20230801_AC16_WL_100.raw,20230801_AC16_WL_100.mzML.gz,time100_riana.txt,100.0,https://storage.jpostdb.org/JPST002443/20230801_AC16_WL_100.raw
