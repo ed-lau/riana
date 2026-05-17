@@ -169,6 +169,46 @@ benchmark (`riana fit` correctness work interacts with the M3 rewrite and is
 deferred to post-M3/M4). `integrate_outputs/` (~450 MB of `_riana.txt`) is
 gitignored — regenerable via `run_integrate_v0_9_0.py`.
 
+Other notes from the baseline run: v0.9.0 was run with `-m 15` (±15 ppm under
+the 0.9.0 semantic); the snakemake-era reference effectively used ±7.5 ppm due
+to the pre-0.9.0 `/2` bug, so the two are not strictly mass-window-matched.
+The bundled `config_template.yaml` passes `-D D` (a label) which no longer
+parses — the current CLI takes a float isotopomer mass-step; `run_integrate`
+omits `-D` and uses the default 1.003354835.
+
+**M2 findings → M3 implications.**
+
+1. *Median FS bias is a blunt metric for peak-detection work.* It moved only
+   ±0.002 across the entire smoothing sweep. An M3 benchmark that judges peak
+   detection by median FS bias will see almost nothing. The metrics that
+   actually move with integration quality are: the **spread** of FS recovery
+   around each nominal proportion (RMSE/IQR, not the median — `fs_recovery.csv`
+   already carries every per-(peptide, fraction) row); per-AA coefficient
+   std errors and R²; the count of peptides passing the R²>0.95 curation gate;
+   and the *shape* of the N_ISO sweep (if peak detection cleans iso5/iso6, the
+   post-N_ISO=4 R² degradation should flatten).
+2. *The curation filter hides peak-detection's main win.* The R²>0.95 gate
+   discards exactly the co-eluting / low-SNR peptides where peak detection
+   helps most. M3 benchmarks (`bench_peak_boundary.py`, `bench_baseline.py`)
+   **must also report metrics on the uncurated population**, or they will
+   systematically understate the improvement.
+3. *Per-cell-line frozen coefficient tables are viable* — the original
+   "predicted vs observed m0/mA" target is recoverable, just per-line not
+   universal. Within-line coefficient drift is small (≤0.09 AC16 across
+   integrate versions, ≤0.12 across the smoothing sweep). A frozen table is a
+   **constant**, so its bias cancels in any method-vs-method comparison: scoring
+   integration A and B against the same frozen predicted m0/mA preserves the
+   relative ranking, which is what regression-gating needs. Plan: bootstrap one
+   table per cell line from the best available integration, freeze + version it
+   (`d2o_aa_coefficients_<line>.csv`), and add `bench_m0_ma_recovery.py` scoring
+   observed-vs-predicted m0/mA RMSE — the sensitive per-peptide metric (1) calls
+   for. Caveats: the iPSC table is noisier (R² 0.77 vs 0.86), so its absolute
+   numbers are less trustworthy though still usable as a constant reference; a
+   new cell type needs its own re-derived table. Bonus diagnostic: if M3's
+   better integration makes the AC16 and iPSC tables *converge*, that is
+   evidence the 0.54 cross-line divergence was an integration artifact rather
+   than real biology.
+
 The original M2 plan is retained below for reference.
 
 
@@ -331,8 +371,12 @@ correction. Keep it simple.
 
 **Verification (regression-gated by M2):**
 
-- Calibration benchmark recovers nominal labelling fractions at least as
-  accurately as 0.9.0 baseline, peptide by peptide.
+- Calibration benchmark holds or improves vs the committed v0.9.0 baseline.
+  Judge by the *sensitive* metrics, not median FS bias (see M2 findings):
+  FS-recovery spread, per-AA coefficient R²/std errors, peptide count through
+  the R²>0.95 gate, and — once per-cell-line frozen tables exist —
+  observed-vs-predicted m0/mA RMSE on both the curated and uncurated peptide
+  populations.
 - Percolator-ID and mzTab-ID paths produce m0/mA values that agree within
   tolerance (cross-format A/B is itself a validation of the mzTab adapter).
 - `tests/data/sample1/` end-to-end smoke test produces a `_riana.txt`
