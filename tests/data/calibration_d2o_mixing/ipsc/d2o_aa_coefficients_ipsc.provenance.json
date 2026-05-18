@@ -1,0 +1,15 @@
+{
+  "line": "ipsc",
+  "source_spep": "tests/data/calibration_d2o_mixing/ipsc/benchmark_results/v0.9.0/spep_per_peptide.csv",
+  "source_integration": "v0.9.0, -m 15, N_ISO=4",
+  "git_sha": "d5d4887",
+  "date": "2026-05-18",
+  "n_peptides": 2964,
+  "n_boot": 2000,
+  "random_state": 1337,
+  "oob_r2_median": 0.7663386653140449,
+  "oob_r2_ci": [
+    0.7108671748902445,
+    0.8205755705148051
+  ]
+}

@@ -298,8 +298,22 @@ code DOI; repo carries CSVs + scripts + a `make calibration-data` target.
 Branch from the `v0.9.0` tag. Pre-req: M2 baseline numbers recorded so
 the rewrite is regression-gated.
 
-**Approach: walking skeleton, then fill in.** ≈3–4 weeks of focused work.
+**Approach: walking skeleton, then fill in.** ≈3–4 weeks of focused work,
+preceded by a benchmark-infrastructure task (Week 0) that the M2 findings made
+a hard prerequisite.
 
+0. **Week 0 — benchmark infrastructure (no rewrite code).** M2 finding 3:
+   bootstrap one frozen per-cell-line coefficient table from the best v0.9.0
+   integration, freeze + version it as
+   `d2o_aa_coefficients_<line>.csv`, and add `bench_m0_ma_recovery.py`
+   scoring observed-vs-predicted m0/mA RMSE on **both the curated and the
+   uncurated** (pre-R²>0.95-gate) peptide populations — M2 finding 2. Also
+   land `bench_peak_boundary.py` and `bench_baseline.py` as *runnable
+   stubs against v0.9.0* (fixed-window only for now) so Week 3 has a
+   regression gate the moment peak detection is added; both report curated
+   and uncurated metrics. Build `pseudotime_map.csv` + `bench_fit_recovery.py`
+   here too (M2 deferred them, but Week 4 now needs them — see below). None
+   of this depends on the rewrite, so it lands first.
 1. **Week 1 — skeleton + lifts.** New layout (below). Lift `accmass`,
    `models`, `fsynthesis`, `constants`, `utils.get_peptide_distribution`
    into their new homes. Apply two science-layer bug fixes:
@@ -314,12 +328,23 @@ the rewrite is regression-gated.
    `pyteomics.mzml` — never hold more than one fraction in memory.
 3. **Week 3 — core integration pipeline.** Rewrite `core/integration.py`
    against the new types. Add peak detection, baseline subtraction,
-   mass-accuracy outputs inline. Validate each addition against M2
-   benchmarks before committing.
+   mass-accuracy outputs inline. Validate each addition against the Week 0
+   benchmarks before committing — judge by the *sensitive* metrics (M2
+   finding 1: FS-recovery spread, per-AA R²/std errors, R²>0.95 gate count,
+   N_ISO-sweep shape), not median FS bias. Re-run `bench_n_iso_sweep.py`
+   after peak detection: if it cleans iso5/iso6, the post-N_ISO=4 R²
+   degradation should flatten.
 4. **Week 4 — CLI + pipeline glue + fitting.** Build `cli.py`
    (typer or click). Rewrite `core/fitting.py` to consume
-   `IntegrationResult` records. Output provenance header
-   (git SHA, riana version, config hash) via `io/writers.py`.
+   `IntegrationResult` records, **and apply the §2b scientific fixes** (AA
+   `a_max` dispatch, FS-denominator drift, bootstrap kinetic-fit CIs) —
+   regression-gated by the Week 0 `bench_fit_recovery.py`. Output provenance
+   header (git SHA, riana version, config hash) via `io/writers.py`.
+
+   Note: the §2b fixes deliberately change fit output, so the
+   `tests/data/sample1/` smoke test (below) can no longer demand bit-near
+   identity for the fit stage — it gates *integration* m0/m6 only; fitting
+   is gated by `bench_fit_recovery.py` recovering `k_deg₀`.
 
 **Target layout:**
 
@@ -369,21 +394,31 @@ threshold. Optional `--json-out` for downstream tooling.
 Skip: real-time monitoring class, calibration dashboard, automated
 correction. Keep it simple.
 
-**Verification (regression-gated by M2):**
+**Verification (regression-gated by the Week 0 benchmarks):**
 
 - Calibration benchmark holds or improves vs the committed v0.9.0 baseline.
   Judge by the *sensitive* metrics, not median FS bias (see M2 findings):
   FS-recovery spread, per-AA coefficient R²/std errors, peptide count through
-  the R²>0.95 gate, and — once per-cell-line frozen tables exist —
-  observed-vs-predicted m0/mA RMSE on both the curated and uncurated peptide
-  populations.
+  the R²>0.95 gate, N_ISO-sweep shape, and observed-vs-predicted m0/mA RMSE
+  (via `bench_m0_ma_recovery.py` against the Week 0 frozen tables) on **both
+  the curated and uncurated** peptide populations.
+- M3 integration benchmarks must be run with the same `-m 15` mass window as
+  the committed v0.9.0 baseline, or the comparison is invalid (the baseline
+  is *not* mass-window-matched to the snakemake-era reference — see M2 notes).
+- `bench_fit_recovery.py` recovers `k_deg₀` per peptide within tolerance on
+  the pseudo-time-mapped series — this is the gate for the Week 4 fit rewrite
+  and its §2b fixes.
 - Percolator-ID and mzTab-ID paths produce m0/mA values that agree within
   tolerance (cross-format A/B is itself a validation of the mzTab adapter).
-- `tests/data/sample1/` end-to-end smoke test produces a `_riana.txt`
-  whose per-peptide m0/m6 agree with 0.9.0 within 1e-3 relative tolerance
-  (it should be near-identical — same numerical core).
+- `tests/data/sample1/` end-to-end smoke test produces a `_riana.txt` whose
+  per-peptide *integration* m0/m6 agree with 0.9.0 within 1e-3 relative
+  tolerance (near-identical — same numerical core). The fit stage is exempt:
+  the §2b fixes change fit output by design (see Week 4 note).
 - Memory peak on a 2 GB mzML drops from "all of it" to "one fraction
   worth."
+- Bonus diagnostic (M2 finding 3): if the better M3 integration makes the
+  AC16 and iPSC frozen tables *converge*, the 0.54 cross-line divergence was
+  an integration artifact, not biology.
 
 ### M4 — Qt + async GUI rewrite
 

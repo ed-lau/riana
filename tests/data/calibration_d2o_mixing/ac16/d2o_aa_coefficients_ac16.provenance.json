@@ -1,0 +1,15 @@
+{
+  "line": "ac16",
+  "source_spep": "tests/data/calibration_d2o_mixing/ac16/benchmark_results/v0.9.0/spep_per_peptide.csv",
+  "source_integration": "v0.9.0, -m 15, N_ISO=4",
+  "git_sha": "d5d4887",
+  "date": "2026-05-18",
+  "n_peptides": 1512,
+  "n_boot": 2000,
+  "random_state": 1337,
+  "oob_r2_median": 0.8484440801405078,
+  "oob_r2_ci": [
+    0.8040349657886422,
+    0.8864955671350188
+  ]
+}
