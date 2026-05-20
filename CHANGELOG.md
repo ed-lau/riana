@@ -5,6 +5,48 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] — Unreleased
+
+The breaking 1.0 release: a new package structure, peak detection, baseline
+subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
+roadmap. This section is built up iteratively as the M3 milestone progresses;
+entries below are grouped by the week of work that produced them.
+
+### M3 Week 1 — skeleton + lifts
+
+#### Added
+
+- New package layout: `riana/core/`, `riana/algorithms/`, and `riana/io/`
+  subpackages. The numerically-sensitive science modules are *lifted* into
+  their new homes unchanged rather than rewritten — `accmass` →
+  `algorithms/mass_calc`, `utils.get_peptide_distribution` →
+  `algorithms/isotope_dist`, `models` → `core/models`, `fsynthesis` →
+  `core/fsynthesis`.
+- `riana/records.py` — typed, frozen data records (`PSMRecord`,
+  `Chromatogram`, `IsotopomerPeak`) replacing the untyped `pandas` rows and
+  positional lists the 0.9.0 pipeline passes around. Field names are anchored
+  to the existing `*_riana.txt` column schema.
+- `riana/config.py` — frozen `IntegrationConfig` / `FitConfig` dataclasses,
+  the single typed source of truth shared by the CLI and (M4) GUI.
+
+#### Changed
+
+- Version is now `1.0.0.dev0` (PEP 440) for the duration of the M3 rewrite.
+- During the rewrite the legacy flat modules (`accmass`, `models`,
+  `fsynthesis`, `utils`) remain as thin re-export shims, so the 0.9.0
+  `riana integrate` / `riana fit` CLI keeps working as a regression gate.
+  The shims are removed with the legacy pipeline in M3 Week 4.
+
+#### Fixed
+
+- `fsynthesis.calculate_a0` tested `label == 'aa'` (a string) while callers
+  dispatch with an integer label, so the amino-acid `a_0` branch was
+  unreachable and `--label 4` experiments silently used the natural-abundance
+  baseline (`PROJECT_REVIEW.md` §2b). Corrected to `label == 4`. This changes
+  fit output for amino-acid-labeling experiments.
+
+---
+
 ## [0.9.0] — Unreleased
 
 This is a stabilization release. It fixes correctness defects on the existing

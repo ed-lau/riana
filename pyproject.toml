@@ -50,8 +50,8 @@ Homepage = "https://ed-lau.github.io/riana/"
 Source = "https://github.com/ed-lau/riana"
 "Lau Lab" = "https://www.laulab.net"
 
-[tool.setuptools]
-packages = ["riana"]
+[tool.setuptools.packages.find]
+include = ["riana*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "riana.__version__" }
