@@ -130,7 +130,13 @@ def run_recovery(
 
 def _agg(df: pd.DataFrame) -> dict:
     if not len(df):
-        return {'n': 0}
+        return {
+            'n': 0, 'n_peptides': 0,
+            'm0_rmse': float('nan'), 'm0_mae': float('nan'),
+            'm0_bias_median': float('nan'),
+            'env_rmse_median': float('nan'), 'env_rmse_p95': float('nan'),
+            'per_proportion': [],
+        }
     per_prop = df.groupby('proportion').agg(
         m0_rmse=('m0_err', lambda x: float(np.sqrt(np.mean(x ** 2)))),
         m0_iqr=('m0_err', lambda x: float(np.percentile(x, 75) - np.percentile(x, 25))),
@@ -156,6 +162,49 @@ def summarize(rec_df: pd.DataFrame) -> dict:
         'curated': _agg(rec_df[rec_df['is_curated']]),
         'uncurated': _agg(rec_df[~rec_df['is_curated']]),
     }
+
+
+def compare_integrations(
+    methods: dict[str, Path],
+    ground_truth: pd.DataFrame,
+    coeff_dict: dict[str, float],
+    n_iso: int,
+) -> tuple[pd.DataFrame, dict]:
+    """Score several named integration output dirs and tabulate by method.
+
+    `methods` maps a method label -> a directory of *_riana.txt files. Each is
+    scored exactly as a single bench_m0_ma_recovery run (curated + uncurated).
+    Returns a long-format comparison DataFrame (method x population) and the
+    raw per-method summaries.
+
+    This is the shared engine behind the bench_peak_boundary / bench_baseline
+    stubs: in M3 Week 0 only one method exists (fixed-window v0.9.0), so the
+    comparison has a single method; Week 3 registers detected-boundary /
+    baseline-subtracted runs as additional methods and the same table then
+    shows whether the algorithm change moved m0_rmse.
+    """
+    rows = []
+    summaries = {}
+    for name, inputs_dir in methods.items():
+        print(f'[compare] method {name!r} <- {inputs_dir}')
+        riana_df = load_and_curate(inputs_dir, ground_truth, r2_min=-1.0)
+        rec_df = run_recovery(riana_df, coeff_dict, n_iso=n_iso)
+        summ = summarize(rec_df)
+        summaries[name] = summ
+        for pop in ('all', 'curated', 'uncurated'):
+            a = summ[pop]
+            rows.append({
+                'method': name,
+                'population': pop,
+                'n': a.get('n', 0),
+                'n_peptides': a.get('n_peptides', 0),
+                'm0_rmse': a.get('m0_rmse', float('nan')),
+                'm0_mae': a.get('m0_mae', float('nan')),
+                'm0_bias_median': a.get('m0_bias_median', float('nan')),
+                'env_rmse_median': a.get('env_rmse_median', float('nan')),
+                'env_rmse_p95': a.get('env_rmse_p95', float('nan')),
+            })
+    return pd.DataFrame(rows), summaries
 
 
 def main() -> None:

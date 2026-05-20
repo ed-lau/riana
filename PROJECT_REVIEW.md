@@ -61,6 +61,18 @@ mass-tolerance semantic change). Highlights:
   `k_deg` only; the plotted confidence band uses a heuristic
   (`k_deg ** 2 / (k_deg + sd)` as "lower bound") that is not a defined
   statistical CI. Use proper bootstrap CIs in 1.0.
+- **Fixed labelling-site model biases fractional synthesis.** `riana fit`
+  derives FS from the monoisotopic peak alone — `calculate_fs_m0` takes
+  `mi = iso0/colsums`, then inverts the analytic relation
+  `a_max = a_0·(1−ria_max)^n` with a site count `n` from `calculate_label_n`,
+  a fixed per-peptide model. The M3 Week 0 `bench_fit_recovery.py` baseline
+  (2026-05-20) shows this yields FS ≈ 0.6·f on the calibration mixing
+  series: pseudo-time `k` recovery is biased low by ≈ −0.5 (median fitted
+  `k` 0.24 AC16 / 0.28 iPSC vs target `k_deg₀` 0.5; stable across both cell
+  lines and the R²≥0.9 subset). M2's `bench_fs_recovery` confirms FS ≈ f is
+  recoverable (bias −0.017) once the per-peptide Spep is fitted with the
+  IsoSpec forward model — so the gap is the fixed site-count model, not
+  integration. Fix in M3 Week 4 (below).
 
 These are deferred to 1.0.0 because each interacts with the planned
 data-model rewrite (typed records, dataclass-based config) and is cleaner
@@ -336,12 +348,26 @@ a hard prerequisite.
    degradation should flatten.
 4. **Week 4 — CLI + pipeline glue + fitting.** Build `cli.py`
    (typer or click). Rewrite `core/fitting.py` to consume
-   `IntegrationResult` records, **and apply the §2b scientific fixes** (AA
-   `a_max` dispatch, FS-denominator drift, bootstrap kinetic-fit CIs) —
-   regression-gated by the Week 0 `bench_fit_recovery.py`. Output provenance
-   header (git SHA, riana version, config hash) via `io/writers.py`.
+   `IntegrationResult` records, **and apply the §2b scientific fixes**:
+   - AA `a_max` dispatch (`label == 4`), FS-denominator drift, bootstrap
+     kinetic-fit CIs.
+   - **Replace the m0/mA-analytic FS calculation with the IsoSpec
+     forward/solve model.** Drop `calculate_fs_m0` + `calculate_label_n`'s
+     fixed site-count model (§2b) in favour of the per-peptide Spep fit +
+     full-envelope `solve_fs` validated in M2 — the approach in
+     `tests/benchmark/_helpers/forward_model.py` used by
+     `bench_fs_recovery.py` (IsoSpec forward envelope at natural vs. Spep-
+     labelled enrichment, FS by least-squares against the observed
+     envelope rather than from `iso0` alone). The M2 forward model lifts
+     into `algorithms/isotope_dist.py`; IsoSpecPy becomes a runtime
+     dependency of `riana fit`, not just a benchmark one. This is what
+     closes the ≈ −0.5 k-recovery bias the Week 0 `bench_fit_recovery.py`
+     baseline records.
+   Regression-gated by `bench_fit_recovery.py` (`k_deg₀` recovery). Output
+   provenance header (git SHA, riana version, config hash) via
+   `io/writers.py`.
 
-   Note: the §2b fixes deliberately change fit output, so the
+   Note: the fit fixes deliberately change fit output, so the
    `tests/data/sample1/` smoke test (below) can no longer demand bit-near
    identity for the fit stage — it gates *integration* m0/m6 only; fitting
    is gated by `bench_fit_recovery.py` recovering `k_deg₀`.
