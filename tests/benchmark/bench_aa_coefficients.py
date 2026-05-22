@@ -49,8 +49,18 @@ def load_and_curate(
     inputs_dir: Path,
     ground_truth: pd.DataFrame,
     r2_min: float,
+    drop_proportions: tuple[float, ...] = (),
 ) -> pd.DataFrame:
-    """Load *_riana.txt files, join proportions, apply NB87a curation."""
+    """Load *_riana.txt files, join proportions, apply NB87a curation.
+
+    drop_proportions: nominal proportions to exclude *entirely* from curation
+    (e.g. a known-weak acquisition such as cm's time50). The "observed at all
+    proportions" coverage requirement then applies only to the surviving
+    proportions — so dropping one weak fraction recovers peptides that would
+    otherwise be discarded for missing in that single run. The dropped
+    fraction's *_riana.txt is still scored downstream where the caller keeps
+    the full population (bench_m0_ma_recovery runs with r2_min=-1).
+    """
     gt_by_filename = ground_truth.set_index('riana_filename')['nominal_proportion']
     riana_files = sorted(inputs_dir.glob('*_riana.txt'))
     if not riana_files:
@@ -63,16 +73,23 @@ def load_and_curate(
                 f'{f.name} not in ground_truth.csv. '
                 f'Known: {list(gt_by_filename.index)}'
             )
+        proportion = float(gt_by_filename[f.name])
+        if proportion in drop_proportions:
+            continue
         df = pd.read_csv(f, sep='\t')
-        df['proportion'] = float(gt_by_filename[f.name])
+        df['proportion'] = proportion
         df['file_name'] = f.name
         parts.append(df)
+    if not parts:
+        raise ValueError(
+            f'No input files left after drop_proportions={drop_proportions}'
+        )
     riana_df = pd.concat(parts, ignore_index=True)
 
     riana_df = riana_df.drop_duplicates(subset=['concat', 'proportion'])
     riana_df = riana_df.sort_values('proportion')
 
-    expected = len(riana_files)
+    expected = len(parts)
     vc = riana_df.groupby('concat')['proportion'].nunique()
     complete = vc[vc == expected].index
     riana_df = riana_df[riana_df['concat'].isin(complete)].copy()
@@ -208,13 +225,22 @@ def main() -> None:
     parser.add_argument('--n-iso', type=int, default=4)
     parser.add_argument('--random-state', type=int, default=1337)
     parser.add_argument('--r2-min', type=float, default=0.95)
+    parser.add_argument('--drop-proportion', type=float, nargs='+', default=[],
+                        metavar='PCT',
+                        help='nominal proportion(s) to exclude from curation, '
+                             'e.g. --drop-proportion 50 to drop a weak '
+                             'acquisition; coverage then requires the peptide '
+                             'at every surviving proportion')
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f'[load] inputs={args.inputs}  ground_truth={args.ground_truth}')
+    if args.drop_proportion:
+        print(f'[load] dropping proportion(s) from curation: {args.drop_proportion}')
     ground_truth = pd.read_csv(args.ground_truth)
-    riana_df = load_and_curate(args.inputs, ground_truth, r2_min=args.r2_min)
+    riana_df = load_and_curate(args.inputs, ground_truth, r2_min=args.r2_min,
+                               drop_proportions=tuple(args.drop_proportion))
     print(f'[curate] {riana_df["concat"].nunique()} peptides, {len(riana_df)} rows '
           f'after R² > {args.r2_min} filter')
 

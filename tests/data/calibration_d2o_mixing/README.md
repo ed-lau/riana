@@ -16,12 +16,27 @@ cells at 9 nominal heavy fractions:
 0%, 12.5%, 25%, 37.5%, 50%, 62.5%, 75%, 87.5%, 100%
 ```
 
-One LC-MS run per fraction per cell line. Two cell lines are treated
+One LC-MS run per fraction per cell line. Three cell lines are treated
 **independently** in all downstream analysis (separate `ground_truth.csv`,
 separate coefficient tables, separate baseline results):
 
-- `ac16/` — AC16 (human cardiomyocyte cell line). Raw files: JPOST `JPST002443`.
-- `ipsc/` — human iPSC. Raw files: JPOST `JPST003556`.
+- `ac16/` — AC16, a transformed human cardiac fibroblast/myocyte hybrid
+  line. **Proliferative.** Raw files: JPOST `JPST002443`.
+- `ipsc/` — human induced pluripotent stem cells. **Proliferative.**
+  Raw files: JPOST `JPST003556`.
+- `cm/` — contractile human iPSC-derived cardiomyocytes (iPSC-CM).
+  **Post-mitotic.** Raw files: JPOST `JPST003582`.
+
+The third line is deliberate. AC16 and iPSC are both proliferative, and a
+proliferating cell dilutes isotopic label through cell division independently
+of protein turnover; iPSC-CM is post-mitotic, so it isolates turnover from
+division and is the more physiologically relevant test case. Neither AC16 nor
+iPSC-CM is primary cardiomyocyte, but the proliferative-vs-post-mitotic
+contrast is exactly the axis that lets the cross-line coefficient comparison
+separate real biology from integration artifact (`PROJECT_REVIEW.md`, M2
+finding 3): per-AA coefficients that track the proliferative/post-mitotic
+split are a biology signal; coefficients that scatter without it point at the
+integrator.
 
 `comment[file uri]` in the per-line SDRF (`data/calibration_<line>/samplesheet_<line>_alpine.sdrf.tsv`) has the per-fraction download URLs (`https://storage.jpostdb.org/...`).
 
@@ -44,7 +59,7 @@ see below).
 
 ## What is NOT here (heavy inputs)
 
-Raw inputs live at the repo-root `data/calibration_{ac16,ipsc}/`
+Raw inputs live at the repo-root `data/calibration_{ac16,ipsc,cm}/`
 directory (already gitignored). They are not committed because:
 
 1. mzMLs and mzTabs are large (mzML ~1.5 GB/line, mzTab ~240 MB/line).
@@ -60,8 +75,9 @@ directory (already gitignored). They are not committed because:
 | `data/calibration_<line>/uniprot_human_reviewed.fasta` | ~14 MB / line | Search database. |
 | `data/calibration_<line>/samplesheet_<line>_alpine.sdrf.tsv` | ~3 KB / line | SDRF with JPOST URIs and search params. |
 
-`run_integrate_v0_9_0.sh` reads PSMs from those paths and writes
-outputs into `integrate_outputs/v0.9.0/` here.
+`run_integrate_v0_9_0.py` reads PSMs from those paths and writes
+outputs into `integrate_outputs/v0.9.0/` here. It runs all three lines by
+default, or one with `--line {ac16,ipsc,cm}`.
 
 ## Benchmark scripts
 
@@ -87,6 +103,11 @@ and the escape signal is **stability of the coefficients** across
 N_ISO truncation, smoothing settings, and cell line. Instability ⇒
 integrate is doing something wrong.
 
-Once we have a coefficient set we trust, we may freeze it and switch to
-a direct "RMSE of observed vs predicted m0/mA" benchmark for further
-algorithm work. That's a post-M2 decision.
+That freeze has since happened (M3 Week 0): `build_frozen_tables.py` bootstraps
+a **per-cell-line** frozen coefficient table (`d2o_aa_coefficients_<line>.csv`)
+and `bench_m0_ma_recovery.py` scores observed-vs-predicted m0/mA RMSE against
+it. A frozen table is a *constant*, so its bias cancels in any method-vs-method
+comparison — which is what M3 regression-gating needs. The table is per-line,
+not universal: the M2 AC16-vs-iPSC coefficient divergence (up to 0.54) means a
+single shared table is not defensible. The `cm/` line adds the post-mitotic
+third point to that comparison.

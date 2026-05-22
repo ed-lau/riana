@@ -147,7 +147,8 @@ documented mass-tolerance semantic correction. See `CHANGELOG.md`.
 
 **What shipped (2026-05-17).** Benchmark scaffolding lives in
 `tests/benchmark/`; calibration artifacts in
-`tests/data/calibration_d2o_mixing/{ac16,ipsc}/`. The approach diverged from
+`tests/data/calibration_d2o_mixing/{ac16,ipsc,cm}/` (`cm/` was added during M3
+— see the M2 addendum below). The approach diverged from
 the original plan below — there is no external ground truth for per-peptide
 isotope envelopes (no animal calibration curve), so "predicted vs observed
 m0/mA" is not directly scorable. Instead the benchmark ports NB87a
@@ -220,6 +221,63 @@ omits `-D` and uses the default 1.003354835.
    better integration makes the AC16 and iPSC tables *converge*, that is
    evidence the 0.54 cross-line divergence was an integration artifact rather
    than real biology.
+
+**M2 addendum — third calibration line (2026-05-22).** A third D₂O mixing
+series was acquired and wired in under `data/calibration_cm/` and
+`tests/data/calibration_d2o_mixing/cm/`: contractile human iPSC-derived
+cardiomyocytes (iPSC-CM), 9 proportions, JPOST `JPST003582`. It is processed
+identically to ac16 and ipsc — same Crux+Percolator IDs, same pinned `-m 15`
+integrate config — and re-uses every benchmark script via `--line cm`.
+
+Rationale: ac16 and ipsc are both **proliferative**, and a dividing cell
+dilutes isotopic label through division independently of protein turnover;
+iPSC-CM is **post-mitotic**, isolating turnover from division, and is the more
+physiologically relevant model. The third line turns M2 finding 3's two-point
+cross-line comparison into a three-point one with a biology axis.
+
+*v0.9.0 baseline, all 9 proportions:*
+
+| line | curated n | OOB R² | m0_rmse curated | m0_rmse uncurated |
+|------|-----------|--------|-----------------|-------------------|
+| ac16 | 1512      | 0.848  | 0.018           | 0.062             |
+| ipsc | 2964      | 0.766  | 0.024           | 0.072             |
+| cm   |  564      | 0.754  | 0.025           | 0.074             |
+
+cm came back the noisiest line: its `time50` fraction is a weak acquisition
+(16,090 vs ~20k target PSMs; 5,671 vs ~13–16k integrated peptides at `-q 0.01`).
+Because NB87a curation requires a peptide observed at all 9 proportions,
+`time50` alone bottlenecks cm to 564 curated peptides — a third of ipsc's — and
+its frozen table inflates near-zero-labeling residues (Lys 0.235, Tyr 0.258,
+Phe 0.40) where a starved 20-parameter fit absorbs integration noise.
+
+*Relaxed-coverage A/B (drop `time50`).* The "observed at all 9" rule is a
+**coverage** requirement, separate from the R²>0.95 quality gate; `time50` is a
+bad *run*, not a bad set of peptides. Re-curating cm on the 8 surviving
+proportions (`--drop-proportion 50`, new flag on `bench_aa_coefficients.py` /
+`bench_m0_ma_recovery.py`) gives:
+
+| cm variant | curated n | OOB R² | mean coef boot-std | mean \|Δ\| vs ac16 / ipsc |
+|------------|-----------|--------|--------------------|---------------------------|
+| 9/9        |  564      | 0.754  | 0.147              | 0.172 / 0.194             |
+| 8/9 (−t50) | 1817      | 0.782  | 0.094              | 0.165 / 0.157             |
+
+Dropping one weak fraction recovers 3.2× the peptides, cuts coefficient
+bootstrap noise by 36% (0.147→0.094, toward ipsc's 0.064), and collapses the
+unphysical low-labeling coefficients (Lys 0.235→0.022, Tyr 0.258→0.065). The
+table also moves *toward* both proliferative lines — most toward ipsc, cm's
+parental line. The cm self-shift 9/9→8/9 is 0.11 mean (0.26 max), comparable to
+the cross-line deltas themselves: **a large part of cm-9/9's apparent
+cross-line divergence was small-N noise, not biology.** Both tables are kept
+(`d2o_aa_coefficients_cm.csv` = 9/9; `d2o_aa_coefficients_cm_drop50.csv` = 8/9,
+the recommended cm reference); the A/B is the record.
+
+Implications: (a) M2 finding 3's "do the frozen tables converge under better
+integration" diagnostic now has three legs, and cm-8/9 already sits closest to
+ipsc; (b) this is concrete input for the M3 curation-gate revisit — the
+coverage rule should tolerate a known-bad fraction rather than discard every
+peptide missing from it; (c) cm remains the noisiest line even at 8/9 (boot-std
+still ~1.5× ipsc), so it is the sharpest stress test for whether M3 peak
+detection tightens the per-AA fit.
 
 The original M2 plan is retained below for reference.
 
@@ -442,9 +500,12 @@ correction. Keep it simple.
   the §2b fixes change fit output by design (see Week 4 note).
 - Memory peak on a 2 GB mzML drops from "all of it" to "one fraction
   worth."
-- Bonus diagnostic (M2 finding 3): if the better M3 integration makes the
-  AC16 and iPSC frozen tables *converge*, the 0.54 cross-line divergence was
-  an integration artifact, not biology.
+- Bonus diagnostic (M2 finding 3, now three lines): if the better M3
+  integration makes the ac16 / ipsc / cm frozen tables *converge* — and cm's
+  residual low-labeling-residue inflation collapses — the cross-line divergence
+  was an integration artifact, not biology. The M2 addendum already shows a
+  large part of cm's divergence was small-N noise; M3 peak detection is the
+  test of the rest. Score cm against `d2o_aa_coefficients_cm_drop50.csv`.
 
 ### M4 — Qt + async GUI rewrite
 

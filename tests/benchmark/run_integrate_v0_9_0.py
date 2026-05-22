@@ -123,12 +123,12 @@ def run_line(line: str, dry_run: bool, output_dir: Path | None = None,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--line', choices=['ac16', 'ipsc', 'all'], default='all')
+    parser.add_argument('--line', choices=['ac16', 'ipsc', 'cm', 'all'], default='all')
     parser.add_argument('--dry-run', action='store_true',
                         help='Print commands without executing')
     args = parser.parse_args()
 
-    targets = ['ac16', 'ipsc'] if args.line == 'all' else [args.line]
+    targets = ['ac16', 'ipsc', 'cm'] if args.line == 'all' else [args.line]
     for line in targets:
         run_line(line, dry_run=args.dry_run)
 

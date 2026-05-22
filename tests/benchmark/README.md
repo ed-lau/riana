@@ -32,6 +32,24 @@ Two things that are easy to misremember:
 `load_and_curate(r2_min=-1)` (filter disabled), then tags each row
 `is_curated = r2 > 0.95`, so one pass yields all three populations.
 
+## Coverage and weak fractions (`--drop-proportion`)
+
+Curation has a second requirement, separate from the R² gate above: a peptide
+must be **observed at every proportion** to enter the curated set. That makes
+the curated count hostage to the *weakest acquisition* — one bad LC-MS run
+discards every peptide missing from it, regardless of how well-behaved those
+peptides are everywhere else.
+
+The `cm` line is the worked example: its `time50` run is weak (~16k vs ~20k
+target PSMs), and requiring all 9 proportions bottlenecks cm to 564 curated
+peptides. `bench_aa_coefficients.py` and `bench_m0_ma_recovery.py` take
+`--drop-proportion PCT` to exclude a named proportion from curation entirely
+(coverage then requires only the survivors). For cm, `--drop-proportion 50`
+recovers 1817 curated peptides and a markedly more stable frozen table — see
+the M2 addendum in `PROJECT_REVIEW.md`. Pass the **same** `--drop-proportion`
+to the freeze inputs and to `bench_m0_ma_recovery.py` so the scored population
+matches the table's training population.
+
 ## Scripts
 
 | Script | Purpose |
