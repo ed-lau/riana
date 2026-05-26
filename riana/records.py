@@ -38,6 +38,11 @@ class PSMRecord:
     peptide_mass: float
     sample: str
     file_idx: int = 0
+    #: basename (no extension) of the source mzML. Populated by the standalone
+    #: Percolator path (parsed from PSMId) and the mzTab path (from
+    #: ``MTD ms_run[N]-location``); empty for Crux Percolator output, which
+    #: only carries ``file_idx``. Required join key for ``bench_id_path.py``.
+    file_name: str = ""
     protein_id: str = ""
     flanking_aa: str = ""
     #: ``spectrum precursor m/z`` — 0.0 when the standalone-Percolator path
