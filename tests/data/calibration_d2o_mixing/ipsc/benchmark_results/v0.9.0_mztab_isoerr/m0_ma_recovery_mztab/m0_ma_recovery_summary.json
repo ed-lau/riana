@@ -1,0 +1,257 @@
+{
+  "all": {
+    "n": 43566,
+    "n_peptides": 4841,
+    "m0_rmse": 0.046909413415181296,
+    "m0_mae": 0.027718464791407098,
+    "m0_bias_median": 0.002691262564179231,
+    "env_rmse_median": 0.016171489741410538,
+    "env_rmse_p95": 0.09137023290092634,
+    "per_proportion": [
+      {
+        "proportion": 0.0,
+        "m0_rmse": 0.057346,
+        "m0_iqr": 0.035015,
+        "m0_bias": 0.004076,
+        "env_rmse_median": 0.018319,
+        "n": 4840
+      },
+      {
+        "proportion": 12.5,
+        "m0_rmse": 0.052888,
+        "m0_iqr": 0.032866,
+        "m0_bias": 0.002459,
+        "env_rmse_median": 0.01743,
+        "n": 4841
+      },
+      {
+        "proportion": 25.0,
+        "m0_rmse": 0.052437,
+        "m0_iqr": 0.032784,
+        "m0_bias": 0.00464,
+        "env_rmse_median": 0.017601,
+        "n": 4841
+      },
+      {
+        "proportion": 37.5,
+        "m0_rmse": 0.046853,
+        "m0_iqr": 0.029691,
+        "m0_bias": 0.003795,
+        "env_rmse_median": 0.016334,
+        "n": 4841
+      },
+      {
+        "proportion": 50.0,
+        "m0_rmse": 0.043173,
+        "m0_iqr": 0.027879,
+        "m0_bias": 0.003848,
+        "env_rmse_median": 0.015322,
+        "n": 4841
+      },
+      {
+        "proportion": 62.5,
+        "m0_rmse": 0.042004,
+        "m0_iqr": 0.027183,
+        "m0_bias": 0.003401,
+        "env_rmse_median": 0.015068,
+        "n": 4841
+      },
+      {
+        "proportion": 75.0,
+        "m0_rmse": 0.041838,
+        "m0_iqr": 0.027791,
+        "m0_bias": 0.002842,
+        "env_rmse_median": 0.015429,
+        "n": 4840
+      },
+      {
+        "proportion": 87.5,
+        "m0_rmse": 0.040785,
+        "m0_iqr": 0.027513,
+        "m0_bias": 0.000746,
+        "env_rmse_median": 0.015343,
+        "n": 4840
+      },
+      {
+        "proportion": 100.0,
+        "m0_rmse": 0.041615,
+        "m0_iqr": 0.027674,
+        "m0_bias": -0.001481,
+        "env_rmse_median": 0.015277,
+        "n": 4841
+      }
+    ]
+  },
+  "curated": {
+    "n": 28593,
+    "n_peptides": 3177,
+    "m0_rmse": 0.025552702178523557,
+    "m0_mae": 0.017349322832509437,
+    "m0_bias_median": 0.0036132488343419422,
+    "env_rmse_median": 0.012158104972869292,
+    "env_rmse_p95": 0.04800358385528514,
+    "per_proportion": [
+      {
+        "proportion": 0.0,
+        "m0_rmse": 0.030725,
+        "m0_iqr": 0.024981,
+        "m0_bias": 0.006062,
+        "env_rmse_median": 0.013695,
+        "n": 3177
+      },
+      {
+        "proportion": 12.5,
+        "m0_rmse": 0.027872,
+        "m0_iqr": 0.023379,
+        "m0_bias": 0.004121,
+        "env_rmse_median": 0.012535,
+        "n": 3177
+      },
+      {
+        "proportion": 25.0,
+        "m0_rmse": 0.02808,
+        "m0_iqr": 0.02388,
+        "m0_bias": 0.00609,
+        "env_rmse_median": 0.013202,
+        "n": 3177
+      },
+      {
+        "proportion": 37.5,
+        "m0_rmse": 0.024816,
+        "m0_iqr": 0.021833,
+        "m0_bias": 0.004831,
+        "env_rmse_median": 0.011906,
+        "n": 3177
+      },
+      {
+        "proportion": 50.0,
+        "m0_rmse": 0.023783,
+        "m0_iqr": 0.021745,
+        "m0_bias": 0.004627,
+        "env_rmse_median": 0.011676,
+        "n": 3177
+      },
+      {
+        "proportion": 62.5,
+        "m0_rmse": 0.023306,
+        "m0_iqr": 0.021013,
+        "m0_bias": 0.003844,
+        "env_rmse_median": 0.011454,
+        "n": 3177
+      },
+      {
+        "proportion": 75.0,
+        "m0_rmse": 0.023079,
+        "m0_iqr": 0.02153,
+        "m0_bias": 0.003117,
+        "env_rmse_median": 0.011721,
+        "n": 3177
+      },
+      {
+        "proportion": 87.5,
+        "m0_rmse": 0.023185,
+        "m0_iqr": 0.021525,
+        "m0_bias": 0.001063,
+        "env_rmse_median": 0.011578,
+        "n": 3177
+      },
+      {
+        "proportion": 100.0,
+        "m0_rmse": 0.023922,
+        "m0_iqr": 0.021846,
+        "m0_bias": -0.001674,
+        "env_rmse_median": 0.011746,
+        "n": 3177
+      }
+    ]
+  },
+  "uncurated": {
+    "n": 14973,
+    "n_peptides": 1664,
+    "m0_rmse": 0.0718036007200887,
+    "m0_mae": 0.047519765534795914,
+    "m0_bias_median": -0.001668360799551627,
+    "env_rmse_median": 0.030155675651600447,
+    "env_rmse_p95": 0.14204501306346756,
+    "per_proportion": [
+      {
+        "proportion": 0.0,
+        "m0_rmse": 0.088134,
+        "m0_iqr": 0.080086,
+        "m0_bias": -0.008642,
+        "env_rmse_median": 0.035315,
+        "n": 1663
+      },
+      {
+        "proportion": 12.5,
+        "m0_rmse": 0.081574,
+        "m0_iqr": 0.077103,
+        "m0_bias": -0.007322,
+        "env_rmse_median": 0.03423,
+        "n": 1664
+      },
+      {
+        "proportion": 25.0,
+        "m0_rmse": 0.080586,
+        "m0_iqr": 0.076686,
+        "m0_bias": -0.004567,
+        "env_rmse_median": 0.033734,
+        "n": 1664
+      },
+      {
+        "proportion": 37.5,
+        "m0_rmse": 0.072185,
+        "m0_iqr": 0.066245,
+        "m0_bias": -0.001561,
+        "env_rmse_median": 0.031752,
+        "n": 1664
+      },
+      {
+        "proportion": 50.0,
+        "m0_rmse": 0.0659,
+        "m0_iqr": 0.054386,
+        "m0_bias": -0.000259,
+        "env_rmse_median": 0.027156,
+        "n": 1664
+      },
+      {
+        "proportion": 62.5,
+        "m0_rmse": 0.063998,
+        "m0_iqr": 0.053988,
+        "m0_bias": 0.001361,
+        "env_rmse_median": 0.027156,
+        "n": 1664
+      },
+      {
+        "proportion": 75.0,
+        "m0_rmse": 0.06385,
+        "m0_iqr": 0.052885,
+        "m0_bias": 0.00132,
+        "env_rmse_median": 0.028284,
+        "n": 1663
+      },
+      {
+        "proportion": 87.5,
+        "m0_rmse": 0.06176,
+        "m0_iqr": 0.050053,
+        "m0_bias": -5.7e-05,
+        "env_rmse_median": 0.027293,
+        "n": 1663
+      },
+      {
+        "proportion": 100.0,
+        "m0_rmse": 0.062814,
+        "m0_iqr": 0.047837,
+        "m0_bias": -0.000752,
+        "env_rmse_median": 0.027099,
+        "n": 1664
+      }
+    ]
+  },
+  "args": {
+    "inputs": "tests/data/calibration_d2o_mixing/ipsc/integrate_outputs/v0.9.0_mztab_isoerr",
+    "ground_truth": "tests/data/calibration_d2o_mixing/ipsc/ground_truth.csv",
+    "coefficients": "tests/data/calibration_d2o_mixing/ipsc/d2o_aa_coefficients_ipsc.csv",
+    "n_iso": 4
+  }
+}
