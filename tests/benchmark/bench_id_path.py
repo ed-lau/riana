@@ -333,17 +333,21 @@ def main() -> None:
     )
     parser.add_argument("--q-threshold", type=float, default=0.01)
     parser.add_argument(
+        "--label", default="v0.9.0_mztab",
+        help="Subdirectory name under benchmark_results/ and integrate_outputs/. "
+             "Override to A/B two quantms searches without clobbering a "
+             "committed baseline, e.g. --label v0.9.0_mztab_isoerr.",
+    )
+    parser.add_argument(
         "--output-dir", type=Path, default=None,
-        help="Default: tests/data/calibration_d2o_mixing/<line>/benchmark_results/v0.9.0_mztab",
+        help="Default: tests/data/calibration_d2o_mixing/<line>/benchmark_results/<label>",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     line = args.line
     if args.output_dir is None:
-        args.output_dir = (
-            BENCH_DATA / line / "benchmark_results" / "v0.9.0_mztab"
-        )
+        args.output_dir = BENCH_DATA / line / "benchmark_results" / args.label
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Phase 1 — always.
@@ -382,9 +386,7 @@ def main() -> None:
         return
 
     # Phase 2 — integrate against mzTab IDs.
-    integrate_out = (
-        BENCH_DATA / line / "integrate_outputs" / "v0.9.0_mztab"
-    )
+    integrate_out = BENCH_DATA / line / "integrate_outputs" / args.label
     print(f"\n=== phase 2: integrate mzTab IDs -> {integrate_out} ===")
     run_integrate_from_mztab(line, output_dir=integrate_out, dry_run=args.dry_run)
 
