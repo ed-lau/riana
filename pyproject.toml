@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "pymzml>=2,<3",
     "pyteomics>=4.7",
+    "pybaselines>=1.1",
     "scipy>=1",
     "pandas>=2",
     "matplotlib>=3,<4",
