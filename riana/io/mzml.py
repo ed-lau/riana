@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from typing import Iterator
 
@@ -73,9 +74,17 @@ class IndexedMzML:
         self.rt_idx = np.asarray(rts_min, dtype=np.float64)
         self._scan_to_spec_id: dict[int, str] = dict(zip(scans, spec_ids))
 
-        # Long-lived random-access reader. pyteomics keeps an offset index;
-        # ``get_by_id`` decodes one spectrum on demand.
-        self._reader = mzml.MzML(str(self._reader_path), use_index=True)
+        # Random-access readers are per-thread. The pyteomics MzML +
+        # lxml parser carry per-instance state during ``get_by_id``; sharing
+        # one reader across workers corrupts XML mid-decode (manifested as
+        # `XMLSyntaxError: Specification mandates value for attribute ...`
+        # under ThreadPoolExecutor with 4 workers). Each thread lazily opens
+        # its own; readers leak on thread exit but are cleaned at process
+        # exit, which is fine for the integrator's bounded thread pool.
+        self._tl = threading.local()
+        # Track per-thread readers so ``close()`` can drain them in tests.
+        self._readers: list[mzml.MzML] = []
+        self._readers_lock = threading.Lock()
 
     def _materialize_seekable(self, path: Path) -> Path:
         """Return a path to a seekable mzML; decompress .gz to a temp file."""
@@ -88,15 +97,28 @@ class IndexedMzML:
         return out
 
     def peaks(self, scan: int) -> tuple[np.ndarray, np.ndarray]:
-        """Return (m/z, intensity) arrays for the MS1 scan number *scan*."""
+        """Return (m/z, intensity) arrays for the MS1 scan number *scan*.
+
+        Thread-safe: each calling thread gets its own pyteomics reader.
+        """
         try:
             spec_id = self._scan_to_spec_id[scan]
         except KeyError as e:
             raise DataError(
                 f"scan {scan} is not an MS1 in {self.path.name}"
             ) from e
-        spec = self._reader.get_by_id(spec_id)
+        reader = self._thread_reader()
+        spec = reader.get_by_id(spec_id)
         return spec["m/z array"], spec["intensity array"]
+
+    def _thread_reader(self) -> "mzml.MzML":
+        r = getattr(self._tl, "reader", None)
+        if r is None:
+            r = mzml.MzML(str(self._reader_path), use_index=True)
+            self._tl.reader = r
+            with self._readers_lock:
+                self._readers.append(r)
+        return r
 
     def ms1_iter(self) -> Iterator[tuple[int, float, np.ndarray, np.ndarray]]:
         """Yield ``(scan, rt_minutes, mz_array, intensity_array)`` per MS1.
@@ -116,7 +138,13 @@ class IndexedMzML:
                 )
 
     def close(self) -> None:
-        self._reader.close()
+        with self._readers_lock:
+            for r in self._readers:
+                try:
+                    r.close()
+                except Exception:
+                    pass
+            self._readers.clear()
         if self._tmpdir is not None:
             self._tmpdir.cleanup()
             self._tmpdir = None
