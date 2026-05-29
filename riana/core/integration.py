@@ -24,6 +24,7 @@ bit-near-identical so each later change is its own attributable diff.
 
 from __future__ import annotations
 
+import logging
 import re
 from concurrent import futures
 from dataclasses import replace
@@ -34,11 +35,16 @@ import pandas as pd
 import scipy.signal
 
 from riana import constants
+from riana.algorithms import baseline as ba
+from riana.algorithms import peaks as pk
+from riana.algorithms import smoothing as sm
 from riana.config import IntegrationConfig
 from riana.exceptions import IntegrationError
 from riana.io.mzml import IndexedMzML
 from riana.io.percolator import filter_by_q_value, fraction_psms
 from riana.records import PSMRecord
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # --- Column schema -----------------------------------------------------------
@@ -114,13 +120,46 @@ def integrate_run(
         intensity_dfs = list(ex.map(_do, range(len(kept))))
 
     # Trapezoidal integration per (PSM × mod × iso) on the per-PSM rt trace.
+    # Phase C: when peak_method="detected" the boundaries come from
+    # peaks.detect_peak on the iso0 XIC + a co-elution check against iso1;
+    # baseline-subtraction uses baseline_method (default "linear", Skyline-
+    # style). Per-peptide fallback to fixed-window on detection failure.
     iso_cols = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
     integrated_rows: list[list] = []
-    for idf in intensity_dfs:
+    n_detected = n_fallback = 0
+    iso0_col = f"mod{_g(forced[0])}_iso0"
+    iso1_col = f"mod{_g(forced[0])}_iso1" if 1 in isos else None
+    for idf, psm in zip(intensity_dfs, kept):
         row: list = [idf["pep_id"].iloc[0]]
+        rt_arr = idf["rt"].to_numpy(dtype=np.float64)
+
+        boundary = _peak_boundary(idf, psm, mzml, config, rt_arr, iso0_col, iso1_col)
+        if boundary is not None:
+            n_detected += 1
+        else:
+            n_fallback += 1
+
         for col in iso_cols:
-            row.append(float(np.trapezoid(idf[col].to_numpy(), x=idf["rt"].to_numpy())))
+            trace = idf[col].to_numpy(dtype=np.float64)
+            if boundary is not None:
+                lo, hi = boundary.lo, boundary.hi
+                corrected = _baseline_corrected_slice(
+                    rt_arr, trace, lo, hi, config.baseline_method
+                )
+                area = float(
+                    np.trapezoid(corrected, x=rt_arr[lo : hi + 1])
+                )
+            else:
+                area = float(np.trapezoid(trace, x=rt_arr))
+            row.append(area)
         integrated_rows.append(row)
+
+    if config.peak_method == "detected":
+        _LOGGER.info(
+            "integrate_run: %d PSMs detected, %d fell back to fixed-window "
+            "(detection or co-elution failure).",
+            n_detected, n_fallback,
+        )
 
     integrated_df = pd.DataFrame(integrated_rows, columns=["pep_id"] + iso_cols)
     # Legacy strips ``mod0_`` from output column names (the default
@@ -217,18 +256,95 @@ def _extract_per_psm(
     wide["pep_id"] = psm.pep_id
     wide["concat"] = psm.concat
 
-    # Smoothing — Phase A preserves the legacy polyorder=1 path so the port
-    # is bit-near-identical. Phase B upgrades the default polyorder to 2.
+    # Smoothing. When the user asks for fixed-window + smoothing, polyorder=1
+    # is preserved for bit-near-identity with the 0.9.0 baseline (the only
+    # gate that can catch a regression in the legacy semantics). For the
+    # detected/Phase-C science path we use the §2c fix polyorder=2 via the
+    # algorithms.smoothing wrapper.
     if config.smoothing is not None and config.smoothing > 0:
-        for col in iso_cols:
-            if wide[col].sum() > 0:
-                wide[col] = scipy.signal.savgol_filter(
+        if config.peak_method == "fixed_window":
+            for col in iso_cols:
+                if wide[col].sum() > 0:
+                    wide[col] = scipy.signal.savgol_filter(
+                        wide[col].to_numpy(),
+                        window_length=config.smoothing,
+                        polyorder=1,
+                        mode="nearest",
+                    )
+        else:
+            for col in iso_cols:
+                wide[col] = sm.savgol(
                     wide[col].to_numpy(),
-                    window_length=config.smoothing,
-                    polyorder=1,
-                    mode="nearest",
+                    window=config.smoothing,
+                    polyorder=config.smoothing_polyorder,
                 )
     return wide
+
+
+def _peak_boundary(
+    idf: pd.DataFrame,
+    psm: PSMRecord,
+    mzml: IndexedMzML,
+    config: IntegrationConfig,
+    rt_arr: np.ndarray,
+    iso0_col: str,
+    iso1_col: str | None,
+) -> "pk.PeakBoundary | None":
+    """Detect iso0 peak + verify iso1 co-elution. ``None`` ⇒ fall back."""
+    if config.peak_method != "detected":
+        return None
+    iso0_trace = idf[iso0_col].to_numpy(dtype=np.float64)
+    if iso0_trace.sum() <= 0:
+        return None
+    psm_rt = float(
+        mzml.rt_idx[
+            np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1
+        ]
+    )
+    iso0_b = pk.detect_peak(rt_arr, iso0_trace, scan_prior_rt=psm_rt)
+    if iso0_b is None:
+        return None
+    if iso1_col is not None:
+        iso1_trace = idf[iso1_col].to_numpy(dtype=np.float64)
+        iso1_b = (
+            pk.detect_peak(rt_arr, iso1_trace, scan_prior_rt=psm_rt)
+            if iso1_trace.sum() > 0
+            else None
+        )
+        if not pk.coelution_ok(iso0_b, iso1_b, rt_arr):
+            return None
+    return iso0_b
+
+
+def _baseline_corrected_slice(
+    rt_arr: np.ndarray,
+    trace: np.ndarray,
+    lo: int,
+    hi: int,
+    method: str,
+) -> np.ndarray:
+    """Return ``trace[lo:hi+1] - baseline`` according to ``method``.
+
+    For ``"none"`` we skip subtraction (just slice). For ``"linear"`` the
+    baseline is the Skyline local-linear between the boundary endpoints.
+    ``"snip"`` / ``"asls"`` route through :mod:`algorithms.baseline`.
+    """
+    sliced = trace[lo : hi + 1]
+    if method == "none":
+        return sliced
+    if method == "linear":
+        bl = ba.local_linear(rt_arr, trace, lo, hi)
+    elif method == "snip":
+        bl = ba.snip(trace)
+    elif method == "asls":
+        bl = ba.asls(trace)
+    else:  # defensive; __post_init__ already gated
+        return sliced
+    corrected = sliced - bl[lo : hi + 1]
+    # Skyline never reports negative-baseline-after-subtraction areas; clip
+    # at zero to avoid negative iso{N} columns the downstream R²>0.95 gate
+    # would discard for the wrong reason.
+    return np.maximum(corrected, 0.0)
 
 
 def _psm_metadata_df(psms: Sequence[PSMRecord]) -> pd.DataFrame:

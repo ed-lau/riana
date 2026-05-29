@@ -60,6 +60,27 @@ class IntegrationConfig:
     #: the Week 3 rewrite can make it configurable without a signature change.
     use_range: bool = True
 
+    # --- M3 Week 3 (Phase C/D) science fields. Defaults are the new
+    # canonical pipeline; the legacy fixed-window path stays available via
+    # ``peak_method="fixed_window"`` for Phase A parity / regression gating.
+
+    #: Peak boundary method on the iso0 XIC. ``"detected"`` runs
+    #: :func:`algorithms.peaks.detect_peak` + co-elution check, falling back
+    #: per-peptide to fixed-window when detection fails. ``"fixed_window"``
+    #: reproduces the 0.9.0 rectangle integration (Phase A anchor).
+    peak_method: str = "detected"
+    #: Chromatographic baseline subtraction inside the integrated window.
+    #: ``"none"`` matches 0.9.0; ``"linear"`` is the Skyline default
+    #: recommended by §2c; ``"snip"`` / ``"asls"`` are pybaselines fallbacks.
+    baseline_method: str = "linear"
+    #: Savitzky–Golay polynomial order. ``2`` is the §2c fix (the 0.9.0
+    #: polyorder=1 path is mathematically a moving average); only used when
+    #: ``smoothing`` is set.
+    smoothing_polyorder: int = 2
+    #: Per-fraction calibration drift alert threshold, in ppm. Phase D logs
+    #: a warning when the per-fraction median ppm error exceeds this.
+    ppm_alert: float = 20.0
+
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
             raise ValueError(f"mass_tol_ppm must be in [1, 500], got {self.mass_tol_ppm}")
@@ -69,6 +90,21 @@ class IntegrationConfig:
             raise ValueError(f"smoothing must be an odd integer >= 3, got {self.smoothing}")
         if self.threads < 1:
             raise ValueError(f"threads must be >= 1, got {self.threads}")
+        if self.peak_method not in ("detected", "fixed_window"):
+            raise ValueError(
+                f"peak_method must be 'detected' or 'fixed_window', got {self.peak_method!r}"
+            )
+        if self.baseline_method not in ("none", "linear", "snip", "asls"):
+            raise ValueError(
+                f"baseline_method must be one of 'none', 'linear', 'snip', 'asls'; "
+                f"got {self.baseline_method!r}"
+            )
+        if self.smoothing_polyorder < 2:
+            raise ValueError(
+                f"smoothing_polyorder must be >= 2 (the §2c fix); got {self.smoothing_polyorder}"
+            )
+        if self.ppm_alert <= 0:
+            raise ValueError(f"ppm_alert must be > 0, got {self.ppm_alert}")
 
 
 @dataclass(frozen=True, slots=True)
