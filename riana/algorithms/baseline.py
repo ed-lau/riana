@@ -5,22 +5,60 @@ Pure ``numpy`` functions, one per method. Phase C composes them inside
 
 Methods (matching ``bench_baseline.py``'s expected ``--method`` set):
 
-- ``local_linear`` — Skyline default. Linear interpolation between the
-  intensities at the detected peak boundaries (lo, hi) — what
-  PROJECT_REVIEW.md §2c recommends.
+- ``noise_floor`` — flat baseline at a low quantile (default p10) of the
+  full extracted trace. Robust to single-scan noise spikes and to where
+  exactly the detected boundaries land. **This is the recommended default
+  for our calibration data** — see PROJECT_REVIEW.md Week 3 notes.
+- ``local_linear`` — Skyline classic. Linear interpolation between the
+  intensities at the detected peak boundaries (lo, hi). Works on Skyline-
+  shaped data where boundary detection lands on true noise floor; brittle
+  on our peak_widths(rel_height=0.05) boundaries because a single noise
+  spike at one endpoint inflates the whole baseline.
 - ``snip`` — Statistics-sensitive Non-linear Iterative Peak clipping
   (``pybaselines``). Robust to broad humps.
 - ``asls`` — Asymmetric Least Squares (``pybaselines``). Smooth,
   parameterised baseline; good for noisy traces with structured drift.
 
 ``pybaselines`` is imported lazily inside the snip/asls calls so the rest
-of the pipeline (and the unit tests on ``local_linear``) doesn't pay the
-import cost.
+of the pipeline (and the unit tests on ``local_linear`` / ``noise_floor``)
+doesn't pay the import cost.
 """
 
 from __future__ import annotations
 
 import numpy as np
+
+
+def noise_floor(
+    intensity: np.ndarray,
+    *,
+    quantile: float = 0.10,
+) -> np.ndarray:
+    """Flat noise-floor baseline from a low quantile of the trace.
+
+    The instrument noise floor at a given m/z window is approximately
+    constant across the RT range we extract (±r_time around the PSM
+    scan). A low quantile of the **full extracted trace** captures that
+    floor: the peak occupies only part of the window, so the lower tail
+    of the intensity distribution is the off-peak noise.
+
+    Returns a per-scan baseline array (same length as ``intensity``) so
+    callers can use the same subtraction code path as the other methods.
+    Robust to single noise spikes — unlike :func:`local_linear` which
+    anchors on two specific endpoint scans.
+
+    Args:
+        intensity: per-scan summed intensities for the full extracted RT
+            window.
+        quantile: which quantile of the trace to treat as noise floor.
+            Default 0.10 — robust to peak occupying up to ~90% of window
+            (rare; usually the peak is < 50% of the window).
+    """
+    arr = np.asarray(intensity, dtype=np.float64)
+    if arr.size == 0:
+        return arr.copy()
+    floor = float(np.quantile(arr, quantile))
+    return np.full(arr.size, floor, dtype=np.float64)
 
 
 def local_linear(

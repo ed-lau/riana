@@ -62,6 +62,37 @@ def test_savgol_validates_window():
 # ---------------------------------------------------------------------------
 
 
+def test_noise_floor_recovers_constant_noise_under_peak():
+    rng = np.random.default_rng(0)
+    rt = np.linspace(0, 1, 201)
+    noise = 50.0 + 5.0 * rng.standard_normal(rt.size)  # mean 50, σ 5
+    sig = noise + _gaussian(rt, 0.5, 0.03, 800.0)
+    bl = ba.noise_floor(sig)
+    # p10 of (noise + occasional peak) is approximately noise's p10.
+    # noise mean=50, σ=5 ⇒ p10 ≈ 50 - 1.28*5 ≈ 43.6.
+    assert bl[0] == pytest.approx(bl[-1])  # flat
+    assert 35 < bl[0] < 55
+
+
+def test_noise_floor_handles_zero_or_empty_trace():
+    assert ba.noise_floor(np.zeros(10))[0] == 0.0
+    assert ba.noise_floor(np.array([], dtype=np.float64)).size == 0
+
+
+def test_noise_floor_robust_to_endpoint_spike():
+    """The whole point of noise_floor vs local_linear: an endpoint spike
+    that would inflate local_linear's interpolation does not move the
+    p10 noise estimate."""
+    rt = np.linspace(0, 1, 51)
+    sig = 10.0 + _gaussian(rt, 0.5, 0.04, 100.0)
+    spike = sig.copy()
+    spike[0] = 500.0  # noise spike at endpoint
+    bl_clean = ba.noise_floor(sig)
+    bl_spike = ba.noise_floor(spike)
+    # p10 is unaffected by a single high spike.
+    assert abs(bl_spike[0] - bl_clean[0]) < 1.0
+
+
 def test_local_linear_subtracts_known_linear_drift():
     rt = np.linspace(0, 1, 51)
     drift = 100.0 + 50.0 * rt

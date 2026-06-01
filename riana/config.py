@@ -64,15 +64,32 @@ class IntegrationConfig:
     # canonical pipeline; the legacy fixed-window path stays available via
     # ``peak_method="fixed_window"`` for Phase A parity / regression gating.
 
-    #: Peak boundary method on the iso0 XIC. ``"detected"`` runs
-    #: :func:`algorithms.peaks.detect_peak` + co-elution check, falling back
-    #: per-peptide to fixed-window when detection fails. ``"fixed_window"``
-    #: reproduces the 0.9.0 rectangle integration (Phase A anchor).
-    peak_method: str = "detected"
+    #: Peak boundary method on the iso0 XIC.  ``"fixed_window"`` is the
+    #: current default — it reproduces the 0.9.0 rectangle integration.
+    #: ``"detected"`` runs :func:`algorithms.peaks.detect_peak` +
+    #: co-elution check, falling back per-peptide to fixed-window when
+    #: detection fails.
+    #:
+    #: **Why fixed_window is still the default in Week 3**: the Phase C
+    #: regression bench across ac16/ipsc/cm showed that scipy.signal.find_peaks
+    #: + peak_widths produces narrow per-peptide-per-fraction boundaries that
+    #: are *not stable across the 9 D₂O proportions* — iso5 area drops ~70%
+    #: under detection because the boundary lands at slightly different scan
+    #: indices at different proportions, breaking R²>0.95 curation (curated
+    #: peptide count fell 24–33% across lines; uncurated m0_rmse worsened
+    #: ~65%). Baseline tuning (linear → noise-floor) didn't recover.
+    #: Conclusion: opt-in only until a cross-proportion-stable peak picker
+    #: lands (e.g. consensus boundaries fitted once per peptide, Skyline-
+    #: grade noise-aware detection).
+    peak_method: str = "fixed_window"
     #: Chromatographic baseline subtraction inside the integrated window.
-    #: ``"none"`` matches 0.9.0; ``"linear"`` is the Skyline default
-    #: recommended by §2c; ``"snip"`` / ``"asls"`` are pybaselines fallbacks.
-    baseline_method: str = "linear"
+    #: ``"none"`` matches 0.9.0; ``"noise_floor"`` is the recommended
+    #: default — flat p10-of-trace baseline, robust to noise spikes at
+    #: the boundary endpoints (the failure mode that broke the first cut
+    #: of Phase C; see PROJECT_REVIEW.md Week 3 notes). ``"linear"`` is
+    #: the Skyline classic (brittle on our boundaries); ``"snip"`` /
+    #: ``"asls"`` are pybaselines fallbacks.
+    baseline_method: str = "noise_floor"
     #: Savitzky–Golay polynomial order. ``2`` is the §2c fix (the 0.9.0
     #: polyorder=1 path is mathematically a moving average); only used when
     #: ``smoothing`` is set.
@@ -94,10 +111,10 @@ class IntegrationConfig:
             raise ValueError(
                 f"peak_method must be 'detected' or 'fixed_window', got {self.peak_method!r}"
             )
-        if self.baseline_method not in ("none", "linear", "snip", "asls"):
+        if self.baseline_method not in ("none", "noise_floor", "linear", "snip", "asls"):
             raise ValueError(
-                f"baseline_method must be one of 'none', 'linear', 'snip', 'asls'; "
-                f"got {self.baseline_method!r}"
+                f"baseline_method must be one of 'none', 'noise_floor', 'linear', "
+                f"'snip', 'asls'; got {self.baseline_method!r}"
             )
         if self.smoothing_polyorder < 2:
             raise ValueError(

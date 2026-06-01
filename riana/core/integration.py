@@ -143,12 +143,22 @@ def integrate_run(
             trace = idf[col].to_numpy(dtype=np.float64)
             if boundary is not None:
                 lo, hi = boundary.lo, boundary.hi
+                # Baseline subtraction applies to ALL isotopomers, because
+                # the noise floor is approximately constant across iso0..iso5
+                # (same instrument, similar m/z window). Subtraction is tiny
+                # for iso0 (noise << apex) and meaningful for iso{N>0} where
+                # noise is comparable to apex — without it iso5 would be
+                # over-estimated by integrating the noise floor across the
+                # window. Per-trace noise-floor (default) is robust to
+                # endpoint spikes (the failure mode of the first Phase C cut).
                 corrected = _baseline_corrected_slice(
                     rt_arr, trace, lo, hi, config.baseline_method
                 )
-                area = float(
-                    np.trapezoid(corrected, x=rt_arr[lo : hi + 1])
-                )
+                # Clamp the integrated area (not per-scan): a single noisy
+                # boundary scan can produce small negatives in `corrected`,
+                # but the *integrated* area still reflects the underlying
+                # peak — clipping per-scan amputates whole isotopomers.
+                area = max(0.0, float(np.trapezoid(corrected, x=rt_arr[lo : hi + 1])))
             else:
                 area = float(np.trapezoid(trace, x=rt_arr))
             row.append(area)
@@ -328,11 +338,19 @@ def _baseline_corrected_slice(
     For ``"none"`` we skip subtraction (just slice). For ``"linear"`` the
     baseline is the Skyline local-linear between the boundary endpoints.
     ``"snip"`` / ``"asls"`` route through :mod:`algorithms.baseline`.
+
+    The corrected slice can contain small negatives when a single
+    boundary scan happens to sit above the trace just inside. Those
+    integrate to small negative or near-zero areas — the caller clips the
+    *final* integrated area at zero. Clipping per-scan (the original Phase
+    C behavior) zeroed entire isotopomers from one noisy boundary scan.
     """
     sliced = trace[lo : hi + 1]
     if method == "none":
         return sliced
-    if method == "linear":
+    if method == "noise_floor":
+        bl = ba.noise_floor(trace)
+    elif method == "linear":
         bl = ba.local_linear(rt_arr, trace, lo, hi)
     elif method == "snip":
         bl = ba.snip(trace)
@@ -340,11 +358,7 @@ def _baseline_corrected_slice(
         bl = ba.asls(trace)
     else:  # defensive; __post_init__ already gated
         return sliced
-    corrected = sliced - bl[lo : hi + 1]
-    # Skyline never reports negative-baseline-after-subtraction areas; clip
-    # at zero to avoid negative iso{N} columns the downstream R²>0.95 gate
-    # would discard for the wrong reason.
-    return np.maximum(corrected, 0.0)
+    return sliced - bl[lo : hi + 1]
 
 
 def _psm_metadata_df(psms: Sequence[PSMRecord]) -> pd.DataFrame:
