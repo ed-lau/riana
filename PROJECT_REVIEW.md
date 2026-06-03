@@ -531,6 +531,53 @@ The math is already mostly in `fsynthesis.py` — the gap is in serializing
 intermediate `fs` per-timepoint instead of only the fitted constant.
 This stays a planning placeholder until scoped further.
 
+### M6 — SDRF-driven ID intake (record only; defer design)
+
+Riana's integration unit is one timepoint per ``<sample>_riana.txt``,
+recombined into a time series at fit time. That asymmetry is fine for the
+Percolator path (snakemake already emits one file per timepoint), but the
+quantms mzTab path emits one file per **study** (covers every timepoint
+and every LC fraction). Today the bench-side projection helper
+`tests/benchmark/bench_id_path.py:write_mztab_as_percolator_tsv` does the
+split using `ground_truth.csv` as the file → timepoint map.
+
+SDRF is needed for **production use** of the mzTab adapter, **even for
+single-fraction-per-timepoint** data, because nothing in the mzTab itself
+says which `ms_run[N]-location` (a filename) corresponds to which sample
+/ timepoint. `ground_truth.csv` is doing that job for the calibration
+mixing series; for animal in-vivo (M3 finding [[m3-animal-within-protein-metric]])
+or other future data the column is `collection_time_h` instead of
+`nominal_proportion`, and the source of truth is the SDRF tsv quantms
+already requires.
+
+Likely surface, when scoped (probably the post-M4 planning round):
+
+- `riana/io/sdrf.py` parses the SDRF and returns
+  `{ms_run_index: SampleInfo(sample, timepoint, fraction_idx)}`.
+- `riana/io/mztab.py` and `riana/io/percolator.py` already flag the
+  `sample_map: dict[ms_run_idx, str]` parameter as the TODO seam.
+- `riana integrate --ids-format mztab --sdrf path/to/sdrf.tsv` iterates
+  the timepoints from SDRF and emits one `<sample>_riana.txt` per.
+- Multi-LC-fraction-per-sample falls out for free because SDRF already
+  groups fractions under one sample name (`assay name` →
+  `sample name`).
+
+Deferred until the first multi-fraction quantms run or the first user
+needs to feed `riana integrate` an mzTab directly (today everyone goes
+through the `bench_id_path` projection). Planning anchor: revisit
+post-Week-4 alongside the broader new-features planning round.
+
+### Post-M4 planning anchor
+
+Once M4 (Qt + async GUI) lands, take a deliberate pass to plan the next
+batch of features in earnest — including M5 (flexible D₂O reporting),
+M6 (SDRF ID intake), Phase C v2 (cross-proportion-stable peak detection
+— see [[m3-peak-detection-boundary-stability]]), and the
+within-protein-θ-variance benchmark for the animal calibration dataset
+([[m3-animal-within-protein-metric]]). The M3 work has surfaced concrete
+constraints that change what M5+ should look like; better to plan with
+the post-M3/M4 picture in hand than against the original 0.9.0 review.
+
 ## 4. Cross-cutting recommendations
 
 These apply during and after the rewrite:
