@@ -186,3 +186,46 @@ def test_sample1_detected_pipeline_runs_and_is_smaller_than_fixed():
         # And there should be at least one row where detection meaningfully
         # tightened the window (proves the detected branch ran).
         assert (diff < -1.0).any(), f"detected pipeline never narrowed {c}"
+
+
+# --- Phase D smoke: mass-accuracy outputs populated --------------------------
+
+
+def test_sample1_mass_accuracy_columns_populated():
+    """Phase D smoke: each ``isoN_obs_mz`` is within ±mass_tol_ppm of its
+    target (validates the intensity-weighted centroid calc), each
+    ``isoN_ppm_error`` is finite for matched PSMs, and the per-fraction
+    drift summary is attached to ``df.attrs['drift_summary']`` with a
+    non-zero count.
+    """
+    config = IntegrationConfig(
+        sample="sample1", isotopomers=(0, 6), q_value=1.0,
+        r_time=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        peak_method="fixed_window", baseline_method="none",
+    )
+    psms = read_percolator(
+        SAMPLE1 / "percolator.target.psms.txt", sample="sample1"
+    )
+    with IndexedMzML(SAMPLE1 / "20180216_BSA.mzML.gz") as mzml:
+        df = integrate_run(config, psms, mzml)
+
+    # New columns landed.
+    for c in ("iso0_obs_mz", "iso6_obs_mz", "iso0_ppm_error", "iso6_ppm_error"):
+        assert c in df.columns, f"missing Phase D column {c}"
+
+    # ppm_error stays inside the requested mass window for the rows that
+    # actually matched a centroid (NaN = no match in window, ignored).
+    for c in ("iso0_ppm_error", "iso6_ppm_error"):
+        observed = df[c].dropna()
+        assert len(observed) > 0, f"{c} has no observed values"
+        assert observed.abs().max() <= config.mass_tol_ppm, (
+            f"{c} drift {observed.abs().max():.2f} ppm exceeds "
+            f"mass_tol_ppm={config.mass_tol_ppm}"
+        )
+
+    # Drift summary attached + non-trivial.
+    drift = df.attrs.get("drift_summary")
+    assert drift is not None
+    assert drift.n > 0
+    assert not np.isnan(drift.median_ppm)
+    assert drift.mad_ppm >= 0

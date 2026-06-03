@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import dataclasses
+import json
 import sys
 import time
 from pathlib import Path
@@ -76,6 +78,14 @@ def run_one_fraction(line: str, row: dict, output_dir: Path) -> None:
     )
 
     df.to_csv(out_file, sep="\t")
+    # Phase D sidecar: per-fraction calibration drift summary as a small JSON
+    # alongside the TSV. Kept separate from _riana.txt so existing bench
+    # loaders (pd.read_csv without comment handling) keep working.
+    drift = df.attrs.get("drift_summary")
+    if drift is not None:
+        drift_path = out_file.with_suffix(".drift.json")
+        with drift_path.open("w") as f:
+            json.dump(dataclasses.asdict(drift), f, indent=2)
 
 
 def run_line(line: str) -> Path:

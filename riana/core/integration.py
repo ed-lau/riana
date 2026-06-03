@@ -36,6 +36,7 @@ import scipy.signal
 
 from riana import constants
 from riana.algorithms import baseline as ba
+from riana.algorithms import calibration as cal
 from riana.algorithms import peaks as pk
 from riana.algorithms import smoothing as sm
 from riana.config import IntegrationConfig
@@ -109,15 +110,17 @@ def integrate_run(
     forced = tuple(config.forced_mods or (0.0,))
     isos = tuple(config.isotopomers)
 
-    # Threaded per-PSM extraction → list of per-PSM DataFrames (one row per
-    # MS1 scan, columns are mod{m}_iso{n}). Same worker pattern as legacy.
-    def _do(idx: int) -> pd.DataFrame:
+    # Threaded per-PSM extraction → list of per-PSM (DataFrame,
+    # mass_accuracy_dict). Same worker pattern as legacy.
+    def _do(idx: int):
         return _extract_per_psm(
             kept[idx], concat_scans, forced, isos, config, mzml
         )
 
     with futures.ThreadPoolExecutor(max_workers=config.threads) as ex:
-        intensity_dfs = list(ex.map(_do, range(len(kept))))
+        extract_results = list(ex.map(_do, range(len(kept))))
+    intensity_dfs = [r[0] for r in extract_results]
+    mass_accuracies = [r[1] for r in extract_results]
 
     # Trapezoidal integration per (PSM × mod × iso) on the per-PSM rt trace.
     # Phase C: when peak_method="detected" the boundaries come from
@@ -125,11 +128,14 @@ def integrate_run(
     # baseline-subtraction uses baseline_method (default "linear", Skyline-
     # style). Per-peptide fallback to fixed-window on detection failure.
     iso_cols = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
+    mz_cols = [f"{c}_obs_mz" for c in iso_cols]
+    ppm_cols = [f"{c}_ppm_error" for c in iso_cols]
     integrated_rows: list[list] = []
     n_detected = n_fallback = 0
     iso0_col = f"mod{_g(forced[0])}_iso0"
     iso1_col = f"mod{_g(forced[0])}_iso1" if 1 in isos else None
-    for idf, psm in zip(intensity_dfs, kept):
+    iso0_ppm_errors: list[float] = []
+    for idf, ma, psm in zip(intensity_dfs, mass_accuracies, kept):
         row: list = [idf["pep_id"].iloc[0]]
         rt_arr = idf["rt"].to_numpy(dtype=np.float64)
 
@@ -162,6 +168,19 @@ def integrate_run(
             else:
                 area = float(np.trapezoid(trace, x=rt_arr))
             row.append(area)
+        # Append mass-accuracy columns in the same order as iso_cols.
+        for col in iso_cols:
+            obs_mz, _ppm = ma.get(col, (None, None))
+            row.append(np.nan if obs_mz is None else obs_mz)
+        for col in iso_cols:
+            _obs_mz, ppm_error = ma.get(col, (None, None))
+            row.append(np.nan if ppm_error is None else ppm_error)
+        # iso0's ppm_error is the strongest per-PSM drift indicator (M+1 etc.
+        # can be contaminated by other peptides at high D2O); use it for the
+        # per-fraction drift footer.
+        iso0_ppm = ma.get(iso0_col, (None, None))[1]
+        if iso0_ppm is not None and not np.isnan(iso0_ppm):
+            iso0_ppm_errors.append(float(iso0_ppm))
         integrated_rows.append(row)
 
     if config.peak_method == "detected":
@@ -171,16 +190,36 @@ def integrate_run(
             n_detected, n_fallback,
         )
 
-    integrated_df = pd.DataFrame(integrated_rows, columns=["pep_id"] + iso_cols)
+    integrated_df = pd.DataFrame(
+        integrated_rows,
+        columns=["pep_id"] + iso_cols + mz_cols + ppm_cols,
+    )
     # Legacy strips ``mod0_`` from output column names (the default
     # no-forced-mod case); other forced mods stay namespaced. Reproduces the
-    # ac16 baseline header exactly.
+    # ac16 baseline header exactly. The same stripping applies to the new
+    # mass-accuracy columns (``mod0_isoN_obs_mz`` -> ``isoN_obs_mz``).
     integrated_df.columns = [re.sub(r"^mod0_", "", c) for c in integrated_df.columns]
+
+    # Per-fraction drift summary — log a warning if the median ppm error
+    # exceeds --ppm-alert.
+    drift = cal.drift_summary(np.asarray(iso0_ppm_errors, dtype=np.float64))
+    integrate_run.last_drift = drift  # type: ignore[attr-defined]
+    if drift.n > 0 and abs(drift.median_ppm) > config.ppm_alert:
+        _LOGGER.warning(
+            "integrate_run: per-fraction iso0 ppm-error median %+0.2f ppm "
+            "(MAD %.2f, n=%d) exceeds --ppm-alert %+0.1f ppm. Suggested "
+            "calibration shift: %+0.2f ppm.",
+            drift.median_ppm, drift.mad_ppm, drift.n,
+            config.ppm_alert, drift.suggested_shift_ppm,
+        )
 
     # Build the PSM-metadata frame the legacy pipeline emits, then merge.
     psm_df = _psm_metadata_df(kept)
     out = pd.merge(psm_df, integrated_df, on="pep_id", how="left")
     out["file"] = file_label if file_label is not None else _mzml_basename(mzml)
+    # Stash the drift summary on the DataFrame as attrs so callers/writers can
+    # emit the footer without re-computing.
+    out.attrs["drift_summary"] = drift
     return out
 
 
@@ -194,8 +233,14 @@ def _extract_per_psm(
     isos: tuple[int, ...],
     config: IntegrationConfig,
     mzml: IndexedMzML,
-) -> pd.DataFrame:
-    """Per-MS1-scan isotopomer intensities for one PSM (Phase A: fixed window).
+) -> tuple[pd.DataFrame, dict[str, tuple[float | None, float | None]]]:
+    """Per-MS1-scan isotopomer intensities + mass-accuracy for one PSM.
+
+    Returns ``(wide_df, mass_accuracy)`` where ``mass_accuracy`` maps each
+    ``mod{m}_iso{n}`` column to ``(obs_mz, ppm_error)``. Both are ``None``
+    when no centroid matched in the window (an honest "not observed"
+    rather than a fabricated zero — same posture
+    :class:`riana.records.IsotopomerPeak` takes).
 
     Matches the legacy ``get_isotopomer_intensity`` numerics:
     ``prec_iso_am = (peptide_mass + z*proton)/z + forced/z + iso*Δ/z``;
@@ -224,8 +269,15 @@ def _extract_per_psm(
         rt_center = mzml.rt_idx[np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1]
         nearby = mzml.scan_idx[np.abs(mzml.rt_idx - rt_center) <= config.r_time]
 
-    # Lazy peak fetch + centroid sum per (mod, iso) per MS1.
+    # Lazy peak fetch + centroid sum per (mod, iso) per MS1. As a Phase D
+    # addition we also accumulate intensity-weighted observed m/z per
+    # (mod, iso) across the integration window so the writer can emit the
+    # iso{N}_obs_mz / iso{N}_ppm_error mass-accuracy columns.
     rows: list[tuple[str, float, float]] = []
+    iso_cols_local = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
+    targets: dict[str, float] = {}
+    mz_weighted: dict[str, float] = {c: 0.0 for c in iso_cols_local}
+    intens_total: dict[str, float] = {c: 0.0 for c in iso_cols_local}
     ppm_tol = float(config.mass_tol_ppm) * 1e-6
     for scan in nearby:
         scan_int = int(scan)
@@ -234,11 +286,20 @@ def _extract_per_psm(
         for mod in forced:
             prec_shifted = peptide_prec + (mod / charge)
             for iso in isos:
+                col = f"mod{_g(mod)}_iso{iso}"
                 target = prec_shifted + (iso * iso_added_mass / charge)
+                targets[col] = target
                 delta = target * ppm_tol
                 mask = np.abs(mz_arr - target) <= delta
-                summed = float(np.sum(intens_arr[mask])) if mask.any() else 0.0
-                rows.append((f"mod{_g(mod)}_iso{iso}", rt, summed))
+                if mask.any():
+                    matched_mz = mz_arr[mask]
+                    matched_i = intens_arr[mask]
+                    summed = float(matched_i.sum())
+                    mz_weighted[col] += float((matched_mz * matched_i).sum())
+                    intens_total[col] += summed
+                else:
+                    summed = 0.0
+                rows.append((col, rt, summed))
 
     if not rows:
         if config.use_range:
@@ -288,7 +349,21 @@ def _extract_per_psm(
                     window=config.smoothing,
                     polyorder=config.smoothing_polyorder,
                 )
-    return wide
+
+    # Mass-accuracy aggregation: intensity-weighted observed m/z over the
+    # whole integration window, per (mod, iso). None when no centroid landed
+    # in window — honest "not observed" over a fabricated zero.
+    mass_accuracy: dict[str, tuple[float | None, float | None]] = {}
+    for col in iso_cols_local:
+        weight = intens_total[col]
+        target = targets[col]
+        if weight > 0:
+            obs_mz = mz_weighted[col] / weight
+            ppm_error = (obs_mz - target) / target * 1e6
+            mass_accuracy[col] = (obs_mz, ppm_error)
+        else:
+            mass_accuracy[col] = (None, None)
+    return wide, mass_accuracy
 
 
 def _peak_boundary(
