@@ -258,7 +258,17 @@ def main():
 
 
 
-    parser_integrate.set_defaults(func=riana_integrate.integrate_all)
+    parser_integrate.add_argument('--engine',
+                                  choices=['legacy', 'new'],
+                                  default='legacy',
+                                  help='integration engine. "legacy" (default) is the '
+                                       'preserved 0.9.0 path; "new" routes through '
+                                       'riana.core.integration.integrate_run (M3 Week 3). '
+                                       '--engine new emits the Phase D mass-accuracy '
+                                       'columns and a per-fraction drift JSON sidecar; '
+                                       '--engine legacy preserves the 0.9.0 schema bit-for-bit.')
+
+    parser_integrate.set_defaults(func=_integrate_dispatch)
 
     #
     # Arguments for fit subcommand
@@ -361,3 +371,118 @@ def main():
 
     # Run the function in the argument
     args.func(args)
+
+
+def _integrate_dispatch(args: argparse.Namespace) -> None:
+    """``riana integrate`` entry point — chooses legacy vs new engine."""
+    engine = getattr(args, 'engine', 'legacy')
+    if engine == 'new':
+        _integrate_new(args)
+    else:
+        riana_integrate.integrate_all(args)
+
+
+def _integrate_new(args: argparse.Namespace) -> None:
+    """``--engine new`` adapter: build typed inputs, fan out per fraction.
+
+    This is the M3 Week 3 CLI wiring (Phase E). It mirrors
+    :func:`riana_integrate.integrate_all`'s per-fraction loop but reads PSMs
+    via :func:`io.percolator.read_percolator`, opens mzMLs via
+    :class:`io.mzml.IndexedMzML`, and integrates through
+    :func:`core.integration.integrate_run`. Output is the same
+    ``<sample>_riana.txt`` schema (with the Phase D mass-accuracy columns
+    appended) plus a per-fraction ``<sample>.drift.json`` sidecar.
+
+    Week 4 replaces argparse with typer/click and re-homes this adapter to
+    ``cli.py``; the function lives here for now because the legacy ``main.py``
+    is still the live regression gate.
+    """
+    import dataclasses
+    import json
+    import os as _os
+    import re
+    from pathlib import Path
+
+    from riana.config import IntegrationConfig
+    from riana.core.integration import integrate_run
+    from riana.io.mzml import IndexedMzML
+    from riana.io.percolator import file_indices, fraction_psms, read_percolator
+    from riana.logger import get_logger
+
+    logger = get_logger(__name__, args.out)
+    logger.info('engine=new (M3 Week 3)')
+    logger.info(__version__)
+
+    # Build the IntegrationConfig from argparse defaults. The CLI surface
+    # doesn't expose peak_method / baseline_method / smoothing_polyorder /
+    # ppm_alert yet — they ride at IntegrationConfig defaults
+    # (peak_method='fixed_window'; see commit 3d8c715 for why). When Phase C v2
+    # lands a stable detected pipeline, the CLI flags follow.
+    config = IntegrationConfig(
+        sample=args.sample,
+        isotopomers=tuple(args.iso),
+        mass_tol_ppm=int(args.mass_tol),
+        r_time=float(args.r_time),
+        q_value=float(args.q_value),
+        unique_only=bool(args.unique),
+        write_intensities=bool(args.write_intensities),
+        smoothing=args.smoothing,
+        mass_difference=float(args.mass_difference),
+        ignored_mods=tuple(args.ignored_mods),
+        forced_mods=tuple(args.forced_mods),
+        threads=int(args.thread),
+        out_dir=args.out,
+    )
+
+    # Read PSMs once; the per-fraction loop filters by file_idx.
+    psms_path = args.id_path
+    if hasattr(psms_path, 'name'):
+        psms_path = psms_path.name
+    if hasattr(args.id_path, 'close'):
+        args.id_path.close()
+    all_psms = read_percolator(psms_path, sample=args.sample,
+                               ignored_mods=tuple(args.ignored_mods))
+
+    # mzML directory layout: mirror the legacy resolution (sort-by-name, accept
+    # .mzML or .mzML.gz). The legacy `percolator.log.txt` path is unimplemented
+    # under the new engine — Week 3 bench inputs come from a tempdir with a
+    # single symlinked mzML per fraction (see run_integrate_v0_9_0), so the
+    # sort order is unambiguous.
+    mzml_files = sorted(
+        f for f in _os.listdir(args.mzml_path)
+        if re.match(r'^.*\.mz[Mm][Ll](\.gz)?$', f)
+    )
+    if not mzml_files:
+        raise FileNotFoundError(
+            f'No mzML files in {args.mzml_path}'
+        )
+    indices = file_indices(all_psms)
+    if len(mzml_files) != len(indices):
+        raise ValueError(
+            f'mzML count ({len(mzml_files)}) != distinct file_idx count '
+            f'({len(indices)}) in {psms_path}'
+        )
+
+    for idx in indices:
+        mzml_basename = re.sub(r'\.mz[Mm][Ll](\.gz)?$', '', mzml_files[idx])
+        mzml_path = _os.path.join(args.mzml_path, mzml_files[idx])
+        logger.info(f'integrating fraction {idx}: {mzml_basename}')
+
+        fraction = fraction_psms(all_psms, idx)
+        with IndexedMzML(mzml_path) as mzml:
+            df = integrate_run(
+                config, fraction, mzml, file_label=mzml_basename
+            )
+
+        out_file = Path(args.out) / f'{args.sample}_riana.txt'
+        df.to_csv(out_file, sep='\t')
+
+        drift = df.attrs.get('drift_summary')
+        if drift is not None:
+            drift_path = out_file.with_suffix('.drift.json')
+            with drift_path.open('w') as f:
+                json.dump(dataclasses.asdict(drift), f, indent=2)
+        logger.info(f'wrote {out_file} (+ drift sidecar)')
+
+    logger.info('engine=new: done')
+    logger.handlers.clear()

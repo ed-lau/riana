@@ -13,6 +13,7 @@ rewrap didn't drift the numbers.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -229,3 +230,43 @@ def test_sample1_mass_accuracy_columns_populated():
     assert drift.n > 0
     assert not np.isnan(drift.median_ppm)
     assert drift.mad_ppm >= 0
+
+
+# --- Phase E smoke: --engine new CLI dispatch -------------------------------
+
+
+def test_engine_new_cli_produces_compatible_output(tmp_path):
+    """Phase E smoke: ``python -m riana integrate --engine new`` writes the
+    same _riana.txt schema as legacy (with Phase D's mass-accuracy columns
+    on top) and a per-fraction drift JSON sidecar.
+    """
+    out_dir = tmp_path / "engine_new_out"
+    out_dir.mkdir()
+    cmd = [
+        sys.executable, "-m", "riana", "integrate",
+        str(SAMPLE1), str(SAMPLE1 / "percolator.target.psms.txt"),
+        "-s", "sample1", "-o", str(out_dir),
+        "-i", "0", "6",
+        "-q", "1.0",
+        "-r", "1.0",
+        "-m", "50",
+        "-t", "1",
+        "--engine", "new",
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+    out_file = out_dir / "sample1_riana.txt"
+    drift_file = out_dir / "sample1_riana.drift.json"
+    assert out_file.exists()
+    assert drift_file.exists()
+
+    df = pd.read_csv(out_file, sep="\t", index_col=0)
+    # Legacy area columns + Phase D additions.
+    for c in ("iso0", "iso6", "iso0_obs_mz", "iso6_obs_mz",
+              "iso0_ppm_error", "iso6_ppm_error", "concat", "sample"):
+        assert c in df.columns, f"missing column {c}"
+
+    drift = json.loads(drift_file.read_text())
+    for k in ("n", "median_ppm", "mad_ppm", "suggested_shift_ppm"):
+        assert k in drift, f"missing drift key {k}"
+    assert drift["n"] > 0
