@@ -1,15 +1,22 @@
-"""Run the M3 Week 3 detected-peak integrator across the calibration set.
+"""Run the M3 Week 3 (v1.0) integrator across the calibration set.
 
 Mirrors :mod:`run_integrate_v0_9_0` but calls :func:`core.integration.integrate_run`
-directly with the new science fields on (peak_method='detected',
-baseline_method='linear', smoothing=None, polyorder=2). Outputs land at
-``tests/data/calibration_d2o_mixing/<line>/integrate_outputs/v1.0.0_detected/<sample>_riana.txt``
-ready to be picked up by ``bench_peak_boundary.py --method``,
-``bench_m0_ma_recovery.py --inputs``, etc.
+directly through the typed-records pipeline. Outputs land at
+``tests/data/calibration_d2o_mixing/<line>/integrate_outputs/v1.0.0/<sample>_riana.txt``
+and feed ``bench_peak_boundary.py --method``, ``bench_m0_ma_recovery.py
+--inputs``, etc.
 
-Phase E will fold the same dispatch into ``riana integrate --engine new``.
-This standalone exists so Phase C's regression benchmarks have a runnable
-input without waiting on the CLI rewrite.
+Config matches the Week 3 *shipped* defaults: ``peak_method='fixed_window'``
+and ``baseline_method='none'`` (see PROJECT_REVIEW.md §3 and commits
+``3d8c715`` for the rationale — opt-in detection until a cross-proportion-
+stable picker lands). Versus ``v0.9.0/`` this dir adds the Phase D
+mass-accuracy columns (``iso{N}_obs_mz``, ``iso{N}_ppm_error``) and a
+per-fraction ``<sample>_riana.drift.json`` sidecar; the legacy area
+columns remain numerically faithful to ``v0.9.0/`` within 1e-3 rel
+(Phase A parity).
+
+Phase E folds the same dispatch into ``riana integrate --engine new``;
+this standalone runner stays for benchmark convenience.
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ from riana.core.integration import integrate_run  # noqa: E402
 from riana.io.mzml import IndexedMzML  # noqa: E402
 from riana.io.percolator import read_percolator  # noqa: E402
 
-VERSION_LABEL = "v1.0.0_detected"
+VERSION_LABEL = "v1.0.0"
 PINNED_CONFIG = dict(
     isotopomers=(0, 1, 2, 3, 4, 5),
     q_value=0.01,
@@ -40,8 +47,8 @@ PINNED_CONFIG = dict(
     mass_tol_ppm=15,
     threads=4,
     forced_mods=(0.0,),
-    peak_method="detected",
-    baseline_method="linear",
+    peak_method="fixed_window",
+    baseline_method="none",
 )
 
 
