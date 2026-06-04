@@ -358,7 +358,26 @@ def main():
                             type=int,
                             default=1)
 
-    parser_fit.set_defaults(func=riana_fit.fit_all)
+    parser_fit.add_argument('--engine',
+                            choices=['legacy', 'new'],
+                            default='legacy',
+                            help='fit engine. "legacy" (default) is the 0.9.0 '
+                                 'analytic FS path (sd from sqrt(diag(pcov))); '
+                                 '"new" routes through core.fitting.fit_run '
+                                 '(M3 Week 4: Spep from coefficients + IsoSpec '
+                                 'forward FS + bootstrap CI). --engine new '
+                                 'requires --coefficients pointing at a '
+                                 'd2o_aa_coefficients_<line>.csv.')
+    parser_fit.add_argument('--coefficients',
+                            type=str,
+                            default=None,
+                            help='Path to a d2o_aa_coefficients_<line>.csv with '
+                                 'columns (amino_acid, coefficient). Used by '
+                                 '--engine new to derive per-peptide Spep. '
+                                 'Required for --engine new; ignored by '
+                                 '--engine legacy.')
+
+    parser_fit.set_defaults(func=_fit_dispatch)
 
     # Print help message if no arguments are given
     import sys
@@ -497,4 +516,87 @@ def _integrate_new(args: argparse.Namespace) -> None:
         logger.info(f'wrote {out_file} (+ drift sidecar)')
 
     logger.info('engine=new: done')
+    logger.handlers.clear()
+
+
+def _fit_dispatch(args: argparse.Namespace) -> None:
+    """``riana fit`` entry point — chooses legacy vs new engine."""
+    engine = getattr(args, 'engine', 'legacy')
+    if engine == 'new':
+        _fit_new(args)
+    else:
+        riana_fit.fit_all(args)
+
+
+def _fit_new(args: argparse.Namespace) -> None:
+    """``riana fit --engine new`` adapter: route through ``core/fitting.py``.
+
+    Builds a :class:`riana.config.FitConfig` from argparse, loads the
+    per-AA coefficient table (``--coefficients``), reads the per-timepoint
+    ``_riana.txt`` inputs, runs :func:`riana.core.fitting.fit_run`, and
+    writes ``riana_fit_peptides.txt`` with the Phase F3 provenance header.
+
+    Week 4 keeps argparse as the surface; the typer/click rewrite + GUI
+    config plumbing lands together in M4 per the re-scoping decision.
+    """
+    import dataclasses as _dataclasses
+
+    import pandas as _pd
+
+    from riana.config import FitConfig
+    from riana.core.fitting import fit_run, load_aa_coefficients
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+    from riana.logger import get_logger
+
+    logger = get_logger(__name__, args.out)
+    logger.info('engine=new (M3 Week 4 fit rewrite)')
+    logger.info(__version__)
+
+    if not args.coefficients:
+        raise SystemExit(
+            'riana fit --engine new requires --coefficients pointing at a '
+            'd2o_aa_coefficients_<line>.csv. Use --engine legacy to fall back '
+            "to the 0.9.0 fixed-site-count analytic path."
+        )
+
+    config = FitConfig(
+        model=args.model,
+        label=int(args.label),
+        aa=args.aa,
+        k_p=float(args.kp),
+        k_r=float(args.kr),
+        r_p=float(args.rp),
+        q_value=float(args.q_value),
+        depth=int(args.depth),
+        ria_max=float(args.ria),
+        fs_formula=args.fs,
+        plot_curves=bool(args.plotcurves),
+        threads=int(args.thread or 1),
+        out_dir=args.out,
+    )
+    coeffs = load_aa_coefficients(args.coefficients)
+    logger.info(f'loaded {len(coeffs)} AA coefficients from {args.coefficients}')
+
+    dfs = []
+    for in_file in args.riana_path:
+        # M3 Week 4: _riana.txt carries a provenance header; comment='#' skips it.
+        dfs.append(_pd.read_table(in_file, comment='#'))
+    logger.info(f'read {len(dfs)} timepoint files; running fit_run ...')
+
+    result_df = fit_run(config, dfs, coeffs)
+
+    import os as _os
+    out_path = _os.path.join(args.out, 'riana_fit_peptides.txt')
+    provenance = make_provenance(
+        _dataclasses.asdict(config),
+        id_source=','.join(str(p) for p in (args.riana_path or [])),
+        extra={'engine': 'new', 'model': args.model,
+               'coefficients': str(args.coefficients)},
+    )
+    write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
+    logger.info(f'wrote {out_path}')
+    n_fitted = int(result_df['k_deg'].notna().sum())
+    n_well = int((result_df['R_squared'] >= 0.9).sum())
+    logger.info(f'{n_fitted} peptides converged; {n_well} R²≥0.9')
+
     logger.handlers.clear()
