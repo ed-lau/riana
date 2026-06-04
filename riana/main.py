@@ -333,9 +333,12 @@ def main():
                             default=3)
 
     parser_fit.add_argument('-r', '--ria',
-                            help='final isotope enrichment levels, if known [default: 0.5]',
+                            help='precursor enrichment level — the asymptotic D2O fraction '
+                                 'in body water / culture media (e.g. 0.06 for 6%% v/v D2O). '
+                                 'Push around per-experiment (metabolic water dilution, lab '
+                                 'protocol) [default: 0.06]',
                             type=float,
-                            default=0.5)
+                            default=0.06)
 
     parser_fit.add_argument('-o', '--out', help='path to the output directory [default: .]',
                             default='.')

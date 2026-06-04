@@ -80,7 +80,7 @@ def _make_synthetic_dfs(
             pep_mass = calculate_ion_mz(seq)
             spep = spep_by_seq[seq]
             init = _get_init_env(seq, pep_mass, n=4)
-            final = _get_final_env(seq, pep_mass, spep, n=4)
+            final = _get_final_env(seq, pep_mass, spep, ria_max=0.06, n=4)
             init_norm = init / init.sum()
             final_norm = final / final.sum()
             mix = (1.0 - prop) * init_norm + prop * final_norm
@@ -119,7 +119,7 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(
         model="simple", label=1, q_value=0.05, depth=3,
-        ria_max=0.046, threads=1,
+        ria_max=0.06, threads=1,
     )
 
     result = fit_run(config, dfs, coeffs, n_boot=50, random_state=42)
@@ -156,7 +156,7 @@ def test_fit_run_filters_by_depth():
     short_dfs = dfs[:2]
     config = FitConfig(
         model="simple", label=1, q_value=0.05, depth=3,
-        ria_max=0.046, threads=1,
+        ria_max=0.06, threads=1,
     )
     with pytest.raises(ValueError, match="No peptides survive"):
         fit_run(config, short_dfs, coeffs, n_boot=10)
@@ -168,7 +168,7 @@ def test_fit_run_rejects_unknown_model():
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
     bad_config = FitConfig(
         model="simple", label=1, q_value=0.05, depth=3,
-        ria_max=0.046, threads=1,
+        ria_max=0.06, threads=1,
     )
     object.__setattr__(bad_config, "model", "nonexistent")
     with pytest.raises(ValueError, match="unknown kinetic model"):

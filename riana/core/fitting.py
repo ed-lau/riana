@@ -231,14 +231,16 @@ def _fit_one_concat(
     spep_float = spep_from_coefficients(seq, aa_coefficients)
     spep_int = max(1, int(round(spep_float)))
 
-    # Per-timepoint FS via solve_fs_d2o.
+    # Per-timepoint FS via solve_fs_d2o, at the experiment's precursor
+    # enrichment ``config.ria_max``.
     sums = obs_matrix.sum(axis=1)
     valid = sums > 0
     fs_arr = np.full_like(t_arr, np.nan)
     for i in range(len(t_arr)):
         if valid[i]:
             fs_arr[i] = solve_fs_d2o(
-                seq, pep_mass, obs_matrix[i], spep_int, n_iso=len(iso_cols)
+                seq, pep_mass, obs_matrix[i], spep_int,
+                ria_max=float(config.ria_max), n_iso=len(iso_cols),
             )
 
     fit_mask = ~np.isnan(fs_arr) & valid
@@ -246,10 +248,10 @@ def _fit_one_concat(
         return _null_result(concat, protein_id)
 
     # Kinetic-model asymptotes: FS goes 0 → 1 (full pool turned over).
-    # ria_max is NOT used here — it's an isotope-enrichment level for the
-    # legacy analytic FS path; the IsoSpec forward model uses RIA_D2O
-    # directly via algorithms.isotope_dist. The legacy curve_fit also
-    # used a_max=1.0 (riana_fit.py:368).
+    # a_max here is the *kinetic* model's saturation level — always 1.0
+    # for FS ∈ [0, 1], independent of the experiment's precursor
+    # enrichment (which is config.ria_max, passed to solve_fs_d2o above).
+    # The legacy curve_fit also used a_max=1.0 (riana_fit.py:368).
     kinetic_kwargs = dict(
         a_0=0.0, a_max=1.0,
         k_p=config.k_p, k_r=config.k_r, r_p=config.r_p,

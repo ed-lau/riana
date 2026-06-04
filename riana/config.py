@@ -150,8 +150,14 @@ class FitConfig:
     q_value: float = 1e-2
     #: -d / --depth. Fit only peptides seen in at least this many samples.
     depth: int = 3
-    #: -r / --ria. Final isotope enrichment level (RIA max).
-    ria_max: float = 0.5
+    #: -r / --ria. Precursor enrichment level (RIA max) — the asymptotic
+    #: D₂O fraction in body water / culture media (e.g. 0.06 ≈ 6% v/v
+    #: D₂O). Used by the IsoSpec forward model
+    #: (:func:`algorithms.isotope_dist.solve_fs_d2o`) and by the legacy
+    #: analytic FS path (``core/fsynthesis.py``). User-controlled per
+    #: experiment because metabolic-water dilution and protocol
+    #: variability push this around.
+    ria_max: float = 0.06
     #: -f / --fs. Fine-structure FS formula; None uses the m0 analytic path.
     fs_formula: str | None = None
     #: -p / --plotcurves. Emit per-peptide fitted-curve plots.

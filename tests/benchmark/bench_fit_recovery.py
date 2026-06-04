@@ -53,7 +53,11 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _helpers.forward_model import RIA_D2O  # noqa: E402
+
+# RIA_D2O used to come from _helpers.forward_model (M2 oracle, frozen). The
+# bench's --ria default now lives inline at 0.06 (≈ 6% v/v D₂O) so it
+# matches FitConfig.ria_max and the new CLI default in main.py.
+_DEFAULT_RIA_D2O = 0.06
 
 WELL_FIT_R2 = 0.9
 
@@ -201,7 +205,7 @@ def main() -> None:
     parser.add_argument('--k-deg0', type=float, default=0.5,
                         help='target rate constant; only used when the '
                              'pseudotime map must be built [default: 0.5]')
-    parser.add_argument('--ria', type=float, default=round(RIA_D2O, 6),
+    parser.add_argument('--ria', type=float, default=_DEFAULT_RIA_D2O,
                         help='ria_max for riana fit [default: 6%% D2O RIA]')
     parser.add_argument('--label', type=int, default=1)
     parser.add_argument('--depth', type=int, default=3)

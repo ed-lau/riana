@@ -29,7 +29,6 @@ import IsoSpecPy
 from IsoSpecPy import IsoTotalProb
 
 from riana.algorithms.mass_calc import count_atoms
-from riana.constants import RIA_D2O
 
 
 def get_peptide_distribution(peptide: str,
@@ -164,18 +163,23 @@ def _get_init_env(sequence: str, pep_mass: float,
 
 
 def _get_final_env(sequence: str, pep_mass: float, spep: int,
+                   ria_max: float,
                    n: int = _DEFAULT_N_ISO) -> np.ndarray:
-    """Fully-labeled envelope at ``RIA_D2O`` enrichment with ``spep`` sites.
+    """Fully-labeled envelope at precursor enrichment ``ria_max``
+    with ``spep`` labile sites.
 
-    Cached by (sequence, spep, n). Spep is rounded to integer here because
-    the Spep optimization loop linearly interpolates between adjacent
-    integer-Spep envelopes (see :func:`peptide_spep_loss`).
+    Cached by (sequence, spep, ria_max-rounded, n). ``ria_max`` is the
+    experiment's precursor enrichment (~0.06 for 6% v/v D₂O culture
+    media, possibly different for in-vivo / metabolic-water cases).
     """
-    key = ('final', sequence, spep, n)
+    # Round ria_max for the cache key so very close values share an
+    # envelope; the IsoSpec calc is insensitive to 1e-7 changes anyway.
+    ria_key = round(float(ria_max), 6)
+    key = ('final', sequence, spep, ria_key, n)
     if key not in _envelope_cache:
         dist = get_peptide_distribution(
             sequence,
-            deuterium_enrichment_level=RIA_D2O,
+            deuterium_enrichment_level=ria_max,
             label=1,
             num_labeling_sites=spep,
         )
@@ -190,6 +194,7 @@ def peptide_spep_loss(
     pep_mass: float,
     obs_matrix: np.ndarray,        # shape (n_prop, n_iso), normalized per row
     proportions_frac: np.ndarray,  # shape (n_prop,)
+    ria_max: float = 0.06,
 ) -> float:
     """SSE across all proportions between normalized observed and predicted
     envelopes — the per-peptide Spep fit objective.
@@ -200,6 +205,10 @@ def peptide_spep_loss(
     and ``floor(spep_float)+1`` so the loss stays continuous in
     ``spep_float`` — required for :func:`scipy.optimize.minimize_scalar`
     (Brent) to converge cleanly.
+
+    ``ria_max`` is the experiment's precursor enrichment (default 0.06,
+    i.e. 6% v/v D₂O); callers in production fitting and benchmark code
+    pass the user-controlled value.
     """
     spep_float = max(0.0, spep_float)
     spep_lo = int(np.floor(spep_float))
@@ -208,8 +217,8 @@ def peptide_spep_loss(
     n_iso = obs_matrix.shape[1]
 
     init_env = _get_init_env(sequence, pep_mass, n=n_iso)
-    fenv_lo = _get_final_env(sequence, pep_mass, spep_lo, n=n_iso)
-    fenv_hi = _get_final_env(sequence, pep_mass, spep_hi, n=n_iso)
+    fenv_lo = _get_final_env(sequence, pep_mass, spep_lo, ria_max, n=n_iso)
+    fenv_hi = _get_final_env(sequence, pep_mass, spep_hi, ria_max, n=n_iso)
     final_env = (1.0 - frac) * fenv_lo + frac * fenv_hi
 
     init_sum = init_env.sum()
@@ -232,6 +241,7 @@ def solve_fs_d2o(
     pep_mass: float,
     observed_iso,
     spep: int,
+    ria_max: float = 0.06,
     n_iso: int = _DEFAULT_N_ISO,
 ) -> float:
     """Per-timepoint fractional synthesis from one observed envelope.
@@ -248,7 +258,9 @@ def solve_fs_d2o(
     from scipy.optimize import minimize_scalar  # local import keeps cold path fast
 
     init_env = np.asarray(_get_init_env(sequence, pep_mass, n=n_iso), dtype=float)
-    final_env = np.asarray(_get_final_env(sequence, pep_mass, spep, n=n_iso), dtype=float)
+    final_env = np.asarray(
+        _get_final_env(sequence, pep_mass, spep, ria_max, n=n_iso), dtype=float,
+    )
     obs = np.asarray(observed_iso[:n_iso], dtype=float)
     obs_total = obs.sum()
     if obs_total == 0:
@@ -273,6 +285,7 @@ def fit_peptide_spep(
     pep_mass: float,
     obs_matrix: np.ndarray,
     proportions_frac: np.ndarray,
+    ria_max: float = 0.06,
 ) -> float:
     """Fit the effective per-peptide labeling-site count Spep.
 
@@ -301,7 +314,7 @@ def fit_peptide_spep(
 
     result = minimize_scalar(
         peptide_spep_loss,
-        args=(sequence, pep_mass, obs_matrix, proportions_frac),
+        args=(sequence, pep_mass, obs_matrix, proportions_frac, ria_max),
         bounds=_SPEP_BOUNDS,
         method='bounded',
     )

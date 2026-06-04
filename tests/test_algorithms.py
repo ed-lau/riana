@@ -319,7 +319,7 @@ def test_peptide_spep_loss_minimized_at_true_spep():
     true_spep = 8
 
     init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
-    final = iso._get_final_env(_TEST_SEQ, pep_mass, true_spep, n=4)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, true_spep, ria_max=0.06, n=4)
     init_norm = init / init.sum()
     final_norm = final / final.sum()
     obs_matrix = np.stack([
@@ -348,7 +348,7 @@ def test_fit_peptide_spep_recovers_synthetic_spep():
     proportions = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
     true_spep = 8
     init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
-    final = iso._get_final_env(_TEST_SEQ, pep_mass, true_spep, n=4)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, true_spep, ria_max=0.06, n=4)
     obs = np.stack([
         (1 - f) * init / init.sum() + f * final / final.sum() for f in proportions
     ])
@@ -363,7 +363,7 @@ def test_solve_fs_d2o_recovers_known_fractions():
     pep_mass = _peptide_mass(_TEST_SEQ)
     spep = 8
     init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
-    final = iso._get_final_env(_TEST_SEQ, pep_mass, spep, n=4)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, spep, ria_max=0.06, n=4)
     init_norm = init / init.sum()
     final_norm = final / final.sum()
 
