@@ -404,9 +404,19 @@ a hard prerequisite.
    N_ISO-sweep shape), not median FS bias. Re-run `bench_n_iso_sweep.py`
    after peak detection: if it cleans iso5/iso6, the post-N_ISO=4 R²
    degradation should flatten.
-4. **Week 4 — CLI + pipeline glue + fitting.** Build `cli.py`
-   (typer or click). Rewrite `core/fitting.py` to consume
-   `IntegrationResult` records, **and apply the §2b scientific fixes**:
+4. **Week 4 — fitting rewrite + §2b science fixes** *(re-scoped 2026-06-04
+   after Week 3 shipped)*. Original spec also included a typer/click CLI
+   rewrite; that is **deferred to M4** so it lands alongside the GUI's
+   shared config-driven API surface, and so Week 4 stays focused on the
+   load-bearing science change (closing the ≈ −0.5 k-recovery bias the
+   Week 0 baseline documented). `--engine new` keeps the existing
+   argparse surface through Week 4; the CLI rewrite happens once. The
+   peak-detection engine revisit (Phase C v2 — cross-proportion-stable
+   boundaries, see [[m3-peak-detection-boundary-stability]]) is its own
+   planning effort post-fit-rewrite.
+
+   Rewrite `core/fitting.py` to consume `IntegrationResult` records,
+   **and apply the §2b scientific fixes**:
    - AA `a_max` dispatch (`label == 4`), FS-denominator drift, bootstrap
      kinetic-fit CIs.
    - **Replace the m0/mA-analytic FS calculation with the IsoSpec
@@ -423,7 +433,10 @@ a hard prerequisite.
      baseline records.
    Regression-gated by `bench_fit_recovery.py` (`k_deg₀` recovery). Output
    provenance header (git SHA, riana version, config hash) via
-   `io/writers.py`.
+   `io/writers.py`. Concrete target: close the Week 0 baseline's median
+   k_rel_err of −0.51 (ac16) / −0.44 (ipsc) toward 0 by replacing the
+   fixed-site-count analytic FS with the per-peptide Spep + IsoSpec
+   forward FS.
 
    Note: the fit fixes deliberately change fit output, so the
    `tests/data/sample1/` smoke test (below) can no longer demand bit-near
