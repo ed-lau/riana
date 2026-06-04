@@ -232,16 +232,22 @@ def _fit_one_concat(
     spep_int = max(1, int(round(spep_float)))
 
     # Per-timepoint FS via solve_fs_d2o, at the experiment's precursor
-    # enrichment ``config.ria_max``.
+    # enrichment ``config.ria_max``. KeyError fires for peptides whose
+    # sequence carries a non-canonical residue (B/X/U/etc.) absent from
+    # the production aa_atoms table — drop those peptides cleanly rather
+    # than crashing the whole fit.
     sums = obs_matrix.sum(axis=1)
     valid = sums > 0
     fs_arr = np.full_like(t_arr, np.nan)
-    for i in range(len(t_arr)):
-        if valid[i]:
-            fs_arr[i] = solve_fs_d2o(
-                seq, pep_mass, obs_matrix[i], spep_int,
-                ria_max=float(config.ria_max), n_iso=len(iso_cols),
-            )
+    try:
+        for i in range(len(t_arr)):
+            if valid[i]:
+                fs_arr[i] = solve_fs_d2o(
+                    seq, pep_mass, obs_matrix[i], spep_int,
+                    ria_max=float(config.ria_max), n_iso=len(iso_cols),
+                )
+    except (KeyError, ValueError):
+        return _null_result(concat, protein_id)
 
     fit_mask = ~np.isnan(fs_arr) & valid
     if int(fit_mask.sum()) < config.depth:

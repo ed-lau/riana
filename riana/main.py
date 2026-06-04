@@ -548,6 +548,8 @@ def _fit_new(args: argparse.Namespace) -> None:
     from riana.io.writers import make_provenance, write_dataframe_tsv
     from riana.logger import get_logger
 
+    import os as _os
+    _os.makedirs(args.out, exist_ok=True)
     logger = get_logger(__name__, args.out)
     logger.info('engine=new (M3 Week 4 fit rewrite)')
     logger.info(__version__)
