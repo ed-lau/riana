@@ -585,11 +585,50 @@ post-Week-4 alongside the broader new-features planning round.
 Once M4 (Qt + async GUI) lands, take a deliberate pass to plan the next
 batch of features in earnest — including M5 (flexible D₂O reporting),
 M6 (SDRF ID intake), Phase C v2 (cross-proportion-stable peak detection
-— see [[m3-peak-detection-boundary-stability]]), and the
+— see [[m3-peak-detection-boundary-stability]]), the
 within-protein-θ-variance benchmark for the animal calibration dataset
-([[m3-animal-within-protein-metric]]). The M3 work has surfaced concrete
-constraints that change what M5+ should look like; better to plan with
-the post-M3/M4 picture in hand than against the original 0.9.0 review.
+([[m3-animal-within-protein-metric]]), and **M7 — proper PTM
+forward-modelling in the IsoSpec envelope** (notes below). The M3 work
+has surfaced concrete constraints that change what M5+ should look
+like; better to plan with the post-M3/M4 picture in hand than against
+the original 0.9.0 review.
+
+### M7 — PTM-aware IsoSpec forward model (record only; defer design)
+
+Today's IsoSpec forward envelope (``algorithms.isotope_dist.get_envelope`` /
+``solve_fs_d2o``) sees only the *unmodified backbone*. Variable mods on
+the sequence (oxidation on M, phosphorylation on S/T/Y, ubiquitin scars,
+TMT, etc.) are stripped from the sequence string before it's passed to
+``count_atoms`` — the peptide_mass IS correct (``calculate_ion_mz``
+parses the bracketed ``[mass]`` annotation and adds it), but the
+envelope shape used by ``solve_fs_d2o`` is the unmodified-peptide
+envelope, so the FS solve is approximated for modified peptides.
+
+For a few-percent population of bracketed PTMs (typical in shotgun
+proteomics), the approximation is acceptable today; for PTM-focused
+datasets it isn't. M7 lifts that:
+
+- ``calculate_ion_mz`` already exposes parsed mod masses; threading them
+  through to ``get_peptide_distribution`` lets IsoSpec see the
+  correct atomic composition for each PTM (a small dict of common mods
+  → atom-count deltas suffices for Ox-M, Phos-STY, Ub diglycine, TMT,
+  iTRAQ; carbamidomethyl-C is already handled via ``count_atoms(iaa=True)``).
+- Cache key on ``_get_init_env`` / ``_get_final_env`` already has
+  ``sequence`` as the natural key; adding a normalized PTM signature
+  to it is trivial.
+- The frozen per-cell-line coefficient tables (``d2o_aa_coefficients_<line>.csv``)
+  are fit on the unmodified backbone — that part doesn't change. Only
+  the per-peptide envelope shape changes.
+
+The current `core/fitting.py` `_fit_one_concat` already separates
+``seq_with_mods`` (for ``calculate_ion_mz``) from ``seq`` (the stripped
+form fed to ``solve_fs_d2o`` and ``spep_from_coefficients``); the M7
+work threads the parsed mods alongside ``seq_with_mods`` into the
+solver layer instead of dropping them on the floor.
+
+Deferred until M3 ships and the post-M4 planning round decides whether
+PTM-aware FS is a near-term priority (e.g. for users running labeled
+phosphoproteomics) or a longer-term refinement.
 
 ## 4. Cross-cutting recommendations
 

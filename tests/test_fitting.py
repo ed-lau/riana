@@ -175,6 +175,37 @@ def test_fit_run_rejects_unknown_model():
         fit_run(bad_config, dfs, coeffs, n_boot=10)
 
 
+def test_fit_run_handles_bracketed_modification_strings():
+    """Concat IDs from search engines often carry [mass] mod annotations
+    (phospho, oxidation, etc.). fit_run must not crash on them — the
+    bracketed-mass mod is included in pep_mass (via calculate_ion_mz),
+    the envelope is computed on the stripped backbone for now (proper
+    PTM forward-modelling is a post-M4 planning item)."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    # Inject a bracketed mod into one peptide's concat across all timepoints,
+    # mimicking what a real Crux Percolator output would contain after a
+    # variable-mod search.
+    for df in dfs:
+        m = df["concat"] == "VAPEPTIDEK_2"
+        df.loc[m, "concat"] = "VAPEPTIDES[79.9663]K_2"
+        df.loc[m, "sequence"] = "VAPEPTIDES[79.9663]K"
+
+    config = FitConfig(
+        model="simple", label=1, q_value=0.05, depth=3,
+        ria_max=0.06, threads=1,
+    )
+    result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
+
+    # All 5 peptides should appear in the output (no crash; bracketed
+    # peptide may or may not converge depending on synthetic-envelope
+    # internal consistency, but should not raise).
+    assert len(result) == len(_TEST_PEPTIDES)
+    # Bracketed concat survives in the output index.
+    assert any("[79.9663]" in c for c in result.index)
+
+
 def test_load_aa_coefficients_reads_csv(tmp_path):
     """load_aa_coefficients reads d2o_aa_coefficients CSVs."""
     csv = tmp_path / "coeffs.csv"
