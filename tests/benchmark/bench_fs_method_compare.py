@@ -119,7 +119,8 @@ def main() -> None:
         if not rfile.exists():
             print(f"[skip] missing {rfile}")
             continue
-        f = pd.read_csv(rfile, sep="\t", index_col=0)
+        # M3 Week 4: _riana.txt now carries a provenance header; comment='#' skips it.
+        f = pd.read_csv(rfile, sep="\t", index_col=0, comment="#")
         f = f[f["percolator q-value"] < args.q_value].copy()
         f["nominal_proportion"] = float(row["nominal_proportion"]) / 100.0
         frames.append(f)

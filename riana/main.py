@@ -478,7 +478,16 @@ def _integrate_new(args: argparse.Namespace) -> None:
             )
 
         out_file = Path(args.out) / f'{args.sample}_riana.txt'
-        df.to_csv(out_file, sep='\t')
+
+        # Phase F3: provenance header (riana version + git SHA + config hash
+        # + id source). Bench readers use comment='#' to skip.
+        from riana.io.writers import make_provenance, write_dataframe_tsv
+        provenance = make_provenance(
+            dataclasses.asdict(config),
+            id_source=str(psms_path),
+            extra={'mzml': mzml_basename},
+        )
+        write_dataframe_tsv(out_file, df, provenance, include_index=True)
 
         drift = df.attrs.get('drift_summary')
         if drift is not None:

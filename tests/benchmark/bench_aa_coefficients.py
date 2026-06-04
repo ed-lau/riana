@@ -76,7 +76,9 @@ def load_and_curate(
         proportion = float(gt_by_filename[f.name])
         if proportion in drop_proportions:
             continue
-        df = pd.read_csv(f, sep='\t')
+        # M3 Week 4: _riana.txt now carries a provenance header; comment='#'
+        # skips it. Pre-Phase-F3 files lack the header — comment='#' is a no-op.
+        df = pd.read_csv(f, sep='\t', comment='#')
         df['proportion'] = proportion
         df['file_name'] = f.name
         parts.append(df)

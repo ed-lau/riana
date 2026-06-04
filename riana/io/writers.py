@@ -122,6 +122,39 @@ def write_tsv(
             writer.writerow(row)
 
 
+def write_dataframe_tsv(
+    path: str | os.PathLike[str],
+    df,
+    provenance: Provenance,
+    *,
+    include_index: bool = True,
+) -> None:
+    """Write a ``pandas.DataFrame`` to *path* as TSV with the provenance header.
+
+    The header is the same ``# riana | git | config_hash | id_source``
+    comment block ``write_tsv`` emits; the body is whatever
+    ``DataFrame.to_csv(sep='\\t', index=include_index)`` would produce.
+
+    Bench readers should ``pd.read_csv(path, sep='\\t', comment='#')`` to
+    skip the provenance lines — that's the convention M3 Week 4 introduces
+    and the helper docstring on ``Provenance`` is the canonical reference.
+
+    Args:
+        path: destination path.
+        df: pandas DataFrame.
+        provenance: from :func:`make_provenance`.
+        include_index: write ``df.index`` as the first column. Defaults
+            true because the legacy ``_riana.txt`` and
+            ``riana_fit_peptides.txt`` schemas both rely on the index.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        for line in provenance.comment_lines():
+            f.write(line + "\n")
+        df.to_csv(f, sep="\t", index=include_index)
+
+
 def write_json(
     path: str | os.PathLike[str],
     payload: Mapping[str, object],

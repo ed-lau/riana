@@ -110,7 +110,8 @@ def relabel_inputs(inputs_dir: Path, gt: pd.DataFrame, pt_map: pd.DataFrame,
         src = inputs_dir / fname
         if not src.exists():
             raise FileNotFoundError(f'integrate output missing: {src}')
-        df = pd.read_csv(src, sep='\t', index_col=0)
+        # M3 Week 4: _riana.txt now carries a provenance header; comment='#' skips it.
+        df = pd.read_csv(src, sep='\t', index_col=0, comment='#')
         df['sample'] = f'time{t:.6f}'
         dst = dest / fname
         df.to_csv(dst, sep='\t')
@@ -231,7 +232,8 @@ def main() -> None:
         result_path = run_riana_fit(files, fit_out, ria=args.ria,
                                     label=args.label, depth=args.depth,
                                     q_value=args.q_value, threads=args.threads)
-        fit_df = pd.read_csv(result_path, sep='\t')
+        # M3 Week 4: riana_fit_peptides.txt carries a provenance header.
+        fit_df = pd.read_csv(result_path, sep='\t', comment='#')
 
     scored = score(fit_df, k_deg0)
     scored.to_csv(args.output_dir / 'fit_recovery.csv', index=False)

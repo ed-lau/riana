@@ -239,7 +239,16 @@ def integrate_all(args) -> None:
 
     # write the integrated and intensities results
     save_path = os.path.join(args.out, args.sample + '_riana.txt')
-    overall_integrated_df.to_csv(path_or_buf=save_path, sep='\t')
+    # Phase F3 (M3 Week 4): provenance header (riana version + git SHA +
+    # config hash + id source). Bench readers use comment='#' to skip.
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+    provenance = make_provenance(
+        {k: v for k, v in vars(args).items()
+         if isinstance(v, (int, float, str, bool, tuple, list)) and not k.startswith('_')},
+        id_source=getattr(args.id_path, 'name', str(args.id_path)),
+        extra={'engine': 'legacy', 'sample': args.sample},
+    )
+    write_dataframe_tsv(save_path, overall_integrated_df, provenance, include_index=True)
 
     # Make a smaller intensities file
     if args.write_intensities:

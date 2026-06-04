@@ -80,7 +80,8 @@ def fit_all(args) -> None:
     #
     # read the integration output files in
     #
-    rdf = pd.concat(pd.read_table(in_file) for in_file in riana_list)
+    # M3 Week 4: _riana.txt now carries a provenance header; comment='#' skips it.
+    rdf = pd.concat(pd.read_table(in_file, comment='#') for in_file in riana_list)
 
     # filter by percolator q-value
     rdf_filtered = rdf[rdf['percolator q-value'] < q_threshold].copy()
@@ -221,7 +222,19 @@ def fit_all(args) -> None:
     # TODO: save the kinetic parameters in a separate file
     out_df_2 = out_df_2.assign(kp=args.kp, kr=args.kr, rp=args.rp, ria_max=args.ria)
 
-    out_df_2.to_csv(os.path.join(outdir, 'riana_fit_peptides.txt'), sep='\t')
+    # Phase F3 (M3 Week 4): provenance header on riana_fit_peptides.txt.
+    # Bench readers use comment='#' to skip.
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+    provenance = make_provenance(
+        {k: v for k, v in vars(args).items()
+         if isinstance(v, (int, float, str, bool, tuple, list)) and not k.startswith('_')},
+        id_source=','.join(str(p) for p in (args.riana_path or [])),
+        extra={'engine': 'legacy', 'model': args.model},
+    )
+    write_dataframe_tsv(
+        os.path.join(outdir, 'riana_fit_peptides.txt'),
+        out_df_2, provenance, include_index=True,
+    )
 
     num_peps_fitted = out_df_2[out_df_2['R_squared'] >= 0.9].shape[0]
     logger.info(f'There are {num_peps_fitted} concats with R2 ≥ 0.9')

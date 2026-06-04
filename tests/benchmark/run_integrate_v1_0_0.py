@@ -84,10 +84,18 @@ def run_one_fraction(line: str, row: dict, output_dir: Path) -> None:
         flush=True,
     )
 
-    df.to_csv(out_file, sep="\t")
-    # Phase D sidecar: per-fraction calibration drift summary as a small JSON
-    # alongside the TSV. Kept separate from _riana.txt so existing bench
-    # loaders (pd.read_csv without comment handling) keep working.
+    # Phase F3: provenance header (riana version + git SHA + config hash +
+    # id source) on _riana.txt. Bench readers use comment='#' to skip.
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+
+    provenance = make_provenance(
+        dataclasses.asdict(config),
+        id_source=str(psms_path),
+        extra={"line": line, "mzml": mzml_basename},
+    )
+    write_dataframe_tsv(out_file, df, provenance, include_index=True)
+
+    # Phase D sidecar: per-fraction calibration drift summary as a small JSON.
     drift = df.attrs.get("drift_summary")
     if drift is not None:
         drift_path = out_file.with_suffix(".drift.json")
