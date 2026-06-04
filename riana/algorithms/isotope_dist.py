@@ -276,21 +276,26 @@ def fit_peptide_spep(
 ) -> float:
     """Fit the effective per-peptide labeling-site count Spep.
 
-    Returns the float Spep that minimizes
-    :func:`peptide_spep_loss` for this peptide across all proportions /
-    timepoints. The new ``core/fitting.py`` calls this once per peptide
-    before solving per-timepoint FS via :func:`solve_fs_d2o`.
+    **Calibration-only.** This function requires **known proportions** —
+    the per-sample nominal heavy fractions from a D₂O mixing-calibration
+    experiment, where each ``proportions_frac[i]`` is independently
+    measured (nominal mixing ratio), not derived from the kinetic model.
+
+    Used by :mod:`tests.benchmark.bench_aa_coefficients` to learn the
+    per-amino-acid coefficient table (``d2o_aa_coefficients_<line>.csv``)
+    from the mixing series. The production ``core/fitting.py`` does
+    **not** call this — for real user time-series data, ``proportions``
+    are unknown a priori (they're what we're fitting). Production
+    instead computes ``Spep = Σ aa_coefficient[c] * count(c, sequence)``
+    using a pre-learned coefficient table.
 
     Args:
         sequence: bare amino-acid sequence.
         pep_mass: peptide neutral monoisotopic mass (for nominal-bin centering).
         obs_matrix: per-(proportion, isotope) integrated areas, normalized
             row-wise to sum to 1. Shape ``(n_prop, n_iso)``.
-        proportions_frac: per-proportion nominal heavy fraction in ``[0, 1]``
-            for the mixing series; or, for real turnover data, the per-
-            timepoint FS prior (e.g. 1 - exp(-k_p * t)) — the optimizer fits
-            Spep that makes the predicted envelopes match observations
-            across these proportions.
+        proportions_frac: per-proportion nominal heavy fraction in
+            ``[0, 1]`` from the mixing experiment ground truth.
     """
     from scipy.optimize import minimize_scalar  # local import
 
@@ -301,3 +306,35 @@ def fit_peptide_spep(
         method='bounded',
     )
     return float(result.x)
+
+
+def spep_from_coefficients(
+    sequence: str,
+    aa_coefficients: dict[str, float],
+    default_per_residue: float = 0.0,
+) -> float:
+    """Per-peptide Spep from a pre-learned per-amino-acid coefficient table.
+
+    This is the **production** path used by ``core/fitting.py`` for real
+    user samples (real D₂O time series with no ground-truth proportions).
+
+    The coefficient table is typically the per-cell-line frozen table
+    learned by :mod:`tests.benchmark.bench_aa_coefficients` and committed
+    as ``d2o_aa_coefficients_<line>.csv`` (M2 work). For data from a cell
+    type without its own calibration, fall back to literature mammalian
+    values (Commerford 1983 et al.) — supply that table here.
+
+    Args:
+        sequence: bare amino-acid sequence (no modifications encoded).
+        aa_coefficients: ``{aa_letter: coefficient}`` — per-residue
+            expected labile-H labeling-site count.
+        default_per_residue: fallback coefficient for residues absent
+            from the table (e.g. when the table omits selenocysteine).
+            Defaults to ``0.0`` (effectively ignore unknown residues).
+
+    Returns:
+        Sum of per-residue coefficients across the peptide sequence.
+    """
+    return float(sum(
+        aa_coefficients.get(aa, default_per_residue) for aa in sequence
+    ))
