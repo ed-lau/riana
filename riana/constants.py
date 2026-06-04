@@ -31,6 +31,20 @@ O_MASS = 15.99491461957
 N_MASS = 14.00307400443
 S_MASS = 31.9720711744
 
+# RIA_D2O — mole-fraction enrichment of D in the H pool for 6% v/v D2O in H2O.
+# Derived from physical molarities (densities 0.997 g/mL H2O, 1.1056 g/mL D2O;
+# molar masses 18.015 / 20.027 g/mol; pure D2O is 99.96% D). Lifted from the
+# M2 calibration forward model so the production Spep/FS solver
+# (algorithms/isotope_dist.py) uses the same enrichment the benchmark oracle
+# uses; do not change without re-running bench_fs_recovery as a parity gate.
+_MOLARITY_H2O = 0.997 * 1000 / 18.015
+_MOLARITY_D2O = 1.1056 * 1000 / 20.027
+_D2O_VOL = 0.06 * 0.9996
+RIA_D2O = (
+    _D2O_VOL * _MOLARITY_D2O
+    / ((1 - _D2O_VOL) * _MOLARITY_H2O + _D2O_VOL * _MOLARITY_D2O)
+)
+
 """
 Amino acids: number of carbon, hydrogen, oxygen, nitrogen, sulfur for amino acids
 """

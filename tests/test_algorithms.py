@@ -13,8 +13,10 @@ import pytest
 
 from riana.algorithms import baseline as ba
 from riana.algorithms import calibration as cal
+from riana.algorithms import isotope_dist as iso
 from riana.algorithms import peaks as pk
 from riana.algorithms import smoothing as sm
+from riana.algorithms.mass_calc import calculate_ion_mz
 
 
 # ---------------------------------------------------------------------------
@@ -266,3 +268,121 @@ def test_drift_summary_ignores_nan_entries():
 def test_drift_summary_empty_safe():
     s = cal.drift_summary(np.array([], dtype=np.float64))
     assert s.n == 0 and s.suggested_shift_ppm == 0.0
+
+
+# ---------------------------------------------------------------------------
+# isotope_dist — Spep / FS solver (M3 Week 4 lift)
+# ---------------------------------------------------------------------------
+
+
+# Fixed test peptide. ~9 labile H sites (Ala/Val/Leu/Asp/Ile/Glu/Lys/Arg
+# all carry α-H; this is the M2 default test peptide pattern).
+_TEST_SEQ = "VAPEPTIDEK"
+
+
+def _peptide_mass(seq: str) -> float:
+    """Neutral monoisotopic mass via the production mass_calc."""
+    return calculate_ion_mz(seq)
+
+
+def test_get_envelope_returns_n_bins_summing_to_distribution_prob():
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    dist = iso.get_peptide_distribution(_TEST_SEQ, label=1)
+    env = iso.get_envelope(dist, pep_mass, n=4)
+    assert len(env) == 4
+    # Natural-abundance envelope is monotone-decreasing past iso0.
+    assert env[0] > env[1] > env[2]
+    # The 4 captured bins should cover most of the (prob_to_cover=0.999) mass.
+    assert sum(env) > 0.95
+
+
+def test_envelope_cache_idempotent_under_clear():
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    env1 = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
+    env2 = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
+    # Same key returns the SAME cached array (identity check) until cleared.
+    assert env1 is env2
+    iso.clear_envelope_cache()
+    env3 = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
+    # After clear, a fresh array is returned (still equal content).
+    assert env3 is not env1
+    np.testing.assert_allclose(env3, env1)
+
+
+def test_peptide_spep_loss_minimized_at_true_spep():
+    """Synthetic: build observed envelopes from a known Spep, then verify
+    the SSE loss has its minimum near the true Spep."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    proportions = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+    true_spep = 8
+
+    init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, true_spep, n=4)
+    init_norm = init / init.sum()
+    final_norm = final / final.sum()
+    obs_matrix = np.stack([
+        (1 - f) * init_norm + f * final_norm for f in proportions
+    ])
+
+    # Loss at true Spep is essentially zero; at any other integer it grows.
+    loss_true = iso.peptide_spep_loss(
+        true_spep, _TEST_SEQ, pep_mass, obs_matrix, proportions,
+    )
+    loss_off_lo = iso.peptide_spep_loss(
+        true_spep - 3, _TEST_SEQ, pep_mass, obs_matrix, proportions,
+    )
+    loss_off_hi = iso.peptide_spep_loss(
+        true_spep + 3, _TEST_SEQ, pep_mass, obs_matrix, proportions,
+    )
+    assert loss_true < 1e-6
+    assert loss_off_lo > loss_true
+    assert loss_off_hi > loss_true
+
+
+def test_fit_peptide_spep_recovers_synthetic_spep():
+    """Brent optimization recovers the true Spep within 0.5 sites."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    proportions = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+    true_spep = 8
+    init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, true_spep, n=4)
+    obs = np.stack([
+        (1 - f) * init / init.sum() + f * final / final.sum() for f in proportions
+    ])
+
+    fitted = iso.fit_peptide_spep(_TEST_SEQ, pep_mass, obs, proportions)
+    assert abs(fitted - true_spep) < 0.5, f"fitted Spep {fitted} far from true {true_spep}"
+
+
+def test_solve_fs_d2o_recovers_known_fractions():
+    """Per-timepoint FS solver recovers each known proportion within ±0.02."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    spep = 8
+    init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, spep, n=4)
+    init_norm = init / init.sum()
+    final_norm = final / final.sum()
+
+    for true_fs in (0.0, 0.125, 0.5, 0.75, 1.0):
+        obs = (1 - true_fs) * init_norm + true_fs * final_norm
+        # The solver expects un-normalized intensities (it normalizes
+        # internally); scale by a synthetic peak area to test that path.
+        obs_unnorm = obs * 1e6
+        recovered = iso.solve_fs_d2o(_TEST_SEQ, pep_mass, obs_unnorm, spep, n_iso=4)
+        assert abs(recovered - true_fs) < 0.02, (
+            f"FS recovery {recovered:.3f} far from true {true_fs:.3f}"
+        )
+
+
+def test_solve_fs_d2o_returns_nan_on_zero_intensity():
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    result = iso.solve_fs_d2o(
+        _TEST_SEQ, pep_mass, observed_iso=[0.0, 0.0, 0.0, 0.0],
+        spep=8, n_iso=4,
+    )
+    assert np.isnan(result)
