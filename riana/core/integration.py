@@ -123,10 +123,10 @@ def integrate_run(
     mass_accuracies = [r[1] for r in extract_results]
 
     # Trapezoidal integration per (PSM × mod × iso) on the per-PSM rt trace.
-    # Phase C: when peak_method="detected" the boundaries come from
-    # peaks.detect_peak on the iso0 XIC + a co-elution check against iso1;
-    # baseline-subtraction uses baseline_method (default "linear", Skyline-
-    # style). Per-peptide fallback to fixed-window on detection failure.
+    # Phase C: with peak_rt="apex" / integration_half_width="auto" the window
+    # comes from the apex finder on the iso0 XIC (+ a co-elution check vs iso1);
+    # baseline-subtraction uses baseline_method (default "none"; the narrow
+    # window excludes background). Per-peptide fallback to fixed on failure.
     iso_cols = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
     mz_cols = [f"{c}_obs_mz" for c in iso_cols]
     ppm_cols = [f"{c}_ppm_error" for c in iso_cols]
@@ -183,7 +183,7 @@ def integrate_run(
             iso0_ppm_errors.append(float(iso0_ppm))
         integrated_rows.append(row)
 
-    if config.peak_method == "detected":
+    if config.peak_rt in ("apex", "consensus") or config.integration_half_width == "auto":
         _LOGGER.info(
             "integrate_run: %d PSMs detected, %d fell back to fixed-window "
             "(detection or co-elution failure).",
@@ -255,19 +255,19 @@ def _extract_per_psm(
 
     # Choose the MS1 scans to integrate over. use_range=True is the 0.9.0
     # default: span all PSM scans of the same (sequence, charge), then
-    # widen by ±r_time. The searchsorted-then-minus-1 trick lands on the
+    # widen by ±extraction_half_width. The searchsorted-then-minus-1 lands on
     # MS1 *preceding* the (possibly MS2) PSM scan — the precursor cycle.
     if config.use_range:
         min_scan, max_scan = concat_scans[psm.concat]
         rt_lo = mzml.rt_idx[np.searchsorted(mzml.scan_idx, min_scan, side="left") - 1]
         rt_hi = mzml.rt_idx[np.searchsorted(mzml.scan_idx, max_scan, side="left") - 1]
         nearby = mzml.scan_idx[
-            (mzml.rt_idx - rt_lo > -config.r_time)
-            & (mzml.rt_idx - rt_hi < config.r_time)
+            (mzml.rt_idx - rt_lo > -config.extraction_half_width)
+            & (mzml.rt_idx - rt_hi < config.extraction_half_width)
         ]
     else:
         rt_center = mzml.rt_idx[np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1]
-        nearby = mzml.scan_idx[np.abs(mzml.rt_idx - rt_center) <= config.r_time]
+        nearby = mzml.scan_idx[np.abs(mzml.rt_idx - rt_center) <= config.extraction_half_width]
 
     # Lazy peak fetch + centroid sum per (mod, iso) per MS1. As a Phase D
     # addition we also accumulate intensity-weighted observed m/z per
@@ -307,11 +307,11 @@ def _extract_per_psm(
             raise IntegrationError(
                 f"No intensity profile for peptide {peptide_prec} "
                 f"(scans {min_scan}-{max_scan}, iso {list(isos)}). "
-                "Try widening --r_time or --mass_tol."
+                "Try widening --extraction_half_width or --mass_tol."
             )
         raise IntegrationError(
             f"No intensity profile for peptide {peptide_prec} "
-            f"(iso {list(isos)}). Try widening --r_time or --mass_tol."
+            f"(iso {list(isos)}). Try widening --extraction_half_width or --mass_tol."
         )
 
     # Pivot (mod_iso × rt) → wide table. Matching legacy: rt rounded to 6 dp
@@ -333,7 +333,7 @@ def _extract_per_psm(
     # detected/Phase-C science path we use the §2c fix polyorder=2 via the
     # algorithms.smoothing wrapper.
     if config.smoothing is not None and config.smoothing > 0:
-        if config.peak_method == "fixed_window":
+        if config.peak_rt == "ms2" and config.integration_half_width != "auto":
             for col in iso_cols:
                 if wide[col].sum() > 0:
                     wide[col] = scipy.signal.savgol_filter(
@@ -375,30 +375,73 @@ def _peak_boundary(
     iso0_col: str,
     iso1_col: str | None,
 ) -> "pk.PeakBoundary | None":
-    """Detect iso0 peak + verify iso1 co-elution. ``None`` ⇒ fall back."""
-    if config.peak_method != "detected":
-        return None
+    """Locate the integration [lo, hi] per ``peak_rt`` / ``integration_half_width``.
+
+    ``None`` ⇒ integrate the whole extraction (ms2 + fixed width = 0.9.0).
+    Otherwise: apex ± fixed width (``peak_rt="apex"``), or detected boundaries
+    with an iso1 co-elution gate (``integration_half_width="auto"``).
+    """
+    auto = config.integration_half_width == "auto"
+    if config.peak_rt == "ms2" and not auto:
+        return None  # 0.9.0 fixed: integrate the whole ±extraction_half_width
     iso0_trace = idf[iso0_col].to_numpy(dtype=np.float64)
     if iso0_trace.sum() <= 0:
         return None
     psm_rt = float(
-        mzml.rt_idx[
-            np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1
-        ]
+        mzml.rt_idx[np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1]
     )
-    iso0_b = pk.detect_peak(rt_arr, iso0_trace, scan_prior_rt=psm_rt)
-    if iso0_b is None:
-        return None
-    if iso1_col is not None:
-        iso1_trace = idf[iso1_col].to_numpy(dtype=np.float64)
-        iso1_b = (
-            pk.detect_peak(rt_arr, iso1_trace, scan_prior_rt=psm_rt)
-            if iso1_trace.sum() > 0
-            else None
+    if auto:
+        iso0_b = pk.detect_peak(
+            rt_arr, iso0_trace, scan_prior_rt=psm_rt,
+            rel_height=config.width_rel_height, prominence_k=config.prominence_k,
         )
-        if not pk.coelution_ok(iso0_b, iso1_b, rt_arr):
+        if iso0_b is None:
             return None
-    return iso0_b
+        if iso1_col is not None:
+            iso1_trace = idf[iso1_col].to_numpy(dtype=np.float64)
+            iso1_b = (
+                pk.detect_peak(
+                    rt_arr, iso1_trace, scan_prior_rt=psm_rt,
+                    rel_height=config.width_rel_height,
+                    prominence_k=config.prominence_k,
+                )
+                if iso1_trace.sum() > 0
+                else None
+            )
+            if not pk.coelution_ok(iso0_b, iso1_b, rt_arr):
+                return None
+        return iso0_b
+    # peak_rt in {"apex","consensus"}: fixed-width window around a detected apex.
+    if config.peak_rt == "consensus":
+        # Median apex over m0..m{n-1} (co-elution consensus): labelling-
+        # independent and rejects a contaminated channel regardless of intensity.
+        base = iso0_col[:-1]  # "mod0_iso0" -> "mod0_iso"
+        cons_cols = [f"{base}{k}" for k in range(config.apex_n_consensus)
+                     if f"{base}{k}" in idf.columns]
+        traces = [idf[c].to_numpy(dtype=np.float64) for c in cons_cols]
+        res = pk.consensus_apex(
+            rt_arr, traces, scan_prior_rt=psm_rt,
+            prominence_k=config.prominence_k,
+            apex_search_half_width=config.apex_search_half_width,
+            selection=config.apex_selection,
+        )
+        apex = res[0] if res is not None else None
+    else:  # "apex"
+        apex = pk.find_apex(
+            rt_arr, iso0_trace, scan_prior_rt=psm_rt,
+            prominence_k=config.prominence_k,
+            apex_search_half_width=config.apex_search_half_width,
+            selection=config.apex_selection,
+        )
+    if apex is None:
+        return None
+    half = float(config.integration_half_width)
+    apex_rt = float(rt_arr[apex])
+    win = np.where(np.abs(rt_arr - apex_rt) <= half)[0]
+    return pk.PeakBoundary(
+        apex_idx=apex, lo=int(win[0]), hi=int(win[-1]),
+        apex_intensity=float(iso0_trace[apex]), prominence=float("nan"),
+    )
 
 
 def _baseline_corrected_slice(
@@ -410,9 +453,10 @@ def _baseline_corrected_slice(
 ) -> np.ndarray:
     """Return ``trace[lo:hi+1] - baseline`` according to ``method``.
 
-    For ``"none"`` we skip subtraction (just slice). For ``"linear"`` the
-    baseline is the Skyline local-linear between the boundary endpoints.
-    ``"snip"`` / ``"asls"`` route through :mod:`algorithms.baseline`.
+    For ``"none"`` we skip subtraction (just slice). ``"noise_floor"`` is a
+    flat p10-of-(full-trace) constant; ``"snip"`` / ``"asls"`` route through
+    :mod:`algorithms.baseline`. (Skyline-style ``"linear"`` was discarded —
+    see PROJECT_REVIEW; it over-subtracts on narrow on-peak boundaries.)
 
     The corrected slice can contain small negatives when a single
     boundary scan happens to sit above the trace just inside. Those
@@ -425,8 +469,6 @@ def _baseline_corrected_slice(
         return sliced
     if method == "noise_floor":
         bl = ba.noise_floor(trace)
-    elif method == "linear":
-        bl = ba.local_linear(rt_arr, trace, lo, hi)
     elif method == "snip":
         bl = ba.snip(trace)
     elif method == "asls":

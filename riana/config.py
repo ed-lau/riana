@@ -35,8 +35,15 @@ class IntegrationConfig:
     isotopomers: tuple[int, ...] = (0, 6)
     #: -m / --mass_tol. ±ppm half-width (see class docstring).
     mass_tol_ppm: int = 50
-    #: -r / --r_time. RT tolerance in minutes, applied in both directions.
-    r_time: float = 1.0
+    #: -r / --extraction_half_width (legacy alias --r_time). EXTRACTION
+    #: half-width in RT minutes (how much XIC to pull, both directions). Must
+    #: be ≥ ``integration_half_width`` (plus room for the apex offset when
+    #: ``peak_rt="apex"``). For the ms2/fixed path the runner sets it equal to
+    #: ``integration_half_width`` (0.9.0 parity). Renamed from ``r_time`` —
+    #: that name conflated extraction with integration; they're distinct now.
+    #: Default 0.5 suits the apex default (covers the apex offset + a 0.15
+    #: window); the runner/CLI derive it from ``integration_half_width``.
+    extraction_half_width: float = 0.5
     #: -q / --q_value. Integrate only PSMs with q-value below this.
     q_value: float = 1e-2
     #: -u / --unique. Restrict to peptides mapping to a single protein.
@@ -60,36 +67,44 @@ class IntegrationConfig:
     #: the Week 3 rewrite can make it configurable without a signature change.
     use_range: bool = True
 
-    # --- M3 Week 3 (Phase C/D) science fields. Defaults are the new
-    # canonical pipeline; the legacy fixed-window path stays available via
-    # ``peak_method="fixed_window"`` for Phase A parity / regression gating.
+    # --- M3 peak-integration fields. DEFAULT since the 2026-06 peak-detection
+    # spike: an apex-centred narrow window (peak_rt="apex",
+    # integration_half_width=0.15, apex_selection="tallest", baseline none),
+    # which beat the 0.9.0 fixed rectangle on every calibration line (ac16/
+    # ipsc/cm, 0% & 100%) and an in-vivo mouse set. ms2 + whole-window
+    # reproduces 0.9.0 (parity/regression escape hatch); consensus is the
+    # high-D₂O alternative; auto detects boundaries. See PROJECT_REVIEW §2c.
 
-    #: Peak boundary method on the iso0 XIC.  ``"fixed_window"`` is the
-    #: current default — it reproduces the 0.9.0 rectangle integration.
-    #: ``"detected"`` runs :func:`algorithms.peaks.detect_peak` +
-    #: co-elution check, falling back per-peptide to fixed-window when
-    #: detection fails.
-    #:
-    #: **Why fixed_window is still the default in Week 3**: the Phase C
-    #: regression bench across ac16/ipsc/cm showed that scipy.signal.find_peaks
-    #: + peak_widths produces narrow per-peptide-per-fraction boundaries that
-    #: are *not stable across the 9 D₂O proportions* — iso5 area drops ~70%
-    #: under detection because the boundary lands at slightly different scan
-    #: indices at different proportions, breaking R²>0.95 curation (curated
-    #: peptide count fell 24–33% across lines; uncurated m0_rmse worsened
-    #: ~65%). Baseline tuning (linear → noise-floor) didn't recover.
-    #: Conclusion: opt-in only until a cross-proportion-stable peak picker
-    #: lands (e.g. consensus boundaries fitted once per peptide, Skyline-
-    #: grade noise-aware detection).
-    peak_method: str = "fixed_window"
+    #: WHERE the integration window is anchored. **Default ``"apex"``** (spike
+    #: winner): locate the chromatographic apex on the iso0 XIC
+    #: (:func:`algorithms.peaks.find_apex`; prominence-gated, ``apex_selection``)
+    #: and integrate apex ± ``integration_half_width``. ``"ms2"`` reproduces
+    #: 0.9.0 — centre on the PSM/MS2 RT and integrate the whole
+    #: ±``extraction_half_width`` (parity escape hatch). ``"consensus"`` takes
+    #: the **median** apex over m0..m{``apex_n_consensus``-1}
+    #: (:func:`algorithms.peaks.consensus_apex`) — labelling-independent and
+    #: contamination-robust; a marginal edge at high D₂O, so prefer it there.
+    #: ``integration_half_width="auto"`` detects the boundaries (implies apex).
+    peak_rt: str = "apex"
+    #: HOW WIDE to integrate — a float half-width in RT minutes (window =
+    #: centre ± this), or ``"auto"`` to detect boundaries from the iso0 shape
+    #: (``peak_widths`` at ``width_rel_height``; implies apex). **Default 0.15**
+    #: (the spike optimum across lines); the best value tracks the
+    #: chromatographic peak width — **dial it to your gradient** (≈0.1 for sharp
+    #: UPLC, ≈0.2–0.33 for broad peaks). In the ms2 path the window IS the whole
+    #: ±``extraction_half_width`` (runner sets it = this for 0.9.0 parity); for
+    #: apex/consensus the window is a sub-interval of the wider extraction.
+    integration_half_width: float | str = 0.15
     #: Chromatographic baseline subtraction inside the integrated window.
-    #: ``"none"`` matches 0.9.0; ``"noise_floor"`` is the recommended
-    #: default — flat p10-of-trace baseline, robust to noise spikes at
-    #: the boundary endpoints (the failure mode that broke the first cut
-    #: of Phase C; see PROJECT_REVIEW.md Week 3 notes). ``"linear"`` is
-    #: the Skyline classic (brittle on our boundaries); ``"snip"`` /
-    #: ``"asls"`` are pybaselines fallbacks.
-    baseline_method: str = "noise_floor"
+    #: ``"none"`` (default) — the narrow apex window removes background by
+    #: *exclusion*, which beat subtraction across all three lines in the spike
+    #: (see PROJECT_REVIEW). ``"noise_floor"`` — flat p10-of-(full-trace)
+    #: baseline; competitive but ~no-op at low labelling, kept for future
+    #: tuning (its quality depends on the extraction width — see the
+    #: baseline.py off-peak TODO). ``"snip"`` / ``"asls"`` are pybaselines
+    #: fallbacks. (Skyline-style ``"linear"`` was tested and discarded — it
+    #: over-subtracts on our narrow on-peak boundaries; see PROJECT_REVIEW.)
+    baseline_method: str = "none"
     #: Savitzky–Golay polynomial order. ``2`` is the §2c fix (the 0.9.0
     #: polyorder=1 path is mathematically a moving average); only used when
     #: ``smoothing`` is set.
@@ -97,6 +112,30 @@ class IntegrationConfig:
     #: Per-fraction calibration drift alert threshold, in ppm. Phase D logs
     #: a warning when the per-fraction median ppm error exceeds this.
     ppm_alert: float = 20.0
+    #: Local-MAD prominence multiplier for the apex finder
+    #: (:func:`algorithms.peaks.find_apex` / ``detect_peak``). A candidate apex
+    #: must clear ``prominence_k · 1.4826 · MAD(trace)``; higher ⇒ stricter.
+    #: Used by ``peak_rt="apex"`` and ``integration_half_width="auto"``.
+    prominence_k: float = 3.0
+    #: Apex-height fraction at which ``integration_half_width="auto"`` measures
+    #: the peak width (via ``scipy.signal.peak_widths``). 0.05 = 5% of apex
+    #: (Skyline-classic; boundary down in the noisy flanks → wanders across
+    #: proportions). 0.5 = FWHM (on the steep near-apex flank → far more
+    #: stable, and amplitude-robust so iso0 suppression at high D₂O doesn't
+    #: move it). Only used when ``integration_half_width="auto"``.
+    width_rel_height: float = 0.05
+    #: Apex selection rule for ``peak_rt="apex"`` / ``"consensus"``.
+    #: **Default ``"tallest"``** (most intense prominent candidate — won the
+    #: cross-dataset screen); ``"nearest"`` picks the candidate closest to the
+    #: MS2 RT prior (better when a tall co-eluting neighbour is a risk).
+    apex_selection: str = "tallest"
+    #: Half-width (RT min) bounding the apex search around the PSM RT;
+    #: ``0`` = the whole extracted trace (the wide default). Tightening it
+    #: trades single-proportion robustness for cross-proportion stability.
+    apex_search_half_width: float = 0.0
+    #: Number of leading isotopomer channels (m0..m{n-1}) the
+    #: ``peak_rt="consensus"`` median-apex pools over (co-elution consensus).
+    apex_n_consensus: int = 4
 
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
@@ -107,13 +146,34 @@ class IntegrationConfig:
             raise ValueError(f"smoothing must be an odd integer >= 3, got {self.smoothing}")
         if self.threads < 1:
             raise ValueError(f"threads must be >= 1, got {self.threads}")
-        if self.peak_method not in ("detected", "fixed_window"):
+        if self.peak_rt not in ("ms2", "apex", "consensus"):
             raise ValueError(
-                f"peak_method must be 'detected' or 'fixed_window', got {self.peak_method!r}"
+                f"peak_rt must be 'ms2', 'apex' or 'consensus', got {self.peak_rt!r}")
+        if self.apex_selection not in ("nearest", "tallest"):
+            raise ValueError(
+                f"apex_selection must be 'nearest' or 'tallest', got {self.apex_selection!r}")
+        if self.apex_search_half_width < 0:
+            raise ValueError(
+                f"apex_search_half_width must be >= 0, got {self.apex_search_half_width}")
+        if self.apex_n_consensus < 1:
+            raise ValueError(
+                f"apex_n_consensus must be >= 1, got {self.apex_n_consensus}")
+        if self.integration_half_width != "auto":
+            w = self.integration_half_width
+            if isinstance(w, bool) or not isinstance(w, (int, float)) or w <= 0:
+                raise ValueError(
+                    "integration_half_width must be a positive number or 'auto', "
+                    f"got {self.integration_half_width!r}"
+                )
+        if self.prominence_k <= 0:
+            raise ValueError(f"prominence_k must be > 0, got {self.prominence_k}")
+        if not 0.0 < self.width_rel_height < 1.0:
+            raise ValueError(
+                f"width_rel_height must be in (0, 1), got {self.width_rel_height}"
             )
-        if self.baseline_method not in ("none", "noise_floor", "linear", "snip", "asls"):
+        if self.baseline_method not in ("none", "noise_floor", "snip", "asls"):
             raise ValueError(
-                f"baseline_method must be one of 'none', 'noise_floor', 'linear', "
+                f"baseline_method must be one of 'none', 'noise_floor', "
                 f"'snip', 'asls'; got {self.baseline_method!r}"
             )
         if self.smoothing_polyorder < 2:

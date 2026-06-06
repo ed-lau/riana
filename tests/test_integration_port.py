@@ -58,14 +58,16 @@ def legacy_sample1_output(tmp_path_factory) -> pd.DataFrame:
         "-t", "1",
     ]
     subprocess.run(cmd, check=True, capture_output=True)
-    return pd.read_csv(out_dir / "sample1_riana.txt", sep="\t", index_col=0)
+    # _riana.txt carries a Phase F3 provenance header (# lines); skip it.
+    return pd.read_csv(out_dir / "sample1_riana.txt", sep="\t", index_col=0,
+                       comment="#")
 
 
 def test_sample1_iso0_iso6_within_rtol(legacy_sample1_output):
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
-        r_time=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
-        peak_method="fixed_window", baseline_method="none",
+        extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(
         SAMPLE1 / "percolator.target.psms.txt", sample="sample1"
@@ -107,8 +109,8 @@ def test_ac16_time0_matches_committed_baseline():
     """The bigger real-data check: ac16 time0, 9 isotopomers including 6."""
     config = IntegrationConfig(
         sample="time0", isotopomers=(0, 1, 2, 3, 4, 5), q_value=0.01,
-        r_time=0.33, mass_tol_ppm=15, threads=4, forced_mods=(0.0,),
-        peak_method="fixed_window", baseline_method="none",
+        extraction_half_width=0.33, mass_tol_ppm=15, threads=4, forced_mods=(0.0,),
+        peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(AC16_PSMS, sample="time0")
     with IndexedMzML(AC16_MZML) as mzml:
@@ -155,12 +157,13 @@ def test_sample1_detected_pipeline_runs_and_is_smaller_than_fixed():
     )
     base = dict(
         sample="sample1", isotopomers=(0, 1, 2, 3, 4, 5), q_value=1.0,
-        r_time=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
     )
-    fixed_cfg = IntegrationConfig(**base, peak_method="fixed_window",
+    fixed_cfg = IntegrationConfig(**base, peak_rt="ms2",
                                   baseline_method="none")
-    det_cfg = IntegrationConfig(**base, peak_method="detected",
-                                baseline_method="linear")
+    det_cfg = IntegrationConfig(**base, peak_rt="apex",
+                                integration_half_width="auto",
+                                baseline_method="none")
     with IndexedMzML(SAMPLE1 / "20180216_BSA.mzML.gz") as mzml:
         fixed = integrate_run(fixed_cfg, psms, mzml)
         det = integrate_run(det_cfg, psms, mzml)
@@ -201,8 +204,8 @@ def test_sample1_mass_accuracy_columns_populated():
     """
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
-        r_time=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
-        peak_method="fixed_window", baseline_method="none",
+        extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(
         SAMPLE1 / "percolator.target.psms.txt", sample="sample1"
@@ -260,7 +263,7 @@ def test_engine_new_cli_produces_compatible_output(tmp_path):
     assert out_file.exists()
     assert drift_file.exists()
 
-    df = pd.read_csv(out_file, sep="\t", index_col=0)
+    df = pd.read_csv(out_file, sep="\t", index_col=0, comment="#")
     # Legacy area columns + Phase D additions.
     for c in ("iso0", "iso6", "iso0_obs_mz", "iso6_obs_mz",
               "iso0_ppm_error", "iso6_ppm_error", "concat", "sample"):

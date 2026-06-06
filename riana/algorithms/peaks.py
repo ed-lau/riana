@@ -110,6 +110,99 @@ def detect_peak(
     )
 
 
+def find_apex(
+    rt: np.ndarray,
+    intensity: np.ndarray,
+    *,
+    scan_prior_rt: float,
+    prominence_k: float = 3.0,
+    apex_search_half_width: float = 0.0,
+    selection: str = "nearest",
+) -> int | None:
+    """Index of a prominent peak apex on one channel's XIC.
+
+    Gate candidate maxima by a local-MAD prominence floor, restrict them to a
+    search window around the PSM-scan RT prior, then choose one:
+
+    - ``selection="nearest"`` — the candidate closest to the MS2 RT prior (DDA
+      fired the scan on *this* precursor, so proximity disambiguates a
+      co-eluting neighbour).
+    - ``selection="tallest"`` — the most intense candidate.
+
+    ``apex_search_half_width`` bounds how far the apex may sit from the PSM RT
+    (``<= 0`` ⇒ whole trace, the wide default). A tight bound keeps the apex
+    near the labelling-independent PSM RT, which matters for cross-proportion
+    stability. Returns ``None`` when no candidate clears the prominence floor
+    inside the window.
+    """
+    intensity = np.asarray(intensity, dtype=np.float64)
+    rt = np.asarray(rt, dtype=np.float64)
+    if intensity.size < 3 or not np.any(intensity > 0):
+        return None
+    med = float(np.median(intensity))
+    mad = float(np.median(np.abs(intensity - med)))
+    prominence_floor = max(prominence_k * 1.4826 * mad, 1.0)
+    apex_idxs, _ = scipy.signal.find_peaks(intensity, prominence=prominence_floor)
+    if apex_idxs.size == 0:
+        return None
+    if apex_search_half_width > 0:
+        apex_idxs = apex_idxs[
+            np.abs(rt[apex_idxs] - scan_prior_rt) <= apex_search_half_width
+        ]
+        if apex_idxs.size == 0:
+            return None
+    if selection == "tallest":
+        return int(apex_idxs[np.argmax(intensity[apex_idxs])])
+    return int(apex_idxs[np.argmin(np.abs(rt[apex_idxs] - scan_prior_rt))])
+
+
+def consensus_apex(
+    rt: np.ndarray,
+    channel_traces,
+    *,
+    scan_prior_rt: float,
+    prominence_k: float = 3.0,
+    apex_search_half_width: float = 0.0,
+    selection: str = "nearest",
+) -> "tuple[int, float] | None":
+    """Co-elution consensus apex: the **median** of the per-channel apexes.
+
+    Every isotopomer of a peptide shares one true apex (co-elution), so the
+    robust estimate is the median of the per-channel apex RTs. It ignores a
+    channel whose apex drifts (contamination) *regardless of that channel's
+    intensity* — unlike summing the channels, which a strong contaminant would
+    pull — and a suppressed channel simply contributes no apex. So it is
+    labelling-independent (there is always a strong channel somewhere in
+    m0..m3) and cross-proportion stable (the median RT does not move as
+    labelling shifts which channel dominates). :func:`find_apex` is the
+    single-channel special case (one trace).
+
+    Args:
+        channel_traces: iterable of per-channel intensity arrays (e.g. iso0..3),
+            all on the shared ``rt`` axis.
+
+    Returns ``(apex_idx, spread)`` where ``spread`` is the MAD of the surviving
+    per-channel apex RTs — a co-elution quality score (small = clean
+    agreement) — or ``None`` if no channel yields an apex.
+    """
+    rt = np.asarray(rt, dtype=np.float64)
+    apex_rts = []
+    for trace in channel_traces:
+        a = find_apex(
+            rt, trace, scan_prior_rt=scan_prior_rt, prominence_k=prominence_k,
+            apex_search_half_width=apex_search_half_width, selection=selection,
+        )
+        if a is not None:
+            apex_rts.append(rt[a])
+    if not apex_rts:
+        return None
+    arr = np.asarray(apex_rts, dtype=np.float64)
+    consensus_rt = float(np.median(arr))
+    spread = float(np.median(np.abs(arr - consensus_rt)))
+    apex_idx = int(np.argmin(np.abs(rt - consensus_rt)))
+    return apex_idx, spread
+
+
 def coelution_ok(
     iso0: PeakBoundary,
     iso1: PeakBoundary | None,

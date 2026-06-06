@@ -205,11 +205,36 @@ def main():
                                   action=CheckQValue,
                                   default=1e-2)
 
-    parser_integrate.add_argument('-r', '--r_time',
-                                  help='retention time (in minutes, both directions) tolerance for integration',
+    parser_integrate.add_argument('-r', '--extraction_half_width', '--r_time',
+                                  dest='extraction_half_width',
+                                  help='extraction half-width (RT min, both directions): how much '
+                                       'XIC to pull around the PSM. If omitted, the new engine '
+                                       'derives it from --integration-half-width / --peak-rt; the '
+                                       'legacy engine uses 1.0. (alias: --r_time)',
                                   type=float,
                                   action=CheckRTime,
-                                  default=1.0)
+                                  default=None)
+
+    # --- peak-detection knobs (new engine). Defaults = the 2026-06 spike
+    # winner: apex-centred narrow window, no baseline. See PROJECT_REVIEW §2c.
+    parser_integrate.add_argument('--peak-rt', choices=['ms2', 'apex', 'consensus'],
+                                  default='apex',
+                                  help="window anchor: 'apex' (default, spike winner), 'ms2' "
+                                       "(0.9.0 parity), or 'consensus' (median apex over m0..m3; "
+                                       "prefer at high D2O / labelled samples)")
+    parser_integrate.add_argument('--integration-half-width', default='0.15',
+                                  metavar='MIN|auto',
+                                  help="integration half-width in RT min (default 0.15; dial to "
+                                       "your chromatographic peak width), or 'auto' to detect "
+                                       "boundaries from the iso0 peak shape")
+    parser_integrate.add_argument('--baseline', dest='baseline_method',
+                                  choices=['none', 'noise_floor', 'snip', 'asls'],
+                                  default='none',
+                                  help='in-window baseline subtraction (default none; the narrow '
+                                       'window already excludes background)')
+    parser_integrate.add_argument('--apex-selection', choices=['tallest', 'nearest'],
+                                  default='tallest',
+                                  help='apex pick rule for apex/consensus (default tallest)')
 
     parser_integrate.add_argument('-w', '--write_intensities',
                                   action='store_true',
@@ -435,16 +460,32 @@ def _integrate_new(args: argparse.Namespace) -> None:
     logger.info('engine=new (M3 Week 3)')
     logger.info(__version__)
 
-    # Build the IntegrationConfig from argparse defaults. The CLI surface
-    # doesn't expose peak_method / baseline_method / smoothing_polyorder /
-    # ppm_alert yet — they ride at IntegrationConfig defaults
-    # (peak_method='fixed_window'; see commit 3d8c715 for why). When Phase C v2
-    # lands a stable detected pipeline, the CLI flags follow.
+    # Build the IntegrationConfig. The peak-detection knobs (--peak-rt,
+    # --integration-half-width, --baseline, --apex-selection) default to the
+    # 2026-06 spike winner (apex / 0.15 / tallest / none). The advanced apex
+    # knobs (apex_search_half_width, apex_n_consensus, prominence_k,
+    # width_rel_height) stay at IntegrationConfig defaults — set them via the
+    # config if needed. integration_half_width accepts a float or 'auto'.
+    ihw = ('auto' if args.integration_half_width == 'auto'
+           else float(args.integration_half_width))
+    # Derive the extraction half-width unless -r was given: ms2 integrates the
+    # whole extraction (so = ihw); apex/consensus need room for the apex offset
+    # (+0.33 min). 'auto' uses a 0.33 base.
+    if args.extraction_half_width is not None:
+        ehw = float(args.extraction_half_width)
+    elif args.peak_rt == 'ms2' and ihw != 'auto':
+        ehw = float(ihw)
+    else:
+        ehw = (0.33 if ihw == 'auto' else float(ihw)) + 0.33
     config = IntegrationConfig(
         sample=args.sample,
         isotopomers=tuple(args.iso),
         mass_tol_ppm=int(args.mass_tol),
-        r_time=float(args.r_time),
+        extraction_half_width=ehw,
+        peak_rt=args.peak_rt,
+        integration_half_width=ihw,
+        baseline_method=args.baseline_method,
+        apex_selection=args.apex_selection,
         q_value=float(args.q_value),
         unique_only=bool(args.unique),
         write_intensities=bool(args.write_intensities),

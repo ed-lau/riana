@@ -45,6 +45,89 @@ entries below are grouped by the week of work that produced them.
   baseline (`PROJECT_REVIEW.md` §2b). Corrected to `label == 4`. This changes
   fit output for amino-acid-labeling experiments.
 
+### M3 Week 2 — I/O layer (both ID paths)
+
+#### Added
+
+- `io/percolator.py` — typed Percolator parser (no exception-as-control-flow);
+  emits `PSMRecord`s.
+- `io/mztab.py` — quantms/OpenMS mzTab intake (`read_mztab` → `PSMRecord`s + an
+  `ms_run → filename` map), the second ID pipeline.
+- `io/mzml.py` — `IndexedMzML`, indexed/streaming reads (one fraction in memory,
+  not the whole run).
+- `io/writers.py` — TSV writer with a provenance header (riana version, git SHA,
+  config hash, id source). Readers skip it with `comment='#'`.
+
+### M3 Week 3 — core integration pipeline + peak-detection toolkit
+
+#### Added
+
+- `core/integration.py` — rewritten against the typed records, streaming per-PSM.
+- `algorithms/peaks.py` — `find_apex`, `consensus_apex`, `detect_peak`, co-elution
+  check, SNR/symmetry/quality scoring. `algorithms/baseline.py` — `noise_floor`
+  (+ SNIP/AsLS) options.
+- Per-isotopomer mass-accuracy columns (`iso{N}_obs_mz`, `iso{N}_ppm_error`) and a
+  per-fraction drift sidecar (Phase D); `--ppm-alert`.
+- `riana integrate --engine new` — dispatcher onto the typed pipeline.
+
+### M3 Week 4 — fitting rewrite + §2b science fixes
+
+#### Added
+
+- `core/fitting.py` (consumes `IntegrationResult`); `riana fit --engine new`.
+- Provenance headers on `_riana.txt` / `riana_fit_peptides.txt` (Phase F3).
+
+#### Changed
+
+- **Fractional synthesis is now computed by the IsoSpec forward/solve model**
+  (`algorithms/isotope_dist.solve_fs_d2o`: per-peptide Spep + full-envelope
+  least-squares) instead of the fixed-site-count `m0`-analytic relation. This
+  closes the ≈ −0.5 pseudo-time `k_deg` recovery bias the M3 Week 0 baseline
+  documented (median `k_rel_err` → ~0 with `--engine new`).
+
+#### Fixed
+
+- AA `a_max` dispatch (§2b); FS-denominator drift; kinetic-fit confidence via
+  bootstrap.
+
+### M3 peak-detection spike (pre-M4, 2026-06) — **default integration changed**
+
+A time-boxed, benchmark-gated investigation of chromatographic peak detection and
+baseline subtraction, validated on the D₂O calibration series (ac16/ipsc/cm at
+0–100%) and an independent in-vivo mouse set.
+
+#### Changed (BREAKING — default integration output differs from 0.9.0 by design)
+
+- **Default integration is now an apex-centred narrow window**: `peak_rt="apex"`,
+  `integration_half_width=0.15`, `apex_selection="tallest"`, `baseline="none"`.
+  It beat the 0.9.0 fixed ±`r_time` rectangle on every test set (envelope RMSE
+  vs IsoSpec; cross-proportion mixing linearity), generalizing across cell line,
+  organism, and ID pipeline. **0.9.0 behaviour is reproducible with
+  `--peak-rt ms2 --integration-half-width 1.0`** (the parity tests pin this).
+- `integration_half_width` tracks the chromatographic peak width — dial it to
+  your gradient (≈0.1 sharp UPLC … ≈0.2–0.33 broad).
+- Renamed config field / CLI flag `r_time` → `extraction_half_width` (it
+  conflated the *extraction* trace with the *integration* window; now distinct).
+  `--r_time` kept as a legacy alias.
+
+#### Added
+
+- `peak_rt` options `apex` (default) and `consensus` (median apex over m0..m3 —
+  labelling-independent, contamination-robust; prefer at high D₂O). Tunable
+  knobs: `integration_half_width` (float|`auto`), `extraction_half_width`,
+  `apex_selection` {tallest,nearest}, `apex_search_half_width`, `apex_n_consensus`,
+  `prominence_k`, `width_rel_height`. CLI: `--peak-rt`, `--integration-half-width`,
+  `--baseline`, `--apex-selection`.
+- Benchmarks: `bench_mixing_linearity.py` (model-free mᵢ:mA-vs-proportion R²),
+  `bench_zero_sweep.py` (fast single-proportion RMSE-vs-IsoSpec sweep; percolator
+  + mzTab intake), `run_mixconfirm.py`, `run_integrate_invivo.py`.
+
+#### Removed
+
+- `baseline="linear"` (Skyline-style local-linear) — it over-subtracts on the
+  narrow on-peak boundaries and failed on every line; rationale retained in
+  `PROJECT_REVIEW.md` §2c.
+
 ---
 
 ## [0.9.0] — Unreleased

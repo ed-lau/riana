@@ -1,7 +1,9 @@
 # Riana — Project Review & Roadmap
 
-> Status: 0.9.0 (stabilization). Next: 1.0.0 (aggressive rewrite, lift the
-> science). Maintainer: Edward Lau. Last reviewed: 2026-05-12.
+> Status: M3 done (1.0.0.dev — restructure, streaming I/O, dual ID intake,
+> apex-default peak integration, IsoSpec forward-model FS). Next: M4 (Qt +
+> async GUI, deferred CLI rewrite). Maintainer: Edward Lau. Last reviewed:
+> 2026-06-06.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -119,6 +121,33 @@ For 1.0.0, an `algorithms/peaks.py` module will implement:
 Whether each of these improvements actually wins is decided by the
 calibration dataset, not by intuition.
 
+**Spike outcome (2026-06-05) — these were tested; the calibration data
+decided** (full record in the `m3-peak-detection-spike` memory; pending the
+full-mixing confirm):
+
+- **Width is the primary lever.** A narrow integration window
+  (`integration_half_width` ≈ 0.1–0.2 min) beats the wide 0.9.0 ±0.33
+  rectangle — on the model-free mixing-linearity metric and on 0%-envelope
+  RMSE vs IsoSpec, across all three lines (ac16/ipsc/cm). It removes
+  background by *exclusion* rather than subtraction.
+- **Apex-centring (`peak_rt="apex"`) is a real but second-order win** — it
+  only matters once the window is narrow (a tight window must sit on the apex
+  or it clips); at the wide width it's a wash. The apex finder uses a
+  prominence gate + nearest-to-MS2-RT selection (not "tallest").
+- **FWHM (`width_rel_height=0.5`) beats 5%** for detected boundaries, but a
+  well-chosen fixed narrow width beats FWHM-auto (which over-clips long
+  peptides). The optimum is mildly line-dependent (0.1–0.2) → length-adaptive
+  width is the open refinement (M8).
+- **`linear` (Skyline local-linear between boundaries) is discarded.** It is
+  the correct Skyline algorithm but assumes boundaries at the chromatographic
+  *floor*; our narrow on-peak boundaries make it over-subtract real signal,
+  catastrophically with tight windows (worst row on every line). Removed from
+  `algorithms/baseline.py` 2026-06-05. `none` is the default; `noise_floor`
+  is competitive-but-no-op at low labelling, kept for future tuning (its
+  quality leaks the extraction width — off-peak-estimate TODO in baseline.py).
+- The config field `r_time` was renamed `extraction_half_width` (it conflated
+  extraction with integration; those are distinct knobs now).
+
 ### 2d. Architecture findings (addressed in 1.0.0 rewrite)
 
 - CLI (`main.py`) and GUI (`riana_ui/`) duplicate validation/config logic
@@ -133,9 +162,9 @@ calibration dataset, not by intuition.
 
 ## 3. Roadmap
 
-Sequencing: M1 has shipped (you're reading the 0.9.0 review). M2 has shipped
-its benchmark scaffolding and v0.9.0 baseline (see below). M3 is gated on M2's
-baseline numbers existing — they now do.
+Sequencing: M1 (0.9.0), M2 (calibration dataset + benchmarks), and M3
+(restructure + peak-detection spike) have all shipped — see CHANGELOG `[1.0.0]`.
+M4 (Qt GUI + deferred CLI rewrite) is next.
 
 ### M1 — Stabilization → 0.9.0 — DONE
 
@@ -363,14 +392,44 @@ code DOI; repo carries CSVs + scripts + a `make calibration-data` target.
 - `bench_integrate_recovery.py` + `bench_fit_recovery.py` running on 0.9.0,
   baseline numbers committed to `benchmark_results/v0.9.0/`.
 
-### M3 — Aggressive restructure → 1.0.0
+### M3 — Aggressive restructure → 1.0.0 — DONE
 
-Branch from the `v0.9.0` tag. Pre-req: M2 baseline numbers recorded so
-the rewrite is regression-gated.
+Delivered over Weeks 0–4 plus a pre-M4 peak-detection spike (2026-06). The
+itemized record is in `CHANGELOG.md` (`[1.0.0]`); the high-level outcome:
 
-**Approach: walking skeleton, then fill in.** ≈3–4 weeks of focused work,
-preceded by a benchmark-infrastructure task (Week 0) that the M2 findings made
-a hard prerequisite.
+- **New package layout + typed records.** `core/` (integration, fitting,
+  models, fsynthesis), `algorithms/` (mass_calc, isotope_dist, peaks, baseline,
+  calibration), `io/` (mzml, percolator, mztab, writers); frozen
+  `IntegrationConfig`/`FitConfig` + `PSMRecord` etc.; science modules lifted
+  unchanged.
+- **Streaming I/O + dual ID intake.** Indexed/streaming mzML (one fraction in
+  memory), typed Percolator parser, and quantms **mzTab** intake; provenance
+  headers on every output.
+- **Integration rewrite + peak detection** (`riana integrate --engine new`):
+  apex/consensus detection, baseline options, per-isotopomer mass-accuracy +
+  drift. The typer/click CLI rewrite is **deferred to M4**.
+- **Fitting rewrite + §2b fixes** (`riana fit --engine new`): FS via the IsoSpec
+  forward/solve model (per-peptide Spep + full-envelope least-squares), closing
+  the ≈ −0.5 pseudo-time `k_deg` recovery bias; AA `a_max` dispatch,
+  FS-denominator, and bootstrap CIs fixed.
+- **Peak-detection spike → default integration changed.** Benchmark-gated on the
+  D₂O calibration series (ac16/ipsc/cm, 0–100%) + an in-vivo mouse set: an
+  **apex-centred narrow window** (`peak_rt="apex"`, `integration_half_width=0.15`,
+  `apex_selection="tallest"`, `baseline="none"`) robustly beats the 0.9.0 fixed
+  rectangle and generalizes across cell line, organism, and ID pipeline. Now the
+  **default**; 0.9.0 reproducible via `--peak-rt ms2 --integration-half-width
+  1.0`. `consensus` (median apex over m0..m3) is the high-D₂O alternative; all
+  window/apex knobs are tunable. Rationale (incl. discarded `linear` baseline)
+  in §2c; full record in the `m3-peak-detection-spike` memory.
+
+**Regression gates met:** explicit-`ms2` `sample1` integration within 1e-3 of
+0.9.0; `bench_fit_recovery` `k_deg₀` recovery; Percolator/mzTab agreement;
+one-fraction memory ceiling. **Open refinements (deferred):** tight
+`apex_search_half_width` (one untested lever); typer/click CLI (M4); adaptive
+width / N_ISO (M8); Phase C v2 cross-proportion-stable picker.
+
+<details><summary>Original M3 Week 0–4 plan, target layout, and verification
+(as-planned; superseded by the summary above and CHANGELOG)</summary>
 
 0. **Week 0 — benchmark infrastructure (no rewrite code).** M2 finding 3:
    bootstrap one frozen per-cell-line coefficient table from the best v0.9.0
@@ -520,6 +579,8 @@ correction. Keep it simple.
   large part of cm's divergence was small-N noise; M3 peak detection is the
   test of the rest. Score cm against `d2o_aa_coefficients_cm_drop50.csv`.
 
+</details>
+
 ### M4 — Qt + async GUI rewrite
 
 PySide6 (LGPL) + `qasync` (bridges asyncio with the Qt event loop) under
@@ -587,8 +648,9 @@ batch of features in earnest — including M5 (flexible D₂O reporting),
 M6 (SDRF ID intake), Phase C v2 (cross-proportion-stable peak detection
 — see [[m3-peak-detection-boundary-stability]]), the
 within-protein-θ-variance benchmark for the animal calibration dataset
-([[m3-animal-within-protein-metric]]), and **M7 — proper PTM
-forward-modelling in the IsoSpec envelope** (notes below). The M3 work
+([[m3-animal-within-protein-metric]]), **M7 — proper PTM
+forward-modelling in the IsoSpec envelope**, and **M8 — adaptive N_ISO
++ robust IsoSpec-mixture matching** (both noted below). The M3 work
 has surfaced concrete constraints that change what M5+ should look
 like; better to plan with the post-M3/M4 picture in hand than against
 the original 0.9.0 review.
@@ -629,6 +691,41 @@ solver layer instead of dropping them on the floor.
 Deferred until M3 ships and the post-M4 planning round decides whether
 PTM-aware FS is a near-term priority (e.g. for users running labeled
 phosphoproteomics) or a longer-term refinement.
+
+### M8 — Adaptive N_ISO + robust IsoSpec-mixture matching (record only; defer design)
+
+N_ISO (the m0..m_N truncation, the channel count behind ``mA``) is a
+**fixed** integer today. The historical reason it was fixed is that
+``m0/mA`` was cheap to compute on a fixed channel count; the IsoSpec
+forward model was adopted in part to escape that ceiling. But the number
+of *meaningfully populated* isotopomers between f=0 and f=100 is knowable
+per peptide from the sequence + IsoSpec envelope at plateau labelling:
+short peptides saturate in 4–5 channels, long / heavily-labelled ones
+need 8–10. A fixed N_ISO therefore either **truncates** long peptides
+(real signal past the cutoff is lost — the source of the truncation /
+Möbius non-linearity in the mixing curve, see the M3 peak-detection
+planning round 2026-06-04) or **over-extends** short ones into the
+contaminated high channels.
+
+Adaptive N_ISO: set the per-peptide channel count from the IsoSpec-
+predicted envelope width. The hard constraint this creates — and the
+reason it is a design effort, not a one-liner — is **contamination**:
+more channels means more exposure to co-eluting isobaric peaks (Sadygov
+et al., and our own work: why m0/m1 and m0/m2 → IsoSpec ratios beat
+wide-envelope integration). So adaptive N_ISO is only safe paired with a
+**robust** observed-envelope-to-IsoSpec-mixture comparison — a fit that
+**downweights an outlier channel** (a contaminated m6) while **still
+using the full information** from the clean channels: Huber / soft-trim
+loss or per-channel SNR weighting, not equal-weight least squares and not
+a naive truncated sum. The open research question is exactly that robust
+matcher.
+
+Couples to the peak-detection probe finding from the same planning round:
+baseline subtraction and boundary effects are *largest* on the low-
+abundance high isotopomers, so adaptive N_ISO + robust matching is
+precisely where better peak detection would pay off. The two are
+complementary integration-fidelity levers and should be planned together,
+alongside Phase C v2 ([[m3-peak-detection-boundary-stability]]).
 
 ## 4. Cross-cutting recommendations
 

@@ -153,7 +153,8 @@ def integrate_all(args) -> None:
                                                    id_=mzid.curr_frac_filtered_id_df.copy(),
                                                    iso_to_do=args.iso,
                                                    mzml=mzml,
-                                                   rt_tolerance=args.r_time,
+                                                   rt_tolerance=(args.extraction_half_width
+                                                                 if args.extraction_half_width is not None else 1.0),
                                                    mass_tolerance=args.mass_tol,
                                                    use_range=True,
                                                    mass_difference=args.mass_difference,  # 2025-07-30 Changed to mass difference specified directly by user
@@ -404,11 +405,11 @@ def get_isotopomer_intensity(index: int,
             raise IntegrationError(
                 f'No intensity profile for peptide {peptide_prec} '
                 f'(scans {min_scan}-{max_scan}, rt {peptide_rt_lower}-{peptide_rt_upper}, '
-                f'iso {iso_to_do}). Try widening --r_time or --mass_tol.'
+                f'iso {iso_to_do}). Try widening --extraction_half_width or --mass_tol.'
             )
         raise IntegrationError(
             f'No intensity profile for peptide {peptide_prec} '
-            f'(rt {peptide_rt}, iso {iso_to_do}). Try widening --r_time or --mass_tol.'
+            f'(rt {peptide_rt}, iso {iso_to_do}). Try widening --extraction_half_width or --mass_tol.'
         )
 
 

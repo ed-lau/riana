@@ -82,9 +82,8 @@ def test_noise_floor_handles_zero_or_empty_trace():
 
 
 def test_noise_floor_robust_to_endpoint_spike():
-    """The whole point of noise_floor vs local_linear: an endpoint spike
-    that would inflate local_linear's interpolation does not move the
-    p10 noise estimate."""
+    """An endpoint spike that would inflate an endpoint-anchored baseline
+    does not move the p10 noise estimate."""
     rt = np.linspace(0, 1, 51)
     sig = 10.0 + _gaussian(rt, 0.5, 0.04, 100.0)
     spike = sig.copy()
@@ -93,34 +92,6 @@ def test_noise_floor_robust_to_endpoint_spike():
     bl_spike = ba.noise_floor(spike)
     # p10 is unaffected by a single high spike.
     assert abs(bl_spike[0] - bl_clean[0]) < 1.0
-
-
-def test_local_linear_subtracts_known_linear_drift():
-    rt = np.linspace(0, 1, 51)
-    drift = 100.0 + 50.0 * rt
-    peak = _gaussian(rt, 0.5, 0.05, 500.0)
-    sig = drift + peak
-    bl = ba.local_linear(rt, sig, lo=10, hi=40)
-    # Inside the peak window, baseline matches the linear drift's endpoints
-    # (peak-free at the boundaries).
-    np.testing.assert_allclose(bl[[10, 40]], sig[[10, 40]], atol=1e-9)
-    # And subtracting it leaves a near-pure gaussian (centre intensity
-    # within a small fraction of the original peak height).
-    centred = sig - bl
-    assert centred.max() / 500.0 > 0.95
-
-
-def test_local_linear_flat_extends_outside():
-    rt = np.linspace(0, 1, 21)
-    sig = np.full(21, 7.0)
-    bl = ba.local_linear(rt, sig, lo=5, hi=15)
-    assert np.all(bl[:5] == sig[5])
-    assert np.all(bl[16:] == sig[15])
-
-
-def test_local_linear_rejects_bad_indices():
-    with pytest.raises(ValueError):
-        ba.local_linear(np.arange(5.0), np.arange(5.0), lo=3, hi=1)
 
 
 def test_snip_baseline_below_signal():

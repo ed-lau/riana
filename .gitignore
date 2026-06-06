@@ -107,3 +107,6 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# Generated in-vivo integration output (regenerable via run_integrate_invivo.py)
+tests/data/timeseries_lve/
