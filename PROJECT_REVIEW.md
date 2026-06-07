@@ -8,9 +8,12 @@
 > removed; legacy modules + Tk GUI deleted; `riana fit` requires
 > `--coefficients`, with bundled presets). M3 done before that (restructure,
 > streaming I/O, dual ID intake, apex-default peak integration, IsoSpec
-> forward-model FS). Next: post-M4 planning round (M5 D₂O reporting, M6 SDRF, M7
-> PTM, M8 adaptive N_ISO, o18 rewrite). Maintainer: Edward Lau. Last reviewed:
-> 2026-06-07.
+> forward-model FS). The post-M4 planning round is **done** (2026-06-07): the
+> record-only M5–M8 numbering is retired and reorganized into five tracks (A
+> I/O & run-identity model, B integration fidelity, C fitting science, D
+> validation infra, E GUI/UX) — see §3 "Post-M4 roadmap". Next implementation
+> step: pre-1.0.0 chores, then M6a (run-identity model). Maintainer: Edward Lau.
+> Last reviewed: 2026-06-07.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -23,8 +26,8 @@ old contents are folded in below where still load-bearing; the rest is cut.
 > rewrite (typed pipeline, streaming I/O, peak detection, mzTab intake, and a
 > PySide6 GUI) have all shipped. The narrative below is the original pre-rewrite
 > evaluation that motivated the plan, kept for context; the as-built record is
-> CHANGELOG `[1.0.0]` + §3. Next is the post-M4 planning round (§3 "Post-M4
-> planning anchor").
+> CHANGELOG `[1.0.0]` + §3. The post-M4 planning round is done — the next
+> batch of work is organized into five tracks in §3 "Post-M4 roadmap".
 
 Riana is a single-author scientific Python tool for extracting and modeling
 isotopomer time-series from MS1 data, used in protein-turnover research. The
@@ -181,7 +184,9 @@ Sequencing: M1 (0.9.0), M2 (calibration dataset + benchmarks), M3 (restructure
 + peak-detection spike), and M4 **Phase 1** (Typer CLI + `--engine legacy`
 removal) have all shipped — see CHANGELOG `[1.0.0]`. M4 **Phase 2** (PySide6 +
 async Qt GUI) is shipped too: the `riana gui` Integrate and Model tabs both run
-end-to-end. Next is the post-M4 planning round (M5–M8 + the o18 rewrite).
+end-to-end. The post-M4 planning round is done — the next batch of work is the
+five-track "Post-M4 roadmap" at the end of this section (it supersedes the old
+record-only M5–M8).
 
 ### M1 — Stabilization → 0.9.0 — DONE
 
@@ -667,141 +672,287 @@ envelope against the IsoSpec forward model over contiguous channels from m0 — 
 (use fewer high isotopomers to dodge co-eluting contaminants — literature-backed;
 deferred alongside the M8 adaptive-N_ISO work).
 
-### M5 — Flexible D₂O reporting (record only; defer design)
+### Post-M4 roadmap (planning round, 2026-06-07)
 
-User-requested: per-timepoint **fraction-new** as a first-class output
-(today, `riana fit` reports per-peptide `k_deg` only; per-timepoint `fs`
-is intermediate and not persisted). Likely surface: `riana fit
---emit-fraction-new` producing a long-format table
-`(concat, sample, t, fs, fs_lower, fs_upper)`, with CIs via bootstrap
-residuals.
+M1–M4 shipped the rewrite (typed pipeline, streaming I/O, peak detection,
+mzTab intake, Typer CLI, PySide6 GUI). This round retires the record-only
+M5–M8 numbering and the scattered deferrals (Phase C v2, the animal
+within-protein benchmark, the `--fs` subset, the o18 rewrite) and reorganizes
+everything — plus substantial new feature work surfaced in the session — into
+**five tracks** with named milestones and a sequence.
 
-The math is already mostly in `fsynthesis.py` — the gap is in serializing
-intermediate `fs` per-timepoint instead of only the fitted constant.
-This stays a planning placeholder until scoped further.
+**The through-line.** Nearly every I/O pain point is downstream of one missing
+abstraction: a **run-identity data model**
 
-### M6 — SDRF-driven ID intake (record only; defer design)
+```
+RunIdentity = (experiment, source/sample, condition/group,
+               biological_replicate, technical_replicate, fraction,
+               labeling_time, acquisition, precursor_enrichment)
+```
 
-Riana's integration unit is one timepoint per ``<sample>_riana.txt``,
-recombined into a time series at fit time. That asymmetry is fine for the
-Percolator path (snakemake already emits one file per timepoint), but the
-quantms mzTab path emits one file per **study** (covers every timepoint
-and every LC fraction). Today the bench-side projection helper
-`tests/benchmark/bench_id_path.py:write_mztab_as_percolator_tsv` does the
-split using `ground_truth.csv` as the file → timepoint map.
+attached to every PSM at intake and carried — *header-authoritatively* — to
+fit and protein rollup. Today identity is positional and conventional
+(`file_idx` as a sort index, timepoint encoded in the filename,
+one-Percolator-file-per-sample by habit); that is the fragility. The SDRF is the
+carrier for both acquisition modes — DDA via quantms and DIA via quantms-diann,
+which emits its own SDRF (a near-identical variant, a few columns different) —
+so the identity model is shared; only the PSM/quant file format differs (mzTab
+vs DIA-NN parquet).
 
-SDRF is needed for **production use** of the mzTab adapter, **even for
-single-fraction-per-timepoint** data, because nothing in the mzTab itself
-says which `ms_run[N]-location` (a filename) corresponds to which sample
-/ timepoint. `ground_truth.csv` is doing that job for the calibration
-mixing series; for animal in-vivo (the M3 animal within-protein-metric finding)
-or other future data the column is `collection_time_h` instead of
-`nominal_proportion`, and the source of truth is the SDRF tsv quantms
-already requires.
+#### Locked decisions (2026-06-07)
 
-Likely surface, when scoped (probably the post-M4 planning round):
+1. **Labeling time is a required SDRF column** — `characteristics[labeling
+   time]`, not parsed from `source name` or the filename. Deliberately a
+   *characteristic* (sample-intrinsic), not `factor value[time]`: it is the
+   kinetic-curve x-axis, and keying on `characteristics[labeling time]` avoids a
+   real collision with a drug-treatment time course (where the *treatment* time
+   is the genuine `factor value[time]` while the metabolic-labeling duration is a
+   separate property). The current `data/timeseries_lve/samplesheet_lve_sdrf.tsv`
+   does *not* carry it (time is only in `LVE_d0` / `…time0`), so adopting Riana's
+   SDRF convention means adding this column. Open sub-decision: the value/unit
+   format (bare number with a documented unit vs. a unit token — LVE is days).
+   Riana reads its own documented subset, so it does not depend on generic SDRF
+   tooling treating the studied variable as a factor value.
+2. **Header-authoritative identity + a manifest.** Integrate freezes the full
+   identity into each output's provenance header (a frozen SDRF snapshot →
+   reproducible, SDRF-independent at fit time); a stage-aware
+   `riana_manifest.tsv` is the index. Fit groups runs from the manifest rather
+   than re-reading the SDRF.
+3. **DIA-NN parquet intake is a fast-follow** (its own milestone), but
+   `PSMRecord` grows `retention_time` now so the DIA RT-prior path is designed
+   in, not bolted on.
+4. **Protein comparison ships as a side-by-side view first**; in-app
+   cross-sample statistics are deferred. The bridge is the linearized
+   simple-model fit (`log(1−θ) = −kt`): once that supports a shared-variance
+   two-sample linear model (marginal-mean k per sample, Δk test), the stats
+   layer becomes reachable.
+5. **Per-sample RIA is an SDRF column** (optional `characteristics[precursor
+   enrichment]`; resolution order SDRF → global `--ria` default). It is
+   load-bearing at the per-timepoint theta-solve — it builds `_get_final_env`
+   in the IsoSpec forward model, which is what recovers θ in the first place —
+   so it cannot stay a single global scalar once one mzTab spans multiple
+   animals.
 
-- `riana/io/sdrf.py` parses the SDRF and returns
-  `{ms_run_index: SampleInfo(sample, timepoint, fraction_idx)}`.
-- `riana/io/mztab.py` and `riana/io/percolator.py` already flag the
-  `sample_map: dict[ms_run_idx, str]` parameter as the TODO seam.
-- `riana integrate --ids-format mztab --sdrf path/to/sdrf.tsv` iterates
-  the timepoints from SDRF and emits one `<sample>_riana.txt` per.
-- Multi-LC-fraction-per-sample falls out for free because SDRF already
-  groups fractions under one sample name (`assay name` →
-  `sample name`).
+#### Track A — I/O & run-identity data model (the spine)
 
-Deferred until the first multi-fraction quantms run or the first user
-needs to feed `riana integrate` an mzTab directly (today everyone goes
-through the `bench_id_path` projection). Planning anchor: revisit
-post-Week-4 alongside the broader new-features planning round.
+- **M6a — identity model + intake refactor.** `io/sdrf.py` + a documented
+  Riana-read column subset (`comment[data file]` → mzML join key; `source
+  name`; `characteristics[biological replicate]`; `comment[technical
+  replicate]`; `comment[fraction identifier]`; `characteristics[labeling time]`
+  (required, the kinetic-curve x-axis); `factor value[...]` → condition/group
+  for side-by-side + future cross-group stats (key on whichever `factor
+  value[...]` column(s) exist — `factor value[condition]` the canonical case,
+  so `factor value[disease]`/`[genotype]` work too);
+  `comment[proteomics data acquisition method]` → DDA/DIA;
+  `characteristics[precursor enrichment]` → RIA (optional)); validation with
+  clear errors; everything else quantms fills is ignored. Identity +
+  `retention_time` on `PSMRecord`. mzTab becomes the primary path
+  (`read_mztab(path, sample_map)` where `sample_map` comes from the SDRF);
+  Percolator is demoted to a single-mzML testing/legacy tier (don't rescue
+  multi-fraction Percolator). **Output: one `<mzml_stem>_riana.txt` per run**
+  (no timepoint-name collisions), full identity + RIA frozen into the header.
+  **Stage-aware `riana_manifest.tsv`** (`stage = integrate | fit | protein`) as
+  the project index. **Fit-time recombination** — group runs by `(experiment,
+  sample, bio_rep)`, merge fractions of the same `(sample, rep, timepoint)` at
+  peptide level, order by time — lands in a shared **`core/pipeline.py`** (the
+  extraction the GUI "mirror, don't refactor" note flagged), consumed by both
+  CLI and GUI. Read `comment[modification parameters]` from the SDRF so variable
+  mods need not be set on the CLI; **do not** inherit `comment[precursor mass
+  tolerance]` — that is the *search* tolerance (tight, ~10 ppm), whereas Riana's
+  integration tolerance is a separate, deliberately *wider* signal-capture
+  window (~50 ppm).
+- **M6b — DIA-NN parquet intake** (fast-follow). `io/diann.py` over the DIA-NN
+  `report.parquet` (DIA-NN ≥ 2.2.0, as emitted by quantms-diann); the quantms-diann
+  run also ships its own SDRF (the DIA variant above), so disaggregation reuses
+  the same `io/sdrf.py` — only the parquet reader is new. An RT-apex prior instead
+  of an MS2 scan; DDA/DIA auto-detected from the SDRF. Riana still extracts MS1
+  isotopologues from the mzML itself — DIA-NN is "just another ID + RT source."
+  Test data lands under `data/timeseries_dia` (Track D TODO).
+- **Integrate concurrency.** The GUI currently awaits one fraction at a time
+  (off-main-thread but serial; the thread spinbox does not drive cross-file
+  parallelism). Bound-parallelize files (a semaphore over 2–4) against the
+  one-fraction-in-memory ceiling, wire the spinbox, and show per-file progress
+  text. (Engine lives here; the GUI surfaces it — Track E.)
 
-### Post-M4 planning anchor
+#### Track B — integration fidelity (research cluster)
 
-M4 (Qt + async GUI) has now shipped, so the next session takes this
-deliberate pass to plan the next batch of features in earnest — including
-M5 (flexible D₂O reporting), M6 (SDRF ID intake), Phase C v2
-(cross-proportion-stable peak detection — the M3 boundary-stability finding),
-the within-protein-θ-variance benchmark for the animal calibration dataset
-(the M3 animal within-protein metric), **M7 — proper PTM forward-modelling in
-the IsoSpec envelope**, and **M8 — adaptive N_ISO + robust IsoSpec-mixture
-matching** (both noted below), plus wiring the reserved `--fs` channel-subset
-SSE (pairs with M8) and the **o18 fit rewrite** (length + selected-residue
-coefficients). The M3 work has surfaced concrete constraints that change what
-M5+ should look like; better to plan with the post-M3/M4 picture in hand than
-against the original 0.9.0 review.
+Plan these together — they are complementary integration-fidelity levers, and
+the high-isotopomer channels are exactly where peak detection, baseline, and
+N_ISO all interact:
 
-### M7 — PTM-aware IsoSpec forward model (record only; defer design)
+- **Phase C v2 — cross-proportion-stable peak picker.** The one untested lever
+  from the M3 spike: tight `apex_search_half_width` (~0.15) and/or
+  `consensus_apex` for boundaries stable across labelling proportions (the
+  boundary-stability finding).
+- **Adaptive N_ISO + robust matcher.** Set the per-peptide channel count from
+  the IsoSpec plateau envelope instead of a fixed integer, paired with a
+  contaminant-robust observed-vs-IsoSpec matcher (Huber / soft-trim /
+  per-channel-SNR weighting) so the extra channels don't import co-eluting
+  isobars. The open research question is that matcher.
+- **`--fs` channel-subset SSE.** Wire the reserved flag: solve FS over a chosen
+  isotopomer subset to dodge contaminated channels.
+- **Dual-mode FS (abundance + mass-defect shift).** D₂O labelling shifts the
+  intensity-weighted accurate mass of each isotopomer (the 2H−1H mass defect
+  differs from 13C−12C), so the per-channel mass shift over the init (natural)
+  envelope is an *orthogonal* FS estimator. Let the model solve FS both ways and
+  combine/cross-validate; for low-abundance peptides mass accuracy can beat
+  spectral accuracy, so this is a robustness win that pairs with the adaptive
+  N_ISO matcher. (The near-term QC half of this idea is in Track E.)
 
-Today's IsoSpec forward envelope (``algorithms.isotope_dist.get_envelope`` /
-``solve_fs_d2o``) sees only the *unmodified backbone*. Variable mods on
-the sequence (oxidation on M, phosphorylation on S/T/Y, ubiquitin scars,
-TMT, etc.) are stripped from the sequence string before it's passed to
-``count_atoms`` — the peptide_mass IS correct (``calculate_ion_mz``
-parses the bracketed ``[mass]`` annotation and adds it), but the
-envelope shape used by ``solve_fs_d2o`` is the unmodified-peptide
-envelope, so the FS solve is approximated for modified peptides.
+Gated by both the mixing-series benchmarks and the new animal benchmark
+(Track D).
 
-For a few-percent population of bracketed PTMs (typical in shotgun
-proteomics), the approximation is acceptable today; for PTM-focused
-datasets it isn't. M7 lifts that:
+#### Track C — fitting / modeling science
 
-- ``calculate_ion_mz`` already exposes parsed mod masses; threading them
-  through to ``get_peptide_distribution`` lets IsoSpec see the
-  correct atomic composition for each PTM (a small dict of common mods
-  → atom-count deltas suffices for Ox-M, Phos-STY, Ub diglycine, TMT,
-  iTRAQ; carbamidomethyl-C is already handled via ``count_atoms(iaa=True)``).
-- Cache key on ``_get_init_env`` / ``_get_final_env`` already has
-  ``sequence`` as the natural key; adding a normalized PTM signature
-  to it is trivial.
-- The frozen per-cell-line coefficient tables (``d2o_aa_coefficients_<line>.csv``)
-  are fit on the unmodified backbone — that part doesn't change. Only
-  the per-peptide envelope shape changes.
+- **M5 — persist per-timepoint fraction-new.** Long-format `(concat, sample, t,
+  fs, fs_lower, fs_upper)` output (CIs via bootstrap residuals). Small build —
+  the math is in `core/fitting` / `fsynthesis`; the gap is serializing the
+  per-timepoint θ instead of only the fitted k. **It is the substrate the
+  protein layer consumes**, so it is sequenced before protein rollup, not as a
+  throwaway column-add.
+- **Protein rollup** (new milestone; 3rd GUI tab). No standard method, so offer
+  a menu and let the user choose:
+  - **Point estimators over fitted peptide k:** median (robust default);
+    harmonic mean (rate-correct — mean of half-lives ↔ harmonic mean of k — but
+    outlier-sensitive on the low-k tail).
+  - **Protein-level refit:** pool the qualifying peptides' `(t, θ)` and fit one
+    k. Two flavours — all peptide points (pseudoreplication risk: peptides are
+    not independent replicates) vs. the **per-timepoint weighted-average
+    collapse** (the pseudoreplication-safe default; open sub-decision = weight by
+    inverse variance from the peptide CI vs. by intensity). **Biorep-aware:** the
+    collapse is *within* `(protein, labeling time, biological replicate)` — only
+    peptides of the same protein in the *same animal* are pseudoreplicates;
+    *different* `characteristics[biological replicate]` are genuine replicates and
+    stay as independent points, giving the refit honest degrees of freedom.
+  - **Linearized + cross-sample** (simple model only): per-timepoint weighted
+    average → `log(1−θ) = −kt` → k by OLS; two samples → a shared-variance
+    linear model giving marginal-mean k and a Δk test. (Guan/Fornasiero add a
+    precursor-rise term and are not linearizable — their cross-sample
+    equivalent needs nonlinear mixed-effects, deferred.)
+  Reads both the fit and integrate outputs via the stage-aware manifest; groups
+  samples by `factor value[...]` (condition/group) and supports opening multiple
+  groups side-by-side for visual comparison — the substrate for the deferred
+  cross-group stats.
+- **o18 rewrite.** Same SSE-vs-IsoSpec → fit machinery as D₂O, but FS is
+  computed with o18 isotope mass/proportion **and a different Spep model**: the
+  labelling sites are only the oxygen-bearing residues, so the coefficient
+  schema is a regression on `length, #D, #E, #N, #Q, #S` (possibly #T/#Y) — *not*
+  a per-AA-over-20 dict. This needs a distinct `--label o18` dispatch (different
+  coefficient format) and a frozen o18 coefficient table built via
+  `data/notebook/90b_O18_LearnAALabelingSites_IsoSpec_AC16.ipynb` (the analog of
+  87a for D₂O). Until then `riana fit --label o18` errors; o18 *integration* is
+  unaffected.
+- **M7 — PTM-aware envelope** (demand-driven). Thread the parsed bracketed mod
+  masses through `get_peptide_distribution` / `solve_fs_d2o` so the IsoSpec
+  envelope shape is correct for modified peptides (today the FS solve uses the
+  unmodified-backbone envelope; the per-cell-line coefficient tables are fit on
+  the backbone and don't change). `_fit_one_concat` already separates
+  `seq_with_mods` from `seq`; M7 threads the mods alongside instead of dropping
+  them. Prioritize only for PTM-focused datasets (e.g. labelled
+  phosphoproteomics).
 
-The current `core/fitting.py` `_fit_one_concat` already separates
-``seq_with_mods`` (for ``calculate_ion_mz``) from ``seq`` (the stripped
-form fed to ``solve_fs_d2o`` and ``spep_from_coefficients``); the M7
-work threads the parsed mods alongside ``seq_with_mods`` into the
-solver layer instead of dropping them on the floor.
+#### Track D — validation infrastructure (unblocked by M6a)
 
-Deferred until M3 ships and the post-M4 planning round decides whether
-PTM-aware FS is a near-term priority (e.g. for users running labeled
-phosphoproteomics) or a longer-term refinement.
+- **Animal within-protein-θ benchmark.** The 4th dataset (`data/timeseries_lve`,
+  mouse in-vivo D₂O, mzTab + SDRF) has no fractional-pool ground truth, so it is
+  scored by *within-protein θ/FS variance per timepoint* (Hammond 2022): a better
+  integrator minimizes the spread among peptides of the same protein. New
+  `bench_within_protein_theta.py`; an orthogonal regression gate to the
+  mixing-series metrics for Track B.
+- **Curation-gate revisit.** Treat both knobs as tunable — the R²>0.95 threshold
+  *and* the "observed at every proportion" coverage rule (it should tolerate a
+  known-bad fraction rather than discard peptides wholesale). Report the R²
+  *distribution* shift before/after a fidelity change, not just curated counts.
+- **DIA test dataset (TODO, enables M6b).** A small quantms-diann run lands under
+  `data/timeseries_dia` (DIA-NN `report.parquet` ≥ 2.2.0 + the DIA-variant SDRF),
+  the fixture the `io/diann.py` adapter and DDA/DIA auto-detect are built and
+  tested against.
 
-### M8 — Adaptive N_ISO + robust IsoSpec-mixture matching (record only; defer design)
+#### Track E — GUI/UX & responsiveness (surfaces the engines above)
 
-N_ISO (the m0..m_N truncation, the channel count behind ``mA``) is a
-**fixed** integer today. The historical reason it was fixed is that
-``m0/mA`` was cheap to compute on a fixed channel count; the IsoSpec
-forward model was adopted in part to escape that ceiling. But the number
-of *meaningfully populated* isotopomers between f=0 and f=100 is knowable
-per peptide from the sequence + IsoSpec envelope at plateau labelling:
-short peptides saturate in 4–5 channels, long / heavily-labelled ones
-need 8–10. A fixed N_ISO therefore either **truncates** long peptides
-(real signal past the cutoff is lost — the source of the truncation /
-Möbius non-linearity in the mixing curve, see the M3 peak-detection
-planning round 2026-06-04) or **over-extends** short ones into the
-contaminated high channels.
+- **Sortable tables** (`QSortFilterProxyModel` over `DataFrameTableModel`) — an
+  easy win.
+- **Save/export graphs** — replaces the removed `--plotcurves`; pyqtgraph export
+  for interactive views, matplotlib for static; all tabs.
+- **Δmass-over-time QC display** — the near-term half of dual-mode FS: surface
+  the per-isotopomer accurate-mass shift over the init envelope across the time
+  series, a high-level QC for advanced users.
+- **Surface smoothing in the GUI + make the displayed trace faithful.** The CLI
+  `-S/--smoothing` (Savitzky–Golay, `polyorder=2`) is missing from the Integrate
+  form, so GUI runs can't enable it. Worse, the chromatogram re-extracts the
+  *raw* XIC from the mzML at row-click, so the plotted trace does not reflect the
+  S-G smoothing integration actually applied. Fix both: add the form control, and
+  either re-apply the run's `IntegrationConfig.smoothing` at click or — better —
+  read the persisted smoothed trace from the `--save-traces` sidecar (which also
+  removes the ~10 s re-read).
+- **Fit progress + real parallelism** (engine is Track C / `core/pipeline.py`,
+  surfaced here). Today the GUI submits one opaque `run_fit` to a single worker
+  with an indeterminate "busy" bar, and the inner peptide parallelism is a
+  GIL-bound `ThreadPoolExecutor`. Make `fit_run` chunk-aware (peptide chunks),
+  dispatch chunks across the **ProcessPool**, emit a progress callback the bar
+  maps to. The CLI gets the same speedup. **Reproducibility caveat:** chunking
+  across processes requires a deterministic per-peptide bootstrap seed (e.g. from
+  `concat`), or output becomes scheduling-dependent — add a parallel == serial
+  test (rec below).
+- **Modernize look** — low priority, ready-made only (a QSS theme or
+  `qt-material` / `qtmodern`).
 
-Adaptive N_ISO: set the per-peptide channel count from the IsoSpec-
-predicted envelope width. The hard constraint this creates — and the
-reason it is a design effort, not a one-liner — is **contamination**:
-more channels means more exposure to co-eluting isobaric peaks (Sadygov
-et al., and our own work: why m0/m1 and m0/m2 → IsoSpec ratios beat
-wide-envelope integration). So adaptive N_ISO is only safe paired with a
-**robust** observed-envelope-to-IsoSpec-mixture comparison — a fit that
-**downweights an outlier channel** (a contaminated m6) while **still
-using the full information** from the clean channels: Huber / soft-trim
-loss or per-channel SNR weighting, not equal-weight least squares and not
-a naive truncated sum. The open research question is exactly that robust
-matcher.
+#### Persist the integration signal (optional sidecar)
 
-Couples to the peak-detection probe finding from the same planning round:
-baseline subtraction and boundary effects are *largest* on the low-
-abundance high isotopomers, so adaptive N_ISO + robust matching is
-precisely where better peak detection would pay off. The two are
-complementary integration-fidelity levers and should be planned together,
-alongside Phase C v2 (the M3 peak-detection boundary-stability finding).
+The GUI re-extracts a peptide's XIC from the mzML on every row click (~10 s). Add
+an optional `--save-traces` → `<stem>_riana_traces.parquet` (keyed `(concat,
+isotopomer) → (rt[], intensity[])`), never in the `.txt`; default off for batch
+(size), on for GUI/diagnostic workflows. This is purely a GUI-speed/diagnostics
+feature — the protein refit consumes per-(peptide, t) θ (the M5 intermediate),
+not the raw XIC, so the two are decoupled.
+
+#### Suggested sequence
+
+1. **Pre-1.0.0 chores** — repo hygiene + cut a real `1.0.0` tag (below). A clean
+   line in the sand before piling on features.
+2. **M6a** — the spine; unblocks Track D and the protein layer; pulls in
+   `core/pipeline.py` and integrate concurrency.
+3. **Track D** — stand up the orthogonal animal gate while M6a is fresh.
+4. **M5** — small, but gates the protein layer.
+5. **Track C protein rollup + Track E polish** — the protein tab needs M5 + the
+   M6a manifest; GUI polish anytime.
+6. **Track B** — the fidelity research, now with two gates ready.
+7. **o18 / M7 / M6b / dual-mode FS** — slot in by demand and bandwidth.
+
+#### Cross-cutting / pre-1.0.0 chores
+
+- **Cut a real `1.0.0`** (currently `1.0.0.dev1`, last tag `v0.9.0`) + a Zenodo
+  *code* DOI. M1–M4 is a complete rewrite and deserves the tag.
+- **Repo hygiene** (also §4.5): remove the stray root outputs
+  (`riana_fit_peptides.txt` etc.), `riana_website/` (mode 0700), the committed
+  `docs/` Quarto HTML, and move 1 GB+ of personal outputs out of `data/`.
+- **Snakemake — retire the bundled `workflow/Snakefile`** (supersedes §4.4). With
+  Percolator demoted and quantms / DIA-NN handling search + ID end-to-end
+  upstream, Riana's own pipeline collapses to a linear `integrate → fit →
+  protein` chain whose glue is the manifest (each step reads the prior's manifest
+  rows). Snakemake's DAG/partial-rerun value largely evaporates; ship the three
+  CLI subcommands (optionally a thin `riana run` convenience wrapper) and stay
+  orchestration-agnostic so Riana composes into whatever workflow already runs
+  quantms.
+- **mypy --strict** rollout (§4.3); `py.typed` already ships.
+
+#### Additional recommendations (added this round)
+
+1. **Benchmark CI smoke tier.** The `bench_*` suite runs manually; add a
+   subsampled fast tier to CI so a science regression (e.g. a fidelity change that
+   worsens within-protein θ) fails the build.
+2. **Reproducibility as an explicit invariant.** Add a parallel-fit == serial-fit
+   test (forces the deterministic per-peptide seeding); protects the
+   header-authoritative frozen-output story.
+3. **Schema-version the manifest/header** so the breaking output-granularity
+   change (timepoint-named → mzml-named + manifest) and future format changes are
+   detectable downstream.
+4. **SDRF as a partial config source** (scoped): read mods from the SDRF; keep
+   integration mass tolerance a separate, wider Riana parameter (not the search
+   tolerance).
+5. **Sequence the breaking-change migration with the Snakefile retirement** so
+   there is never a broken intermediate workflow state.
+
 
 ## 4. Cross-cutting recommendations
 
@@ -815,9 +966,12 @@ These apply during and after the rewrite:
 3. **Type safety.** `from __future__ import annotations` everywhere; add
    `py.typed` marker; run `mypy --strict` on `riana/algorithms/` first
    (smallest blast radius).
-4. **Snakemake.** Keep `workflow/Snakefile`; update rules to use whichever
-   CLI surface lands in 1.0. Add a parallel `workflow/Snakefile.quantms`
-   after M3.
+4. **Snakemake — superseded by the post-M4 round: retire the bundled
+   `workflow/Snakefile`.** With Percolator demoted and quantms / DIA-NN owning
+   search + ID end-to-end, Riana's own pipeline is a linear `integrate → fit →
+   protein` chain glued by the manifest; ship the three CLI subcommands
+   (optionally a thin `riana run` wrapper) and stay orchestration-agnostic. See
+   §3 "Post-M4 roadmap" → cross-cutting chores.
 5. **Repo hygiene.** Move 1+ GB of personal experiment outputs out of
    `data/` (Zenodo for the M2 dataset bits; gitignore the rest). Remove
    `riana_website/` (mode 0700 directory; either commit cleanly or
