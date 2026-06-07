@@ -26,7 +26,8 @@ __all__ = [
     "data",
 ]
 
-# PEP 440: 1.0.0.dev1 marks the M4 CLI rewrite / legacy removal. Bumps to 1.0.0
-# when M4 completes (Phase 2: Qt GUI).
-__version_info__ = ("1", "0", "0", "dev1")
+# PEP 440: 1.0.0 is the M1–M4 rewrite release (typed pipeline, streaming I/O,
+# peak detection, mzTab intake, Typer CLI, PySide6 GUI). The .dev marker is
+# dropped now that M4 is complete; the git tag + Zenodo DOI follow at release.
+__version_info__ = ("1", "0", "0")
 __version__ = ".".join(__version_info__)

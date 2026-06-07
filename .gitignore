@@ -13,6 +13,11 @@ config/
 /data/
 # calibration benchmark intermediate integrate outputs — ~450 MB, regenerable
 tests/data/calibration_d2o_mixing/*/integrate_outputs/
+# Quarto site: source is riana_website/, rendered + deployed by CI (docs.yml).
+# The committed /docs/ tree was retired in 1.0.0.
+/docs/
+riana_website/_site/
+riana_website/.quarto/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

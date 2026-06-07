@@ -5,12 +5,12 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] — Unreleased
+## [1.0.0] — 2026-06-07
 
 The breaking 1.0 release: a new package structure, peak detection, baseline
 subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
-roadmap. This section is built up iteratively as the milestones progress;
-entries below are grouped by the work that produced them.
+roadmap. Entries below are grouped by the work that produced them. (The git tag
+and Zenodo code DOI follow at release.)
 
 ### M4 Phase 2 — PySide6 GUI
 

@@ -76,15 +76,13 @@ flags like `--iso` take a single comma/space-separated token.)
 - **Output** — tab-delimited `<sample>_riana.txt` with one row per PSM and
   one column per integrated isotopomer, plus a provenance header
 
-## Snakemake workflow
+## Pipeline
 
-A reference Snakemake pipeline (Comet → Percolator → Riana integrate → Riana
-fit) is bundled at `workflow/Snakefile`. Edit `config_template.yaml` to point at
-your tooling and data, then:
-
-```bash
-snakemake -c -s workflow/Snakefile -d out/snakemake_test --configfile config_template.yaml
-```
+Riana is orchestration-agnostic: search + identification are owned upstream
+(e.g. quantms for DDA, DIA-NN for DIA), and Riana is a linear `integrate → fit`
+chain you compose into whatever workflow already runs them. The bundled
+Snakemake example was retired in 1.0.0 — drive the subcommands directly, or from
+your own workflow manager.
 
 ## Citation
 

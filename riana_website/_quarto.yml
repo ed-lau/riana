@@ -1,14 +1,17 @@
 project:
   type: website
-  output-dir: ../docs
+  # Rendered to a local _site/ (gitignored) and deployed to GitHub Pages by
+  # .github/workflows/docs.yml — the committed ../docs/ tree was retired in
+  # 1.0.0 in favour of CI rendering.
+  output-dir: _site
 
 website:
 
   page-navigation: true
 
-  title: "RIANA v0.8.1"
+  title: "RIANA v1.0.0"
   description: "Relative Isotope Abundance Analyzer"
-  site-url: "https://github.com/ed-lau/jcast"
+  site-url: "https://ed-lau.github.io/riana/"
 
   repo-url: https://github.com/ed-lau/riana
   repo-actions: [issue]
