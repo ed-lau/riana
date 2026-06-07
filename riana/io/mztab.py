@@ -1,9 +1,11 @@
 """mzTab PSM intake — quantms / OpenMS output → :class:`PSMRecord`.
 
-The Week 2 alternative to :mod:`riana.io.percolator`. quantms produces *one*
-mzTab covering every fraction in the experiment; the Percolator path through
-snakemake produces *one file per fraction*. Both adapters emit the same
-:class:`PSMRecord` type so the Week 3 integrator is parser-agnostic.
+The **primary** ID path as of M6a. quantms produces *one* mzTab covering every
+run in the experiment; :func:`read_mztab` disaggregates it by ``ms_run`` and
+attaches the per-run :class:`~riana.records.RunIdentity` from the SDRF
+(:mod:`riana.io.sdrf`), so every emitted :class:`PSMRecord` carries its full
+identity. The (now demoted) single-mzML :mod:`riana.io.percolator` path emits
+the same record type, so the integrator stays parser-agnostic.
 
 Field mapping (quantms PSM section → :class:`PSMRecord`):
 
@@ -21,33 +23,31 @@ Field mapping (quantms PSM section → :class:`PSMRecord`):
   from whatever ID engine produced the file).
 - ``opt_global_Posterior_Error_Probability_score`` → ``percolator_pep``.
 - ``search_engine_score[1]`` → ``percolator_score``.
+- ``retention_time`` → ``retention_time`` (seconds, mzTab convention) — the DIA
+  RT-apex prior (M6b); the DDA integration path uses the MS2 scan, not this.
 
 Decoy filtering: rows with ``opt_global_cv_MS:1002217_decoy_peptide == 1``
-are dropped by default. quantms emits target+decoy PSMs together; the
-Percolator path's snakemake pipeline already wrote out target-only files,
-so dropping decoys here aligns the two surfaces.
+are dropped by default. quantms emits target+decoy PSMs together, so dropping
+decoys here matches the target-only Percolator surface.
 
-**Multi-fraction TODO.** ``sample`` is a single string applied to every
-emitted record because today every calibration mzML is a single,
-unfractionated run keyed 1:1 to a time point. When a real multi-fraction
-quantms run lands, this should grow a ``sample_map: dict[ms_run_idx, str]``
-parameter sourced from the SDRF samplesheet (``ms_run → sample``); the
-ms_run-keyed PSM emission already supports that. Deferred until the first
-multi-fraction dataset.
+**Run identity (M6a).** Pass ``sample_map`` (``{mzML stem: RunIdentity}`` from
+:func:`riana.io.sdrf.read_sdrf`) to attach the full per-run identity, keyed by
+the ``ms_run[N]-location`` basename. The legacy single-label call (a bare
+``sample=`` string, no SDRF) is kept for the synthetic/round-trip tests.
 """
 
 from __future__ import annotations
 
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from pyteomics import mztab
 
 from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
-from riana.records import PSMRecord
+from riana.records import PSMRecord, RunIdentity
 
 
 _MS_RUN_RE = re.compile(r"ms_run\[(\d+)\]")
@@ -57,16 +57,24 @@ _LOCATION_RE = re.compile(r"^(?:file://)?(.*)$")
 
 def read_mztab(
     path: str | os.PathLike[str],
-    sample: str,
-    ignored_mods: Sequence[str] = (),
+    sample_map: Mapping[str, RunIdentity] | None = None,
     *,
+    sample: str | None = None,
+    ignored_mods: Sequence[str] = (),
     drop_decoys: bool = True,
 ) -> tuple[list[PSMRecord], dict[int, str]]:
     """Parse a quantms-style mzTab into typed records.
 
     Args:
         path: ``*.mzTab`` from quantms / OpenMS.
-        sample: sample label written into every emitted record.
+        sample_map: ``{mzML stem: RunIdentity}`` from
+            :func:`riana.io.sdrf.read_sdrf`. When given, each PSM is tagged with
+            the identity of its ``ms_run`` (joined on the location basename), and
+            ``PSMRecord.sample`` is set to that run's ``source name``. Mutually
+            exclusive with ``sample``.
+        sample: legacy single-label fallback (no SDRF) — written into every
+            record's ``sample`` field with ``identity=None``. Mutually exclusive
+            with ``sample_map``.
         ignored_mods: forwarded to :func:`accmass.calculate_ion_mz` when the
             peptide_mass is recomputed.
         drop_decoys: when true (default), rows flagged as decoys are skipped.
@@ -74,10 +82,17 @@ def read_mztab(
     Returns:
         ``(records, file_index_map)`` — the PSMs and a ``{file_idx: file_name}``
         mapping (file_idx is 0-based ms_run index, file_name is the basename
-        of the mzML location with the ``.mzML`` extension stripped). The
-        caller uses this map to bridge ms_run identity to the snakemake
-        Percolator file_idx scheme (which is per-fraction).
+        of the mzML location with its extension stripped).
+
+    Raises:
+        DataError: neither/both of ``sample_map`` / ``sample`` given, or (with a
+            ``sample_map``) an ``ms_run`` location that the SDRF does not cover.
     """
+    if (sample_map is None) == (sample is None):
+        raise DataError(
+            "read_mztab needs exactly one of `sample_map` (SDRF identity) or "
+            "`sample` (legacy single-label)."
+        )
     path = Path(path)
     if not path.exists():
         raise DataError(f"mzTab not found: {path}")
@@ -90,6 +105,17 @@ def read_mztab(
     file_index_map = _build_file_index_map(table.metadata, path)
     if not file_index_map:
         raise DataError(f"no ms_run entries in mzTab metadata: {path}")
+
+    if sample_map is not None:
+        unmatched = sorted(
+            {stem for stem in file_index_map.values() if stem not in sample_map}
+        )
+        if unmatched:
+            raise DataError(
+                f"mzTab {path} references ms_run mzML(s) {unmatched} that are not "
+                f"in the SDRF (known: {sorted(sample_map)}). Check that "
+                "`comment[data file]` matches the mzML names."
+            )
 
     psm_df = table.spectrum_match_table
     if psm_df is None or len(psm_df) == 0:
@@ -104,6 +130,8 @@ def read_mztab(
         ms_run, scan = _parse_spectra_ref(row["spectra_ref"])
         file_idx = ms_run - 1
         file_name = file_index_map.get(file_idx, "")
+        identity = sample_map.get(file_name) if sample_map is not None else None
+        record_sample = identity.sample if identity is not None else (sample or "")
         sequence = str(row["sequence"])
         records.append(
             PSMRecord(
@@ -113,9 +141,11 @@ def read_mztab(
                 peptide_mass=float(
                     accmass.calculate_ion_mz(sequence, ignored_mods=ignored_mods)
                 ),
-                sample=sample,
+                sample=record_sample,
                 file_idx=file_idx,
                 file_name=file_name,
+                retention_time=_safe_float(row.get("retention_time"), 0.0),
+                identity=identity,
                 protein_id=str(row.get("accession", "") or ""),
                 # mzTab spells pre/post as comma-joined residues across all
                 # protein matches; collapse to the first for parity with the

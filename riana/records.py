@@ -20,6 +20,83 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
+class RunIdentity:
+    """The full identity of a single MS run (one mzML / one PSM-file row).
+
+    The M6a "run-identity data model" (PROJECT_REVIEW.md §3, Track A). Today
+    identity is positional and conventional — ``file_idx`` is a sort index and
+    the timepoint is parsed out of the ``sample`` string — which breaks the
+    moment an experiment has biological replicates, multiple conditions, or one
+    mzTab spanning many runs. This record is sourced from the SDRF
+    (:mod:`riana.io.sdrf`) at intake, attached to every :class:`PSMRecord`, and
+    carried *header-authoritatively* through the stage-aware
+    ``riana_manifest.tsv`` to fit and protein rollup.
+
+    The experiment type is *declared by which independent-variable column is
+    present*: ``labeling_time`` (turnover — the kinetic-curve x-axis) XOR
+    ``mixing_proportion`` (calibration fixtures). Fit dispatches on
+    :attr:`experiment_type`.
+    """
+
+    #: Top-level experiment grouping. Distinguishes studies when several
+    #: manifests/SDRFs are combined; constant within one SDRF. Defaults to the
+    #: SDRF file stem in :func:`riana.io.sdrf.read_sdrf`.
+    experiment: str
+    #: SDRF ``source name`` — the biological sample this run came from.
+    sample: str
+    #: ``comment[data file]`` with its extension stripped — the join key to the
+    #: mzML stem (and to the mzTab ``ms_run[N]-location`` basename).
+    data_file: str
+    #: ``characteristics[biological replicate]`` — genuine replicates (distinct
+    #: animals/cultures). Load-bearing for the biorep-aware protein refit.
+    biological_replicate: int = 1
+    #: ``comment[technical replicate]``.
+    technical_replicate: int = 1
+    #: ``comment[fraction identifier]`` — fractions of one sample are merged at
+    #: peptide level at fit time.
+    fraction: int = 1
+    #: ``characteristics[labeling time]``, numeric (turnover x-axis). ``None``
+    #: for calibration fixtures. Mutually exclusive with ``mixing_proportion``.
+    labeling_time: float | None = None
+    #: Unit token parsed alongside ``labeling_time`` (e.g. ``"day"``), metadata
+    #: only — fitting uses the numeric value.
+    labeling_time_unit: str = ""
+    #: ``characteristics[mixing proportion]`` (calibration x-axis). ``None`` for
+    #: turnover. Mutually exclusive with ``labeling_time``.
+    mixing_proportion: float | None = None
+    #: ``factor value[...]`` (condition / group) for side-by-side comparison and
+    #: future cross-group stats. Empty when no factor-value column is present.
+    condition: str = ""
+    #: ``comment[proteomics data acquisition method]`` collapsed to ``"DDA"`` or
+    #: ``"DIA"``.
+    acquisition: str = "DDA"
+    #: ``characteristics[precursor enrichment]`` (RIA), optional. ``None`` falls
+    #: back to the global ``--ria`` default at fit time.
+    precursor_enrichment: float | None = None
+
+    @property
+    def experiment_type(self) -> str:
+        """``"calibration"`` if a mixing proportion is set, else ``"turnover"``."""
+        return "calibration" if self.mixing_proportion is not None else "turnover"
+
+    @property
+    def independent_value(self) -> float | None:
+        """The fit x-axis value — ``mixing_proportion`` or ``labeling_time``."""
+        return (
+            self.mixing_proportion
+            if self.experiment_type == "calibration"
+            else self.labeling_time
+        )
+
+    @property
+    def curve_key(self) -> tuple[str, str, int]:
+        """The grouping key for one kinetic curve: ``(experiment, sample,
+        biological_replicate)``. Fractions and timepoints of the same curve
+        share this key; different bioreps are genuine replicates (kept apart)."""
+        return (self.experiment, self.sample, self.biological_replicate)
+
+
+@dataclass(frozen=True, slots=True)
 class PSMRecord:
     """A single peptide-spectrum match from an identification search.
 
@@ -60,6 +137,14 @@ class PSMRecord:
     #: how the PSM entered the result: ``"q_value"`` (direct ID) or ``"mbr"``
     #: (match-between-runs, when MBR returns post-0.9.0).
     evidence: str = "q_value"
+    #: PSM retention time in seconds (mzTab convention). 0.0 when unavailable
+    #: (standalone Percolator). Added in M6a as the DIA RT-apex prior (locked
+    #: decision #3) so the M6b DIA path is designed in, not bolted on; the DDA
+    #: integration path uses the MS2 scan, not this field.
+    retention_time: float = 0.0
+    #: The full SDRF-sourced run identity (:class:`RunIdentity`). ``None`` on the
+    #: demoted single-mzML Percolator path, which has no SDRF.
+    identity: RunIdentity | None = None
 
     @property
     def concat(self) -> str:
