@@ -31,8 +31,13 @@ class IntegrationConfig:
 
     #: -s / --sample. Must end in a number (encodes the time point).
     sample: str = "time0"
-    #: -i / --iso. Isotopomers to integrate; 0.9.0 default is the m0/m6 pair.
-    isotopomers: tuple[int, ...] = (0, 6)
+    #: -i / --iso. Isotopomers to integrate. Default is the contiguous m0-m5
+    #: envelope the D2O fit consumes (``solve_fs_d2o`` matches the observed
+    #: envelope against the IsoSpec forward model over these channels); the
+    #: legacy ``(0, 6)`` m0/m6 pair is non-contiguous and is NOT fittable by the
+    #: new engine (see ``core.fitting._REQUIRED_D2O_ISOTOPOMERS``). Override for
+    #: other workflows (e.g. SILAC cluster extraction via ``forced_mods``).
+    isotopomers: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
     #: -m / --mass_tol. ±ppm half-width (see class docstring).
     mass_tol_ppm: int = 50
     #: -r / --extraction_half_width (legacy alias --r_time). EXTRACTION
@@ -224,10 +229,13 @@ class FitConfig:
     #: experiment because metabolic-water dilution and protocol
     #: variability push this around.
     ria_max: float = 0.06
-    #: -f / --fs. Fine-structure FS formula; None uses the m0 analytic path.
+    #: -f / --fs. Reserved (post-M4): restrict the envelope SSE in
+    #: :func:`algorithms.isotope_dist.solve_fs_d2o` to a subset of isotopomer
+    #: channels (e.g. m0-m2) to reduce sensitivity to co-eluting contaminants
+    #: in the higher isotopomers. Currently **ignored** — the full integrated
+    #: envelope is used. Kept on the config so the post-M4 wiring is a localized
+    #: change. (Not the legacy fine-structure-ratio meaning.)
     fs_formula: str | None = None
-    #: -p / --plotcurves. Emit per-peptide fitted-curve plots.
-    plot_curves: bool = False
     #: -t / --thread. Worker count for the per-peptide fit map.
     threads: int = 1
     #: -o / --out. Output directory.

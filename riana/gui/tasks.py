@@ -1,0 +1,108 @@
+# -*- coding: utf-8 -*-
+
+"""Qt-free worker functions for the GUI's ``ProcessPoolExecutor`` (M4 Phase 2).
+
+These run in worker *processes*, so they must be importable at module level and
+take only picklable arguments — which is why they live apart from the widgets
+(no PySide6 import here) and take an mzML *path* rather than an open
+:class:`~riana.io.mzml.IndexedMzML` (the reader holds a ``threading.local`` and
+locks and is built inside the worker).
+
+Each function mirrors the exact sequence :func:`riana.cli.integrate` runs and
+calls the *same* core entry points (:func:`riana.core.integration.integrate_run`
+and friends), so the GUI and CLI cannot diverge numerically. Because they are
+pure and Qt-free, they are unit-tested headlessly with no display.
+"""
+
+from __future__ import annotations
+
+from typing import Sequence
+
+import pandas as pd
+
+from riana.algorithms.calibration import DriftSummary
+from riana.config import FitConfig, IntegrationConfig
+from riana.core.integration import (
+    PeptideTrace,
+    extract_peptide_trace,
+    integrate_run,
+)
+from riana.exceptions import IntegrationError
+from riana.io.mzml import IndexedMzML
+from riana.io.percolator import read_percolator
+from riana.records import PSMRecord
+
+
+def read_psms(
+    id_path: str,
+    sample: str,
+    ignored_mods: Sequence[float] = (),
+) -> list[PSMRecord]:
+    """Parse the Percolator id file into typed records (worker side).
+
+    Thin wrapper over :func:`riana.io.percolator.read_percolator` so the GUI can
+    do the (potentially slow) parse off the Qt event loop. Same call the CLI
+    makes in :func:`riana.cli.integrate`.
+    """
+    return read_percolator(id_path, sample=sample, ignored_mods=ignored_mods)
+
+
+def integrate_fraction(
+    config: IntegrationConfig,
+    psms: Sequence[PSMRecord],
+    mzml_path: str,
+    file_label: str,
+) -> tuple[pd.DataFrame, DriftSummary | None]:
+    """Integrate one fraction's PSMs against ``mzml_path``.
+
+    Opens the indexed reader in-process, calls the shared
+    :func:`riana.core.integration.integrate_run`, and returns the per-fraction
+    frame plus its :class:`~riana.algorithms.calibration.DriftSummary`. The
+    drift is pulled out of ``df.attrs`` here (in-process) and returned
+    explicitly, since ``DataFrame.attrs`` is not guaranteed to survive the
+    pickle back to the GUI process.
+    """
+    with IndexedMzML(mzml_path) as mzml:
+        df = integrate_run(config, list(psms), mzml, file_label=file_label)
+    drift = df.attrs.get("drift_summary")
+    return df, drift
+
+
+def extract_trace(
+    config: IntegrationConfig,
+    psm: PSMRecord,
+    mzml_path: str,
+    scan_span: tuple[int, int] | None = None,
+) -> PeptideTrace | None:
+    """Extract one peptide-charge's XICs + integration window for the plot.
+
+    Returns ``None`` when the peptide has no extractable intensity profile (an
+    honest "nothing to show" rather than propagating
+    :class:`~riana.exceptions.IntegrationError` across the process boundary).
+    """
+    try:
+        with IndexedMzML(mzml_path) as mzml:
+            return extract_peptide_trace(config, psm, mzml, scan_span=scan_span)
+    except IntegrationError:
+        return None
+
+
+def run_fit(
+    config: FitConfig,
+    riana_paths: Sequence[str],
+    coefficients: str | None,
+) -> pd.DataFrame:
+    """Read the integrate-output time series and run the kinetic fit (worker side).
+
+    Mirrors the sequence :func:`riana.cli.fit` runs — load the per-AA coefficient
+    table, read one DataFrame per timepoint file, then call the shared
+    :func:`riana.core.fitting.fit_run`. Returns the per-peptide result frame
+    (indexed by ``concat``, carrying the per-peptide ``t`` / ``fs`` lists used by
+    the GUI's fitted-curve plot). Errors (bad coefficients, nothing surviving
+    ``--depth``, o18 guard) propagate for the tab to surface.
+    """
+    from riana.core.fitting import fit_run, load_aa_coefficients
+
+    coeffs = load_aa_coefficients(coefficients) if coefficients else {}
+    dfs = [pd.read_table(p, comment="#") for p in riana_paths]
+    return fit_run(config, dfs, coeffs)

@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import re
 from concurrent import futures
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Sequence
 
 import numpy as np
@@ -43,7 +43,7 @@ from riana.config import IntegrationConfig
 from riana.exceptions import IntegrationError
 from riana.io.mzml import IndexedMzML
 from riana.io.percolator import filter_by_q_value, fraction_psms
-from riana.records import PSMRecord
+from riana.records import Chromatogram, PSMRecord
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -221,6 +221,100 @@ def integrate_run(
     # emit the footer without re-computing.
     out.attrs["drift_summary"] = drift
     return out
+
+
+@dataclass(frozen=True, slots=True)
+class PeptideTrace:
+    """Per-isotopomer XICs for one peptide-charge plus the integrated window.
+
+    The data behind the M4 Phase 2 GUI chromatogram view. Built by
+    :func:`extract_peptide_trace`; Qt-free and picklable (only stdlib + the
+    frozen :class:`riana.records.Chromatogram`) so it can cross a
+    ``ProcessPoolExecutor`` boundary back to the GUI process.
+    """
+
+    #: ``sequence_charge`` identifier of the peptide-charge.
+    concat: str
+    #: iso index → the extracted-ion chromatogram for that isotopomer (the
+    #: first forced-mod cluster — ``mod0`` in the no-SILAC default).
+    chromatograms: dict[int, Chromatogram]
+    #: ``(lo_rt, hi_rt)`` of the integrated window in RT minutes, or ``None``
+    #: when the whole extraction was integrated (the ms2 / fixed-window path).
+    window: tuple[float, float] | None
+
+
+def extract_peptide_trace(
+    config: IntegrationConfig,
+    psm: PSMRecord,
+    mzml: IndexedMzML,
+    *,
+    scan_span: tuple[int, int] | None = None,
+) -> PeptideTrace:
+    """Extract one peptide-charge's per-isotopomer XICs + integration window.
+
+    Reuses the same extraction (:func:`_extract_per_psm`) and boundary detection
+    (:func:`_peak_boundary`) the integrator runs, so the trace and shaded window
+    the GUI shows match what was integrated for that PSM. Gives the otherwise
+    orphaned :class:`riana.records.Chromatogram` record a producer.
+
+    Args:
+        config: the same :class:`~riana.config.IntegrationConfig` used to run.
+        psm: the selected peptide-spectrum match.
+        mzml: streaming reader for the fraction's run.
+        scan_span: the ``(min_scan, max_scan)`` the integrator spans for this
+            peptide-charge across the fraction (``config.use_range``). Pass the
+            fraction's real span so the trace matches the integration exactly;
+            defaults to the PSM's own scan.
+
+    Returns:
+        :class:`PeptideTrace` — chromatograms keyed by iso index + the window.
+    """
+    forced = tuple(config.forced_mods or (0.0,))
+    isos = tuple(config.isotopomers)
+    concat_scans = {psm.concat: scan_span or (psm.scan, psm.scan)}
+
+    idf, _ma = _extract_per_psm(psm, concat_scans, forced, isos, config, mzml)
+    rt_arr = idf["rt"].to_numpy(dtype=np.float64)
+
+    iso0_col = f"mod{_g(forced[0])}_iso0"
+    iso1_col = f"mod{_g(forced[0])}_iso1" if 1 in isos else None
+    boundary = _peak_boundary(idf, psm, mzml, config, rt_arr, iso0_col, iso1_col)
+    window = (
+        (float(rt_arr[boundary.lo]), float(rt_arr[boundary.hi]))
+        if boundary is not None
+        else None
+    )
+
+    # Recover the scan per (rounded) rt — _extract_per_psm pivots on rt rounded
+    # to 6 dp, and those rt values originate from mzml.rt_idx, so the map is exact.
+    rt_to_scan = {
+        round(float(r), 6): int(s) for s, r in zip(mzml.scan_idx, mzml.rt_idx)
+    }
+    scans_for_rt = tuple(rt_to_scan.get(round(float(r), 6), -1) for r in rt_arr)
+
+    proton = constants.PROTON_MASS
+    peptide_prec = (psm.peptide_mass + psm.charge * proton) / psm.charge
+    mod0 = forced[0]
+    chromatograms: dict[int, Chromatogram] = {}
+    for iso in isos:
+        col = f"mod{_g(mod0)}_iso{iso}"
+        intensity = idf[col].to_numpy(dtype=np.float64)
+        target = (
+            peptide_prec
+            + (mod0 / psm.charge)
+            + (iso * config.mass_difference / psm.charge)
+        )
+        chromatograms[iso] = Chromatogram(
+            isotopomer=iso,
+            target_mz=float(target),
+            mass_tol_ppm=float(config.mass_tol_ppm),
+            scans=scans_for_rt,
+            rt=tuple(float(r) for r in rt_arr),
+            intensity=tuple(float(v) for v in intensity),
+        )
+    return PeptideTrace(
+        concat=psm.concat, chromatograms=chromatograms, window=window
+    )
 
 
 # --- internals ---------------------------------------------------------------

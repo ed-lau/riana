@@ -79,8 +79,10 @@ def _make_synthetic_dfs(
         for pep_idx, (seq, charge) in enumerate(peptides):
             pep_mass = calculate_ion_mz(seq)
             spep = spep_by_seq[seq]
-            init = _get_init_env(seq, pep_mass, n=4)
-            final = _get_final_env(seq, pep_mass, spep, ria_max=0.06, n=4)
+            # The m0-m5 envelope the production fit consumes (matches the
+            # `riana integrate --iso` default and core.fitting's required set).
+            init = _get_init_env(seq, pep_mass, n=6)
+            final = _get_final_env(seq, pep_mass, spep, ria_max=0.06, n=6)
             init_norm = init / init.sum()
             final_norm = final / final.sum()
             mix = (1.0 - prop) * init_norm + prop * final_norm
@@ -96,8 +98,8 @@ def _make_synthetic_dfs(
                 "sample": f"time{ti:.6f}",
                 "percolator q-value": 1e-4,
                 "protein id": f"sp|P0000{pep_idx}|TEST_HUMAN",
-                "iso0": scaled[0], "iso1": scaled[1],
-                "iso2": scaled[2], "iso3": scaled[3],
+                "iso0": scaled[0], "iso1": scaled[1], "iso2": scaled[2],
+                "iso3": scaled[3], "iso4": scaled[4], "iso5": scaled[5],
             })
         dfs.append(pd.DataFrame(rows))
     return dfs
@@ -173,6 +175,20 @@ def test_fit_run_rejects_unknown_model():
     object.__setattr__(bad_config, "model", "nonexistent")
     with pytest.raises(ValueError, match="unknown kinetic model"):
         fit_run(bad_config, dfs, coeffs, n_boot=10)
+
+
+def test_fit_run_requires_canonical_isotopomers():
+    """Integrate output missing m0-m5 (e.g. the legacy `--iso 0 6` pair) is
+    rejected with a clear message rather than silently misaligning the envelope."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    # Drop the higher isotopomers so only m0-m3 remain (mimics too-narrow --iso).
+    dfs = [df.drop(columns=["iso4", "iso5"]) for df in dfs]
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    with pytest.raises(ValueError, match="isotopomers"):
+        fit_run(config, dfs, coeffs, n_boot=10)
 
 
 def test_fit_run_handles_bracketed_modification_strings():

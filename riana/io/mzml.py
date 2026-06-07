@@ -34,6 +34,27 @@ from riana.exceptions import DataError
 # (none of Riana's targets ship Sciex mzML today).
 _SCAN_RE = re.compile(r"scan=(\d+)")
 
+# A directory entry that is an mzML file: ``foo.mzML`` or ``foo.mzML.gz``.
+_MZML_FILE_RE = re.compile(r"^.*\.mz[Mm][Ll](\.gz)?$")
+# The trailing extension, for stripping a basename to its stem.
+_MZML_EXT_RE = re.compile(r"\.mz[Mm][Ll](\.gz)?$")
+
+
+def list_mzml_files(directory: str | os.PathLike[str]) -> list[str]:
+    """Sorted basenames of the mzML files (``.mzML`` / ``.mzML.gz``) in *directory*.
+
+    The single source of truth for the directory-layout convention shared by
+    the CLI (:func:`riana.cli.integrate`) and the GUI integrate worker, so the
+    two surfaces assign the same fraction order. Sorted by name — mirrors the
+    0.9.0 fraction-index assignment when no ``percolator.log.txt`` is present.
+    """
+    return sorted(f for f in os.listdir(directory) if _MZML_FILE_RE.match(f))
+
+
+def mzml_stem(filename: str) -> str:
+    """Strip a ``.mzML`` / ``.mzML.gz`` extension from a basename (the ``file`` label)."""
+    return _MZML_EXT_RE.sub("", filename)
+
 
 class IndexedMzML:
     """Indexed mzML reader exposing the MS1 (scan, rt) table + lazy peak access.

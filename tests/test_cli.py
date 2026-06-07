@@ -80,9 +80,10 @@ def test_fit_label_o18_is_recognised_but_errors():
 def test_fit_resolves_bundled_preset(tmp_path):
     """--coefficients commerford resolves the bundled table and reaches fit_run.
 
-    A single timepoint can't satisfy --depth, so fit_run raises 'No peptides
-    survive' — which proves the preset loaded and the pipeline ran (the
-    BadParameter for a missing table would have fired earlier).
+    The committed single-timepoint golden was integrated with `--iso 0 6`, so
+    fit_run's canonical-isotopomer guard fires — which proves the preset loaded
+    and the pipeline ran past the `--coefficients` BadParameter (a missing table
+    would have errored earlier, before any coefficients were loaded).
     """
     result = runner.invoke(app, [
         "fit", str(ONE_TIMEPOINT),
@@ -91,4 +92,16 @@ def test_fit_resolves_bundled_preset(tmp_path):
     ])
     assert result.exit_code != 0
     msg = (result.output or "") + str(result.exception or "")
-    assert "No peptides survive" in msg
+    assert "coefficients from commerford" in msg  # preset resolved + loaded
+    assert "isotopomers" in msg                    # reached fit_run's guard
+
+
+def test_gui_subcommand_is_registered():
+    """`riana gui --help` exits 0 — the subcommand is wired (M4 Phase 2).
+
+    The GUI itself is exercised in test_gui.py; here we only confirm the CLI
+    surfaces the command without importing PySide6 (the import is lazy).
+    """
+    result = runner.invoke(app, ["gui", "--help"])
+    assert result.exit_code == 0
+    assert "GUI" in result.output

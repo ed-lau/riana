@@ -94,8 +94,10 @@ def integrate(
         "number encoding the time point, e.g. time1.",
     ),
     iso: str = typer.Option(
-        "0 6", "-i", "--iso",
-        help="Isotopomers to integrate, comma/space separated, e.g. '0 1 2 3'.",
+        "0 1 2 3 4 5", "-i", "--iso",
+        help="Isotopomers to integrate, comma/space separated. Default "
+        "'0 1 2 3 4 5' is the m0-m5 envelope the D2O fit consumes; pick a "
+        "custom set for other workflows (e.g. SILAC cluster extraction via -F).",
     ),
     unique: bool = typer.Option(
         False, "-u", "--unique",
@@ -160,7 +162,7 @@ def integrate(
 
     from riana.config import IntegrationConfig
     from riana.core.integration import integrate_run
-    from riana.io.mzml import IndexedMzML
+    from riana.io.mzml import IndexedMzML, list_mzml_files, mzml_stem
     from riana.io.percolator import file_indices, fraction_psms, read_percolator
     from riana.io.writers import make_provenance, write_dataframe_tsv
     from riana.logger import get_logger
@@ -229,10 +231,7 @@ def integrate(
 
     # mzML directory layout: sort by name, accept .mzML / .mzML.gz (mirrors the
     # 0.9.0 fraction-index assignment when no percolator.log.txt is present).
-    mzml_files = sorted(
-        f for f in os.listdir(mzml_path)
-        if re.match(r"^.*\.mz[Mm][Ll](\.gz)?$", f)
-    )
+    mzml_files = list_mzml_files(mzml_path)
     if not mzml_files:
         raise typer.BadParameter(f"No mzML files in {mzml_path}.")
     indices = file_indices(all_psms)
@@ -242,7 +241,7 @@ def integrate(
             f"({len(indices)}) in {id_path}.")
 
     for idx in indices:
-        mzml_basename = re.sub(r"\.mz[Mm][Ll](\.gz)?$", "", mzml_files[idx])
+        mzml_basename = mzml_stem(mzml_files[idx])
         mzml_file = os.path.join(mzml_path, mzml_files[idx])
         logger.info(f"integrating fraction {idx}: {mzml_basename}")
 
@@ -313,11 +312,11 @@ def fit(
         "for 6%% v/v) [default: 0.06]."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
-    plotcurves: bool = typer.Option(
-        False, "-p", "--plotcurves", help="Emit per-peptide fitted-curve plots."),
     fs: Optional[str] = typer.Option(
         None, "-f", "--fs",
-        help="Fine-structure FS formula (m0_m1, m0_m2, ..., Auto)."),
+        help="Reserved (post-M4): restrict the envelope SSE to a subset of "
+        "isotopomer channels to reduce co-eluting-contaminant sensitivity. "
+        "Currently ignored — the full integrated envelope is used."),
     thread: int = typer.Option(
         1, "-t", "--thread", help="Worker threads [default: 1]."),
 ) -> None:
@@ -356,7 +355,6 @@ def fit(
             depth=int(depth),
             ria_max=float(ria),
             fs_formula=fs,
-            plot_curves=bool(plotcurves),
             threads=int(thread),
             out_dir=str(out),
         )
@@ -366,6 +364,11 @@ def fit(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("fit (typed pipeline)")
+    if fs:
+        logger.warning(
+            "--fs is reserved for a post-M4 feature (channel-subset envelope "
+            "SSE) and is currently ignored; the full envelope is used."
+        )
 
     coeffs = load_aa_coefficients(coefficients) if coefficients else {}
     if coeffs:
@@ -388,6 +391,38 @@ def fit(
     n_well = int((result_df["R_squared"] >= 0.9).sum())
     logger.info(f"{n_fitted} peptides converged; {n_well} R²≥0.9")
     logger.handlers.clear()
+
+
+# --------------------------------------------------------------------------- #
+# gui
+# --------------------------------------------------------------------------- #
+@app.command()
+def gui(
+    thread: int = typer.Option(
+        1, "-t", "--thread",
+        help="Seed the Integrate form's worker-thread field [default: 1]."),
+) -> None:
+    """Launch the PySide6 GUI (requires the optional ``[gui]`` extra).
+
+    The GUI forms build the *same* frozen IntegrationConfig/FitConfig as the CLI,
+    so both surfaces validate identically. PySide6/qasync/pyqtgraph are imported
+    lazily here so they never load on the core CLI path.
+    """
+    if thread > (os.cpu_count() or 1):
+        raise typer.BadParameter(
+            f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
+    # Import from riana.gui.app (not the lazy riana.gui wrapper): this is the
+    # import that actually pulls in PySide6/qasync/pyqtgraph, so a missing
+    # [gui] extra is caught here with a clean message instead of a traceback.
+    try:
+        from riana.gui.app import run_gui
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "The GUI needs the optional dependencies. Install them with:\n"
+            "    pip install 'riana[gui]'\n"
+            f"(import failed: {exc})"
+        ) from exc
+    raise typer.Exit(code=run_gui(threads=int(thread)))
 
 
 def main() -> None:

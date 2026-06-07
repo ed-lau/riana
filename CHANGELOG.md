@@ -12,6 +12,63 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. This section is built up iteratively as the milestones progress;
 entries below are grouped by the work that produced them.
 
+### M4 Phase 2 — PySide6 GUI
+
+#### Added
+
+- **`riana gui` subcommand** launches a PySide6 GUI (`riana/gui/`). PySide6 /
+  qasync / pyqtgraph are imported lazily, so they never load on the core CLI
+  path; install them with the new optional extra: `pip install 'riana[gui]'`.
+- **Model tab** — a form mirroring `riana fit` builds the *same* frozen
+  `FitConfig` (shared `__post_init__` validation). The fit runs on the
+  `ProcessPoolExecutor` via the Qt-free `riana.gui.tasks.run_fit` worker (reads
+  the per-timepoint `_riana.txt` files, loads the `--coefficients` table, calls
+  the shared `core.fitting.fit_run`), so output matches the CLI. Per-peptide
+  results land in a table; selecting a peptide draws its `(t, fraction-new)`
+  points and the fitted kinetic-model curve in an embedded pyqtgraph view
+  (`riana.core.models` functions evaluated directly — no worker round-trip).
+- **Integrate tab** — a form whose fields mirror `riana integrate` and build the
+  *same* frozen `IntegrationConfig`, so its `__post_init__` is the single shared
+  validator (CLI and GUI cannot drift). Integration runs off the Qt event loop:
+  CPU work is awaited on a `ProcessPoolExecutor` one fraction at a time (via
+  qasync), keeping the UI responsive with honest per-fraction progress. Results
+  land in a table, the per-fraction mass-accuracy **drift summary** (median/MAD
+  ppm, suggested shift, `--ppm-alert` flag) is shown inline (no separate
+  Calibration tab), and selecting a peptide draws its isotopomer XICs in an
+  embedded **pyqtgraph chromatogram** with the integrated window shaded. The
+  `_riana.txt` (+ `.drift.json`) output is identical to the CLI's.
+- `riana.core.integration.extract_peptide_trace` + `PeptideTrace` — extract one
+  peptide-charge's per-isotopomer XICs and integration window (reuses the
+  integrator's own extraction/boundary code), giving the previously orphaned
+  `records.Chromatogram` dataclass a producer.
+- `riana.io.mzml.list_mzml_files` / `mzml_stem` — the shared mzML
+  directory-layout helpers the CLI and the GUI worker both use to assign the
+  same fraction order.
+- `tests/test_gui.py` — Qt-free worker tests (assert the GUI integrate path
+  matches the committed `sample1` golden within 1e-3, and that `run_fit` fits a
+  synthetic D₂O series) + headless `pytest-qt` smoke tests for both tabs, the
+  form→config validation, and the fitted-curve plot.
+
+#### Changed (BREAKING)
+
+- **`riana integrate --iso` default is now `0 1 2 3 4 5`** (was `0 6`). The D₂O
+  fit matches the observed envelope against an IsoSpec forward model over the
+  contiguous m0-m5 channels, so the legacy `0 6` pair is not fittable by the new
+  engine. `--iso` is still free-form for other workflows (e.g. SILAC cluster
+  extraction via `-F`). The reframed `--fs` help calls out the post-M4 plan.
+- **`riana fit` now errors clearly when the integrate output lacks the
+  isotopomers the D₂O solver needs** (m0-m5). Previously `--iso 0 6` data was
+  silently misaligned against the model, producing garbage `fs`/`k_deg`; it now
+  raises with a "re-run integrate with `--iso '0 1 2 3 4 5'`" message.
+
+#### Removed
+
+- **`riana fit --plotcurves`** — it was a no-op in the new fit engine (the
+  legacy static-PNG path was never wired in). Inspect fitted curves
+  interactively in the GUI Model tab instead. `--fs` is **kept but currently
+  ignored** (reserved for a post-M4 channel-subset envelope SSE; a warning is
+  logged if it is set).
+
 ### M4 Phase 1 — Typer CLI + `--engine legacy` removal
 
 #### Changed (BREAKING)

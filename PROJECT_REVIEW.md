@@ -1,17 +1,30 @@
 # Riana — Project Review & Roadmap
 
-> Status: M4 Phase 1 done (1.0.0.dev1 — Typer CLI replaces argparse; the typed
-> pipeline is the only engine, `--engine legacy` removed; legacy modules + Tk
-> GUI deleted; `riana fit` requires `--coefficients`, with bundled presets).
-> M3 done before it (restructure, streaming I/O, dual ID intake, apex-default
-> peak integration, IsoSpec forward-model FS). Next: M4 Phase 2 (PySide6 + async
-> GUI). Maintainer: Edward Lau. Last reviewed: 2026-06-06.
+> Status: M4 Phase 2 done (1.0.0.dev1 — PySide6 GUI: `riana gui` Integrate +
+> Model tabs run end-to-end via qasync + a ProcessPoolExecutor; Integrate has an
+> inline drift summary and a pyqtgraph chromatogram, Model has fitted-curve
+> plots; deps ship as a `[gui]` extra). M4 Phase 1 done before it (Typer CLI
+> replaces argparse; the typed pipeline is the only engine, `--engine legacy`
+> removed; legacy modules + Tk GUI deleted; `riana fit` requires
+> `--coefficients`, with bundled presets). M3 done before that (restructure,
+> streaming I/O, dual ID intake, apex-default peak integration, IsoSpec
+> forward-model FS). Next: post-M4 planning round (M5 D₂O reporting, M6 SDRF, M7
+> PTM, M8 adaptive N_ISO, o18 rewrite). Maintainer: Edward Lau. Last reviewed:
+> 2026-06-07.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
 old contents are folded in below where still load-bearing; the rest is cut.
 
 ## 1. Project status
+
+> **Update (2026-06, 1.0.0.dev1):** the three-step plan below is complete
+> through M4 — 0.9.0 stabilization, the calibration dataset, and the 1.0.0
+> rewrite (typed pipeline, streaming I/O, peak detection, mzTab intake, and a
+> PySide6 GUI) have all shipped. The narrative below is the original pre-rewrite
+> evaluation that motivated the plan, kept for context; the as-built record is
+> CHANGELOG `[1.0.0]` + §3. Next is the post-M4 planning round (§3 "Post-M4
+> planning anchor").
 
 Riana is a single-author scientific Python tool for extracting and modeling
 isotopomer time-series from MS1 data, used in protein-turnover research. The
@@ -167,7 +180,8 @@ full-mixing confirm):
 Sequencing: M1 (0.9.0), M2 (calibration dataset + benchmarks), M3 (restructure
 + peak-detection spike), and M4 **Phase 1** (Typer CLI + `--engine legacy`
 removal) have all shipped — see CHANGELOG `[1.0.0]`. M4 **Phase 2** (PySide6 +
-async Qt GUI) is next.
+async Qt GUI) is shipped too: the `riana gui` Integrate and Model tabs both run
+end-to-end. Next is the post-M4 planning round (M5–M8 + the o18 rewrite).
 
 ### M1 — Stabilization → 0.9.0 — DONE
 
@@ -475,7 +489,7 @@ width / N_ISO (M8); Phase C v2 cross-proportion-stable picker.
    Week 0 baseline documented). `--engine new` keeps the existing
    argparse surface through Week 4; the CLI rewrite happens once. The
    peak-detection engine revisit (Phase C v2 — cross-proportion-stable
-   boundaries, see [[m3-peak-detection-boundary-stability]]) is its own
+   boundaries; the M3 boundary-stability finding) is its own
    planning effort post-fit-rewrite.
 
    Rewrite `core/fitting.py` to consume `IntegrationResult` records,
@@ -602,15 +616,56 @@ fitting dropped (integrate still extracts SILAC peaks), and `o18` is recognized
 but errors pending its post-M4 rewrite. The A/B-against-legacy tests were
 converted to committed-golden comparisons. See CHANGELOG `[1.0.0]` M4 Phase 1.
 
-**Phase 2 — PySide6 + async GUI — NEXT.** PySide6 (LGPL) + `qasync` (bridges
-asyncio with the Qt event loop) under `riana/gui/`. Long-running CPU work via
-`ProcessPoolExecutor` driven from async tasks. `pyqtgraph` for fast embedded
-chromatogram inspection; matplotlib only for static export. Tabs: Integrate,
-Model, Calibration. Entry point: a `riana gui` subcommand added to `cli.py`. The
-GUI forms construct the *same* frozen `IntegrationConfig`/`FitConfig` from widget
-values (shared `__post_init__` validation). GUI deps ship as a `[gui]` extra so
-the core CLI stays lightweight. (`rx`, `sv_ttk`, `pandastable`, the missing
-`console` shim, and Tkinter are already gone after Phase 1.)
+**Phase 2 — PySide6 + async GUI — DONE (2026-06-07).** PySide6 (LGPL) + `qasync`
+(bridges asyncio with the Qt event loop) under `riana/gui/`. Long-running CPU
+work via `ProcessPoolExecutor` driven from async tasks. `pyqtgraph` for fast
+embedded chromatogram / fitted-curve inspection; matplotlib only for static
+export. Entry point: a lazy `riana gui` subcommand in `cli.py`
+(PySide6/qasync/pyqtgraph are imported only inside it, so they never load on the
+core CLI path). GUI deps ship as a `[gui]` extra so the core CLI stays
+lightweight. Both tabs share the Qt-free worker layer (`riana/gui/tasks.py`,
+unit-tested without a display) and a `DataFrameTableModel` (`riana/gui/models.py`).
+
+*Shipped (the vertical slice that proves the architecture):* the **Integrate**
+tab runs end-to-end. Its form builds the *same* frozen `IntegrationConfig` from
+widget values, so `__post_init__` is the single shared validator (CLI and GUI
+cannot drift). Integration is awaited on the process pool one fraction at a time
+(responsive UI, honest per-fraction progress) through the Qt-free workers in
+`riana/gui/tasks.py` (which call the identical `core.integration.integrate_run`
+→ numerics provably match the CLI; gated in `tests/test_gui.py` against the
+`sample1` golden within 1e-3). Calibration is **folded into Integrate**: the
+per-fraction `DriftSummary` (median/MAD ppm, suggested shift, `--ppm-alert`
+flag) shows inline in the results panel — no separate Calibration tab.
+Peptide-row selection draws the isotopomer XICs in a pyqtgraph
+`ChromatogramView` with the integrated window shaded, backed by the new
+`core.integration.extract_peptide_trace` / `PeptideTrace` (which also gives the
+orphaned `records.Chromatogram` its first producer). The per-fraction
+orchestration is *mirrored* from `cli.integrate` (not refactored) to keep the
+tested CLI path untouched; a shared `core/pipeline.py` extraction is a noted
+future cleanup.
+
+The **Model** tab is the fit counterpart: its form builds the same frozen
+`FitConfig`, and the fit runs as a single batched job on the pool via
+`tasks.run_fit` (reads the per-timepoint `_riana.txt` files, loads the
+`--coefficients` table, calls the shared `core.fitting.fit_run`), so output
+matches `riana fit`. Selecting a result row plots that peptide's
+`(t, fraction-new)` points + the fitted kinetic curve in a pyqtgraph `CurveView`
+(`core.models` functions evaluated on the GUI thread — pure math, no worker
+round-trip). `plot_curves` / `fs_formula` are not surfaced (no-ops in the new
+fit engine; the interactive curve replaces the legacy `-p` static plots).
+(`rx`, `sv_ttk`, `pandastable`, the missing `console` shim, and Tkinter are
+already gone after Phase 1.)
+
+*Fit/integrate consistency fix (2026-06-07, from the Phase 2 review):* the
+`riana integrate --iso` default changed from the legacy `0 6` pair to the
+contiguous **m0-m5** envelope, because `solve_fs_d2o` matches the observed
+envelope against the IsoSpec forward model over contiguous channels from m0 — the
+`0 6` pair silently misaligned (observed m6 vs predicted m1) → garbage `k_deg`.
+`fit_run` now **guards** on the canonical set (`_REQUIRED_D2O_ISOTOPOMERS =
+0..5`) and errors clearly if absent. `--plotcurves` (a no-op) was removed;
+`--fs` is kept but ignored, reserved for a post-M4 *channel-subset* envelope SSE
+(use fewer high isotopomers to dodge co-eluting contaminants — literature-backed;
+deferred alongside the M8 adaptive-N_ISO work).
 
 ### M5 — Flexible D₂O reporting (record only; defer design)
 
@@ -639,7 +694,7 @@ SDRF is needed for **production use** of the mzTab adapter, **even for
 single-fraction-per-timepoint** data, because nothing in the mzTab itself
 says which `ms_run[N]-location` (a filename) corresponds to which sample
 / timepoint. `ground_truth.csv` is doing that job for the calibration
-mixing series; for animal in-vivo (M3 finding [[m3-animal-within-protein-metric]])
+mixing series; for animal in-vivo (the M3 animal within-protein-metric finding)
 or other future data the column is `collection_time_h` instead of
 `nominal_proportion`, and the source of truth is the SDRF tsv quantms
 already requires.
@@ -663,17 +718,18 @@ post-Week-4 alongside the broader new-features planning round.
 
 ### Post-M4 planning anchor
 
-Once M4 (Qt + async GUI) lands, take a deliberate pass to plan the next
-batch of features in earnest — including M5 (flexible D₂O reporting),
-M6 (SDRF ID intake), Phase C v2 (cross-proportion-stable peak detection
-— see [[m3-peak-detection-boundary-stability]]), the
-within-protein-θ-variance benchmark for the animal calibration dataset
-([[m3-animal-within-protein-metric]]), **M7 — proper PTM
-forward-modelling in the IsoSpec envelope**, and **M8 — adaptive N_ISO
-+ robust IsoSpec-mixture matching** (both noted below). The M3 work
-has surfaced concrete constraints that change what M5+ should look
-like; better to plan with the post-M3/M4 picture in hand than against
-the original 0.9.0 review.
+M4 (Qt + async GUI) has now shipped, so the next session takes this
+deliberate pass to plan the next batch of features in earnest — including
+M5 (flexible D₂O reporting), M6 (SDRF ID intake), Phase C v2
+(cross-proportion-stable peak detection — the M3 boundary-stability finding),
+the within-protein-θ-variance benchmark for the animal calibration dataset
+(the M3 animal within-protein metric), **M7 — proper PTM forward-modelling in
+the IsoSpec envelope**, and **M8 — adaptive N_ISO + robust IsoSpec-mixture
+matching** (both noted below), plus wiring the reserved `--fs` channel-subset
+SSE (pairs with M8) and the **o18 fit rewrite** (length + selected-residue
+coefficients). The M3 work has surfaced concrete constraints that change what
+M5+ should look like; better to plan with the post-M3/M4 picture in hand than
+against the original 0.9.0 review.
 
 ### M7 — PTM-aware IsoSpec forward model (record only; defer design)
 
@@ -745,7 +801,7 @@ baseline subtraction and boundary effects are *largest* on the low-
 abundance high isotopomers, so adaptive N_ISO + robust matching is
 precisely where better peak detection would pay off. The two are
 complementary integration-fidelity levers and should be planned together,
-alongside Phase C v2 ([[m3-peak-detection-boundary-stability]]).
+alongside Phase C v2 (the M3 peak-detection boundary-stability finding).
 
 ## 4. Cross-cutting recommendations
 
@@ -792,7 +848,7 @@ These apply during and after the rewrite:
 - o18 fitting: recognized (`--label o18`) but errors pending a post-M4
   rewrite (length + selected-residue coefficients, not a per-AA dict).
   o18 *integration* is unaffected.
-- GUI: the broken Tkinter `riana_ui/` is deleted (M4 Phase 1); the
-  PySide6 replacement lands in M4 Phase 2.
+- GUI: the broken Tkinter `riana_ui/` is deleted (M4 Phase 1); the PySide6
+  replacement shipped in M4 Phase 2 (`riana gui` — Integrate + Model tabs).
 - The bundled `workflow/Snakefile` is an example, not a tested pipeline.
   Treat as a starting point.

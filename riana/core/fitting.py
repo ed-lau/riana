@@ -71,6 +71,15 @@ _K_DEG_BOUNDS = ([1e-4], [10.0])
 _DEFAULT_N_BOOT = 200
 _DEFAULT_BOOT_CI_PCT = (5.0, 95.0)
 
+#: Isotopomer channels the D2O envelope solver currently needs in the integrate
+#: output. :func:`algorithms.isotope_dist.solve_fs_d2o` matches the observed
+#: envelope against the IsoSpec forward model over the contiguous m0-m5 channels,
+#: so all of these must be present (the legacy ``--iso 0 6`` pair is not enough,
+#: and would silently misalign the observed envelope against the model). Matches
+#: the ``riana integrate --iso`` default. A future ``--fs`` may let the fit use a
+#: subset, but integrate should still emit the full set.
+_REQUIRED_D2O_ISOTOPOMERS = (0, 1, 2, 3, 4, 5)
+
 
 @dataclass(frozen=True, slots=True)
 class FitResult:
@@ -182,6 +191,21 @@ def fit_run(
     model_fn = _MODELS[config.model]
 
     rdf = pd.concat(integrate_dfs, ignore_index=True)
+
+    # The D2O envelope solver needs the m0-m5 channels present and aligned;
+    # guard here so an integrate run with too few / the wrong isotopomers (e.g.
+    # the legacy `--iso 0 6` pair) fails with a clear message instead of
+    # silently misaligning the observed envelope against the IsoSpec model.
+    present_isos = {int(c[3:]) for c in rdf.columns if re.match(r"^iso\d+$", c)}
+    missing = [i for i in _REQUIRED_D2O_ISOTOPOMERS if i not in present_isos]
+    if missing:
+        raise ValueError(
+            f"The D2O fit needs isotopomers {list(_REQUIRED_D2O_ISOTOPOMERS)} in "
+            f"the integrate output, but {missing} are absent "
+            f"(found {sorted(present_isos)}). Re-run `riana integrate --iso "
+            f"'0 1 2 3 4 5'` (the default)."
+        )
+
     rdf = rdf[rdf["percolator q-value"] < config.q_value].copy()
     rdf = (
         rdf.groupby(["concat", "file_idx"], group_keys=False)
