@@ -712,7 +712,10 @@ vs DIA-NN parquet).
    SDRF convention means adding this column. Open sub-decision: the value/unit
    format (bare number with a documented unit vs. a unit token — LVE is days).
    Riana reads its own documented subset, so it does not depend on generic SDRF
-   tooling treating the studied variable as a factor value.
+   tooling treating the studied variable as a factor value. The calibration
+   mixing series declares its type with the sibling `characteristics[mixing
+   proportion]` instead; fit dispatches on which column is present (kinetic
+   models vs. the `calibration` 1:1 recovery model — see Track C).
 2. **Header-authoritative identity + a manifest.** Integrate freezes the full
    identity into each output's provenance header (a frozen SDRF snapshot →
    reproducible, SDRF-independent at fit time); a stage-aware
@@ -739,7 +742,9 @@ vs DIA-NN parquet).
   Riana-read column subset (`comment[data file]` → mzML join key; `source
   name`; `characteristics[biological replicate]`; `comment[technical
   replicate]`; `comment[fraction identifier]`; `characteristics[labeling time]`
-  (required, the kinetic-curve x-axis); `factor value[...]` → condition/group
+  (required for turnover, the kinetic-curve x-axis) OR `characteristics[mixing
+  proportion]` (calibration fixtures) — the independent-variable column declares
+  experiment type and fit dispatches on it; `factor value[...]` → condition/group
   for side-by-side + future cross-group stats (key on whichever `factor
   value[...]` column(s) exist — `factor value[condition]` the canonical case,
   so `factor value[disease]`/`[genotype]` work too);
@@ -810,6 +815,24 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   per-timepoint θ instead of only the fitted k. **It is the substrate the
   protein layer consumes**, so it is sequenced before protein rollup, not as a
   throwaway column-add.
+- **Fit-model set + the calibration model.** The kinetic models `{simple, guan,
+  fornasiero}` are *all wired end-to-end* already (models math lifted unchanged;
+  `_MODELS` dispatch → `curve_fit`; CLI `--model`; `FitConfig.model` validation;
+  GUI combo + k_p/k_r/r_p spinboxes) — they fit `k_deg` with `k_p/k_r/r_p` held
+  *fixed* at config values. **Caveat (verified 2026-06-07):** only `simple` is
+  validated — guan/fornasiero have **no test or benchmark** (every gate, incl.
+  the −0.5 bias close, ran on `simple`) and their `k_p/k_r/r_p` defaults
+  (0.5/0.05/10.0) are placeholders. Add **`calibration` as a 4th model** — a 1:1
+  line fit of observed FS vs. known mixing proportion (slope ≈ 1, bias, R² = the
+  recovery metric; the productized "option b" recovery mode), dispatched
+  identically and reusing the GUI curve view. Its x-axis is `characteristics[mixing
+  proportion]`, so **fit dispatches on the experiment-type SDRF column**:
+  `characteristics[labeling time]` → kinetic models; `characteristics[mixing
+  proportion]` → `calibration`. **Future science (as-needed):** validate
+  guan/fornasiero against the in-vivo animal labeling data (hard to model) and
+  decide whether the precursor parameters (k_p / k_r / r_p) are *fitted* or
+  *supplied* — both are fixed today, so meaningful two-compartment use needs real
+  precursor priors. Unlikely near-term.
 - **Protein rollup** (new milestone; 3rd GUI tab). No standard method, so offer
   a menu and let the user choose:
   - **Point estimators over fitted peptide k:** median (robust default);
