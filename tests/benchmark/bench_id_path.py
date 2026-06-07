@@ -62,7 +62,7 @@ BENCH_DATA = REPO_ROOT / "tests" / "data" / "calibration_d2o_mixing"
 # verification: "must be run with the same -m 15 mass window as the committed
 # v0.9.0 baseline").
 INTEGRATE_ARGS = [
-    "-i", "0", "1", "2", "3", "4", "5",
+    "-i", "0 1 2 3 4 5",
     "-q", "0.01",
     "-r", "0.33",
     "-m", "15",

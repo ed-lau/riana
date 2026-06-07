@@ -38,6 +38,7 @@ gate through Week 4; Phase F5 wires ``--engine new`` to dispatch here.
 
 from __future__ import annotations
 
+import importlib.resources
 import logging
 import re
 from concurrent import futures
@@ -92,15 +93,45 @@ class FitResult:
 # ---------------------------------------------------------------------------
 
 
-def load_aa_coefficients(path: str | Path) -> dict[str, float]:
-    """Load a ``d2o_aa_coefficients_<line>.csv`` into the dict ``fit_run`` expects.
+#: Package directory holding the bundled per-AA coefficient presets.
+_COEFF_PKG = "riana.data.coefficients"
 
-    The CSV is the format committed under
-    ``tests/data/calibration_d2o_mixing/<line>/`` — two required columns
-    ``amino_acid, coefficient``. Other columns (bootstrap stats etc.) are
-    ignored.
+
+def available_coefficient_presets() -> list[str]:
+    """Names of the bundled ``--coefficients`` presets (CSV stems).
+
+    These ship inside the package (``riana/data/coefficients/*.csv``):
+    ``commerford`` (Commerford 1983 literature, the mammalian/general default)
+    plus the calibration-derived ``ac16`` / ``ipsc`` / ``cm`` cell-line tables.
+    A user may also pass a filesystem path to their own re-derived table.
     """
-    df = pd.read_csv(path)
+    try:
+        root = importlib.resources.files(_COEFF_PKG)
+    except (ModuleNotFoundError, FileNotFoundError):
+        return []
+    return sorted(
+        p.name[:-4] for p in root.iterdir()
+        if p.name.endswith(".csv")
+    )
+
+
+def load_aa_coefficients(path: str | Path) -> dict[str, float]:
+    """Load a per-AA coefficient table into the dict ``fit_run`` expects.
+
+    ``path`` is resolved as either a **bundled preset name** (one of
+    :func:`available_coefficient_presets`, e.g. ``"commerford"``, ``"ac16"``)
+    or a **filesystem path** to a CSV in the same format — two required columns
+    ``amino_acid, coefficient`` (the format committed under
+    ``tests/data/calibration_d2o_mixing/<line>/``). Extra columns (bootstrap
+    stats etc.) are ignored.
+    """
+    name = str(path)
+    if name in available_coefficient_presets():
+        src = importlib.resources.files(_COEFF_PKG).joinpath(f"{name}.csv")
+        with importlib.resources.as_file(src) as real_path:
+            df = pd.read_csv(real_path)
+    else:
+        df = pd.read_csv(path)
     return {str(aa): float(c) for aa, c in zip(df["amino_acid"], df["coefficient"])}
 
 
@@ -133,6 +164,16 @@ def fit_run(
         DataFrame indexed by ``concat`` with columns
         ``k_deg, R_squared, sd, spep, ci_lo, ci_hi, t, fs, protein id``.
     """
+    if config.label != "hw":
+        # The M4 fit engine is heavy-water (D₂O) only. o18 fitting lived in the
+        # removed legacy engine and is being reimplemented post-M4 (it will move
+        # off the per-AA dict to a length + selected-residue model). Integrate
+        # is label-agnostic, so o18 *extraction* is unaffected.
+        raise ValueError(
+            f"riana fit supports --label hw (heavy water / D₂O) only in this "
+            f"release; got {config.label!r}. o18 fitting is being reimplemented "
+            f"post-M4. (o18 peak integration is unaffected.)"
+        )
     if config.model not in _MODELS:
         raise ValueError(
             f"unknown kinetic model {config.model!r}; "

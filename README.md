@@ -3,10 +3,9 @@
 # Riana — Relative Isotope Abundance Analyzer
 
 Riana takes standard mass-spectrometry spectra (mzML) and peptide-spectrum-match
-files (Percolator output today; mzTab via quantms in 1.0) and returns mass
-isotopomer distributions, e.g. for protein turnover analysis. It also fits
-kinetic models (one-exponential, Guan, Fornasiero) to time-series isotopomer
-data.
+files (Percolator output, or mzTab via quantms) and returns mass isotopomer
+distributions, e.g. for protein turnover analysis. It also fits kinetic models
+(one-exponential, Guan, Fornasiero) to time-series isotopomer data.
 
 Full documentation: <https://ed-lau.github.io/riana/>
 
@@ -36,38 +35,46 @@ table:
 ```bash
 riana integrate <mzml_dir> <percolator_psms.txt> \
     --sample time1 \
-    --iso 0 1 2 3 4 5 6 \
+    --iso "0 1 2 3 4 5 6" \
     --q_value 0.01 \
-    --r_time 0.5 \
     --mass_tol 25 \
     --out ./out
 ```
 
+By default integration uses an apex-centred narrow window
+(`--integration-half-width 0.15`, dial it to your chromatographic peak width).
+To reproduce the 0.9.0 fixed-window behaviour, add
+`--peak-rt ms2 --integration-half-width 1.0`.
+
 ### Fit
 
-Fit a kinetic model across timepoints:
+Fit a kinetic model across timepoints. Fitting is heavy-water (D₂O) only and
+needs a per-amino-acid labeling-site table via `--coefficients` — a bundled
+preset (`commerford` literature, or the `ac16` / `ipsc` / `cm` calibration
+tables) or a path to your own `(amino_acid, coefficient)` CSV:
 
 ```bash
 riana fit ./out/time0_riana.txt ./out/time1_riana.txt ./out/time3_riana.txt \
     --model simple \
-    --label 1 \
+    --label hw \
+    --coefficients commerford \
     --ria 0.06 \
     --depth 3 \
     --out ./out
 ```
 
 See `riana integrate --help` and `riana fit --help` for the full argument set,
-or the [online docs](https://ed-lau.github.io/riana/) for tutorials.
+or the [online docs](https://ed-lau.github.io/riana/) for tutorials. (List
+flags like `--iso` take a single comma/space-separated token.)
 
 ## File formats
 
 - **mzML** (gzipped or plain) — MS1 spectra, parsed with pymzml
 - **Percolator** `target.psms.txt` — Crux Percolator or standalone Percolator
   output (auto-detected by header)
+- **mzTab** (quantms / OpenMS) — the second ID intake path
 - **Output** — tab-delimited `<sample>_riana.txt` with one row per PSM and
-  one column per integrated isotopomer
-
-mzTab (quantms) intake is planned for the 1.0 release; see `PROJECT_REVIEW.md`.
+  one column per integrated isotopomer, plus a provenance header
 
 ## Snakemake workflow
 

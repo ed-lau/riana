@@ -45,7 +45,7 @@ from pathlib import Path
 
 from pyteomics import mztab
 
-from riana import accmass
+from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
 from riana.records import PSMRecord
 

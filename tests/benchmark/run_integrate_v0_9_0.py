@@ -43,10 +43,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSION_LABEL = 'v0.9.0'
 
+# Reproduces the committed v0.9.0 fixed-window baseline through the M4 typed
+# engine: --peak-rt ms2 + --integration-half-width 0.33 is the 0.9.0 fixed
+# ±0.33-min rectangle centred on the MS2 RT (the legacy `-r 0.33`). The legacy
+# engine itself was removed in M4; the baseline files stay committed.
 PINNED_ARGS = [
-    '-i', '0', '1', '2', '3', '4', '5',
+    '-i', '0 1 2 3 4 5',
     '-q', '0.01',
-    '-r', '0.33',
+    '--peak-rt', 'ms2',
+    '--integration-half-width', '0.33',
     '-m', '15',
     '-t', '4',
 ]

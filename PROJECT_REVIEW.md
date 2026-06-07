@@ -1,9 +1,11 @@
 # Riana — Project Review & Roadmap
 
-> Status: M3 done (1.0.0.dev — restructure, streaming I/O, dual ID intake,
-> apex-default peak integration, IsoSpec forward-model FS). Next: M4 (Qt +
-> async GUI, deferred CLI rewrite). Maintainer: Edward Lau. Last reviewed:
-> 2026-06-06.
+> Status: M4 Phase 1 done (1.0.0.dev1 — Typer CLI replaces argparse; the typed
+> pipeline is the only engine, `--engine legacy` removed; legacy modules + Tk
+> GUI deleted; `riana fit` requires `--coefficients`, with bundled presets).
+> M3 done before it (restructure, streaming I/O, dual ID intake, apex-default
+> peak integration, IsoSpec forward-model FS). Next: M4 Phase 2 (PySide6 + async
+> GUI). Maintainer: Edward Lau. Last reviewed: 2026-06-06.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -162,9 +164,10 @@ full-mixing confirm):
 
 ## 3. Roadmap
 
-Sequencing: M1 (0.9.0), M2 (calibration dataset + benchmarks), and M3
-(restructure + peak-detection spike) have all shipped — see CHANGELOG `[1.0.0]`.
-M4 (Qt GUI + deferred CLI rewrite) is next.
+Sequencing: M1 (0.9.0), M2 (calibration dataset + benchmarks), M3 (restructure
++ peak-detection spike), and M4 **Phase 1** (Typer CLI + `--engine legacy`
+removal) have all shipped — see CHANGELOG `[1.0.0]`. M4 **Phase 2** (PySide6 +
+async Qt GUI) is next.
 
 ### M1 — Stabilization → 0.9.0 — DONE
 
@@ -405,9 +408,10 @@ itemized record is in `CHANGELOG.md` (`[1.0.0]`); the high-level outcome:
 - **Streaming I/O + dual ID intake.** Indexed/streaming mzML (one fraction in
   memory), typed Percolator parser, and quantms **mzTab** intake; provenance
   headers on every output.
-- **Integration rewrite + peak detection** (`riana integrate --engine new`):
-  apex/consensus detection, baseline options, per-isotopomer mass-accuracy +
-  drift. The typer/click CLI rewrite is **deferred to M4**.
+- **Integration rewrite + peak detection** (then behind `riana integrate
+  --engine new`, now the default and only engine): apex/consensus detection,
+  baseline options, per-isotopomer mass-accuracy + drift. The typer/click CLI
+  rewrite was deferred to M4 and shipped in M4 Phase 1 (`--engine` removed).
 - **Fitting rewrite + §2b fixes** (`riana fit --engine new`): FS via the IsoSpec
   forward/solve model (per-peptide Spep + full-envelope least-squares), closing
   the ≈ −0.5 pseudo-time `k_deg` recovery bias; AA `a_max` dispatch,
@@ -581,16 +585,32 @@ correction. Keep it simple.
 
 </details>
 
-### M4 — Qt + async GUI rewrite
+### M4 — Qt + CLI rewrite, legacy removal
 
-PySide6 (LGPL) + `qasync` (bridges asyncio with the Qt event loop) under
-`riana/gui/`. Long-running CPU work via `ProcessPoolExecutor` driven from
-async tasks. `pyqtgraph` for fast embedded chromatogram inspection;
-matplotlib only for static export. Tabs: Integrate, Model, Calibration
-(after M3). Entry point: `riana gui` subcommand.
+**Phase 1 — Typer CLI + `--engine legacy` removal — DONE (2026-06-06).** The
+typer/click CLI rewrite deferred from M3 Week 4 landed as `riana/cli.py` (Typer);
+the argparse `main.py` and the whole legacy pipeline
+(`riana_integrate`/`riana_fit` + the `accmass`/`fsynthesis`/`models` shims +
+`spectra`/`peptides`/`project`) are deleted, along with the broken Tkinter
+`riana_ui/`. The typed pipeline is the only engine — `--engine` is gone;
+0.9.0 integration is reproduced with `--peak-rt ms2 --integration-half-width
+1.0` (pinned to a committed golden within 1e-3). `riana fit` now **requires
+`--coefficients`** (bundled presets `commerford`/`ac16`/`ipsc`/`cm` under
+`riana/data/coefficients/`, or a path); `--label` collapsed to `{hw, o18}`
+(cell specificity is the coefficient table, not the label), amino-acid/SILAC
+fitting dropped (integrate still extracts SILAC peaks), and `o18` is recognized
+but errors pending its post-M4 rewrite. The A/B-against-legacy tests were
+converted to committed-golden comparisons. See CHANGELOG `[1.0.0]` M4 Phase 1.
 
-Drops: `rx`, `sv_ttk`, `pandastable`, the missing `console` shim,
-Tkinter dependencies entirely.
+**Phase 2 — PySide6 + async GUI — NEXT.** PySide6 (LGPL) + `qasync` (bridges
+asyncio with the Qt event loop) under `riana/gui/`. Long-running CPU work via
+`ProcessPoolExecutor` driven from async tasks. `pyqtgraph` for fast embedded
+chromatogram inspection; matplotlib only for static export. Tabs: Integrate,
+Model, Calibration. Entry point: a `riana gui` subcommand added to `cli.py`. The
+GUI forms construct the *same* frozen `IntegrationConfig`/`FitConfig` from widget
+values (shared `__post_init__` validation). GUI deps ship as a `[gui]` extra so
+the core CLI stays lightweight. (`rx`, `sv_ttk`, `pandastable`, the missing
+`console` shim, and Tkinter are already gone after Phase 1.)
 
 ### M5 — Flexible D₂O reporting (record only; defer design)
 
@@ -761,15 +781,18 @@ These apply during and after the rewrite:
 
 ## 6. Known limitations (honest list)
 
-- Memory: full mzML loaded into a Python list of numpy arrays
-  (`spectra.py`). 1.0 fixes this with streaming/indexed reads; 0.9.0
-  carries the limit.
-- Peak fidelity: see §2c. The calibration dataset will quantify the
-  impact; until then, treat integrated areas as comparable across
-  samples but not as absolute peak areas.
-- AA labelling (`--label 4`): `a_0` dispatch bug (§2b) means the fit
-  uses an incorrect baseline. Fix lands in 1.0.
-- GUI: broken on a fresh clone today (`console` import missing).
-  Replaced wholesale in 1.0.
+- Memory: fixed in 1.0 via streaming/indexed reads (`io/mzml.py`,
+  `IndexedMzML` — one fraction in memory). The 0.9.0 list-of-arrays
+  loader (`spectra.py`) is removed.
+- Peak fidelity: see §2c. The calibration dataset quantified the impact;
+  the M3 spike adopted an apex-centred narrow window as the default.
+- AA / SILAC fitting: dropped from `riana fit` in M4 (the buggy
+  `--label 4` `a_0` path is gone). Integrate still extracts SILAC peaks
+  (`-F/--forced_mods`); do the L/(H+L) curve fit downstream.
+- o18 fitting: recognized (`--label o18`) but errors pending a post-M4
+  rewrite (length + selected-residue coefficients, not a per-AA dict).
+  o18 *integration* is unaffected.
+- GUI: the broken Tkinter `riana_ui/` is deleted (M4 Phase 1); the
+  PySide6 replacement lands in M4 Phase 2.
 - The bundled `workflow/Snakefile` is an example, not a tested pipeline.
   Treat as a starting point.

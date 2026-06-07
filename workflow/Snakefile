@@ -41,10 +41,14 @@ rule riana_integrate:
         mass_tol=config["params"]["mass_tol"],
         mass_defect=config["params"]["mass_defect"]
     threads: config["threads"]["riana"]
+    # M4: -i takes a single comma/space token (quote it); the typed engine is
+    # the only engine. --peak-rt ms2 + --integration-half-width 0.33 reproduces
+    # the 0.9.0 fixed window; drop those two flags to use the apex default.
     shell:
         "riana integrate {input.mzml} "
         "{input.pin} -D {params.mass_defect} "
-        "-i {params.iso} -q 0.01 -r 0.33 -m {params.mass_tol} -o . -s {wildcards.timepoint} "
+        '-i "{params.iso}" -q 0.01 --peak-rt ms2 --integration-half-width 0.33 '
+        "-m {params.mass_tol} -o . -s {wildcards.timepoint} "
         "-t {threads}"
 
 rule riana_fit:
@@ -57,14 +61,19 @@ rule riana_fit:
         kp=config["params"]["kp"],
         kr=config["params"]["kr"],
         rp=config["params"]["rp"],
-        aa=config["params"]["aa"],
         depth=config["params"]["depth"],
+        # M4: label_type must be "hw" (D2O); o18 fit is being reimplemented.
         label_type=config["params"]["label_type"],
         model=config["params"]["model"],
-        fs=config["params"]["fs"]
+        fs=config["params"]["fs"],
+        # M4: a per-AA coefficient table is REQUIRED for --label hw. Use a
+        # bundled preset (commerford | ac16 | ipsc | cm) or a path to your own
+        # re-derived d2o_aa_coefficients_<line>.csv.
+        coefficients=config["params"]["coefficients"]
     threads: config["threads"]["fitcurve"]
     shell:
         "riana fit {input.integrated} "
         "-q 0.01 -d {params.depth} -o . -m {params.model} --kp {params.kp} "
-        "--aa {params.aa} --kr {params.kr} --rp {params.rp} --fs {params.fs}" # --fs m1_mA --fs Auto
+        "--kr {params.kr} --rp {params.rp} --fs {params.fs} "
+        "--coefficients {params.coefficients} "
         "-t {threads} -r {params.ria} -l {params.label_type}"

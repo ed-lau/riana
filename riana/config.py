@@ -188,18 +188,24 @@ class IntegrationConfig:
 class FitConfig:
     """Configuration for ``riana fit``.
 
-    Most exposed to change in M3: Week 4 rewrites ``core/fitting.py`` to apply the
-    §2b science fixes — AA ``a_max`` dispatch, FS-denominator drift, bootstrap
-    kinetic-fit CIs, and replacing the m0/mA-analytic FS calculation with the
-    IsoSpec forward/solve model. Treat this as a living definition until then.
+    Heavy-water (D₂O) fitting via the IsoSpec forward/solve model: per-peptide
+    Spep from a ``--coefficients`` table, per-timepoint FS by full-envelope
+    least-squares, bootstrap kinetic-fit CIs (the M3 Week 4 science fixes). The
+    per-AA coefficient table is the single source of cell/tissue specificity —
+    ``label`` only selects the labeling chemistry (``hw``; ``o18`` is a
+    post-M4 placeholder).
     """
 
     #: -m / --model. One of "simple", "guan", "fornasiero".
     model: str = "simple"
-    #: -l / --label. 1=2H in vivo, 2=2H in vitro, 3=18O, 4=amino-acid labeling.
-    label: int = 1
-    #: -a / --aa. Label-carrying residue(s), for label=4 (e.g. "K", "KR").
-    aa: str = "K"
+    #: -l / --label. The labeling chemistry. ``"hw"`` (heavy water / D₂O,
+    #: default) is the only path the M4 fit engine implements — cell/tissue
+    #: specificity comes from the per-AA ``--coefficients`` table, not the
+    #: label. ``"o18"`` (¹⁸O) is recognized but its fit path is being
+    #: reimplemented post-M4 (``fit_run`` raises a clear error). Amino-acid /
+    #: SILAC labeling was dropped from fitting — integrate still extracts SILAC
+    #: peaks via ``forced_mods``; do the L/(H+L) curve fit downstream.
+    label: str = "hw"
     #: --kp. Precursor rate constant for the two-compartment models.
     k_p: float = 0.5
     #: --kr. Reutilization rate constant for the Fornasiero model.
@@ -230,8 +236,8 @@ class FitConfig:
     def __post_init__(self) -> None:
         if self.model not in ("simple", "guan", "fornasiero"):
             raise ValueError(f"model must be simple/guan/fornasiero, got {self.model!r}")
-        if self.label not in (1, 2, 3, 4):
-            raise ValueError(f"label must be 1, 2, 3, or 4, got {self.label}")
+        if self.label not in ("hw", "o18"):
+            raise ValueError(f"label must be 'hw' or 'o18', got {self.label!r}")
         if not 0.0 <= self.q_value <= 1.0:
             raise ValueError(f"q_value must be in [0, 1], got {self.q_value}")
         if self.depth < 1:

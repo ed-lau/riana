@@ -44,23 +44,18 @@ AC16_PSMS = Path(
 
 
 @pytest.fixture(scope="module")
-def legacy_sample1_output(tmp_path_factory) -> pd.DataFrame:
-    """Run the legacy ``riana integrate`` on sample1 once; return its _riana.txt."""
-    out_dir = tmp_path_factory.mktemp("legacy_sample1")
-    cmd = [
-        sys.executable, "-m", "riana", "integrate",
-        str(SAMPLE1), str(SAMPLE1 / "percolator.target.psms.txt"),
-        "-s", "sample1", "-o", str(out_dir),
-        "-i", "0", "6",
-        "-q", "1.0",
-        "-r", "1.0",
-        "-m", "50",
-        "-t", "1",
-    ]
-    subprocess.run(cmd, check=True, capture_output=True)
-    # _riana.txt carries a Phase F3 provenance header (# lines); skip it.
-    return pd.read_csv(out_dir / "sample1_riana.txt", sep="\t", index_col=0,
-                       comment="#")
+def legacy_sample1_output() -> pd.DataFrame:
+    """The committed 0.9.0 golden ``_riana.txt`` for sample1.
+
+    Captured from the legacy engine before it was removed in M4 (it ran
+    ``riana integrate ... -i 0 6 -q 1.0 -r 1.0 -m 50``). The new engine's
+    ``ms2`` mode must still reproduce it within 1e-3 — that parity is the
+    "is legacy removal safe" gate. Regenerate only if the numerical core
+    legitimately changes.
+    """
+    # _riana.txt carries a provenance header (# lines); skip it.
+    return pd.read_csv(SAMPLE1 / "sample1_riana.v0_9_0.txt", sep="\t",
+                       index_col=0, comment="#")
 
 
 def test_sample1_iso0_iso6_within_rtol(legacy_sample1_output):
@@ -235,26 +230,25 @@ def test_sample1_mass_accuracy_columns_populated():
     assert drift.mad_ppm >= 0
 
 
-# --- Phase E smoke: --engine new CLI dispatch -------------------------------
+# --- CLI smoke: `riana integrate` dispatch ----------------------------------
 
 
-def test_engine_new_cli_produces_compatible_output(tmp_path):
-    """Phase E smoke: ``python -m riana integrate --engine new`` writes the
-    same _riana.txt schema as legacy (with Phase D's mass-accuracy columns
-    on top) and a per-fraction drift JSON sidecar.
+def test_cli_integrate_produces_compatible_output(tmp_path):
+    """CLI smoke: ``python -m riana integrate`` writes the legacy _riana.txt
+    schema (plus the mass-accuracy columns) and a per-fraction drift JSON
+    sidecar through the Typer CLI (the only engine after M4).
     """
-    out_dir = tmp_path / "engine_new_out"
+    out_dir = tmp_path / "cli_out"
     out_dir.mkdir()
     cmd = [
         sys.executable, "-m", "riana", "integrate",
         str(SAMPLE1), str(SAMPLE1 / "percolator.target.psms.txt"),
         "-s", "sample1", "-o", str(out_dir),
-        "-i", "0", "6",
+        "-i", "0 6",
         "-q", "1.0",
         "-r", "1.0",
         "-m", "50",
         "-t", "1",
-        "--engine", "new",
     ]
     subprocess.run(cmd, check=True, capture_output=True)
 

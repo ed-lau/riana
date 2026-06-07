@@ -44,33 +44,27 @@ def test_percolator_reads_crux_format():
 def test_percolator_matches_readpercolator_parity():
     """The typed parser must be a drop-in for the 0.9.0 ReadPercolator.
 
-    Anchored to the parity result we verified on the ac16 calibration data
-    (peptide_mass diff 0.0, q-value diff 0.0); rerunning the same check on
-    the sample1 fixture in CI catches regressions in the field mapping.
+    Compared against ``percolator_parity_v0_9_0.csv`` — the legacy
+    ``ReadPercolator.id_df`` (peptide mass / scan / sequence) frozen before the
+    legacy module was removed in M4. Anchored to the same parity we verified on
+    the ac16 calibration data (peptide_mass diff 0.0); catches field-mapping
+    regressions in the new parser.
     """
-    import logging
+    import pandas as pd
 
-    from riana.peptides import ReadPercolator
-
-    with open(PSMS) as f:
-        old = ReadPercolator(
-            path=f,
-            sample="sample1",
-            _ignored_mods=(),
-            logger=logging.getLogger("test_io"),
-        )
+    old = pd.read_csv(FIXTURE_DIR / "percolator_parity_v0_9_0.csv")
     new = ioperc.read_percolator(PSMS, sample="sample1")
-    assert len(new) == len(old.id_df)
+    assert len(new) == len(old)
+    # peptide mass is a recomputed float; the golden round-trips through CSV, so
+    # compare at full float precision rather than bit-exact ==.
+    np.testing.assert_allclose(
+        np.array([r.peptide_mass for r in new]),
+        old["peptide mass"].to_numpy(),
+        rtol=1e-9, atol=1e-6,
+    )
+    assert (old["scan"].to_numpy() == np.array([r.scan for r in new])).all()
     assert (
-        old.id_df["peptide mass"].to_numpy()
-        == np.array([r.peptide_mass for r in new])
-    ).all()
-    assert (
-        old.id_df["scan"].to_numpy() == np.array([r.scan for r in new])
-    ).all()
-    assert (
-        old.id_df["sequence"].to_numpy()
-        == np.array([r.sequence for r in new])
+        old["sequence"].to_numpy() == np.array([r.sequence for r in new])
     ).all()
 
 
@@ -87,21 +81,24 @@ def test_percolator_fraction_psms_assigns_pep_ids():
 
 
 def test_indexed_mzml_matches_pymzml_ms1_count():
-    """pyteomics-backed reader sees the same MS1 scans as the 0.9.0 pymzml one."""
-    from riana.spectra import Mzml
+    """pyteomics-backed reader sees the same MS1 scans as the 0.9.0 pymzml one.
 
-    old = Mzml(str(MZML_GZ))
-    old.parse_mzml()
+    Compared against ``mzml_ms1_v0_9_0.npz`` — the legacy ``riana.spectra.Mzml``
+    ``scan_idx`` / ``rt_idx`` and a mid-scan peak count, frozen before the
+    legacy reader was removed in M4.
+    """
+    golden = np.load(FIXTURE_DIR / "mzml_ms1_v0_9_0.npz")
+    old_scan_idx = golden["scan_idx"]
+    old_rt_idx = golden["rt_idx"]
+    mid_scan = int(golden["mid_scan"])
+    mid_npeaks = int(golden["mid_npeaks"])
     with iomzml.IndexedMzML(MZML_GZ) as new:
-        assert (new.scan_idx == old.scan_idx).all()
+        assert (new.scan_idx == old_scan_idx).all()
         # rt_idx is in minutes for both readers; tolerate 1e-9 for float quirks.
-        assert np.max(np.abs(new.rt_idx - old.rt_idx)) < 1e-9
+        assert np.max(np.abs(new.rt_idx - old_rt_idx)) < 1e-9
         # Random-access peaks fetch round-trips against the eager pymzml load.
-        scan = int(old.scan_idx[len(old.scan_idx) // 2])
-        idx_in_msdata = int(np.where(old.scan_idx == scan)[0][0])
-        old_peaks = old.msdata[idx_in_msdata]
-        new_mz, new_int = new.peaks(scan)
-        assert len(old_peaks) == len(new_mz)
+        new_mz, _ = new.peaks(mid_scan)
+        assert len(new_mz) == mid_npeaks
 
 
 def test_indexed_mzml_ms1_iter_yields_full_set():

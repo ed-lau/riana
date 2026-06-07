@@ -118,7 +118,7 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(
-        model="simple", label=1, q_value=0.05, depth=3,
+        model="simple", label="hw", q_value=0.05, depth=3,
         ria_max=0.06, threads=1,
     )
 
@@ -155,7 +155,7 @@ def test_fit_run_filters_by_depth():
     # Only feed 2 timepoints — fewer than depth=3.
     short_dfs = dfs[:2]
     config = FitConfig(
-        model="simple", label=1, q_value=0.05, depth=3,
+        model="simple", label="hw", q_value=0.05, depth=3,
         ria_max=0.06, threads=1,
     )
     with pytest.raises(ValueError, match="No peptides survive"):
@@ -167,7 +167,7 @@ def test_fit_run_rejects_unknown_model():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
     bad_config = FitConfig(
-        model="simple", label=1, q_value=0.05, depth=3,
+        model="simple", label="hw", q_value=0.05, depth=3,
         ria_max=0.06, threads=1,
     )
     object.__setattr__(bad_config, "model", "nonexistent")
@@ -193,7 +193,7 @@ def test_fit_run_handles_bracketed_modification_strings():
         df.loc[m, "sequence"] = "VAPEPTIDES[79.9663]K"
 
     config = FitConfig(
-        model="simple", label=1, q_value=0.05, depth=3,
+        model="simple", label="hw", q_value=0.05, depth=3,
         ria_max=0.06, threads=1,
     )
     result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)

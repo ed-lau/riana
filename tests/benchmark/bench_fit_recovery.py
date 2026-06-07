@@ -119,11 +119,12 @@ def relabel_inputs(inputs_dir: Path, gt: pd.DataFrame, pt_map: pd.DataFrame,
     return out
 
 
-def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: int,
+def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: str,
                   depth: int, q_value: float, threads: int,
-                  engine: str = 'legacy',
                   coefficients: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
+    if label == 'hw' and coefficients is None:
+        raise ValueError("riana fit --label hw requires a coefficients CSV path")
     cmd = [
         sys.executable, '-m', 'riana', 'fit',
         *[str(f) for f in files],
@@ -134,11 +135,8 @@ def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: int,
         '-d', str(depth),
         '-t', str(threads),
         '-o', str(out_dir),
-        '--engine', engine,
     ]
-    if engine == 'new':
-        if coefficients is None:
-            raise ValueError("--engine new requires a coefficients CSV path")
+    if coefficients is not None:
         cmd.extend(['--coefficients', str(coefficients)])
     print(f'[fit] {" ".join(cmd)}')
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -215,18 +213,17 @@ def main() -> None:
                              'pseudotime map must be built [default: 0.5]')
     parser.add_argument('--ria', type=float, default=_DEFAULT_RIA_D2O,
                         help='ria_max for riana fit [default: 6%% D2O RIA]')
-    parser.add_argument('--label', type=int, default=1)
+    parser.add_argument('--label', type=str, default='hw',
+                        help="labeling chemistry [default: hw]")
     parser.add_argument('--depth', type=int, default=3)
     parser.add_argument('--q-value', type=float, default=0.01)
     parser.add_argument('--threads', type=int, default=4)
-    parser.add_argument('--engine', choices=['legacy', 'new'], default='legacy',
-                        help='which riana fit engine to drive '
-                             '[default: legacy]; --engine new requires '
-                             '--coefficients')
-    parser.add_argument('--coefficients', type=Path, default=None,
-                        help='per-AA coefficient CSV for --engine new '
-                             '(e.g. tests/data/calibration_d2o_mixing/<line>/'
-                             'd2o_aa_coefficients_<line>.csv)')
+    parser.add_argument('--coefficients', type=str, default=None,
+                        help='per-AA coefficient table for `riana fit` — a '
+                             'bundled preset (commerford|ac16|ipsc|cm) or a CSV '
+                             'path (e.g. tests/data/calibration_d2o_mixing/'
+                             '<line>/d2o_aa_coefficients_<line>.csv). Required '
+                             'for --label hw.')
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -247,7 +244,6 @@ def main() -> None:
         result_path = run_riana_fit(files, fit_out, ria=args.ria,
                                     label=args.label, depth=args.depth,
                                     q_value=args.q_value, threads=args.threads,
-                                    engine=args.engine,
                                     coefficients=args.coefficients)
         # M3 Week 4: riana_fit_peptides.txt carries a provenance header.
         fit_df = pd.read_csv(result_path, sep='\t', comment='#')

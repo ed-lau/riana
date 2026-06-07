@@ -1,0 +1,399 @@
+# -*- coding: utf-8 -*-
+
+"""Riana command-line interface (Typer).
+
+This is the M4 CLI rewrite. It replaces the 0.9.0 argparse ``main.py`` and the
+``--engine legacy``/``--engine new`` split: the typed pipeline
+(``riana.core`` + ``riana.io``, driven by the frozen
+:class:`riana.config.IntegrationConfig` / :class:`~riana.config.FitConfig`) is
+now the *only* engine. Those frozen dataclasses are the single source of truth
+shared with the (M4 Phase 2) Qt GUI — their ``__post_init__`` carries the domain
+validation, so both surfaces validate identically (PROJECT_REVIEW §2d, §4.2).
+
+The CLI layer here only does the *CLI-shaped* checks Typer/click can't express
+on the dataclass (paths exist, thread ≤ cpu count, sample ends in a digit) and
+the arg→config marshalling; everything numeric is the dataclass's job.
+
+Defaults reproduce the 2026-06 peak-detection spike winner (apex-centred narrow
+window). Reproduce 0.9.0 integration with ``--peak-rt ms2
+--integration-half-width 1.0``.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import List, Optional
+
+import typer
+
+from riana import __version__
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Riana — integrate isotopomer abundances from MS1 data and fit "
+    "protein-turnover kinetics. https://github.com/ed-lau/riana",
+)
+
+
+# --------------------------------------------------------------------------- #
+# helpers
+# --------------------------------------------------------------------------- #
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"riana {__version__}")
+        raise typer.Exit()
+
+
+def _parse_number_list(value: str | None, cast, *, sort: bool, unique: bool):
+    """Parse a comma/space-separated numeric list (``"0 6"`` or ``"0,6"``).
+
+    Replaces the 0.9.0 argparse ``nargs='+'`` (``-i 0 6``); a single token keeps
+    the flag Snakemake- and shell-quote-friendly.
+    """
+    if value is None or not value.strip():
+        return ()
+    parts = [p for p in re.split(r"[,\s]+", value.strip()) if p]
+    out = [cast(p) for p in parts]
+    if unique and len(out) != len(set(out)):
+        raise typer.BadParameter(f"duplicate values not allowed: {value!r}")
+    if sort:
+        out.sort()
+    return tuple(out)
+
+
+@app.callback()
+def _main(
+    version: Optional[bool] = typer.Option(
+        None, "--version", "-v",
+        callback=_version_callback, is_eager=True,
+        help="Show the riana version and exit.",
+    ),
+) -> None:
+    """Riana CLI root."""
+
+
+# --------------------------------------------------------------------------- #
+# integrate
+# --------------------------------------------------------------------------- #
+@app.command()
+def integrate(
+    mzml_path: Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Folder containing the mzML file(s).",
+    ),
+    id_path: Path = typer.Argument(
+        ..., exists=True, dir_okay=False, readable=True,
+        help="Percolator target psms.txt (the search-ID file).",
+    ),
+    sample: str = typer.Option(
+        "time0", "-s", "--sample",
+        help="Sample name (overrides the mzML folder name); must end with a "
+        "number encoding the time point, e.g. time1.",
+    ),
+    iso: str = typer.Option(
+        "0 6", "-i", "--iso",
+        help="Isotopomers to integrate, comma/space separated, e.g. '0 1 2 3'.",
+    ),
+    unique: bool = typer.Option(
+        False, "-u", "--unique",
+        help="Integrate unique (single-protein) peptides only.",
+    ),
+    thread: int = typer.Option(
+        1, "-t", "--thread", help="Worker threads [default: 1]."),
+    out: Path = typer.Option(
+        Path("."), "-o", "--out", help="Output directory [default: .]."),
+    q_value: float = typer.Option(
+        1e-2, "-q", "--q_value", metavar="FDR",
+        help="Integrate only PSMs with q-value below this [default: 1e-2]."),
+    extraction_half_width: Optional[float] = typer.Option(
+        None, "-r", "--extraction_half_width", "--r_time",
+        help="Extraction half-width (RT min, both directions): how much XIC to "
+        "pull around the PSM. If omitted, derived from --integration-half-width "
+        "/ --peak-rt. (alias: --r_time)",
+    ),
+    peak_rt: str = typer.Option(
+        "apex", "--peak-rt",
+        help="Window anchor: 'apex' (default, spike winner), 'ms2' (0.9.0 "
+        "parity), or 'consensus' (median apex over m0..m3; prefer at high D2O).",
+    ),
+    integration_half_width: str = typer.Option(
+        "0.15", "--integration-half-width", metavar="MIN|auto",
+        help="Integration half-width in RT min (default 0.15; dial to your "
+        "chromatographic peak width), or 'auto' to detect boundaries.",
+    ),
+    baseline_method: str = typer.Option(
+        "none", "--baseline",
+        help="In-window baseline subtraction: none (default), noise_floor, "
+        "snip, asls.",
+    ),
+    apex_selection: str = typer.Option(
+        "tallest", "--apex-selection",
+        help="Apex pick rule for apex/consensus: tallest (default) or nearest.",
+    ),
+    write_intensities: bool = typer.Option(
+        False, "-w", "--write_intensities",
+        help="Also write the pre-integration intensity trace."),
+    mass_tol: int = typer.Option(
+        50, "-m", "--mass_tol", metavar="PPM",
+        help="Mass tolerance half-width in ppm (±N ppm) [default: 50]."),
+    smoothing: Optional[int] = typer.Option(
+        None, "-S", "--smoothing",
+        help="Savitzky-Golay smoothing window (odd int ≥ 3)."),
+    mass_difference: float = typer.Option(
+        1.003354835, "-D", "--mass_difference",
+        help="Mass difference between isotopomers [default: 1.003354835]."),
+    ignored_mods: str = typer.Option(
+        "", "-X", "--ignored_mods",
+        help="Modification mass(es) to ignore for true-peptide-mass calc, "
+        "comma/space separated, e.g. '6.02'."),
+    forced_mods: str = typer.Option(
+        "", "-F", "--forced_mods",
+        help="Modification mass(es) to always add (SILAC clusters), e.g. "
+        "'6.0201'."),
+) -> None:
+    """Integrate isotopomer abundance over retention time."""
+    import dataclasses
+    import json
+
+    from riana.config import IntegrationConfig
+    from riana.core.integration import integrate_run
+    from riana.io.mzml import IndexedMzML
+    from riana.io.percolator import file_indices, fraction_psms, read_percolator
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+    from riana.logger import get_logger
+
+    # --- CLI-shaped validation (the dataclass does the numeric domain checks) -
+    if thread > (os.cpu_count() or 1):
+        raise typer.BadParameter(
+            f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
+    if not sample or not sample[-1].isdigit():
+        raise typer.BadParameter(
+            f"--sample must end with a number (got {sample!r}).")
+
+    isotopomers = _parse_number_list(iso, int, sort=True, unique=True)
+    if not isotopomers:
+        raise typer.BadParameter("--iso must list at least one isotopomer.")
+    ignored = _parse_number_list(ignored_mods, float, sort=False, unique=True)
+    forced = _parse_number_list(forced_mods, float, sort=True, unique=True)
+    # 0.9.0 semantic: forced_mods always carries a leading 0 (the unmodified
+    # cluster); StoreUniqueForcedMods did this in argparse.
+    forced = (0.0,) + tuple(m for m in forced if m != 0.0)
+
+    ihw: float | str = ("auto" if integration_half_width == "auto"
+                        else float(integration_half_width))
+    # Derive the extraction half-width unless -r given: ms2 integrates the whole
+    # extraction (= ihw); apex/consensus need room for the apex offset (+0.33);
+    # 'auto' uses a 0.33 base. (Lifted from the M3 _integrate_new adapter.)
+    if extraction_half_width is not None:
+        ehw = float(extraction_half_width)
+    elif peak_rt == "ms2" and ihw != "auto":
+        ehw = float(ihw)
+    else:
+        ehw = (0.33 if ihw == "auto" else float(ihw)) + 0.33
+
+    os.makedirs(out, exist_ok=True)
+    # The frozen config's __post_init__ owns the numeric domain validation
+    # (mass_tol range, q_value range, peak_rt enum, ...); surface it as a clean
+    # CLI error rather than a traceback.
+    try:
+        config = IntegrationConfig(
+            sample=sample,
+            isotopomers=isotopomers,
+            mass_tol_ppm=int(mass_tol),
+            extraction_half_width=ehw,
+            peak_rt=peak_rt,
+            integration_half_width=ihw,
+            baseline_method=baseline_method,
+            apex_selection=apex_selection,
+            q_value=float(q_value),
+            unique_only=bool(unique),
+            write_intensities=bool(write_intensities),
+            smoothing=smoothing,
+            mass_difference=float(mass_difference),
+            ignored_mods=ignored,
+            forced_mods=forced,
+            threads=int(thread),
+            out_dir=str(out),
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    logger = get_logger(__name__, str(out))
+    logger.info(f"riana {__version__}")
+    logger.info("integrate (typed pipeline)")
+
+    all_psms = read_percolator(str(id_path), sample=sample, ignored_mods=ignored)
+
+    # mzML directory layout: sort by name, accept .mzML / .mzML.gz (mirrors the
+    # 0.9.0 fraction-index assignment when no percolator.log.txt is present).
+    mzml_files = sorted(
+        f for f in os.listdir(mzml_path)
+        if re.match(r"^.*\.mz[Mm][Ll](\.gz)?$", f)
+    )
+    if not mzml_files:
+        raise typer.BadParameter(f"No mzML files in {mzml_path}.")
+    indices = file_indices(all_psms)
+    if len(mzml_files) != len(indices):
+        raise typer.BadParameter(
+            f"mzML count ({len(mzml_files)}) != distinct file_idx count "
+            f"({len(indices)}) in {id_path}.")
+
+    for idx in indices:
+        mzml_basename = re.sub(r"\.mz[Mm][Ll](\.gz)?$", "", mzml_files[idx])
+        mzml_file = os.path.join(mzml_path, mzml_files[idx])
+        logger.info(f"integrating fraction {idx}: {mzml_basename}")
+
+        fraction = fraction_psms(all_psms, idx)
+        with IndexedMzML(mzml_file) as mzml:
+            df = integrate_run(config, fraction, mzml, file_label=mzml_basename)
+
+        out_file = Path(out) / f"{sample}_riana.txt"
+        provenance = make_provenance(
+            dataclasses.asdict(config),
+            id_source=str(id_path),
+            extra={"mzml": mzml_basename},
+        )
+        write_dataframe_tsv(out_file, df, provenance, include_index=True)
+
+        drift = df.attrs.get("drift_summary")
+        if drift is not None:
+            drift_path = out_file.with_suffix(".drift.json")
+            with drift_path.open("w") as fh:
+                json.dump(dataclasses.asdict(drift), fh, indent=2)
+        logger.info(f"wrote {out_file} (+ drift sidecar)")
+
+    logger.info("integrate: done")
+    logger.handlers.clear()
+
+
+# --------------------------------------------------------------------------- #
+# fit
+# --------------------------------------------------------------------------- #
+@app.command()
+def fit(
+    riana_path: List[Path] = typer.Argument(
+        ..., exists=True, dir_okay=False,
+        help="One or more integrate output _riana.txt files (sample field must "
+        "encode the time point, e.g. time0, time6).",
+    ),
+    coefficients: Optional[str] = typer.Option(
+        None, "--coefficients",
+        help="Per-AA D2O labeling-site table — REQUIRED for --label hw. Either "
+        "a bundled preset name (commerford | ac16 | ipsc | cm) or a path to a "
+        "CSV with columns (amino_acid, coefficient).",
+    ),
+    model: str = typer.Option(
+        "simple", "-m", "--model",
+        help="Kinetic model: simple (default), guan, fornasiero."),
+    label: str = typer.Option(
+        "hw", "-l", "--label",
+        help="Labeling chemistry: 'hw' (heavy water / D2O, default). 'o18' is "
+        "recognized but its fit is being reimplemented post-M4. (Amino-acid / "
+        "SILAC fitting was dropped — integrate SILAC peaks, fit L/(H+L) "
+        "downstream.)",
+    ),
+    kp: float = typer.Option(
+        0.5, "--kp", help="Precursor rate constant (two-compartment models)."),
+    kr: float = typer.Option(
+        0.05, "--kr", help="Reutilization rate constant (Fornasiero)."),
+    rp: float = typer.Option(
+        10.0, "--rp", help="Bound/free precursor ratio (Fornasiero)."),
+    q_value: float = typer.Option(
+        1e-2, "-q", "--q_value", metavar="FDR",
+        help="Fit only data points with q-value below this [default: 1e-2]."),
+    depth: int = typer.Option(
+        3, "-d", "--depth",
+        help="Fit only peptides seen in at least this many samples [default: 3]."),
+    ria: float = typer.Option(
+        0.06, "-r", "--ria",
+        help="Precursor enrichment level (asymptotic D2O fraction, e.g. 0.06 "
+        "for 6%% v/v) [default: 0.06]."),
+    out: Path = typer.Option(
+        Path("."), "-o", "--out", help="Output directory [default: .]."),
+    plotcurves: bool = typer.Option(
+        False, "-p", "--plotcurves", help="Emit per-peptide fitted-curve plots."),
+    fs: Optional[str] = typer.Option(
+        None, "-f", "--fs",
+        help="Fine-structure FS formula (m0_m1, m0_m2, ..., Auto)."),
+    thread: int = typer.Option(
+        1, "-t", "--thread", help="Worker threads [default: 1]."),
+) -> None:
+    """Fit kinetic models to a D2O-labeling integrate time series."""
+    import dataclasses
+
+    import pandas as pd
+
+    from riana.config import FitConfig
+    from riana.core.fitting import (
+        available_coefficient_presets, fit_run, load_aa_coefficients,
+    )
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+    from riana.logger import get_logger
+
+    if thread > (os.cpu_count() or 1):
+        raise typer.BadParameter(
+            f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
+
+    # --coefficients is required for the hw path; o18 errors in fit_run anyway.
+    if label == "hw" and not coefficients:
+        presets = " | ".join(available_coefficient_presets())
+        raise typer.BadParameter(
+            "--coefficients is required for --label hw. Pass a bundled preset "
+            f"({presets}) or a path to a (amino_acid, coefficient) CSV.")
+
+    os.makedirs(out, exist_ok=True)
+    try:
+        config = FitConfig(
+            model=model,
+            label=label,
+            k_p=float(kp),
+            k_r=float(kr),
+            r_p=float(rp),
+            q_value=float(q_value),
+            depth=int(depth),
+            ria_max=float(ria),
+            fs_formula=fs,
+            plot_curves=bool(plotcurves),
+            threads=int(thread),
+            out_dir=str(out),
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    logger = get_logger(__name__, str(out))
+    logger.info(f"riana {__version__}")
+    logger.info("fit (typed pipeline)")
+
+    coeffs = load_aa_coefficients(coefficients) if coefficients else {}
+    if coeffs:
+        logger.info(f"loaded {len(coeffs)} AA coefficients from {coefficients}")
+
+    dfs = [pd.read_table(p, comment="#") for p in riana_path]
+    logger.info(f"read {len(dfs)} timepoint files; fitting ...")
+
+    result_df = fit_run(config, dfs, coeffs)
+
+    out_path = Path(out) / "riana_fit_peptides.txt"
+    provenance = make_provenance(
+        dataclasses.asdict(config),
+        id_source=",".join(str(p) for p in riana_path),
+        extra={"model": model, "label": label, "coefficients": str(coefficients)},
+    )
+    write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
+    logger.info(f"wrote {out_path}")
+    n_fitted = int(result_df["k_deg"].notna().sum())
+    n_well = int((result_df["R_squared"] >= 0.9).sum())
+    logger.info(f"{n_fitted} peptides converged; {n_well} R²≥0.9")
+    logger.handlers.clear()
+
+
+def main() -> None:
+    """Console-script entry point (``riana = riana.cli:main``)."""
+    app()
+
+
+if __name__ == "__main__":
+    main()

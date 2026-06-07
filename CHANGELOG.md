@@ -9,8 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The breaking 1.0 release: a new package structure, peak detection, baseline
 subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
-roadmap. This section is built up iteratively as the M3 milestone progresses;
-entries below are grouped by the week of work that produced them.
+roadmap. This section is built up iteratively as the milestones progress;
+entries below are grouped by the work that produced them.
+
+### M4 Phase 1 — Typer CLI + `--engine legacy` removal
+
+#### Changed (BREAKING)
+
+- **The CLI is now a Typer app** (`riana/cli.py`); the argparse `riana/main.py`
+  is gone. The console entry point is `riana = riana.cli:main`. The typed
+  pipeline (`core` + `io`, driven by the frozen `IntegrationConfig` /
+  `FitConfig`) is the **only** engine — the `--engine legacy|new` flag is
+  **removed**. Reproduce 0.9.0 integration with `--peak-rt ms2
+  --integration-half-width 1.0` (numerically within 1e-3; pinned by a committed
+  golden, `tests/data/sample1/sample1_riana.v0_9_0.txt`).
+- **List flags take a single comma/space-separated token**, not argparse
+  `nargs='+'`: `-i "0 1 2 3"` (was `-i 0 1 2 3`); same for `-X` / `-F`.
+- **`riana fit --coefficients` is now REQUIRED** for `--label hw`. Pass a
+  bundled preset (`commerford` | `ac16` | `ipsc` | `cm`) or a path to a
+  `(amino_acid, coefficient)` CSV. The old fixed-site-count default is gone.
+- **`riana fit --label` is now `{hw, o18}`** (was `1|2|3|4`). The deuterium
+  in-vivo/in-vitro split collapses into one `hw` (heavy water / D₂O) mode —
+  cell/tissue specificity comes from the coefficient table, not the label.
+  **Amino-acid / SILAC fitting (old `--label 4`, `-a/--aa`) is dropped**:
+  integrate still extracts SILAC peaks via `-F/--forced_mods`; do the
+  L/(H+L) curve fit downstream. **`o18` is recognized but errors** ("being
+  reimplemented post-M4"); o18 *integration* is unaffected.
+
+#### Added
+
+- Bundled per-AA D₂O coefficient presets under `riana/data/coefficients/`
+  (`commerford` literature + `ac16`/`ipsc`/`cm` calibration tables);
+  `riana fit --coefficients <name>` resolves a preset, else a filesystem path
+  (`core.fitting.load_aa_coefficients` / `available_coefficient_presets`).
+- `tests/test_cli.py` (Typer `CliRunner` smoke tests).
+
+#### Removed
+
+- Legacy modules `riana/{main,riana_integrate,riana_fit,spectra,peptides,project}.py`
+  and the re-export shims `riana/{accmass,fsynthesis,models}.py`. The broken
+  Tkinter GUI (`riana_ui/`) is deleted (PySide6 GUI lands in M4 Phase 2).
+- Tests that A/B-tested against the live legacy modules now compare against
+  committed golden fixtures captured from 0.9.0 before deletion
+  (`sample1_riana.v0_9_0.txt`, `percolator_parity_v0_9_0.csv`,
+  `mzml_ms1_v0_9_0.npz`).
 
 ### M3 Week 1 — skeleton + lifts
 
