@@ -12,6 +12,63 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Pre-1.0.0 chores
+
+#### Changed
+
+- **Version → `1.0.0`** (dropped the `.dev1` marker).
+- **Docs** are no longer committed as rendered HTML. The Quarto source under
+  `riana_website/` now renders to a gitignored `_site/` and is published to
+  GitHub Pages by a new `.github/workflows/docs.yml`. *Manual one-time step:* set
+  the repo's Pages source to "GitHub Actions" before merging to `master`.
+
+#### Removed
+
+- **The bundled `workflow/Snakefile`** and its `config_template.yaml`. Riana is
+  orchestration-agnostic: quantms / DIA-NN own search + ID upstream, and Riana is
+  a linear `integrate → fit` chain glued by the manifest (below). Compose the
+  subcommands into whatever workflow already runs them.
+
+### M6a — run-identity data model & intake refactor (Track A)
+
+#### Added
+
+- **`RunIdentity`** (`records.py`): the SDRF-sourced identity
+  (experiment, sample, data_file, bio/tech replicate, fraction,
+  labeling_time | mixing_proportion, condition, acquisition,
+  precursor_enrichment) attached to every PSM at intake and carried
+  header-authoritatively to fit. The experiment type is *declared by which
+  independent-variable column is present*. `PSMRecord` also gains
+  `retention_time` (the DIA RT-apex prior) and `identity`.
+- **`io/sdrf.py`** — `read_sdrf()` reads Riana's documented SDRF column subset
+  (handling duplicate `comment[modification parameters]` columns), validates it,
+  and exposes a `sample_map` keyed by mzML stem. It deliberately does **not**
+  read `comment[precursor mass tolerance]` (the tight search window).
+- **`io/manifest.py`** — a schema-versioned, stage-aware `riana_manifest.tsv`
+  (`stage = integrate | fit | protein`) that indexes every stage output with its
+  identity; the project glue between subcommands.
+- **`core/pipeline.py`** — the shared orchestration extracted from
+  `cli.integrate` / `gui.tasks`: `integrate_project()` (SDRF → mzTab → one
+  `<mzml_stem>_riana.txt` per run, identity in the provenance header, manifest
+  rows) and the fit-time recombination (`recombine_for_fit` / `fit_project`)
+  that groups runs into kinetic curves by `(experiment, condition)`, merges
+  fractions of the same `(biorep, timepoint)` at peptide level, and takes the
+  curve x-axis from the identity — not from the `sample` string.
+
+#### Changed
+
+- **`io/mztab.py`** — `read_mztab(path, sample_map=…)` is now the primary path:
+  it joins per-`ms_run` identity by location basename and carries the mzTab
+  retention time. The bare `sample=` call is kept for legacy/single-run tests.
+- **`riana integrate --sdrf SDRF`** drives the identity-keyed mzTab intake (one
+  output per run + manifest). Without `--sdrf`, the single-mzML Percolator path
+  is unchanged (the demoted testing/legacy tier).
+- **`riana fit --manifest MANIFEST`** groups runs into curves from the manifest
+  identity. The positional `_riana.txt` path stays for legacy/single-curve fits.
+  `fit_run` gained a `time_column` so the manifest path reads the timepoint from
+  the identity; a parity test pins the manifest path's `k_deg` to the legacy
+  path's.
+
 ### M4 Phase 2 — PySide6 GUI
 
 #### Added

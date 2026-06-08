@@ -86,12 +86,22 @@ def integrate(
     ),
     id_path: Path = typer.Argument(
         ..., exists=True, dir_okay=False, readable=True,
-        help="Percolator target psms.txt (the search-ID file).",
+        help="The search-ID file: a Percolator target psms.txt (single-mzML "
+        "path), or — with --sdrf — the quantms mzTab covering every run.",
+    ),
+    sdrf: Optional[Path] = typer.Option(
+        None, "--sdrf", exists=True, dir_okay=False, readable=True,
+        help="SDRF samplesheet (the primary path). Drives identity-keyed "
+        "intake: id_path is read as an mzTab, one <mzml_stem>_riana.txt is "
+        "written per run with its full identity in the header, and a "
+        "riana_manifest.tsv is written/updated. Without --sdrf, id_path is a "
+        "Percolator file (the demoted single-mzML tier).",
     ),
     sample: str = typer.Option(
         "time0", "-s", "--sample",
-        help="Sample name (overrides the mzML folder name); must end with a "
-        "number encoding the time point, e.g. time1.",
+        help="Sample name for the Percolator (no-SDRF) path; must end with a "
+        "number encoding the time point, e.g. time1. Ignored with --sdrf "
+        "(identity comes from the SDRF).",
     ),
     iso: str = typer.Option(
         "0 1 2 3 4 5", "-i", "--iso",
@@ -162,6 +172,7 @@ def integrate(
 
     from riana.config import IntegrationConfig
     from riana.core.integration import integrate_run
+    from riana.exceptions import DataError
     from riana.io.mzml import IndexedMzML, list_mzml_files, mzml_stem
     from riana.io.percolator import file_indices, fraction_psms, read_percolator
     from riana.io.writers import make_provenance, write_dataframe_tsv
@@ -171,7 +182,9 @@ def integrate(
     if thread > (os.cpu_count() or 1):
         raise typer.BadParameter(
             f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
-    if not sample or not sample[-1].isdigit():
+    # The --sample digit convention is only how the no-SDRF Percolator path
+    # encodes the timepoint; with --sdrf the timepoint is an SDRF column.
+    if sdrf is None and (not sample or not sample[-1].isdigit()):
         raise typer.BadParameter(
             f"--sample must end with a number (got {sample!r}).")
 
@@ -227,6 +240,28 @@ def integrate(
     logger.info(f"riana {__version__}")
     logger.info("integrate (typed pipeline)")
 
+    # --- SDRF path (primary): identity-keyed mzTab intake via the shared
+    # pipeline — one <stem>_riana.txt per run + a manifest. ---------------------
+    if sdrf is not None:
+        from riana.core.pipeline import integrate_project
+        from riana.io.sdrf import read_sdrf
+
+        try:
+            sdrf_table = read_sdrf(sdrf)
+            logger.info(
+                f"SDRF {sdrf}: {len(sdrf_table.runs)} runs, "
+                f"{sdrf_table.experiment_type}, {sdrf_table.acquisition}"
+            )
+            integrate_project(
+                config, sdrf_table, mzml_path, id_path, out, logger=logger
+            )
+        except DataError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        logger.info("integrate: done")
+        logger.handlers.clear()
+        return
+
+    # --- Percolator path (demoted single-mzML testing/legacy tier). -----------
     all_psms = read_percolator(str(id_path), sample=sample, ignored_mods=ignored)
 
     # mzML directory layout: sort by name, accept .mzML / .mzML.gz (mirrors the
@@ -273,10 +308,17 @@ def integrate(
 # --------------------------------------------------------------------------- #
 @app.command()
 def fit(
-    riana_path: List[Path] = typer.Argument(
-        ..., exists=True, dir_okay=False,
-        help="One or more integrate output _riana.txt files (sample field must "
-        "encode the time point, e.g. time0, time6).",
+    riana_path: Optional[List[Path]] = typer.Argument(
+        None, exists=True, dir_okay=False,
+        help="Integrate output _riana.txt files (legacy/single-curve path; the "
+        "sample field encodes the time point, e.g. time0, time6). Omit when "
+        "using --manifest.",
+    ),
+    manifest: Optional[Path] = typer.Option(
+        None, "--manifest", exists=True, dir_okay=False, readable=True,
+        help="riana_manifest.tsv from `integrate --sdrf` (the primary path). "
+        "Runs are grouped into kinetic curves by (experiment, condition) with "
+        "the timepoint taken from the SDRF identity, not the filename.",
     ),
     coefficients: Optional[str] = typer.Option(
         None, "--coefficients",
@@ -336,6 +378,11 @@ def fit(
         raise typer.BadParameter(
             f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
 
+    if (manifest is None) == (not riana_path):
+        raise typer.BadParameter(
+            "provide either positional _riana.txt file(s) (legacy path) or "
+            "--manifest (the SDRF path), not both / neither.")
+
     # --coefficients is required for the hw path; o18 errors in fit_run anyway.
     if label == "hw" and not coefficients:
         presets = " | ".join(available_coefficient_presets())
@@ -374,15 +421,22 @@ def fit(
     if coeffs:
         logger.info(f"loaded {len(coeffs)} AA coefficients from {coefficients}")
 
-    dfs = [pd.read_table(p, comment="#") for p in riana_path]
-    logger.info(f"read {len(dfs)} timepoint files; fitting ...")
+    if manifest is not None:
+        from riana.core.pipeline import fit_project
 
-    result_df = fit_run(config, dfs, coeffs)
+        logger.info(f"fitting from manifest {manifest}")
+        result_df = fit_project(config, manifest, coeffs, logger=logger)
+        id_source = str(manifest)
+    else:
+        dfs = [pd.read_table(p, comment="#") for p in riana_path]
+        logger.info(f"read {len(dfs)} timepoint files; fitting ...")
+        result_df = fit_run(config, dfs, coeffs)
+        id_source = ",".join(str(p) for p in riana_path)
 
     out_path = Path(out) / "riana_fit_peptides.txt"
     provenance = make_provenance(
         dataclasses.asdict(config),
-        id_source=",".join(str(p) for p in riana_path),
+        id_source=id_source,
         extra={"model": model, "label": label, "coefficients": str(coefficients)},
     )
     write_dataframe_tsv(out_path, result_df, provenance, include_index=True)

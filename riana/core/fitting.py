@@ -149,6 +149,7 @@ def fit_run(
     integrate_dfs: list[pd.DataFrame],
     aa_coefficients: Mapping[str, float],
     *,
+    time_column: str | None = None,
     n_boot: int = _DEFAULT_N_BOOT,
     boot_ci_pct: tuple[float, float] = _DEFAULT_BOOT_CI_PCT,
     random_state: int = 1337,
@@ -158,13 +159,20 @@ def fit_run(
     Args:
         config: :class:`riana.config.FitConfig` (model, label, depth,
             q-value, k_p / k_r / r_p, ria_max, threads).
-        integrate_dfs: one ``pandas.DataFrame`` per timepoint, each in the
-            ``_riana.txt`` schema (with ``concat`` / ``sample`` /
-            ``percolator q-value`` / ``isoN`` columns).
+        integrate_dfs: one or more ``pandas.DataFrame`` in the ``_riana.txt``
+            schema (``concat`` / ``sample`` / ``percolator q-value`` / ``isoN``).
         aa_coefficients: ``{aa_letter: coefficient}`` for per-peptide Spep
             computation. Typically loaded via :func:`load_aa_coefficients`
             from the M2 per-cell-line frozen table; literature default for
             other cell types.
+        time_column: when given (the M6a manifest path), the kinetic-curve
+            x-axis is read from this numeric column (e.g. ``"labeling_time"``,
+            from the SDRF identity) and each row is treated as one
+            already-recombined data point — :func:`riana.core.pipeline` does the
+            fraction merge and replicate-point assembly upstream. When ``None``
+            (the legacy/single-run path), the timepoint is parsed out of the
+            ``sample`` string and data points are deduped on ``(sample,
+            file_idx)``, preserving the pre-M6a behavior.
         n_boot: bootstrap resamples for the k_deg CI.
         boot_ci_pct: percentile bounds (default 5, 95).
         random_state: seed for the bootstrap RNG.
@@ -207,11 +215,25 @@ def fit_run(
         )
 
     rdf = rdf[rdf["percolator q-value"] < config.q_value].copy()
-    rdf = (
-        rdf.groupby(["concat", "file_idx"], group_keys=False)
-        .filter(lambda x: x["sample"].nunique() >= config.depth)
-        .copy()
-    )
+    if time_column is not None:
+        if time_column not in rdf.columns:
+            raise ValueError(
+                f"time_column {time_column!r} not in the integrate frames "
+                f"(have {list(rdf.columns)}). The pipeline must add it."
+            )
+        # Rows are already recombined to one point per (peptide, biorep,
+        # timepoint); depth = number of distinct points per peptide.
+        rdf = (
+            rdf.groupby("concat", group_keys=False)
+            .filter(lambda x: len(x) >= config.depth)
+            .copy()
+        )
+    else:
+        rdf = (
+            rdf.groupby(["concat", "file_idx"], group_keys=False)
+            .filter(lambda x: x["sample"].nunique() >= config.depth)
+            .copy()
+        )
     if rdf.empty:
         raise ValueError(
             "No peptides survive --q-value / --depth filtering. "
@@ -225,6 +247,7 @@ def fit_run(
         model_fn=model_fn,
         config=config,
         aa_coefficients=dict(aa_coefficients),
+        time_column=time_column,
         n_boot=n_boot,
         boot_ci_pct=boot_ci_pct,
         base_seed=random_state,
@@ -256,16 +279,23 @@ def _fit_one_concat(
     model_fn: Callable,
     config: FitConfig,
     aa_coefficients: dict[str, float],
+    time_column: str | None = None,
     n_boot: int,
     boot_ci_pct: tuple[float, float],
     base_seed: int,
 ) -> FitResult | None:
     """Per-peptide fit: Spep from coefficients → per-timepoint FS → k_deg."""
-    peptide_rows = (
-        rdf[rdf["concat"] == concat]
-        .drop_duplicates(subset=["sample", "file_idx"])
-        .copy()
-    )
+    if time_column is not None:
+        # M6a manifest path: rows are already one point per (peptide, biorep,
+        # timepoint); the x-axis is the numeric identity column, not the sample
+        # string.
+        peptide_rows = rdf[rdf["concat"] == concat].copy()
+    else:
+        peptide_rows = (
+            rdf[rdf["concat"] == concat]
+            .drop_duplicates(subset=["sample", "file_idx"])
+            .copy()
+        )
     if peptide_rows.empty:
         return _null_result(concat, "")
 
@@ -277,10 +307,13 @@ def _fit_one_concat(
         return _null_result(concat, "")
 
     obs_matrix = peptide_rows[iso_cols].to_numpy(dtype=np.float64)
-    t_arr = np.array(
-        [float(re.sub(r"[^0-9.]", "", s)) for s in peptide_rows["sample"]],
-        dtype=np.float64,
-    )
+    if time_column is not None:
+        t_arr = peptide_rows[time_column].to_numpy(dtype=np.float64)
+    else:
+        t_arr = np.array(
+            [float(re.sub(r"[^0-9.]", "", s)) for s in peptide_rows["sample"]],
+            dtype=np.float64,
+        )
     protein_id = (
         str(peptide_rows["protein id"].iloc[0])
         if "protein id" in peptide_rows.columns

@@ -61,6 +61,59 @@ def test_integrate_sample_must_end_with_digit(tmp_path):
     assert "must end with a number" in result.output
 
 
+# --- M6a SDRF / manifest paths ----------------------------------------------
+
+_BSA_MZTAB = (
+    "MTD\tmzTab-version\t1.0.0\n"
+    "MTD\tms_run[1]-location\tfile://20180216_BSA.mzML\n\n"
+    "PSH\tsequence\tPSM_ID\taccession\tunique\tdatabase\tdatabase_version\t"
+    "search_engine\tsearch_engine_score[1]\tmodifications\tretention_time\t"
+    "charge\texp_mass_to_charge\tcalc_mass_to_charge\tspectra_ref\tpre\tpost\t"
+    "start\tend\topt_global_Posterior_Error_Probability_score\t"
+    "opt_global_q-value\topt_global_cv_MS:1002217_decoy_peptide\t"
+    "opt_global_cv_MS:1000889_peptidoform_sequence\n"
+    "PSM\tRHPEYAVSVLLR\t0\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t"
+    "0.001\tnull\t300.0\t3\t470.6\t470.6\t"
+    "ms_run[1]:controllerType=0 controllerNumber=1 scan=4408\tK\tR\t1\t12\t"
+    "0.01\t0.001\t0\tRHPEYAVSVLLR\n"
+)
+
+_BSA_SDRF = (
+    "source name\tcharacteristics[biological replicate]\t"
+    "characteristics[precursor enrichment]\tcharacteristics[labeling time]\t"
+    "comment[data file]\tcomment[fraction identifier]\t"
+    "comment[technical replicate]\t"
+    "comment[proteomics data acquisition method]\tfactor value[condition]\n"
+    "bsa_t0\t1\t0.06\t0 day\t20180216_BSA.mzML\t1\t1\t"
+    "NT=data-dependent acquisition;AC=MS:1003221\tcontrol\n"
+)
+
+
+def test_integrate_sdrf_writes_per_run_output_and_manifest(tmp_path):
+    mztab = tmp_path / "bsa.mzTab"
+    mztab.write_text(_BSA_MZTAB)
+    sdrf = tmp_path / "bsa.sdrf.tsv"
+    sdrf.write_text(_BSA_SDRF)
+    result = runner.invoke(app, [
+        "integrate", str(SAMPLE1), str(mztab),
+        "--sdrf", str(sdrf), "-o", str(tmp_path),
+        "--peak-rt", "ms2", "--integration-half-width", "1.0", "-m", "50",
+    ])
+    assert result.exit_code == 0, result.output
+    # one <stem>_riana.txt per run + a manifest
+    assert (tmp_path / "20180216_BSA_riana.txt").exists()
+    assert (tmp_path / "riana_manifest.tsv").exists()
+    header = (tmp_path / "20180216_BSA_riana.txt").read_text()
+    assert "# sample bsa_t0" in header and "# condition control" in header
+
+
+def test_fit_requires_exactly_one_input_source(tmp_path):
+    # neither positional files nor --manifest
+    result = runner.invoke(app, ["fit", "--coefficients", "commerford"])
+    assert result.exit_code != 0
+    assert "either positional" in result.output
+
+
 def test_fit_requires_coefficients_for_hw():
     result = runner.invoke(app, ["fit", str(ONE_TIMEPOINT)])
     assert result.exit_code != 0

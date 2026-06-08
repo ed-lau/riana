@@ -159,6 +159,49 @@ def test_mztab_keeps_decoys_when_flag_off(tmp_path):
     assert len(records) == 3
 
 
+def test_mztab_attaches_identity_from_sample_map(tmp_path):
+    """The M6a primary path: a sample_map keyed by mzML stem tags each PSM with
+    its run identity and sets PSMRecord.sample to the SDRF source name."""
+    from riana.records import RunIdentity
+
+    fixture = tmp_path / "minimal.mzTab"
+    fixture.write_text(_MINIMAL_MZTAB)
+    sample_map = {
+        "run_A": RunIdentity(experiment="e", sample="SampA", data_file="run_A",
+                             labeling_time=0.0, biological_replicate=1),
+        "run_B": RunIdentity(experiment="e", sample="SampB", data_file="run_B",
+                             labeling_time=6.0, biological_replicate=2),
+    }
+    records, _ = iomztab.read_mztab(fixture, sample_map)
+    by_scan = {r.scan: r for r in records}
+    assert by_scan[101].sample == "SampA"
+    assert by_scan[101].identity.labeling_time == 0.0
+    assert by_scan[101].retention_time == pytest.approx(10.5)  # mzTab RT carried
+    assert by_scan[202].sample == "SampB"
+    assert by_scan[202].identity.biological_replicate == 2
+
+
+def test_mztab_errors_on_run_not_in_sdrf(tmp_path):
+    from riana.exceptions import DataError
+    from riana.records import RunIdentity
+
+    fixture = tmp_path / "minimal.mzTab"
+    fixture.write_text(_MINIMAL_MZTAB)
+    partial = {"run_A": RunIdentity(experiment="e", sample="A", data_file="run_A",
+                                    labeling_time=0.0)}
+    with pytest.raises(DataError, match="not in the SDRF"):
+        iomztab.read_mztab(fixture, partial)  # run_B missing
+
+
+def test_mztab_requires_exactly_one_selector(tmp_path):
+    from riana.exceptions import DataError
+
+    fixture = tmp_path / "minimal.mzTab"
+    fixture.write_text(_MINIMAL_MZTAB)
+    with pytest.raises(DataError, match="exactly one"):
+        iomztab.read_mztab(fixture)  # neither sample nor sample_map
+
+
 def test_mztab_preserves_zero_qvalue(tmp_path):
     """Regression: a q-value of exactly 0.0 must stay 0.0, not flip to 1.0.
 

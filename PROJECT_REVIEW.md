@@ -11,9 +11,12 @@
 > forward-model FS). The post-M4 planning round is **done** (2026-06-07): the
 > record-only M5–M8 numbering is retired and reorganized into five tracks (A
 > I/O & run-identity model, B integration fidelity, C fitting science, D
-> validation infra, E GUI/UX) — see §3 "Post-M4 roadmap". Next implementation
-> step: pre-1.0.0 chores, then M6a (run-identity model). Maintainer: Edward Lau.
-> Last reviewed: 2026-06-07.
+> validation infra, E GUI/UX) — see §3 "Post-M4 roadmap". **Pre-1.0.0 chores +
+> M6a (the run-identity model) are now done on branch `m3-rewrite`** (version →
+> 1.0.0, Snakefile retired, CI Quarto docs deploy, `RunIdentity` + `io/sdrf.py` +
+> `io/manifest.py` + `core/pipeline.py`, `integrate --sdrf` / `fit --manifest`).
+> Next implementation step: Track D (animal within-protein-θ gate) then M5
+> (per-timepoint FS). Maintainer: Edward Lau. Last reviewed: 2026-06-07.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -738,7 +741,20 @@ vs DIA-NN parquet).
 
 #### Track A — I/O & run-identity data model (the spine)
 
-- **M6a — identity model + intake refactor.** `io/sdrf.py` + a documented
+- **M6a — identity model + intake refactor. DONE (2026-06-07, branch
+  `m3-rewrite`).** Shipped as `RunIdentity` (`records.py`) + `io/sdrf.py` +
+  `io/manifest.py` (schema-versioned, stage-aware) + `core/pipeline.py`
+  (`integrate_project` one-file-per-run with identity-in-header + manifest;
+  `recombine_for_fit`/`fit_project` grouping curves by `(experiment,
+  condition)`), wired as `integrate --sdrf` / `fit --manifest`. Curve grouping
+  was user-confirmed: one curve per condition, `characteristics[biological
+  replicate]` are independent replicate points (not separate curves). Percolator
+  is the demoted single-mzML tier. Variable mods are parsed/exposed but not yet
+  threaded into the envelope (that stays M7). A parity test pins the manifest
+  path to the legacy path. **Deferred to follow-ups:** DIA-NN intake (M6b),
+  bounded file-parallelism (below), GUI rewiring onto `core/pipeline.py`
+  (Track E), threading SDRF mods into integration. Original spec below.
+- **M6a (original spec).** `io/sdrf.py` + a documented
   Riana-read column subset (`comment[data file]` → mzML join key; `source
   name`; `characteristics[biological replicate]`; `comment[technical
   replicate]`; `comment[fraction identifier]`; `characteristics[labeling time]`
