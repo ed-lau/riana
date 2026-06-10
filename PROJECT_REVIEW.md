@@ -15,8 +15,15 @@
 > M6a (the run-identity model) are now done on branch `m3-rewrite`** (version →
 > 1.0.0, Snakefile retired, CI Quarto docs deploy, `RunIdentity` + `io/sdrf.py` +
 > `io/manifest.py` + `core/pipeline.py`, `integrate --sdrf` / `fit --manifest`).
-> Next implementation step: Track D (animal within-protein-θ gate) then M5
-> (per-timepoint FS). Maintainer: Edward Lau. Last reviewed: 2026-06-07.
+> Track D shipped (within-protein-θ benchmark + frozen LVE bench set), which
+> surfaced + fixed two integration bugs: the quantms **filename-prefix**
+> scan-scramble (de-prefix mzML names) and **mass_tol 50→10 ppm** (now read from
+> the SDRF; centroid search-tolerance, not a profile-width window). Engine also
+> gained a best-q apex anchor, `apex_search_half_width=0.25`, bounded file-
+> parallelism (`--workers`), and a profile-mzML intake warning. Next: intake
+> scan↔RT guard → M5 (per-timepoint FS) → M6b (DIA-NN intake) → Track E GUI
+> rewiring onto `core/pipeline.py` → Track B fidelity (now gateable by Track D).
+> Maintainer: Edward Lau. Last reviewed: 2026-06-10.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -937,12 +944,21 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
 
 #### Track D — validation infrastructure (unblocked by M6a)
 
-- **Animal within-protein-θ benchmark.** The 4th dataset (`data/timeseries_lve`,
-  mouse in-vivo D₂O, mzTab + SDRF) has no fractional-pool ground truth, so it is
-  scored by *within-protein θ/FS variance per timepoint* (Hammond 2022): a better
-  integrator minimizes the spread among peptides of the same protein. New
-  `bench_within_protein_theta.py`; an orthogonal regression gate to the
-  mixing-series metrics for Track B.
+- **Animal within-protein-θ benchmark — BUILT (2026-06-10).** The 4th dataset
+  (`data/timeseries_lve`, mouse in-vivo D₂O, mzTab + SDRF) has no fractional-pool
+  ground truth, so it is scored by *within-protein θ/FS variance per timepoint*
+  (Hammond 2022): a better integrator minimizes the spread among peptides of the
+  same protein. Shipped as `build_lve_bench_set.py` (frozen, integrator-
+  independent set: proteotypic peptides of ≥3-peptide proteins at q<0.01,
+  abundance tertiles) + `bench_within_protein_theta.py` (per-timepoint θ via the
+  production `solve_fs_d2o`; overall / per-stratum / curated-vs-uncurated;
+  `compare_methods` so a Track B variant slots in on the identical set). Baseline
+  at the adopted defaults (apex@0.15 + best-q anchor + 10 ppm): within-protein-θ
+  robust-SD median **0.10** (curated 0.044), correct abundance ordering. Building
+  it surfaced and fixed **two integration bugs**: (1) the quantms **filename-prefix
+  scan-scramble** (Track A gotcha above) and (2) **mass_tol 50→10** (centroid
+  search-tolerance, not profile width — LVE R²med 0.69→0.87). Now the orthogonal
+  regression gate for Track B.
 - **Curation-gate revisit.** Treat both knobs as tunable — the R²>0.95 threshold
   *and* the "observed at every proportion" coverage rule (it should tolerate a
   known-bad fraction rather than discard peptides wholesale). Report the R²
