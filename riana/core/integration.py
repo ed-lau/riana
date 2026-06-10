@@ -87,6 +87,15 @@ def integrate_run(
         forced mods ≠ 0) area columns + ``file``.
     """
     # Filter by q-value, assign per-fraction pep_id 0..N-1 sorted by scan.
+    if mzml.ms1_centroid is False:
+        _LOGGER.warning(
+            "%s: MS1 is PROFILE, not centroid. The ±%d ppm window assumes "
+            "centroid data (one line per isotopomer ~ mass accuracy); on profile "
+            "data it under-captures the peak (FWHM ~30 ppm at 700 m/z). Centroid "
+            "the mzML, or widen --mass_tol to the profile peak width.",
+            file_label or _mzml_basename(mzml), config.mass_tol_ppm,
+        )
+
     kept = filter_by_q_value(psms, config.q_value)
     if config.unique_only:
         kept = [p for p in kept if "," not in p.protein_id]
@@ -107,6 +116,19 @@ def integrate_run(
         lo, hi = concat_scans.get(p.concat, (p.scan, p.scan))
         concat_scans[p.concat] = (min(lo, p.scan), max(hi, p.scan))
 
+    # Per-concat apex anchor — the scan of the **best-q (most confident) PSM**
+    # for each peptide-charge. When a peptide is identified at several scans, the
+    # apex search (and the use_range=False extraction centre) keys on this single
+    # anchor rather than each PSM's own scan, so every row of the concat locates
+    # the same peak near the confident ID instead of drifting per-PSM. Paired with
+    # ``apex_search_half_width`` it stops the apex roaming to a co-eluting isobar.
+    concat_anchor: dict[str, int] = {}
+    _best_q: dict[str, float] = {}
+    for p in kept:
+        if p.concat not in _best_q or p.percolator_q_value < _best_q[p.concat]:
+            _best_q[p.concat] = p.percolator_q_value
+            concat_anchor[p.concat] = p.scan
+
     forced = tuple(config.forced_mods or (0.0,))
     isos = tuple(config.isotopomers)
 
@@ -114,7 +136,8 @@ def integrate_run(
     # mass_accuracy_dict). Same worker pattern as legacy.
     def _do(idx: int):
         return _extract_per_psm(
-            kept[idx], concat_scans, forced, isos, config, mzml
+            kept[idx], concat_scans, forced, isos, config, mzml,
+            anchor_scan=concat_anchor[kept[idx].concat],
         )
 
     with futures.ThreadPoolExecutor(max_workers=config.threads) as ex:
@@ -139,7 +162,10 @@ def integrate_run(
         row: list = [idf["pep_id"].iloc[0]]
         rt_arr = idf["rt"].to_numpy(dtype=np.float64)
 
-        boundary = _peak_boundary(idf, psm, mzml, config, rt_arr, iso0_col, iso1_col)
+        boundary = _peak_boundary(
+            idf, psm, mzml, config, rt_arr, iso0_col, iso1_col,
+            anchor_scan=concat_anchor[psm.concat],
+        )
         if boundary is not None:
             n_detected += 1
         else:
@@ -327,6 +353,8 @@ def _extract_per_psm(
     isos: tuple[int, ...],
     config: IntegrationConfig,
     mzml: IndexedMzML,
+    *,
+    anchor_scan: int | None = None,
 ) -> tuple[pd.DataFrame, dict[str, tuple[float | None, float | None]]]:
     """Per-MS1-scan isotopomer intensities + mass-accuracy for one PSM.
 
@@ -360,7 +388,8 @@ def _extract_per_psm(
             & (mzml.rt_idx - rt_hi < config.extraction_half_width)
         ]
     else:
-        rt_center = mzml.rt_idx[np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1]
+        center_scan = anchor_scan if anchor_scan is not None else psm.scan
+        rt_center = mzml.rt_idx[np.searchsorted(mzml.scan_idx, center_scan, side="left") - 1]
         nearby = mzml.scan_idx[np.abs(mzml.rt_idx - rt_center) <= config.extraction_half_width]
 
     # Lazy peak fetch + centroid sum per (mod, iso) per MS1. As a Phase D
@@ -468,6 +497,8 @@ def _peak_boundary(
     rt_arr: np.ndarray,
     iso0_col: str,
     iso1_col: str | None,
+    *,
+    anchor_scan: int | None = None,
 ) -> "pk.PeakBoundary | None":
     """Locate the integration [lo, hi] per ``peak_rt`` / ``integration_half_width``.
 
@@ -481,8 +512,9 @@ def _peak_boundary(
     iso0_trace = idf[iso0_col].to_numpy(dtype=np.float64)
     if iso0_trace.sum() <= 0:
         return None
+    prior_scan = anchor_scan if anchor_scan is not None else psm.scan
     psm_rt = float(
-        mzml.rt_idx[np.searchsorted(mzml.scan_idx, psm.scan, side="left") - 1]
+        mzml.rt_idx[np.searchsorted(mzml.scan_idx, prior_scan, side="left") - 1]
     )
     if auto:
         iso0_b = pk.detect_peak(

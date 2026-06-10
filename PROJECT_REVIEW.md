@@ -778,10 +778,16 @@ vs DIA-NN parquet).
   peptide level, order by time — lands in a shared **`core/pipeline.py`** (the
   extraction the GUI "mirror, don't refactor" note flagged), consumed by both
   CLI and GUI. Read `comment[modification parameters]` from the SDRF so variable
-  mods need not be set on the CLI; **do not** inherit `comment[precursor mass
-  tolerance]` — that is the *search* tolerance (tight, ~10 ppm), whereas Riana's
-  integration tolerance is a separate, deliberately *wider* signal-capture
-  window (~50 ppm).
+  mods need not be set on the CLI; **and read `comment[precursor mass tolerance]`
+  as the integration window** (CLI `--mass_tol` overrides; default 10 ppm).
+  *(Reverses the original rec4: it had said NOT to inherit the search tolerance,
+  using a deliberately wider ~50 ppm "signal-capture" window. That was a
+  profile-vs-centroid category error — on **centroid** mzML, ~50 ppm imports
+  co-eluting interference into the heavy isotopomer channels. Verified 2026-06-09
+  on LVE: tightening 50→10 ppm lifted R²med 0.69→0.87, ≥0.8 41→61%, within-protein
+  θ 0.16→0.10, out-of-range θ 27%→8%; all current mzMLs are MS1 centroid. The
+  search tolerance IS the right integration window for centroid data. A
+  profile-mode mzML triggers an intake warning.)*
 - **M6b — DIA-NN parquet intake** (fast-follow). `io/diann.py` over the DIA-NN
   `report.parquet` (DIA-NN ≥ 2.2.0, as emitted by quantms-diann); the quantms-diann
   run also ships its own SDRF (the DIA variant above), so disaggregation reuses
@@ -793,7 +799,30 @@ vs DIA-NN parquet).
   (off-main-thread but serial; the thread spinbox does not drive cross-file
   parallelism). Bound-parallelize files (a semaphore over 2–4) against the
   one-fraction-in-memory ceiling, wire the spinbox, and show per-file progress
-  text. (Engine lives here; the GUI surfaces it — Track E.)
+  text. (Engine lives here; the GUI surfaces it — Track E.) *Done engine-side:*
+  `integrate_project(max_workers=)` + `riana integrate -W/--workers` (CLI only;
+  GUI rewiring still TODO).
+
+> **⚠️ quantms input gotcha — mzML filenames MUST NOT be prefixes of one another
+> (verified 2026-06-08, quantms/OpenMS ~1.7.0).** ConsensusID/ProteomicsLFQ
+> matches mzML/spectra by a **filename-prefix** rule, so when one basename is a
+> prefix of another (`…_time1` vs `…_time10`/`…_time15`; `…_time3` vs `…_time30`)
+> the mzTab `spectra_ref` **scan is pulled from the sibling file** — the scan↔file
+> association silently scrambles for every entangled run. On the LVE series this
+> wrecked integration on 8 of 12 runs (their `spectra_ref` scans indexed a
+> sibling's mzML; e.g. `time30`'s scans → `time3`'s mzML to 0.13 min). Proof was
+> single-variable: **renaming to zero-padded non-prefix names (`time00…time30`),
+> same 2023 conversion, restored scan-match to ~90% on all 12.** Also previously
+> seen as the reason Sage couldn't be added to ConsensusID. **Mitigations:**
+> (1) zero-pad / otherwise de-prefix mzML basenames before a quantms run;
+> (2) **anchor mzTab integration on `spectra_ref` scan, NOT the reported
+> `retention_time`** — RT carries an alignment-frame offset (~0.1 min on clean
+> runs, but the mzTab RT is OpenMS-aligned, not raw) so scan is the correct,
+> confound-free key *once filenames are clean*; (3) **Track A intake guard
+> (TODO):** per run, verify `spectra_ref scan → mzML RT` reconciles with the mzTab
+> `retention_time` (tol ~1.5 min) and **error loudly** otherwise — this failure
+> was completely silent and would recur on any prefix-entangled or
+> wrong-mzML run.
 
 #### Track B — integration fidelity (research cluster)
 
@@ -810,8 +839,24 @@ N_ISO all interact:
   contaminant-robust observed-vs-IsoSpec matcher (Huber / soft-trim /
   per-channel-SNR weighting) so the extra channels don't import co-eluting
   isobars. The open research question is that matcher.
+  - **⚠️ HARD CONSTRAINT — normalize the FULL IsoSpec envelope BEFORE truncating
+    to N_ISO** (the "H4′" finding, verified 2026-06-08). `solve_fs_d2o` today
+    normalizes init/final *separately over the truncated channels* then mixes:
+    `(1−f)·norm(init_trunc) + f·norm(final_trunc)`. That equals the physical
+    `norm_trunc[(1−f)·init_full + f·final_full]` **only when init and final carry
+    the same fraction of mass inside the window.** The labeled envelope spills
+    past the window (more, the higher the RIA / Spep), so normalize-then-mix drops
+    the θ-dependent denominator and FS↔θ goes **non-linear** — the math won't work.
+    Negligible at LVE's RIA 4.6% (in-window mass fraction ΔS ≤ 0.04 ⇒
+    current == correct to 3 dp), which is why it is *deferred*; but it becomes
+    load-bearing the moment adaptive N_ISO widens/varies the window, or at high
+    RIA / high Spep / ¹⁸O. **So build the mix-then-normalize FS solve as part of
+    this item** (mix full-envelope *abundances*, THEN truncate + normalize), not
+    after. The same trap kills a naive iso0/iso1-ratio interpolation — you must
+    mix the abundances, then take the ratio.
 - **`--fs` channel-subset SSE.** Wire the reserved flag: solve FS over a chosen
-  isotopomer subset to dodge contaminated channels.
+  isotopomer subset to dodge contaminated channels. (Subject to the same
+  full-envelope-normalization constraint above.)
 - **Dual-mode FS (abundance + mass-defect shift).** D₂O labelling shifts the
   intensity-weighted accurate mass of each isotopomer (the 2H−1H mass defect
   differs from 13C−12C), so the per-channel mass shift over the init (natural)

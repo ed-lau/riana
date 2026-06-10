@@ -24,9 +24,20 @@ class IntegrationConfig:
     """Configuration for ``riana integrate``.
 
     The mass-window semantic is the 0.9.0 one: ``mass_tol_ppm`` is the ±N ppm
-    half-width around the theoretical m/z (window is 2·N ppm wide). The M2 v0.9.0
-    baseline was generated at ``mass_tol_ppm=15``; M3 integration benchmarks must
-    use the same value or the regression comparison is invalid (M2 notes).
+    half-width around the theoretical m/z (window is 2·N ppm wide). Default
+    **10 ppm** — the centroid mass-accuracy / search-tolerance norm (the value the
+    calibration + animal SDRFs carry, and what both the LVE turnover and the
+    ac16/iPSC/CM calibration were re-validated at). The integration window should
+    track *mass accuracy* on **centroid** data — one centroid line per isotopomer,
+    spread only by calibration drift (~3–10 ppm) — i.e. ≈ the search tolerance,
+    NOT a profile *peak width* (~30 ppm at 700 m/z on a 60k Orbitrap). The earlier
+    50-ppm default conflated the two: on centroid mzML it imported co-eluting
+    near-isobar interference into the heavy isotopomer channels (out-of-range θ
+    27%→8% and R²med 0.69→0.86 on LVE when tightened 50→10). On the SDRF path the
+    value is read from ``comment[precursor mass tolerance]`` (the search
+    tolerance); a CLI ``--mass_tol`` overrides; this dataclass default is the
+    last-resort fallback. (The committed v0.9.0 baselines used 15 ppm; the
+    integration_port parity tests pin that explicitly.)
     """
 
     #: -s / --sample. Must end in a number (encodes the time point).
@@ -38,8 +49,11 @@ class IntegrationConfig:
     #: new engine (see ``core.fitting._REQUIRED_D2O_ISOTOPOMERS``). Override for
     #: other workflows (e.g. SILAC cluster extraction via ``forced_mods``).
     isotopomers: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
-    #: -m / --mass_tol. ±ppm half-width (see class docstring).
-    mass_tol_ppm: int = 50
+    #: -m / --mass_tol. ±ppm half-width (see class docstring). Default 10 ppm
+    #: (centroid mass-accuracy / search-tolerance norm); SDRF
+    #: ``comment[precursor mass tolerance]`` supplies it on the SDRF path, CLI
+    #: overrides.
+    mass_tol_ppm: int = 10
     #: -r / --extraction_half_width (legacy alias --r_time). EXTRACTION
     #: half-width in RT minutes (how much XIC to pull, both directions). Must
     #: be ≥ ``integration_half_width`` (plus room for the apex offset when
@@ -134,10 +148,16 @@ class IntegrationConfig:
     #: cross-dataset screen); ``"nearest"`` picks the candidate closest to the
     #: MS2 RT prior (better when a tall co-eluting neighbour is a risk).
     apex_selection: str = "tallest"
-    #: Half-width (RT min) bounding the apex search around the PSM RT;
-    #: ``0`` = the whole extracted trace (the wide default). Tightening it
-    #: trades single-proportion robustness for cross-proportion stability.
-    apex_search_half_width: float = 0.0
+    #: Half-width (RT min) bounding the apex search around the PSM RT prior
+    #: (the best-q PSM's scan for a peptide-charge with multiple PSMs — see
+    #: :func:`riana.core.integration.integrate_run`). ``0`` = the whole
+    #: extracted trace, which (with ``use_range=True`` spanning every PSM scan)
+    #: lets the apex roam to the tallest peak anywhere in the window and grab a
+    #: co-eluting isobar — the failure mode found on the animal D₂O series.
+    #: **Default ``0.25``**: keep the apex within ±0.25 min of the confident ID,
+    #: so the integration window (apex ± ``integration_half_width``) still nests
+    #: inside the extraction (``extraction_half_width`` ≥ 0.25 + 0.15 = 0.40).
+    apex_search_half_width: float = 0.25
     #: Number of leading isotopomer channels (m0..m{n-1}) the
     #: ``peak_rt="consensus"`` median-apex pools over (co-elution consensus).
     apex_n_consensus: int = 4

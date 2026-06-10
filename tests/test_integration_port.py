@@ -267,3 +267,61 @@ def test_cli_integrate_produces_compatible_output(tmp_path):
     for k in ("n", "median_ppm", "mad_ppm", "suggested_shift_ppm"):
         assert k in drift, f"missing drift key {k}"
     assert drift["n"] > 0
+
+
+# --- best-q anchor + apex_search_half_width bound ----------------------------
+
+
+def test_apex_search_half_width_bounds_apex_to_anchor():
+    """The apex search keys on the (best-q) anchor scan, bounded by
+    ``apex_search_half_width``.
+
+    Synthetic iso0 with two prominent peaks: a *shorter* one at RT 1.0 and a
+    *taller* one at RT 3.0. With ``apex_search_half_width=0.25`` the apex must
+    follow the anchor (pick the peak within ±0.25 of it), not the global tallest
+    — the regression guard for the animal-D₂O failure where ``asw=0`` +
+    ``selection="tallest"`` roamed to a co-eluting isobar.
+    """
+    import dataclasses
+    from types import SimpleNamespace
+
+    from riana.core.integration import _peak_boundary
+
+    rt = np.linspace(0.0, 5.0, 101)  # rt[20]=1.0, rt[60]=3.0
+
+    def gauss(center, amp, sigma=0.08):
+        return amp * np.exp(-((rt - center) ** 2) / (2 * sigma * sigma))
+
+    # Both peaks well clear of the prominence floor; the one at 3.0 is taller.
+    iso0 = gauss(1.0, 100.0) + gauss(3.0, 500.0) + 1.0
+    idf = pd.DataFrame({"rt": rt, "mod0_iso0": iso0, "mod0_iso1": iso0 * 0.5})
+    # MS1 index: scan N -> rt[N-1]; searchsorted(scan)-1 lands on rt[N-2].
+    mzml = SimpleNamespace(scan_idx=np.arange(1, 102), rt_idx=rt)
+    psm = SimpleNamespace(scan=1, concat="PEPTIDEK_2")
+    cfg = IntegrationConfig(
+        peak_rt="apex", integration_half_width=0.15,
+        apex_search_half_width=0.25, apex_selection="tallest",
+    )
+
+    # Anchor near the SHORTER peak at 1.0 -> apex must be ~1.0, not the taller 3.0.
+    b_near = _peak_boundary(
+        idf, psm, mzml, cfg, rt, "mod0_iso0", "mod0_iso1", anchor_scan=22,
+    )
+    assert b_near is not None
+    assert abs(rt[b_near.apex_idx] - 1.0) < 0.2
+
+    # Anchor near the taller peak at 3.0 -> apex follows to ~3.0.
+    b_far = _peak_boundary(
+        idf, psm, mzml, cfg, rt, "mod0_iso0", "mod0_iso1", anchor_scan=62,
+    )
+    assert b_far is not None
+    assert abs(rt[b_far.apex_idx] - 3.0) < 0.2
+
+    # The old default (asw=0) + tallest WOULD roam to the global-tallest peak
+    # at 3.0 even when anchored near 1.0 — the bug the 0.25 default fixes.
+    cfg0 = dataclasses.replace(cfg, apex_search_half_width=0.0)
+    b_roam = _peak_boundary(
+        idf, psm, mzml, cfg0, rt, "mod0_iso0", "mod0_iso1", anchor_scan=22,
+    )
+    assert b_roam is not None
+    assert abs(rt[b_roam.apex_idx] - 3.0) < 0.2

@@ -148,9 +148,11 @@ def integrate(
     write_intensities: bool = typer.Option(
         False, "-w", "--write_intensities",
         help="Also write the pre-integration intensity trace."),
-    mass_tol: int = typer.Option(
-        50, "-m", "--mass_tol", metavar="PPM",
-        help="Mass tolerance half-width in ppm (±N ppm) [default: 50]."),
+    mass_tol: Optional[int] = typer.Option(
+        None, "-m", "--mass_tol", metavar="PPM",
+        help="Mass tolerance half-width in ppm (±N ppm). If omitted, taken from "
+        "the SDRF comment[precursor mass tolerance], else the 10 ppm default. "
+        "Given here, overrides the SDRF."),
     smoothing: Optional[int] = typer.Option(
         None, "-S", "--smoothing",
         help="Savitzky-Golay smoothing window (odd int ≥ 3)."),
@@ -165,6 +167,11 @@ def integrate(
         "", "-F", "--forced_mods",
         help="Modification mass(es) to always add (SILAC clusters), e.g. "
         "'6.0201'."),
+    workers: int = typer.Option(
+        1, "-W", "--workers", metavar="N",
+        help="Runs to integrate concurrently on the --sdrf path (one mzML in "
+        "memory per worker; 2-4 suits a many-timepoint time series) [default: "
+        "1]. Distinct from -t/--thread (per-run peptide threads)."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -210,6 +217,27 @@ def integrate(
         ehw = (0.33 if ihw == "auto" else float(ihw)) + 0.33
 
     os.makedirs(out, exist_ok=True)
+
+    # Read the SDRF up front (primary path) so its precursor mass tolerance can
+    # feed the integration window. Resolution: explicit --mass_tol > SDRF
+    # comment[precursor mass tolerance] > dataclass default. Mirrors the
+    # per-sample RIA resolution (SDRF -> --ria default).
+    sdrf_table = None
+    if sdrf is not None:
+        from riana.io.sdrf import read_sdrf
+        try:
+            sdrf_table = read_sdrf(sdrf)
+        except DataError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    _default_mass_tol = IntegrationConfig.__dataclass_fields__["mass_tol_ppm"].default
+    if mass_tol is not None:
+        mass_tol_ppm, mass_tol_src = int(mass_tol), "--mass_tol"
+    elif sdrf_table is not None and sdrf_table.precursor_mass_tol_ppm is not None:
+        mass_tol_ppm = int(round(sdrf_table.precursor_mass_tol_ppm))
+        mass_tol_src = "SDRF comment[precursor mass tolerance]"
+    else:
+        mass_tol_ppm, mass_tol_src = _default_mass_tol, "default"
+
     # The frozen config's __post_init__ owns the numeric domain validation
     # (mass_tol range, q_value range, peak_rt enum, ...); surface it as a clean
     # CLI error rather than a traceback.
@@ -217,7 +245,7 @@ def integrate(
         config = IntegrationConfig(
             sample=sample,
             isotopomers=isotopomers,
-            mass_tol_ppm=int(mass_tol),
+            mass_tol_ppm=mass_tol_ppm,
             extraction_half_width=ehw,
             peak_rt=peak_rt,
             integration_half_width=ihw,
@@ -239,21 +267,21 @@ def integrate(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("integrate (typed pipeline)")
+    logger.info(f"mass tolerance: ±{mass_tol_ppm} ppm (from {mass_tol_src})")
 
     # --- SDRF path (primary): identity-keyed mzTab intake via the shared
     # pipeline — one <stem>_riana.txt per run + a manifest. ---------------------
-    if sdrf is not None:
+    if sdrf_table is not None:
         from riana.core.pipeline import integrate_project
-        from riana.io.sdrf import read_sdrf
 
         try:
-            sdrf_table = read_sdrf(sdrf)
             logger.info(
                 f"SDRF {sdrf}: {len(sdrf_table.runs)} runs, "
                 f"{sdrf_table.experiment_type}, {sdrf_table.acquisition}"
             )
             integrate_project(
-                config, sdrf_table, mzml_path, id_path, out, logger=logger
+                config, sdrf_table, mzml_path, id_path, out,
+                max_workers=int(workers), logger=logger,
             )
         except DataError as exc:
             raise typer.BadParameter(str(exc)) from exc

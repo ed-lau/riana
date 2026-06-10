@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from riana.exceptions import DataError
-from riana.io.sdrf import read_sdrf
+from riana.io.sdrf import _parse_mass_tol_ppm, read_sdrf
 
 SDRF_DIR = Path("tests/data/sdrf")
 TURNOVER = SDRF_DIR / "turnover.sdrf.tsv"
@@ -57,6 +57,29 @@ def test_duplicate_modification_columns_are_both_read():
     variable = [(m.name, m.residue) for m in t.variable_modifications]
     assert ("Carbamidomethyl", "C") in fixed
     assert ("Oxidation", "M") in variable
+
+
+def test_precursor_mass_tolerance_read_as_ppm():
+    """comment[precursor mass tolerance] feeds the integration window (rec4
+    reversed): the search tolerance IS the right window for centroid mzML."""
+    t = read_sdrf(TURNOVER)
+    assert t.precursor_mass_tol_ppm == 10.0
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("10 ppm", 10.0),
+        ("10ppm", 10.0),
+        ("10", 10.0),        # bare number assumed ppm
+        ("4.5 ppm", 4.5),
+        ("0.02 Da", None),   # Da window can't be a ppm tolerance
+        ("not applicable", None),
+        ("", None),
+    ],
+)
+def test_parse_mass_tol_ppm_units(value, expected):
+    assert _parse_mass_tol_ppm(value) == expected
 
 
 def test_calibration_sdrf_declares_calibration_type():

@@ -22,6 +22,7 @@ SDRF column                                     :class:`~riana.records.RunIdenti
 ``factor value[...]``                            ``condition``
 ``comment[proteomics data acquisition method]``  ``acquisition`` (DDA/DIA)
 ``characteristics[precursor enrichment]``        ``precursor_enrichment`` (RIA)
+``comment[precursor mass tolerance]``            :attr:`SdrfTable.precursor_mass_tol_ppm`
 ``comment[modification parameters]`` (1..n)      :attr:`SdrfTable.modifications`
 ==============================================  ===============================
 
@@ -34,9 +35,18 @@ Locked decisions (PROJECT_REVIEW.md §3):
 - Labeling time is a *characteristic* (sample-intrinsic), deliberately not
   ``factor value[time]`` — that avoids colliding with a drug-treatment time
   course where the *treatment* time is the genuine factor value.
-- ``comment[precursor mass tolerance]`` is **not** read: that is the tight
-  (~10 ppm) *search* window, whereas Riana's integration tolerance is a
-  separate, deliberately *wider* (~50 ppm) signal-capture window.
+- ``comment[precursor mass tolerance]`` **is** read into
+  :attr:`SdrfTable.precursor_mass_tol_ppm` and used as the integration mass
+  tolerance (CLI ``--mass_tol`` overrides; dataclass default is the fallback).
+  This **reverses** the earlier M3 rec4 decision (which treated the search window
+  as too tight and used a deliberately wider ~50 ppm window). That was a
+  profile-vs-centroid category error: on **centroid** mzML (the quantms/
+  ThermoRawFileParser norm) each isotopomer is one line spread only by mass
+  accuracy (~3–10 ppm), so the search tolerance *is* the right integration
+  window; a ~50 ppm "peak-width" window just imports co-eluting interference
+  (verified on LVE: out-of-range θ 27%→8%, R²med 0.69→0.86 tightening 50→10).
+  Only a ``ppm`` unit is honored; a ``Da`` value is ignored (can't map to a ppm
+  window) with a warning.
 
 Variable modifications are parsed and exposed on :attr:`SdrfTable.modifications`
 but not yet threaded into the isotope-envelope model — that is the PTM-aware
@@ -46,6 +56,7 @@ Carbamidomethyl(C) handled by :func:`riana.algorithms.mass_calc.calculate_ion_mz
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -53,6 +64,8 @@ from pathlib import Path
 
 from riana.exceptions import DataError
 from riana.records import RunIdentity
+
+_LOGGER = logging.getLogger(__name__)
 
 # mzML/raw/vendor extensions stripped from ``comment[data file]`` to recover the
 # stem that joins to the mzTab ``ms_run[N]-location`` basename and the on-disk
@@ -90,6 +103,10 @@ class SdrfTable:
     experiment_type: str
     #: ``"DDA"`` or ``"DIA"`` — consistent across all runs.
     acquisition: str
+    #: ``comment[precursor mass tolerance]`` in ppm (search tolerance), used as
+    #: the integration mass window unless CLI ``--mass_tol`` overrides. ``None``
+    #: when the column is absent or given in Da (not a ppm window).
+    precursor_mass_tol_ppm: float | None = None
 
     @property
     def sample_map(self) -> dict[str, RunIdentity]:
@@ -152,6 +169,7 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
 
     runs: list[RunIdentity] = []
     acquisitions: set[str] = set()
+    mass_tol_ppms: set[float] = set()
     seen_data_files: dict[str, int] = {}
     modifications: list[Modification] = []
     seen_mods: set[Modification] = set()
@@ -189,6 +207,10 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
             cell("comment[proteomics data acquisition method]")
         )
         acquisitions.add(acquisition)
+
+        mt_ppm = _parse_mass_tol_ppm(cell("comment[precursor mass tolerance]"))
+        if mt_ppm is not None:
+            mass_tol_ppms.add(mt_ppm)
 
         condition = "|".join(
             v for c in factor_cols if (v := cell(c)) and v.lower() not in _NOT_APPLICABLE
@@ -233,12 +255,33 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
             "Riana expects one method per SDRF."
         )
 
+    # Precursor mass tolerance (search window) → integration tolerance. Uniform
+    # across runs in practice; if rows disagree, use the smallest (tightest) and
+    # warn. A present-but-Da column resolves to no ppm value (warn once).
+    prec_mass_tol_ppm: float | None = None
+    if "comment[precursor mass tolerance]" in col_index:
+        if mass_tol_ppms:
+            prec_mass_tol_ppm = min(mass_tol_ppms)
+            if len(mass_tol_ppms) > 1:
+                _LOGGER.warning(
+                    "SDRF %s: multiple precursor mass tolerances %s ppm; using "
+                    "tightest (%g ppm).", path, sorted(mass_tol_ppms),
+                    prec_mass_tol_ppm,
+                )
+        else:
+            _LOGGER.warning(
+                "SDRF %s: 'comment[precursor mass tolerance]' present but no "
+                "usable ppm value (Da given?); falling back to the integration "
+                "default.", path,
+            )
+
     return SdrfTable(
         experiment=experiment,
         runs=tuple(runs),
         modifications=tuple(modifications),
         experiment_type=experiment_type,
         acquisition=acquisitions.pop(),
+        precursor_mass_tol_ppm=prec_mass_tol_ppm,
     )
 
 
@@ -314,6 +357,25 @@ def _parse_optional_float(value: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_mass_tol_ppm(value: str) -> float | None:
+    """Parse a precursor-mass-tolerance cell to ppm.
+
+    Accepts ``"10 ppm"``, ``"10ppm"``, or a bare ``"10"`` (assumed ppm). Returns
+    ``None`` for empty/NA *or* a non-ppm unit (e.g. ``"0.02 Da"``) — a Da window
+    can't be applied as a ppm tolerance, so the caller falls back to the default.
+    """
+    v = value.strip().lower()
+    if v in _NOT_APPLICABLE:
+        return None
+    m = re.match(r"^([0-9]*\.?[0-9]+)\s*([a-z/]+)?$", v)
+    if m is None:
+        return None
+    unit = (m.group(2) or "ppm").strip()
+    if unit != "ppm":
+        return None
+    return float(m.group(1))
 
 
 def _parse_int(value: str, default: int) -> int:

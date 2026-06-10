@@ -28,6 +28,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+from concurrent import futures
 from pathlib import Path
 from typing import Mapping
 
@@ -56,6 +57,7 @@ def integrate_project(
     out_dir: str | os.PathLike[str],
     *,
     manifest_path: str | os.PathLike[str] | None = None,
+    max_workers: int = 1,
     logger: logging.Logger | None = None,
 ) -> list[ManifestRow]:
     """Integrate every run in *mztab_path*, keyed by the *sdrf* identity.
@@ -63,9 +65,17 @@ def integrate_project(
     Writes one ``<mzml_stem>_riana.txt`` per run (full identity in its provenance
     header) and appends an ``integrate`` row per run to the manifest. Returns the
     rows it wrote.
-    """
-    from riana.core.integration import integrate_run
 
+    Args:
+        max_workers: number of runs to integrate concurrently. Each run holds one
+            mzML in memory, so this is the file-parallelism knob bounded by the
+            one-mzML-per-worker memory ceiling (Track A; pick 2–4 for the big
+            animal time series, where a dozen ~350 MB mzMLs are embarrassingly
+            parallel). ``1`` (default) keeps the serial, deterministic path the
+            tests pin. Output files and manifest rows are always written in
+            ``file_idx`` order regardless of completion order, so the result is
+            independent of *max_workers*.
+    """
     log = logger or _LOGGER
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +91,9 @@ def integrate_project(
     mzml_index = _index_mzml_dir(mzml_dir)
     by_file_idx = _group_by_file_idx(all_psms)
 
-    rows: list[ManifestRow] = []
+    # Resolve identity + mzML path for every run up front so a missing SDRF
+    # entry / mzML fails before any (potentially long) integration starts.
+    plan: list[tuple[int, str, RunIdentity, str, list[PSMRecord]]] = []
     for file_idx in sorted(by_file_idx):
         stem = file_index_map.get(file_idx, "")
         identity = sdrf.sample_map.get(stem)
@@ -92,19 +104,40 @@ def integrate_project(
                 f"no mzML for run {stem!r} in {mzml_dir} "
                 f"(have {sorted(mzml_index)[:5]}...)."
             )
-
         fraction = _assign_pep_ids(by_file_idx[file_idx])
-        log.info("integrating run %s (%s)", stem, _identity_brief(identity))
-        with IndexedMzML(mzml_index[stem]) as mzml:
-            df = integrate_run(config, fraction, mzml, file_label=stem)
+        plan.append((file_idx, stem, identity, mzml_index[stem], fraction))
 
+    n_parallel = max(1, min(max_workers, len(plan)))
+    if n_parallel > 1:
+        log.info("integrating %d runs, %d at a time", len(plan), n_parallel)
+        dfs: dict[int, pd.DataFrame] = {}
+        with futures.ProcessPoolExecutor(max_workers=n_parallel) as pool:
+            future_to_idx = {
+                pool.submit(_integrate_one_run, config, mzml_path, fraction, stem):
+                (file_idx, stem)
+                for file_idx, stem, _identity, mzml_path, fraction in plan
+            }
+            for fut in futures.as_completed(future_to_idx):
+                file_idx, stem = future_to_idx[fut]
+                dfs[file_idx] = fut.result()
+                log.info("integrated run %s", stem)
+    else:
+        dfs = {}
+        for file_idx, stem, identity, mzml_path, fraction in plan:
+            log.info("integrating run %s (%s)", stem, _identity_brief(identity))
+            dfs[file_idx] = _integrate_one_run(config, mzml_path, fraction, stem)
+
+    # Write outputs + manifest in file_idx order — deterministic regardless of
+    # which worker finished first.
+    rows: list[ManifestRow] = []
+    for file_idx, stem, identity, _mzml_path, _fraction in plan:
         out_file = out_dir / f"{stem}_riana.txt"
         provenance = make_provenance(
             dataclasses.asdict(config),
             id_source=str(mztab_path),
             extra=identity_to_extra(identity),
         )
-        write_dataframe_tsv(out_file, df, provenance, include_index=True)
+        write_dataframe_tsv(out_file, dfs[file_idx], provenance, include_index=True)
         rows.append(
             ManifestRow(
                 stage="integrate",
@@ -119,6 +152,24 @@ def integrate_project(
     append_manifest(manifest_path, rows)
     log.info("appended %d integrate rows to %s", len(rows), manifest_path)
     return rows
+
+
+def _integrate_one_run(
+    config: IntegrationConfig,
+    mzml_path: str,
+    psms: list[PSMRecord],
+    stem: str,
+) -> pd.DataFrame:
+    """Integrate one run's PSMs against its mzML — the parallelizable unit.
+
+    Module-level (not a closure) so it pickles cleanly for the
+    :class:`ProcessPoolExecutor` path. Opens the mzML inside the worker so only
+    the path crosses the process boundary, keeping one mzML in memory per worker.
+    """
+    from riana.core.integration import integrate_run
+
+    with IndexedMzML(mzml_path) as mzml:
+        return integrate_run(config, psms, mzml, file_label=stem)
 
 
 def identity_to_extra(identity: RunIdentity) -> dict[str, str]:

@@ -83,10 +83,20 @@ class IndexedMzML:
         scans: list[int] = []
         rts_min: list[float] = []
         spec_ids: list[str] = []
+        #: Whether MS1 is centroid (``True``)/profile (``False``)/unmarked
+        #: (``None``), from the first MS1 spectrum's cvParam. The integration
+        #: mass tolerance assumes centroid (one line per isotopomer); a profile
+        #: mzML wants a wider window or centroiding first — the integrator warns.
+        self.ms1_centroid: bool | None = None
         with mzml.MzML(str(self._reader_path), use_index=True) as reader:
             for spec in reader:
                 if spec.get("ms level") != 1:
                     continue
+                if not scans:  # first MS1: record its spectrum representation
+                    if "centroid spectrum" in spec:
+                        self.ms1_centroid = True
+                    elif "profile spectrum" in spec:
+                        self.ms1_centroid = False
                 scans.append(_scan_from_id(spec["id"]))
                 rts_min.append(_rt_minutes(spec))
                 spec_ids.append(spec["id"])

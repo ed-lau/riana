@@ -115,3 +115,6 @@ ENV/
 
 # Generated in-vivo integration output (regenerable via run_integrate_invivo.py)
 tests/data/timeseries_lve/
+
+# Local integration/experiment outputs (not tracked)
+runs/
