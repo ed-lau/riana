@@ -40,7 +40,7 @@ from riana.algorithms import calibration as cal
 from riana.algorithms import peaks as pk
 from riana.algorithms import smoothing as sm
 from riana.config import IntegrationConfig
-from riana.exceptions import IntegrationError
+from riana.exceptions import DataError, IntegrationError
 from riana.io.mzml import IndexedMzML
 from riana.io.percolator import filter_by_q_value, fraction_psms
 from riana.records import Chromatogram, PSMRecord
@@ -61,6 +61,73 @@ _PSM_COLUMNS = [
     "sequence", "protein id", "flanking aa",
     "concat", "sample", "pep_id", "evidence",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class ScanRtCheck:
+    """Result of reconciling a run's PSM ``spectra_ref`` scans against mzML RT.
+
+    Produced by :func:`check_scan_rt_consistency`. ``n_checked`` counts the PSMs
+    that carried a usable mzTab ``retention_time`` (> 0); the Percolator path
+    supplies none, so the guard no-ops there (``n_checked == 0`` ⇒ :attr:`ok`).
+    """
+
+    #: PSMs with a usable reported RT that were reconciled.
+    n_checked: int
+    #: Median |mzML scan-RT − reported RT| over the checked PSMs, in RT minutes.
+    median_offset_min: float
+    #: Fraction of checked PSMs within :attr:`tol_min` of their reported RT.
+    frac_within_tol: float
+    #: The tolerance the median was gated against (RT minutes).
+    tol_min: float
+
+    @property
+    def ok(self) -> bool:
+        """True when there was nothing to check or the median is within tol."""
+        return self.n_checked == 0 or self.median_offset_min <= self.tol_min
+
+
+def check_scan_rt_consistency(
+    psms: Sequence[PSMRecord],
+    mzml: IndexedMzML,
+    tol_min: float,
+) -> ScanRtCheck:
+    """Reconcile each PSM's ``spectra_ref`` scan → mzML MS1 RT vs its mzTab RT.
+
+    On the quantms mzTab path every PSM carries the ``retention_time`` the
+    search/quant pipeline reported (seconds). Looking the PSM's ``scan`` up in
+    *this* mzML's MS1 index must land near that RT; a large per-run **median**
+    offset means the ``spectra_ref`` scans do not belong to this mzML — the
+    quantms filename-prefix scan-scramble (mzML basenames that are prefixes of
+    one another) or a wrong mzML↔mzTab pairing (PROJECT_REVIEW Track A intake
+    guard). The failure was previously silent.
+
+    The **median** is the gate (not per-PSM): it is robust to the ~10% of PSMs
+    that legitimately mismatch and to the run-dependent ProteomicsLFQ alignment
+    offset (≤~0.9 min measured on real output), while a scrambled run sits tens
+    of minutes off — a ~25× separation, so the exact tolerance barely matters.
+
+    PSMs without a usable ``retention_time`` (≤ 0 — the Percolator path) are
+    skipped; with none, the guard no-ops (``n_checked == 0``, :attr:`ScanRtCheck.ok`).
+    The caller decides policy (error vs. log).
+    """
+    if not psms:
+        return ScanRtCheck(0, float("nan"), float("nan"), tol_min)
+    scans = np.array([p.scan for p in psms], dtype=np.int64)
+    rep_rt_min = np.array(
+        [p.retention_time / 60.0 for p in psms], dtype=np.float64
+    )  # mzTab RT is seconds; mzML rt_idx is minutes.
+    valid = rep_rt_min > 0
+    n = int(valid.sum())
+    if n == 0:
+        return ScanRtCheck(0, float("nan"), float("nan"), tol_min)
+    offset = np.abs(mzml.rt_for_scans(scans[valid]) - rep_rt_min[valid])
+    return ScanRtCheck(
+        n_checked=n,
+        median_offset_min=float(np.median(offset)),
+        frac_within_tol=float(np.mean(offset <= tol_min)),
+        tol_min=tol_min,
+    )
 
 
 def integrate_run(
@@ -96,13 +163,40 @@ def integrate_run(
             file_label or _mzml_basename(mzml), config.mass_tol_ppm,
         )
 
+    # Intake scan↔RT guard (Track A): before integrating, verify the mzTab
+    # spectra_ref scans actually index THIS mzML. Runs on the full PSM set
+    # (best statistics) and no-ops on the Percolator path (no retention_time).
+    if config.check_scan_rt:
+        label = file_label or _mzml_basename(mzml)
+        check = check_scan_rt_consistency(psms, mzml, config.scan_rt_tol_min)
+        if check.n_checked > 0 and not check.ok:
+            raise DataError(
+                f"{label}: scan↔RT reconciliation FAILED — median offset "
+                f"{check.median_offset_min:.2f} min over {check.n_checked} PSMs "
+                f"exceeds tol {check.tol_min:.1f} min "
+                f"({check.frac_within_tol:.0%} within tol). The mzTab spectra_ref "
+                "scans do not line up with this mzML's retention times: most "
+                "likely the quantms filename-prefix scan-scramble (zero-pad / "
+                "de-prefix the mzML basenames before the quantms run) or a wrong "
+                "mzML↔mzTab pairing. Override with --no-rt-check only if this run "
+                "is knowingly correct."
+            )
+        if check.n_checked > 0:
+            _LOGGER.info(
+                "%s: scan↔RT reconciled — median %.2f min, %.0f%% within "
+                "%.1f min (n=%d).",
+                label, check.median_offset_min, 100 * check.frac_within_tol,
+                check.tol_min, check.n_checked,
+            )
+
+    # Integrate ALL peptides, shared included — protein attribution (unique /
+    # isoform parsimony) is a summarize-time decision in `riana rollup`, not an
+    # integrate-time filter (a shared peptide is still a valid per-peptide
+    # measurement; only its protein roll-up is ambiguous).
     kept = filter_by_q_value(psms, config.q_value)
-    if config.unique_only:
-        kept = [p for p in kept if "," not in p.protein_id]
     if not kept:
         raise IntegrationError(
-            "No PSMs survive q-value/unique filtering. "
-            "Relax --q_value or --unique."
+            "No PSMs survive q-value filtering. Relax --q_value."
         )
     # The legacy pipeline assigns pep_id per fraction; the caller is already
     # at one fraction so it's safe to reset here.

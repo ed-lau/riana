@@ -251,7 +251,7 @@ def fit_project(
     x-axis. Results across curves are concatenated with ``experiment`` /
     ``condition`` columns so side-by-side groups are distinguishable.
     """
-    from riana.core.fitting import fit_run
+    from riana.core.fitting import build_fractions_long, fit_run
 
     log = logger or _LOGGER
     integrate_rows = read_manifest(manifest_path, stage="integrate")
@@ -260,6 +260,7 @@ def fit_project(
     curves = recombine_for_fit(integrate_rows)
 
     results: list[pd.DataFrame] = []
+    long_frames: list[pd.DataFrame] = []
     for (experiment, condition), frame in sorted(curves.items()):
         log.info(
             "fitting curve experiment=%s condition=%s (%d rows)",
@@ -278,6 +279,14 @@ def fit_project(
                 experiment, condition or "-", exc,
             )
             continue
+        # M5: tag the per-timepoint long table with the curve identity so
+        # side-by-side conditions stay distinguishable in riana_fit_fractions.txt.
+        long = result.attrs.get("fractions_long")
+        if long is not None and not long.empty:
+            long = long.copy()
+            long["experiment"] = experiment
+            long["condition"] = condition
+            long_frames.append(long)
         result = result.copy()
         result["experiment"] = experiment
         result["condition"] = condition
@@ -288,7 +297,13 @@ def fit_project(
             f"no fittable curves in manifest {manifest_path} "
             "(check --q-value / --depth and that runs have ≥ depth timepoints)."
         )
-    return pd.concat(results)
+    out = pd.concat(results)
+    out.attrs["fractions_long"] = (
+        pd.concat(long_frames, ignore_index=True)
+        if long_frames
+        else build_fractions_long([])
+    )
+    return out
 
 
 # --------------------------------------------------------------------------- #

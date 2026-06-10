@@ -20,10 +20,28 @@
 > scan-scramble (de-prefix mzML names) and **mass_tol 50→10 ppm** (now read from
 > the SDRF; centroid search-tolerance, not a profile-width window). Engine also
 > gained a best-q apex anchor, `apex_search_half_width=0.25`, bounded file-
-> parallelism (`--workers`), and a profile-mzML intake warning. Next: intake
-> scan↔RT guard → M5 (per-timepoint FS) → M6b (DIA-NN intake) → Track E GUI
-> rewiring onto `core/pipeline.py` → Track B fidelity (now gateable by Track D).
-> Maintainer: Edward Lau. Last reviewed: 2026-06-10.
+> parallelism (`--workers`), and a profile-mzML intake warning. The **intake
+> scan↔RT guard is shipped** (2026-06-10): per run, `integrate_run` errors if the
+> median |spectra_ref-scan→mzML-RT − mzTab-RT| exceeds 2 min (the prefix-scramble
+> signature; ≤~0.9 min on clean ProteomicsLFQ output), with `--no-rt-check` to
+> override. **M5 (per-timepoint fraction-new) is shipped** (2026-06-10): `riana
+> fit` now also writes `riana_fit_fractions.txt` — long-format `(concat, protein,
+> biorep, t, fs, fs_lower, fs_upper)` with prediction-interval bounds from a
+> unified residual bootstrap; this is the substrate the protein rollup
+> inverse-variance-weights. **Track C protein rollup — `unique` first cut shipped**
+> (2026-06-10): `riana rollup` writes `riana_protein.txt` (median-of-peptide-k +
+> the biorep-aware per-timepoint weighted refit), parsimony is now a
+> summarize-time decision (`integrate --unique` removed so integrate extracts all
+> peptides). **`--parsimony isoform` + the GUI Protein tab are shipped too**
+> (2026-06-10): `isoform` folds isoform-only-shared peptides into the canonical
+> entry unless an isoform carries its own unique peptide (a dataset-wide pass,
+> adapted from `02_R_parsimony_reference.Rmd` with Riana-`,` / NA-fallback / `-N`+`-J`-suffix
+> fixes + an optional `--min-r2` gate); the GUI grew a 3rd **Protein** tab over
+> the same `rollup_proteins` core, with a per-protein refit curve on row select.
+> **M6b is parked** pending DIA mzMLs + a DIA-NN version/parquet fix (see memory).
+> Next: harmonic-mean / cross-sample Δk estimators, Track E GUI rewiring onto
+> `core/pipeline.py`, Track B fidelity (gateable by Track D), M6b when its data
+> lands. Maintainer: Edward Lau. Last reviewed: 2026-06-10.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -826,10 +844,20 @@ vs DIA-NN parquet).
 > `retention_time`** — RT carries an alignment-frame offset (~0.1 min on clean
 > runs, but the mzTab RT is OpenMS-aligned, not raw) so scan is the correct,
 > confound-free key *once filenames are clean*; (3) **Track A intake guard
-> (TODO):** per run, verify `spectra_ref scan → mzML RT` reconciles with the mzTab
-> `retention_time` (tol ~1.5 min) and **error loudly** otherwise — this failure
-> was completely silent and would recur on any prefix-entangled or
-> wrong-mzML run.
+> (SHIPPED 2026-06-10):** `integrate_run` reconciles, per run, each PSM's
+> `spectra_ref scan → mzML RT` against the mzTab `retention_time` and raises
+> `DataError` when the **per-run median** offset exceeds `scan_rt_tol_min`
+> (default **2.0 min**). The median (not per-PSM) gate is robust to the ~10% of
+> PSMs that legitimately mismatch and to the run-dependent ProteomicsLFQ
+> alignment offset — measured at ≤~0.9 min on the de-prefixed LVE runs (time00
+> median 0.92, time03 0.22, time30 0.36; all 100% within 2 min), vs tens of
+> minutes on a scrambled run (~25× separation). Errors loudly with the
+> de-prefix/zero-pad remedy in the message; `--no-rt-check` (config
+> `check_scan_rt=False`) overrides. No-ops on the Percolator path (no
+> `retention_time`). **DIA caveat:** this is scan-anchored, so it does not
+> transfer to M6b — DIA-NN reports an inferred per-run apex RT with no MS2-scan
+> anchor to reconcile against; the DIA analog (reported RT within mzML bounds +
+> run-column matches the paired mzML) is a separate, weaker check for M6b.
 
 #### Track B — integration fidelity (research cluster)
 
@@ -877,12 +905,20 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
 
 #### Track C — fitting / modeling science
 
-- **M5 — persist per-timepoint fraction-new.** Long-format `(concat, sample, t,
-  fs, fs_lower, fs_upper)` output (CIs via bootstrap residuals). Small build —
-  the math is in `core/fitting` / `fsynthesis`; the gap is serializing the
-  per-timepoint θ instead of only the fitted k. **It is the substrate the
-  protein layer consumes**, so it is sequenced before protein rollup, not as a
-  throwaway column-add.
+- **M5 — persist per-timepoint fraction-new (SHIPPED 2026-06-10).** `riana fit`
+  writes `riana_fit_fractions.txt` — long-format one row per `(concat,
+  biological_replicate, labeling_time)` with `fs` and prediction-interval bounds
+  `fs_lower` / `fs_upper`. The CIs come from a **unified residual bootstrap**
+  (fixed t-design, resample residuals, refit) that now feeds *both* the `k_deg`
+  CI and the per-timepoint band: `fs_lower`/`fs_upper` are a **prediction
+  interval** — `model(t_i; k*) + resampled-residual` — so they reflect each
+  peptide's measurement scatter (the quantity the protein rollup inverse-variance
+  weights), not just curve uncertainty. On noise-free data the band collapses to
+  ~0; on a sparse 3-5 point curve the fixed design is more robust than the old
+  pairs bootstrap. `build_fractions_long` + `out.attrs["fractions_long"]` carry
+  it through `fit_run` → `fit_project` (tagged with experiment/condition) → CLI;
+  the wide `riana_fit_peptides.txt` also gains `fs_lower`/`fs_upper` list-cells
+  for the GUI curve view. **This is the substrate the protein rollup consumes.**
 - **Fit-model set + the calibration model.** The kinetic models `{simple, guan,
   fornasiero}` are *all wired end-to-end* already (models math lifted unchanged;
   `_MODELS` dispatch → `curve_fit`; CLI `--model`; `FitConfig.model` validation;
@@ -901,8 +937,48 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   decide whether the precursor parameters (k_p / k_r / r_p) are *fitted* or
   *supplied* — both are fixed today, so meaningful two-compartment use needs real
   precursor priors. Unlikely near-term.
-- **Protein rollup** (new milestone; 3rd GUI tab). No standard method, so offer
-  a menu and let the user choose:
+- **Protein rollup** (new milestone). **Shipped 2026-06-10** — `riana rollup`
+  (`core/protein.py`) writes `riana_protein.txt` with the **median-of-peptide-k**
+  and the **biorep-aware per-timepoint inverse-variance weighted refit** (σ from
+  the M5 prediction interval), grouped by `(experiment, condition, protein)`;
+  both `--parsimony unique` and `--parsimony isoform`; an optional peptide R²
+  admission gate (`--min-r2`, off by default, with a JCI slow-turnover admit);
+  and a **GUI Protein tab** (`gui/protein_tab.py` + `tasks.run_rollup`) with a
+  per-protein collapsed-`(t, θ)` + refit **curve** on row selection. Still TODO:
+  the harmonic-mean point estimator, the linearized cross-sample Δk test, and
+  manifest stage-row wiring (rollup reads the fit output files directly for
+  now). No standard method, so offer a menu and let the user choose:
+  - **Parsimony is a summarize-time decision, not integrate-time** (locked
+    2026-06-10). A shared peptide's envelope blends both proteins' turnover, so
+    its isotope signature can't be attributed — the rollup is unique-by-default.
+    `integrate --unique` is therefore **removed**: integrate extracts *all*
+    peptides (shared included — still valid per-peptide measurements), and
+    `riana rollup --parsimony {unique, isoform}` (default `unique`) does the
+    attribution. **`unique`** (shipped): drop any peptide whose `protein id` is
+    multi-accession; attribute the rest to the bare UniProt accession.
+    **`isoform`** (shipped 2026-06-10; adapted from `02_R_parsimony_reference.Rmd`
+    by Juber/Lau): like MSFragger gene/protein parsimony but with a specific
+    isoform rule — if the protein group spans **multiple genes**, reject
+    (cross-gene turnover is unattributable); if it is **multiple UniProt entries
+    of one protein (isoforms)**, then for the isoform set this peptide maps to,
+    ask whether **any** of those isoforms has its own *unique* peptide (mappable
+    to it alone): **no** → assign this shared-among-isoforms peptide to the
+    **canonical** entry; **yes** → exclude it. Rationale: physically-present
+    isoforms (evidenced by isoform-unique peptides) make the shared signal
+    genuinely ambiguous, while isoforms that don't actually exist / are
+    low-abundance (no unique evidence) shouldn't decimate "unique" peptide counts
+    just because an isoform-bearing database makes most peptides nominally shared
+    — assumes most isoforms are low-abundance or absent. It is a **dataset-wide
+    pass** over the peptide↔protein map (`_resolve_parsimony`), built once from
+    the peptide table and applied to both the peptide and fraction frames.
+    **Deviations from the R reference** (scrutinized, not copied): Riana joins
+    accessions with `,` not `;`; an all-isoform group with no canonical present
+    falls back to the shared **base** accession (the R left `collapsed_uniprot`
+    NA); the isoform suffix is UniProt `-N` *and* JCAST `-J1`/`-J2` (`-J?\d+`,
+    requiring digits so a bare trailing `-` is not a suffix); and the θ collapse
+    weights by the **M5 inverse variance**, not the R's `log2(Int)`. An optional
+    `--min-r2` peptide gate (off by default, with the R's JCI slow-turnover
+    admit) is available as a complementary A/B to the inverse-variance weighting.
   - **Point estimators over fitted peptide k:** median (robust default);
     harmonic mean (rate-correct — mean of half-lives ↔ harmonic mean of k — but
     outlier-sensitive on the low-k tail).

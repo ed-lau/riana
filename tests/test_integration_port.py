@@ -24,10 +24,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from riana.algorithms.mass_calc import calculate_ion_mz
 from riana.config import IntegrationConfig
-from riana.core.integration import integrate_run
+from riana.core.integration import (
+    check_scan_rt_consistency,
+    integrate_run,
+)
+from riana.exceptions import DataError
 from riana.io.mzml import IndexedMzML
 from riana.io.percolator import read_percolator
+from riana.records import PSMRecord
 
 
 SAMPLE1 = Path("tests/data/sample1")
@@ -325,3 +331,84 @@ def test_apex_search_half_width_bounds_apex_to_anchor():
     )
     assert b_roam is not None
     assert abs(rt[b_roam.apex_idx] - 3.0) < 0.2
+
+
+# --- intake scan↔RT guard (Track A) ------------------------------------------
+
+# BSA mzML MS1 RT at the (MS2) PSM scans the synthetic mzTab references — the
+# scans `searchsorted(side="left") - 1` lands on. Measured from the committed
+# mzML; the reported retention_time must reconcile to within the 2 min default.
+_BSA_SCAN_RT_S = {4408: 541.1, 6838: 732.6}
+
+
+def _bsa_psm(scan, rt_seconds, *, sequence="RHPEYAVSVLLR", charge=3, q=1e-3):
+    """A hand-built PSM at a real BSA scan with a chosen reported RT (seconds)."""
+    return PSMRecord(
+        scan=scan, charge=charge, sequence=sequence,
+        peptide_mass=float(calculate_ion_mz(sequence)),
+        sample="bsa", file_idx=0, percolator_q_value=q,
+        retention_time=rt_seconds,
+    )
+
+
+@pytest.fixture(scope="module")
+def bsa_mzml():
+    with IndexedMzML(SAMPLE1 / "20180216_BSA.mzML.gz") as m:
+        yield m
+
+
+def test_scan_rt_consistency_passes_when_reported_rt_matches(bsa_mzml):
+    """Reported RT ≈ the scan's mzML MS1 RT ⇒ reconciles (tiny median, ok)."""
+    psms = [_bsa_psm(s, rt) for s, rt in _BSA_SCAN_RT_S.items()]
+    check = check_scan_rt_consistency(psms, bsa_mzml, tol_min=2.0)
+    assert check.n_checked == 2
+    assert check.ok
+    assert check.median_offset_min < 0.2
+    assert check.frac_within_tol == 1.0
+
+
+def test_scan_rt_consistency_flags_scrambled_rt_and_integrate_run_errors(bsa_mzml):
+    """A coherent 5 min offset on every PSM ⇒ median > tol ⇒ DataError.
+
+    This is the prefix-bug signature: spectra_ref scans that index a sibling
+    mzML land minutes away from this run's retention times.
+    """
+    psms = [_bsa_psm(s, rt + 300.0) for s, rt in _BSA_SCAN_RT_S.items()]
+    check = check_scan_rt_consistency(psms, bsa_mzml, tol_min=2.0)
+    assert not check.ok
+    assert check.median_offset_min == pytest.approx(5.0, abs=0.1)
+
+    cfg = IntegrationConfig(
+        isotopomers=(0, 1), q_value=1.0, peak_rt="ms2",
+        integration_half_width=1.0, extraction_half_width=1.0, mass_tol_ppm=50,
+    )
+    with pytest.raises(DataError, match="reconciliation FAILED"):
+        integrate_run(cfg, psms, bsa_mzml)
+
+
+def test_scan_rt_guard_no_ops_without_retention_time(bsa_mzml):
+    """The Percolator path carries no RT ⇒ guard skips, integration proceeds."""
+    psms = read_percolator(
+        SAMPLE1 / "percolator.target.psms.txt", sample="sample1"
+    )
+    check = check_scan_rt_consistency(psms, bsa_mzml, tol_min=2.0)
+    assert check.n_checked == 0
+    assert check.ok  # nothing to check is not a failure
+
+    cfg = IntegrationConfig(
+        sample="sample1", isotopomers=(0, 6), q_value=1.0, peak_rt="ms2",
+        integration_half_width=1.0, extraction_half_width=1.0, mass_tol_ppm=50,
+    )
+    df = integrate_run(cfg, psms, bsa_mzml)  # must not raise
+    assert len(df) > 0
+
+
+def test_scan_rt_guard_escape_hatch_disables_check(bsa_mzml):
+    """check_scan_rt=False bypasses the guard even on a badly-scrambled RT."""
+    psms = [_bsa_psm(4408, _BSA_SCAN_RT_S[4408] + 600.0)]  # 10 min off
+    cfg = IntegrationConfig(
+        check_scan_rt=False, isotopomers=(0, 1), q_value=1.0, peak_rt="ms2",
+        integration_half_width=1.0, extraction_half_width=1.0, mass_tol_ppm=50,
+    )
+    df = integrate_run(cfg, psms, bsa_mzml)  # no DataError despite the bad RT
+    assert len(df) == 1

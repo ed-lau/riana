@@ -222,6 +222,60 @@ def test_fit_run_handles_bracketed_modification_strings():
     assert any("[79.9663]" in c for c in result.index)
 
 
+def test_fit_run_emits_fractions_long_with_prediction_intervals():
+    """M5: fit_run attaches a tidy per-timepoint fraction-new table with PI bounds."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    result = fit_run(config, dfs, coeffs, n_boot=200, random_state=42)
+
+    long = result.attrs["fractions_long"]
+    assert list(long.columns) == [
+        "concat", "protein id", "biological_replicate", "labeling_time",
+        "fs", "fs_lower", "fs_upper",
+    ]
+    # One row per (peptide, timepoint); on clean data all 5 peptides converge
+    # over all 8 timepoints, and the long count matches the wide t list-cells.
+    assert len(long) == sum(len(t) for t in result["t"])
+    assert len(long) == 8 * len(_TEST_PEPTIDES)
+    # The band is an interval (lower <= upper) and, on noise-free data, tight.
+    assert (long["fs_lower"] <= long["fs_upper"] + 1e-9).all()
+    width = (long["fs_upper"] - long["fs_lower"]).to_numpy()
+    assert np.nanmedian(width) < 0.05
+    # No SDRF identity on this path -> biorep defaults to 1.
+    assert (long["biological_replicate"] == 1).all()
+    # The wide frame also carries the PI list-cells for the GUI curve view.
+    assert {"fs_lower", "fs_upper"} <= set(result.columns)
+
+
+def test_prediction_interval_widens_with_scatter():
+    """The residual-bootstrap band tracks measurement scatter: injecting noise
+    into the envelopes widens the per-timepoint prediction interval."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    clean = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+
+    rng = np.random.default_rng(0)
+    iso_cols = ["iso0", "iso1", "iso2", "iso3", "iso4", "iso5"]
+    noisy = []
+    for df in clean:
+        d = df.copy()
+        d[iso_cols] = d[iso_cols].to_numpy() * rng.lognormal(0.0, 0.05, d[iso_cols].shape)
+        noisy.append(d)
+
+    w_clean = (lambda L: np.nanmedian((L["fs_upper"] - L["fs_lower"]).to_numpy()))(
+        fit_run(config, clean, coeffs, n_boot=200, random_state=7).attrs["fractions_long"]
+    )
+    w_noisy = (lambda L: np.nanmedian((L["fs_upper"] - L["fs_lower"]).to_numpy()))(
+        fit_run(config, noisy, coeffs, n_boot=200, random_state=7).attrs["fractions_long"]
+    )
+    assert w_noisy > w_clean
+
+
 def test_load_aa_coefficients_reads_csv(tmp_path):
     """load_aa_coefficients reads d2o_aa_coefficients CSVs."""
     csv = tmp_path / "coeffs.csv"

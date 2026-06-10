@@ -25,7 +25,6 @@ from typing import Callable
 import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -155,9 +154,6 @@ class IntegrateTab(QWidget):
         self.thread_spin.setValue(max(1, min(default_threads, os.cpu_count() or 1)))
         form.addRow("Threads", self.thread_spin)
 
-        self.unique_check = QCheckBox("Unique (single-protein) peptides only")
-        form.addRow("", self.unique_check)
-
         self.out_edit = QLineEdit(".")
         form.addRow("Output dir", self._path_row(self.out_edit, self._pick_out))
 
@@ -266,7 +262,6 @@ class IntegrateTab(QWidget):
             baseline_method=self.baseline_combo.currentText(),
             apex_selection=self.apex_combo.currentText(),
             q_value=float(self.qvalue_spin.value()),
-            unique_only=self.unique_check.isChecked(),
             ppm_alert=float(self.ppm_alert_spin.value()),
             threads=int(self.thread_spin.value()),
             out_dir=self.out_edit.text().strip() or ".",

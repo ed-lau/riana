@@ -12,6 +12,86 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Track C — protein rollup
+
+#### Added
+
+- **`riana rollup`** — rolls the `riana fit` per-peptide outputs up to one
+  turnover estimate per `(experiment, condition, protein)`, writing
+  `riana_protein.txt`. Two estimators side by side: (1) **median** of the
+  peptides' `k_deg` (+ a peptide-bootstrap CI); (2) a **biorep-aware
+  per-timepoint weighted refit** — within each `(protein, biological_replicate,
+  labeling_time)` the peptides' fraction-new θ are collapsed by an
+  inverse-variance weighted average (σ from the M5 prediction interval), then one
+  protein `k_deg` is fit to the collapsed `(t, θ)` points across timepoints *and*
+  bioreps (different bioreps stay independent points). `core/protein.py`.
+- **`--parsimony {unique, isoform}`** (default `unique`) — protein attribution is
+  a **summarize-time** decision: a shared peptide's envelope blends both
+  proteins' turnover, so it can't be attributed. `unique` keeps only
+  single-accession peptides; `isoform` additionally folds isoform-only-shared
+  peptides into the canonical entry **unless** an isoform in the group carries
+  its own unique peptide (a dataset-wide pass over the peptide↔protein map,
+  adapted from `02_R_parsimony_reference.Rmd` — Riana-`,` separator, base-accession
+  fallback, UniProt `-N` *and* JCAST `-J1`/`-J2` isoform suffixes; θ weighted by
+  the M5 inverse variance, not `log2(Int)`).
+- **Optional peptide R² admission gate** (`--min-r2`, off by default) — hard-excludes
+  peptides whose kinetic fit doesn't follow the model, *complementing* the
+  inverse-variance weighting, with a JCI-style slow-turnover admit (`--alt-k` /
+  `--alt-se`) so legitimately slow peptides (low R² only because θ barely moves)
+  survive. Off by default keeps the inverse-variance-only result as a clean A/B baseline.
+- **GUI Protein tab** — a 3rd tab over the same `rollup_proteins` core
+  (`gui/protein_tab.py` + the Qt-free `tasks.run_rollup` pool worker): pick a fit
+  output dir, choose parsimony/model/R²-gate, run, write `riana_protein.txt`, and
+  click a protein row to see its collapsed `(t, θ)` points + refit curve.
+
+#### Removed
+
+- **`integrate --unique`** (and `IntegrationConfig.unique_only` + the GUI
+  checkbox). Integrate now extracts **all** peptides — shared peptides are valid
+  per-peptide measurements; the unique/isoform filtering moved to `riana rollup
+  --parsimony`, where protein attribution belongs.
+
+### M5 — per-timepoint fraction-new (Track C)
+
+#### Added
+
+- **`riana_fit_fractions.txt`** — `riana fit` now also writes a long-format,
+  one-row-per-`(concat, biological_replicate, labeling_time)` table with the
+  per-timepoint fraction-new `fs` and prediction-interval bounds `fs_lower` /
+  `fs_upper`. This is the substrate the (upcoming) protein rollup consumes. The
+  wide `riana_fit_peptides.txt` also gains `fs_lower` / `fs_upper` list-cells
+  (aligned to the existing `t` / `fs`) for the GUI curve view.
+- **`build_fractions_long`** (`core/fitting.py`) + `out.attrs["fractions_long"]`
+  carry the long table through `fit_run` → `fit_project` (tagged with
+  `experiment` / `condition`) → CLI without re-deriving θ.
+
+#### Changed
+
+- **Bootstrap is now a unified residual bootstrap** (fixed t-design: resample
+  the kinetic-fit residuals, refit) feeding *both* the `k_deg` CI and the new
+  per-timepoint band. `fs_lower` / `fs_upper` are a **prediction interval**
+  (`model(t_i; k*) + resampled-residual`), so they reflect each peptide's
+  measurement scatter, not just curve uncertainty. More robust than the prior
+  pairs bootstrap on sparse 3–5-point curves. `k_deg` / `R²` are unchanged (they
+  come from the main fit); `k_deg` CI bounds shift slightly (no test pins them).
+
+### Track A — intake scan↔RT guard
+
+#### Added
+
+- **Per-run scan↔RT reconciliation guard** in `integrate_run`: each PSM's mzTab
+  `spectra_ref` scan is mapped to this mzML's MS1 retention time and compared to
+  the mzTab-reported `retention_time`; if the per-run **median** offset exceeds
+  `scan_rt_tol_min` (default **2.0 min**) it raises `DataError`. This catches the
+  quantms filename-prefix scan-scramble (mzML basenames that are prefixes of one
+  another) and wrong mzML↔mzTab pairings — previously silent. The median gate is
+  robust to the run-dependent ProteomicsLFQ alignment offset (≤~0.9 min measured
+  on real output); a scrambled run sits tens of minutes off. No-ops on the
+  Percolator path (no `retention_time`).
+- **`--no-rt-check`** flag (config `check_scan_rt`) to override the guard for a
+  run known to be correctly paired; **`IndexedMzML.rt_for_scans`** vectorized
+  scan→RT lookup.
+
 ### Pre-1.0.0 chores
 
 #### Changed

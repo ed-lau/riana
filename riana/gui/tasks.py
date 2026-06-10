@@ -106,3 +106,47 @@ def run_fit(
     coeffs = load_aa_coefficients(coefficients) if coefficients else {}
     dfs = [pd.read_table(p, comment="#") for p in riana_paths]
     return fit_run(config, dfs, coeffs)
+
+
+def run_rollup(
+    fit_dir: str,
+    model: str,
+    kp: float,
+    kr: float,
+    rp: float,
+    parsimony: str,
+    min_peptides: int,
+    min_points: int,
+    min_r2: float | None = None,
+    alt_k: float = 0.025,
+    alt_se: float = 0.05,
+) -> tuple[pd.DataFrame, dict]:
+    """Read the ``riana fit`` outputs in *fit_dir* and roll peptides up to proteins.
+
+    Mirrors :func:`riana.cli.rollup`: read ``riana_fit_peptides.txt`` +
+    ``riana_fit_fractions.txt`` and call the shared
+    :func:`riana.core.protein.rollup_proteins`, so the GUI and CLI cannot
+    diverge. Errors (bad model/parsimony, missing files) propagate for the tab
+    to surface.
+
+    Returns ``(protein_table, points)`` — ``points`` is the
+    ``{(experiment, condition, protein): (t_list, fs_list)}`` collapsed-refit
+    map, pulled out of ``DataFrame.attrs`` here (in-process) and returned
+    explicitly since ``attrs`` is not guaranteed to survive the pickle back to
+    the GUI process (same posture as :func:`integrate_fraction`'s drift).
+    """
+    from pathlib import Path
+
+    from riana.core.protein import rollup_proteins
+
+    fd = Path(fit_dir)
+    peptides = pd.read_table(fd / "riana_fit_peptides.txt", comment="#")
+    fractions = pd.read_table(fd / "riana_fit_fractions.txt", comment="#")
+    result = rollup_proteins(
+        peptides, fractions, model=model,
+        kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
+        parsimony=parsimony, min_peptides=int(min_peptides),
+        min_points=int(min_points), min_r2=min_r2,
+        alt_k=float(alt_k), alt_se=float(alt_se),
+    )
+    return result, result.attrs.get("protein_points", {})

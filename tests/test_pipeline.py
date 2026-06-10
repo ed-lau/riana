@@ -196,16 +196,51 @@ def test_manifest_fit_matches_legacy_kdeg(tmp_path):
     assert set(manifested["condition"]) == {"control"}
     assert set(manifested["experiment"]) == {"syn"}
 
+    # M5: the per-timepoint long table rides on .attrs, tagged by curve identity.
+    long = manifested.attrs["fractions_long"]
+    assert {"concat", "labeling_time", "fs", "fs_lower", "fs_upper",
+            "biological_replicate", "experiment", "condition"} <= set(long.columns)
+    assert set(long["condition"]) == {"control"}
+    assert set(long["experiment"]) == {"syn"}
+    # One row per (peptide, timepoint) of the fitted curve.
+    assert len(long) == 8 * len(_TEST_PEPTIDES)
+
+
+def test_fit_project_long_keeps_bioreps_separate(tmp_path):
+    """Two bioreps at each timepoint -> distinct long rows per (peptide, biorep)."""
+    coeffs = _coeffs()
+    dfs = _make_timepoint_dfs(coeffs)
+    rows = _integrate_rows_from_dfs(tmp_path, dfs, condition="control")
+    # A second biorep of the same curve (distinct data_file stems).
+    for ti, df in zip(_TIMES, dfs):
+        stem = f"run2_t{ti:.4f}"
+        path = tmp_path / f"{stem}_riana.txt"
+        df.to_csv(path, sep="\t", index=False)
+        rows.append(ManifestRow("integrate", str(path), RunIdentity(
+            experiment="syn", sample=stem, data_file=stem,
+            labeling_time=float(ti), labeling_time_unit="au",
+            biological_replicate=2, condition="control")))
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    long = fit_project(config, mf, coeffs, n_boot=20).attrs["fractions_long"]
+    assert set(long["biological_replicate"]) == {1, 2}
+    # Each (peptide, biorep) contributes its own 8 timepoints.
+    assert len(long) == 2 * 8 * len(_TEST_PEPTIDES)
+
 
 # --- integrate_project end-to-end on the real BSA mzML -----------------------
 
+# retention_time values (541.1 s @ scan 4408, 732.6 s @ scan 6838) are the BSA
+# mzML's real MS1 RTs at those scans, so the intake scan↔RT guard reconciles.
 _BSA_MZTAB = textwrap.dedent("""\
     MTD\tmzTab-version\t1.0.0
     MTD\tms_run[1]-location\tfile://20180216_BSA.mzML
 
     PSH\tsequence\tPSM_ID\taccession\tunique\tdatabase\tdatabase_version\tsearch_engine\tsearch_engine_score[1]\tmodifications\tretention_time\tcharge\texp_mass_to_charge\tcalc_mass_to_charge\tspectra_ref\tpre\tpost\tstart\tend\topt_global_Posterior_Error_Probability_score\topt_global_q-value\topt_global_cv_MS:1002217_decoy_peptide\topt_global_cv_MS:1000889_peptidoform_sequence
-    PSM\tRHPEYAVSVLLR\t0\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t300.0\t3\t470.6\t470.6\tms_run[1]:controllerType=0 controllerNumber=1 scan=4408\tK\tR\t1\t12\t0.01\t0.001\t0\tRHPEYAVSVLLR
-    PSM\tHPYFYAPELLYYANK\t1\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t400.0\t3\t620.3\t620.3\tms_run[1]:controllerType=0 controllerNumber=1 scan=6838\tK\tR\t1\t15\t0.01\t0.001\t0\tHPYFYAPELLYYANK
+    PSM\tRHPEYAVSVLLR\t0\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t541.1\t3\t470.6\t470.6\tms_run[1]:controllerType=0 controllerNumber=1 scan=4408\tK\tR\t1\t12\t0.01\t0.001\t0\tRHPEYAVSVLLR
+    PSM\tHPYFYAPELLYYANK\t1\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t732.6\t3\t620.3\t620.3\tms_run[1]:controllerType=0 controllerNumber=1 scan=6838\tK\tR\t1\t15\t0.01\t0.001\t0\tHPYFYAPELLYYANK
     """)
 
 _BSA_SDRF = textwrap.dedent("""\

@@ -28,7 +28,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from riana.config import FitConfig, IntegrationConfig
 from riana.core.integration import PeptideTrace
-from riana.gui.tasks import extract_trace, integrate_fraction, read_psms, run_fit
+from riana.gui.tasks import (
+    extract_trace,
+    integrate_fraction,
+    read_psms,
+    run_fit,
+    run_rollup,
+)
 from riana.io.percolator import file_indices, fraction_psms
 from riana.records import Chromatogram, PSMRecord
 from tests.test_fitting import (
@@ -150,6 +156,45 @@ def test_run_fit_worker_fits_synthetic_series(tmp_path):
     assert len(converged["t"]) == len(converged["fs"]) >= config.depth
 
 
+def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
+    """The Protein-tab worker reads a fit dir and produces a protein table.
+
+    Exercises the file-reading worker path (not just rollup_proteins): write the
+    `riana fit` outputs, then roll up via the same worker the GUI submits.
+    """
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    paths = []
+    for i, df in enumerate(dfs):
+        p = tmp_path / f"time{i}_riana.txt"
+        df.to_csv(p, sep="\t", index=False)
+        paths.append(str(p))
+    coeff_csv = tmp_path / "coeffs.csv"
+    pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
+                 ).to_csv(coeff_csv, index=False)
+
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    fit_df = run_fit(config, paths, str(coeff_csv))
+    fit_dir = tmp_path / "fit"
+    fit_dir.mkdir()
+    fit_df.to_csv(fit_dir / "riana_fit_peptides.txt", sep="\t", index=True)
+    fit_df.attrs["fractions_long"].to_csv(
+        fit_dir / "riana_fit_fractions.txt", sep="\t", index=False)
+
+    proteins, points = run_rollup(
+        str(fit_dir), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    assert {"protein", "k_deg_median", "k_deg_refit"} <= set(proteins.columns)
+    # Each synthetic peptide maps to its own protein (proteotypic) -> 5 proteins.
+    assert len(proteins) == len(_TEST_PEPTIDES)
+    assert int(proteins["k_deg_refit"].notna().sum()) >= 1
+    # The collapsed (t, θ) points behind each refit ride alongside (the curve).
+    assert len(points) >= 1
+    a_t, a_fs = next(iter(points.values()))
+    assert len(a_t) == len(a_fs) > 0
+
+
 # --- Headless Qt smoke ------------------------------------------------------- #
 
 pytest.importorskip("PySide6")
@@ -173,9 +218,44 @@ def main_window(qtbot):
     pool.shutdown(wait=False)
 
 
-def test_window_has_integrate_and_model_tabs(main_window):
+def test_window_has_integrate_model_and_protein_tabs(main_window):
     titles = [main_window.tabs.tabText(i) for i in range(main_window.tabs.count())]
-    assert titles == ["Integrate", "Model"]
+    assert titles == ["Integrate", "Model", "Protein"]
+
+
+def test_protein_tab_build_params_defaults(main_window):
+    params = main_window.protein_tab.build_params()
+    assert params["parsimony"] == "unique"
+    assert params["model"] == "simple"
+    assert params["min_peptides"] == 2
+    assert params["min_points"] == 3
+    assert params["min_r2"] is None  # 0 on the spin -> gate off
+
+
+def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
+    """Selecting a protein row draws the collapsed points + the refit curve."""
+    from pyqtgraph import PlotDataItem
+
+    tab = main_window.protein_tab
+    result = pd.DataFrame({
+        "experiment": [""], "condition": [""], "protein": ["P1"],
+        "n_peptides": [3], "k_deg_median": [0.40],
+        "k_median_lo": [0.3], "k_median_hi": [0.5],
+        "n_points": [4], "k_deg_refit": [0.42],
+        "k_refit_lo": [0.3], "k_refit_hi": [0.5], "R_squared_refit": [0.98],
+    })
+    tab._result_df = result
+    tab._points = {("", "", "P1"): ([0.0, 1.0, 2.0, 3.0],
+                                    [0.0, 0.3, 0.55, 0.7])}
+    tab._last_params = tab.build_params()
+    tab.model.set_dataframe(result)
+
+    tab.table.setCurrentIndex(tab.model.index(0, 0))
+
+    curves = [it for it in tab.curve.plot.getPlotItem().items
+              if isinstance(it, PlotDataItem)]
+    assert len(curves) == 2  # collapsed points scatter + fitted refit line
+    assert tab.curve.plot.getPlotItem().titleLabel.text == "P1"
 
 
 def test_build_config_defaults_round_trip(main_window):

@@ -65,8 +65,6 @@ class IntegrationConfig:
     extraction_half_width: float = 0.5
     #: -q / --q_value. Integrate only PSMs with q-value below this.
     q_value: float = 1e-2
-    #: -u / --unique. Restrict to peptides mapping to a single protein.
-    unique_only: bool = False
     #: -w / --write_intensities. Also emit the pre-integration intensity trace.
     write_intensities: bool = False
     #: -S / --smoothing. Savitzky-Golay window size; None disables smoothing.
@@ -162,6 +160,23 @@ class IntegrationConfig:
     #: ``peak_rt="consensus"`` median-apex pools over (co-elution consensus).
     apex_n_consensus: int = 4
 
+    # --- Intake scan↔RT guard (Track A). -------------------------------------
+    #: When true (default), :func:`riana.core.integration.integrate_run` verifies
+    #: per run that each PSM's ``spectra_ref`` scan → this mzML's MS1 RT
+    #: reconciles with the mzTab-reported ``retention_time``, and **errors** if
+    #: the per-run *median* offset exceeds :attr:`scan_rt_tol_min`. This catches
+    #: the quantms filename-prefix scan-scramble (mzML basenames that are
+    #: prefixes of one another) and wrong mzML↔mzTab pairings — a class of bug
+    #: that was previously silent (PROJECT_REVIEW Track A). No-ops on the
+    #: Percolator path (no ``retention_time``). Disable with ``--no-rt-check``
+    #: only for a run you know is correctly paired.
+    check_scan_rt: bool = True
+    #: Median scan↔RT offset (RT minutes) above which :attr:`check_scan_rt`
+    #: errors. **Default 2.0** — clears the run-dependent ProteomicsLFQ alignment
+    #: offset (≤~0.9 min measured on real output) with margin, while a
+    #: scan-scrambled run sits tens of minutes off (~25× the threshold).
+    scan_rt_tol_min: float = 2.0
+
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
             raise ValueError(f"mass_tol_ppm must be in [1, 500], got {self.mass_tol_ppm}")
@@ -207,6 +222,9 @@ class IntegrationConfig:
             )
         if self.ppm_alert <= 0:
             raise ValueError(f"ppm_alert must be > 0, got {self.ppm_alert}")
+        if self.scan_rt_tol_min <= 0:
+            raise ValueError(
+                f"scan_rt_tol_min must be > 0, got {self.scan_rt_tol_min}")
 
 
 @dataclass(frozen=True, slots=True)

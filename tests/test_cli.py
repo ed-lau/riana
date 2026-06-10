@@ -72,8 +72,10 @@ _BSA_MZTAB = (
     "start\tend\topt_global_Posterior_Error_Probability_score\t"
     "opt_global_q-value\topt_global_cv_MS:1002217_decoy_peptide\t"
     "opt_global_cv_MS:1000889_peptidoform_sequence\n"
+    # retention_time 541.1 s ≈ the BSA mzML's MS1 RT at scan 4408, so the intake
+    # scan↔RT guard (DataError on a >2 min median offset) reconciles and passes.
     "PSM\tRHPEYAVSVLLR\t0\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t"
-    "0.001\tnull\t300.0\t3\t470.6\t470.6\t"
+    "0.001\tnull\t541.1\t3\t470.6\t470.6\t"
     "ms_run[1]:controllerType=0 controllerNumber=1 scan=4408\tK\tR\t1\t12\t"
     "0.01\t0.001\t0\tRHPEYAVSVLLR\n"
 )

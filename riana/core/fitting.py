@@ -95,6 +95,13 @@ class FitResult:
     t: list[float]
     fs: list[float]
     protein_id: str
+    #: M5 per-timepoint prediction-interval bounds, aligned 1:1 with ``t``/``fs``
+    #: (the residual-bootstrap band; ``nan`` when the bootstrap did not converge).
+    fs_lo: list[float]
+    fs_hi: list[float]
+    #: Per-point biological replicate, aligned 1:1 with ``t``/``fs`` — the
+    #: protein rollup groups within (protein, labeling time, biological replicate).
+    bio_rep: list[int]
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +271,13 @@ def fit_run(
         len(results),
         sum(1 for r in results if r is not None and not np.isnan(r.k_deg)),
     )
-    return _build_output_df(results)
+    out = _build_output_df(results)
+    # M5: the tidy per-timepoint fraction-new table rides alongside the wide
+    # per-peptide frame so callers (CLI, pipeline) can serialize it without
+    # re-deriving θ. ``.attrs`` survives the ``.copy()`` / column-add that
+    # ``fit_project`` does per curve.
+    out.attrs["fractions_long"] = build_fractions_long(results)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +331,14 @@ def _fit_one_concat(
         str(peptide_rows["protein id"].iloc[0])
         if "protein id" in peptide_rows.columns
         else ""
+    )
+    # Per-point biological replicate (manifest path); 1 on the legacy path,
+    # where bioreps are not a concept. Aligned to peptide_rows / t_arr order so
+    # ``[fit_mask]`` selects the same points as ``t``/``fs``.
+    bio_rep_arr = (
+        peptide_rows["biological_replicate"].to_numpy()
+        if "biological_replicate" in peptide_rows.columns
+        else np.ones(len(peptide_rows), dtype=int)
     )
 
     # Two views of the peptide identifier:
@@ -395,30 +416,49 @@ def _fit_one_concat(
     ss_tot = float(np.sum((fs_arr[fit_mask] - np.mean(fs_arr[fit_mask])) ** 2))
     r_squared = float("nan") if ss_tot == 0 else 1.0 - ss_res / ss_tot
 
-    # Bootstrap CI on k_deg.
+    # Unified residual bootstrap (fixed t-design). Resample the fit residuals,
+    # refit k_deg, and from each refit derive BOTH the k_deg CI and a
+    # per-timepoint *prediction interval*: model(t_i; k*) plus a freshly
+    # resampled residual, so fs_lower/fs_upper reflect this peptide's
+    # measurement scatter (the substrate the protein rollup weights on). Keeping
+    # every timepoint in the design (vs. a pairs bootstrap that can drop one) is
+    # more robust on a sparse 3-5 point turnover curve; on noise-free data the
+    # residuals — hence the band — collapse to ~0.
     rng = np.random.default_rng(base_seed ^ (hash(concat) & 0xFFFFFFFF))
-    boot_ks: list[float] = []
     t_fit = t_arr[fit_mask]
     fs_fit = fs_arr[fit_mask]
+    n_pts = len(t_fit)
+    boot_ks: list[float] = []
+    boot_obs: list[np.ndarray] = []
     for _ in range(n_boot):
-        idx = rng.integers(0, len(t_fit), size=len(t_fit))
+        fs_star = pred + residuals[rng.integers(0, n_pts, size=n_pts)]
         try:
             popt_b, _ = curve_fit(
                 partial(model_fn, **kinetic_kwargs),
-                t_fit[idx], fs_fit[idx],
+                t_fit, fs_star,
                 bounds=_K_DEG_BOUNDS,
                 p0=[k_deg],
                 maxfev=2000,
             )
-            boot_ks.append(float(popt_b[0]))
         except (RuntimeError, ValueError):
             continue
+        k_b = float(popt_b[0])
+        boot_ks.append(k_b)
+        pred_b = np.asarray(
+            model_fn(t_fit, k_deg=k_b, **kinetic_kwargs), dtype=np.float64
+        )
+        boot_obs.append(pred_b + residuals[rng.integers(0, n_pts, size=n_pts)])
 
     if len(boot_ks) >= 10:
         ci_lo, ci_hi = (float(p) for p in np.percentile(boot_ks, boot_ci_pct))
         sd = float(np.std(boot_ks, ddof=1))
+        lo_arr, hi_arr = np.percentile(np.vstack(boot_obs), boot_ci_pct, axis=0)
+        fs_lo = [float(x) for x in lo_arr]
+        fs_hi = [float(x) for x in hi_arr]
     else:
         ci_lo = ci_hi = sd = float("nan")
+        fs_lo = [float("nan")] * n_pts
+        fs_hi = [float("nan")] * n_pts
 
     return FitResult(
         concat=concat,
@@ -428,9 +468,12 @@ def _fit_one_concat(
         spep=float(spep_float),
         ci_lo=ci_lo,
         ci_hi=ci_hi,
-        t=t_arr[fit_mask].tolist(),
-        fs=fs_arr[fit_mask].tolist(),
+        t=t_fit.tolist(),
+        fs=fs_fit.tolist(),
         protein_id=protein_id,
+        fs_lo=fs_lo,
+        fs_hi=fs_hi,
+        bio_rep=[int(b) for b in bio_rep_arr[fit_mask]],
     )
 
 
@@ -441,6 +484,7 @@ def _null_result(concat: str, protein_id: str) -> FitResult:
         sd=float("nan"), spep=float("nan"),
         ci_lo=float("nan"), ci_hi=float("nan"),
         t=[], fs=[], protein_id=protein_id,
+        fs_lo=[], fs_hi=[], bio_rep=[],
     )
 
 
@@ -450,12 +494,20 @@ def _null_result(concat: str, protein_id: str) -> FitResult:
 
 
 def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
-    """DataFrame in the legacy riana_fit_peptides.txt schema + Phase F2 adds."""
+    """DataFrame in the legacy riana_fit_peptides.txt schema + Phase F2 adds.
+
+    ``fs_lower`` / ``fs_upper`` are the M5 per-timepoint prediction-interval
+    bounds, carried here as list-cells aligned to ``t`` / ``fs`` so the wide
+    file stays self-contained for the GUI curve view; the tidy one-row-per-point
+    form is :func:`build_fractions_long`.
+    """
     rows = [
         {
             "concat": r.concat,
             "t": r.t,
             "fs": r.fs,
+            "fs_lower": r.fs_lo,
+            "fs_upper": r.fs_hi,
             "k_deg": r.k_deg,
             "R_squared": r.r_squared,
             "sd": r.sd,
@@ -467,3 +519,37 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
         for r in results if r is not None
     ]
     return pd.DataFrame(rows).set_index("concat")
+
+
+#: Column order for the M5 long-format per-timepoint fraction-new table.
+_FRACTIONS_LONG_COLUMNS = [
+    "concat", "protein id", "biological_replicate", "labeling_time",
+    "fs", "fs_lower", "fs_upper",
+]
+
+
+def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
+    """Explode per-peptide fits into the M5 long-format fraction-new table.
+
+    One row per ``(concat, biological_replicate, labeling_time)`` point with the
+    per-timepoint fraction-new ``fs`` and its prediction-interval bounds
+    ``fs_lower`` / ``fs_upper``. This is the substrate the protein rollup
+    consumes (PROJECT_REVIEW Track C); :func:`riana.core.pipeline.fit_project`
+    tags it with ``experiment`` / ``condition``. Peptides that did not fit
+    contribute no rows (their ``t`` list is empty).
+    """
+    rows = []
+    for r in results:
+        if r is None:
+            continue
+        for ti, fsi, lo, hi, br in zip(r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep):
+            rows.append({
+                "concat": r.concat,
+                "protein id": r.protein_id,
+                "biological_replicate": int(br),
+                "labeling_time": float(ti),
+                "fs": float(fsi),
+                "fs_lower": float(lo),
+                "fs_upper": float(hi),
+            })
+    return pd.DataFrame(rows, columns=_FRACTIONS_LONG_COLUMNS)

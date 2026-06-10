@@ -109,10 +109,6 @@ def integrate(
         "'0 1 2 3 4 5' is the m0-m5 envelope the D2O fit consumes; pick a "
         "custom set for other workflows (e.g. SILAC cluster extraction via -F).",
     ),
-    unique: bool = typer.Option(
-        False, "-u", "--unique",
-        help="Integrate unique (single-protein) peptides only.",
-    ),
     thread: int = typer.Option(
         1, "-t", "--thread", help="Worker threads [default: 1]."),
     out: Path = typer.Option(
@@ -172,6 +168,12 @@ def integrate(
         help="Runs to integrate concurrently on the --sdrf path (one mzML in "
         "memory per worker; 2-4 suits a many-timepoint time series) [default: "
         "1]. Distinct from -t/--thread (per-run peptide threads)."),
+    no_rt_check: bool = typer.Option(
+        False, "--no-rt-check",
+        help="Disable the intake scan↔RT guard — the per-run check that the "
+        "mzTab spectra_ref scans reconcile with this mzML's retention times "
+        "(catches the quantms filename-prefix scan-scramble / wrong mzML↔mzTab "
+        "pairing). Only disable for a run you know is correctly paired."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -252,7 +254,6 @@ def integrate(
             baseline_method=baseline_method,
             apex_selection=apex_selection,
             q_value=float(q_value),
-            unique_only=bool(unique),
             write_intensities=bool(write_intensities),
             smoothing=smoothing,
             mass_difference=float(mass_difference),
@@ -260,6 +261,7 @@ def integrate(
             forced_mods=forced,
             threads=int(thread),
             out_dir=str(out),
+            check_scan_rt=not no_rt_check,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -469,9 +471,128 @@ def fit(
     )
     write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
     logger.info(f"wrote {out_path}")
+
+    # M5: per-timepoint fraction-new (long format, one row per peptide-timepoint
+    # with prediction-interval bounds) — the substrate for the protein rollup.
+    fractions = result_df.attrs.get("fractions_long")
+    if fractions is not None and not fractions.empty:
+        frac_path = Path(out) / "riana_fit_fractions.txt"
+        write_dataframe_tsv(frac_path, fractions, provenance, include_index=False)
+        logger.info(
+            f"wrote {frac_path} ({len(fractions)} peptide-timepoints)")
+
     n_fitted = int(result_df["k_deg"].notna().sum())
     n_well = int((result_df["R_squared"] >= 0.9).sum())
     logger.info(f"{n_fitted} peptides converged; {n_well} R²≥0.9")
+    logger.handlers.clear()
+
+
+# --------------------------------------------------------------------------- #
+# rollup
+# --------------------------------------------------------------------------- #
+@app.command()
+def rollup(
+    fit_dir: Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Directory holding riana_fit_peptides.txt + riana_fit_fractions.txt "
+        "from `riana fit`.",
+    ),
+    model: str = typer.Option(
+        "simple", "-m", "--model",
+        help="Kinetic model for the protein refit — match how the peptides were "
+        "fit (simple, guan, fornasiero)."),
+    parsimony: str = typer.Option(
+        "unique", "--parsimony",
+        help="Protein attribution at summarize time. 'unique' (default): only "
+        "single-accession peptides contribute (a shared peptide's envelope "
+        "blends both proteins' turnover, so it can't be attributed). 'isoform': "
+        "also fold isoform-only-shared peptides into the canonical entry, unless "
+        "an isoform in the group carries its own unique peptide."),
+    kp: float = typer.Option(
+        0.5, "--kp", help="Precursor rate constant (two-compartment models)."),
+    kr: float = typer.Option(
+        0.05, "--kr", help="Reutilization rate constant (Fornasiero)."),
+    rp: float = typer.Option(
+        10.0, "--rp", help="Bound/free precursor ratio (Fornasiero)."),
+    min_peptides: int = typer.Option(
+        2, "--min-peptides",
+        help="Min attributed peptides for a protein to be reported [default: 2]."),
+    min_points: int = typer.Option(
+        3, "--min-points",
+        help="Min collapsed (t, theta) points for the refit [default: 3]."),
+    min_r2: Optional[float] = typer.Option(
+        None, "--min-r2", metavar="R2",
+        help="Optional peptide R² admission gate before rollup (off by default — "
+        "the inverse-variance weighting already down-weights noisy peptides). "
+        "When set, keep a peptide if R² ≥ this, OR (slow-turnover admit) "
+        "k ≤ --alt-k and SE ≤ --alt-se. Pass e.g. 0.8 to A/B against the "
+        "unfiltered result."),
+    alt_k: float = typer.Option(
+        0.025, "--alt-k",
+        help="Slow-turnover admit: max k_deg for a low-R² peptide to still be "
+        "kept (only with --min-r2)."),
+    alt_se: float = typer.Option(
+        0.05, "--alt-se",
+        help="Slow-turnover admit: max k_deg bootstrap SE (the 'sd' column) for "
+        "a low-R² peptide to still be kept (only with --min-r2)."),
+    out: Path = typer.Option(
+        Path("."), "-o", "--out", help="Output directory [default: .]."),
+) -> None:
+    """Roll per-peptide fits up to protein turnover.
+
+    Two estimates per (experiment, condition, protein): the median of the
+    peptides' k_deg, and a biorep-aware per-timepoint inverse-variance weighted
+    refit over the M5 fraction-new substrate. Reads the `riana fit` outputs in
+    *fit_dir* and writes ``riana_protein.txt``.
+    """
+    import dataclasses
+
+    import pandas as pd
+
+    from riana.core.protein import rollup_proteins
+    from riana.exceptions import DataError
+    from riana.io.writers import make_provenance, write_dataframe_tsv
+    from riana.logger import get_logger
+
+    pep_path = fit_dir / "riana_fit_peptides.txt"
+    frac_path = fit_dir / "riana_fit_fractions.txt"
+    for p in (pep_path, frac_path):
+        if not p.exists():
+            raise typer.BadParameter(
+                f"{p.name} not found in {fit_dir}. Run `riana fit` there first.")
+
+    os.makedirs(out, exist_ok=True)
+    logger = get_logger(__name__, str(out))
+    logger.info(f"riana {__version__}")
+    logger.info(f"rollup (parsimony={parsimony}, model={model})")
+
+    peptides = pd.read_table(pep_path, comment="#")
+    fractions = pd.read_table(frac_path, comment="#")
+    try:
+        result = rollup_proteins(
+            peptides, fractions, model=model,
+            kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
+            parsimony=parsimony, min_peptides=int(min_peptides),
+            min_points=int(min_points), min_r2=min_r2,
+            alt_k=float(alt_k), alt_se=float(alt_se),
+        )
+    except (DataError, NotImplementedError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    out_path = Path(out) / "riana_protein.txt"
+    provenance = make_provenance(
+        {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
+         "min_peptides": min_peptides, "min_points": min_points,
+         "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se},
+        id_source=str(fit_dir),
+        extra={"parsimony": parsimony, "model": model},
+    )
+    write_dataframe_tsv(out_path, result, provenance, include_index=False)
+    logger.info(f"wrote {out_path}")
+    n_med = int(result["k_deg_median"].notna().sum())
+    n_refit = int(result["k_deg_refit"].notna().sum())
+    logger.info(
+        f"{len(result)} proteins: {n_med} with a median-k, {n_refit} with a refit")
     logger.handlers.clear()
 
 

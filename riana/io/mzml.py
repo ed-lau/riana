@@ -20,6 +20,7 @@ import re
 import shutil
 import tempfile
 import threading
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Iterator
 
@@ -141,6 +142,23 @@ class IndexedMzML:
         reader = self._thread_reader()
         spec = reader.get_by_id(spec_id)
         return spec["m/z array"], spec["intensity array"]
+
+    def rt_for_scans(self, scans: "np.ndarray | Sequence[int]") -> np.ndarray:
+        """RT (minutes) of the MS1 at-or-before each scan number in *scans*.
+
+        Replicates the integrator's ``searchsorted(side="left") - 1``
+        precursor-cycle lookup — the MS1 preceding a (possibly MS2) PSM scan —
+        vectorized over an array of scans. The index is clamped to
+        ``[0, len-1]`` so a scan before the first MS1 maps to the first MS1
+        instead of wrapping to the last (the bare ``- 1`` would). Used by the
+        intake scan↔RT guard (:func:`riana.core.integration.check_scan_rt_consistency`).
+        """
+        s = np.asarray(scans, dtype=np.int64)
+        idx = np.clip(
+            np.searchsorted(self.scan_idx, s, side="left") - 1,
+            0, len(self.rt_idx) - 1,
+        )
+        return self.rt_idx[idx]
 
     def _thread_reader(self) -> "mzml.MzML":
         r = getattr(self._tl, "reader", None)
