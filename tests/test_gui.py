@@ -321,6 +321,21 @@ def test_integrate_tab_has_sdrf_and_workers(main_window):
     tab = main_window.integrate_tab
     assert tab.sdrf_edit.text() == ""              # SDRF path (optional) wired
     assert tab.workers_spin.value() == 1           # cross-file workers control
+    assert tab.mass_tol_spin.value() == 10         # default matches the config
+
+
+def test_integrate_tab_reflects_sdrf_mass_tolerance(main_window, tmp_path):
+    """Picking an SDRF reflects its precursor mass tolerance in the spinbox."""
+    from tests.test_pipeline import _BSA_SDRF
+
+    header, row = _BSA_SDRF.strip().split("\n")
+    sdrf = tmp_path / "s.sdrf.tsv"
+    sdrf.write_text(
+        header + "\tcomment[precursor mass tolerance]\n" + row + "\t25 ppm\n")
+    tab = main_window.integrate_tab
+    tab.sdrf_edit.setText(str(sdrf))
+    tab._resolve_sdrf_mass_tol()
+    assert tab.mass_tol_spin.value() == 25
 
 
 def test_model_tab_has_manifest_field(main_window):

@@ -28,6 +28,10 @@ and Zenodo code DOI follow at release.)
 - **GUI Model tab** gained a **Manifest** field (`fit_project` via the new
   `tasks.run_fit_manifest` worker) and now also writes the M5
   `riana_fit_fractions.txt`.
+- **GUI Integrate tab reflects the SDRF mass tolerance** — picking an SDRF fills
+  the Mass tolerance spinbox from its `comment[precursor mass tolerance]` (the
+  user can still override), the GUI equivalent of the CLI's SDRF resolution; the
+  stale `50 ppm` spinbox default now matches the config's `10 ppm`.
 
 #### Added
 

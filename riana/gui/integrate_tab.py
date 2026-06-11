@@ -125,6 +125,9 @@ class IntegrateTab(QWidget):
 
         self.sdrf_edit = QLineEdit()
         self.sdrf_edit.setPlaceholderText("Optional: SDRF .tsv — enables the identity/manifest path")
+        # Reflect the SDRF's precursor mass tolerance in the spinbox on entry
+        # (the spinbox is built below; the slot reads it at call time).
+        self.sdrf_edit.editingFinished.connect(self._resolve_sdrf_mass_tol)
         form.addRow("SDRF", self._path_row(self.sdrf_edit, self._pick_sdrf))
 
         self.sample_edit = QLineEdit("time0")
@@ -145,8 +148,12 @@ class IntegrateTab(QWidget):
 
         self.mass_tol_spin = QSpinBox()
         self.mass_tol_spin.setRange(1, 500)
-        self.mass_tol_spin.setValue(50)
+        self.mass_tol_spin.setValue(
+            IntegrationConfig.__dataclass_fields__["mass_tol_ppm"].default)
         self.mass_tol_spin.setSuffix(" ppm")
+        self.mass_tol_spin.setToolTip(
+            "Auto-filled from the SDRF's comment[precursor mass tolerance] when "
+            "you pick an SDRF; override here if you want.")
         form.addRow("Mass tolerance", self.mass_tol_spin)
 
         self.peak_rt_combo = QComboBox()
@@ -260,6 +267,24 @@ class IntegrateTab(QWidget):
         )
         if path:
             self.sdrf_edit.setText(path)
+            self._resolve_sdrf_mass_tol()
+
+    def _resolve_sdrf_mass_tol(self) -> None:
+        """Reflect the SDRF's ``comment[precursor mass tolerance]`` in the mass
+        tolerance spinbox (the user can still override) — the GUI equivalent of
+        the CLI's SDRF mass-tolerance resolution. Silent on a missing/unreadable
+        SDRF or one without a tolerance; the run path surfaces real errors."""
+        path = self.sdrf_edit.text().strip()
+        if not path or not Path(path).is_file():
+            return
+        try:
+            from riana.io.sdrf import read_sdrf
+            tol = read_sdrf(path).precursor_mass_tol_ppm
+        except Exception:
+            return
+        if tol is not None:
+            self.mass_tol_spin.setValue(int(round(tol)))
+            self._status_cb(f"mass tolerance set from SDRF: {int(round(tol))} ppm")
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
