@@ -528,7 +528,7 @@ def rollup(
     manifest: Optional[Path] = typer.Option(
         None, "--manifest", exists=True, dir_okay=False, readable=True,
         help="riana_manifest.tsv (the SDRF/project path). Finds the fit outputs "
-        "from its stage='fit' rows, writes riana_protein.txt next to the "
+        "from its stage='fit' rows, writes riana_rollup_proteins.txt next to the "
         "manifest, and records a stage='protein' row. -o is ignored here."),
     model: str = typer.Option(
         "simple", "-m", "--model",
@@ -587,12 +587,12 @@ def rollup(
     peptides' k_deg, and a biorep-aware per-timepoint inverse-variance weighted
     refit over the M5 fraction-new substrate. Reads the `riana fit` outputs —
     from *fit_dir*, or via --manifest (the project path) — and writes
-    ``riana_protein.txt`` (+ a stage='protein' manifest row on the --manifest path).
+    ``riana_rollup_proteins.txt`` (+ stage='rollup' manifest rows on the --manifest path).
     """
     import pandas as pd
 
     from riana.core.pipeline import fit_outputs_from_manifest, record_stage_rows
-    from riana.core.protein import rollup_proteins
+    from riana.core.protein import build_rollup_fractions, rollup_proteins
     from riana.exceptions import DataError
     from riana.io.writers import (
         ESTIMATE_FLOAT_FORMAT, make_provenance, write_dataframe_tsv,
@@ -633,7 +633,7 @@ def rollup(
     logger.info(f"rollup (method={method}, parsimony={parsimony}, model={model})")
     if ignored_out is not None:
         logger.warning(
-            "--manifest: riana_protein.txt goes next to the manifest (%s); "
+            "--manifest: riana_rollup_proteins.txt goes next to the manifest (%s); "
             "ignoring -o %s", out, ignored_out)
 
     peptides = pd.read_table(pep_path, comment="#")
@@ -649,7 +649,7 @@ def rollup(
     except (DataError, NotImplementedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
-    out_path = Path(out) / "riana_protein.txt"
+    out_path = Path(out) / "riana_rollup_proteins.txt"
     provenance = make_provenance(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
@@ -660,11 +660,23 @@ def rollup(
     write_dataframe_tsv(out_path, result, provenance, include_index=False,
                         float_format=ESTIMATE_FLOAT_FORMAT)
     logger.info(f"wrote {out_path}")
+    written = [out_path]
 
-    # Record the stage='protein' row so the manifest indexes the whole chain.
+    # The collapsed inverse-variance-weighted (t, θ) the refit used (the GUI
+    # curve substrate) — long/tidy, for a readable record of the weighting.
+    rollup_fractions = build_rollup_fractions(result)
+    if not rollup_fractions.empty:
+        frac_path = Path(out) / "riana_rollup_fractions.txt"
+        write_dataframe_tsv(frac_path, rollup_fractions, provenance,
+                            include_index=False,
+                            float_format=ESTIMATE_FLOAT_FORMAT)
+        logger.info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
+        written.append(frac_path)
+
+    # Record the stage='rollup' rows so the manifest indexes the whole chain.
     if manifest is not None:
-        record_stage_rows(manifest, "protein", [out_path], result, provenance)
-        logger.info(f"recorded protein row in {manifest}")
+        record_stage_rows(manifest, "rollup", written, result, provenance)
+        logger.info(f"recorded {len(written)} rollup rows in {manifest}")
 
     n_fit = int(result["k_deg"].notna().sum())
     logger.info(

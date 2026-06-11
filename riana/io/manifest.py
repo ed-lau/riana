@@ -1,7 +1,7 @@
 """The stage-aware project manifest — ``riana_manifest.tsv`` (M6a).
 
 The manifest is the **project index** that glues Riana's linear ``integrate →
-fit → protein`` chain together (PROJECT_REVIEW.md §3, locked decision #2). Each
+fit → rollup`` chain together (PROJECT_REVIEW.md §3, locked decision #2). Each
 stage appends rows tagged with its ``stage`` and the run/group
 :class:`~riana.records.RunIdentity`, so a later stage groups its inputs from the
 manifest rather than re-reading the SDRF or parsing identity out of filenames.
@@ -10,9 +10,9 @@ Identity is *header-authoritative*: integrate freezes the full identity into eac
 output's provenance header (reproducible, SDRF-independent at fit time) **and**
 records it here for indexing. ``fit --manifest`` reads ``stage == "integrate"``
 rows, groups by ``(experiment, condition)``, and writes back its own ``stage ==
-"fit"`` rows; ``rollup --manifest`` reads those and writes a ``stage == "protein"``
+"fit"`` rows; ``rollup --manifest`` reads those and writes ``stage == "rollup"``
 row — so the manifest's folder is the project and one ``--manifest`` drives the
-whole ``integrate → fit → rollup`` chain. The fit/protein rows carry a *coarse*
+whole ``integrate → fit → rollup`` chain. The fit/rollup rows carry a *coarse*
 experiment-level identity (the aggregate output spans many curves), used for
 indexing/provenance only; downstream grouping is off the file columns.
 
@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import csv
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from riana.exceptions import DataError
@@ -34,7 +35,14 @@ from riana.records import RunIdentity
 MANIFEST_FILENAME = "riana_manifest.tsv"
 SCHEMA_VERSION = 1
 _SCHEMA_PREFIX = "# manifest_schema"
-_STAGES = ("integrate", "fit", "protein")
+_STAGES = ("integrate", "fit", "rollup")
+#: Pre-rename stage names mapped on read so older manifests still load.
+_STAGE_ALIASES = {"protein": "rollup"}
+
+
+def _now_iso() -> str:
+    """Current UTC time, ISO-8601 to the second — the manifest row timestamp."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # Column order on disk. The identity block mirrors RunIdentity's fields; the
 # float fields serialize None as "" and round-trip back to None.
@@ -56,18 +64,26 @@ _FIELDS = (
     "experiment_type",
     "config_hash",
     "git_sha",
+    "created_at",
 )
 
 
 @dataclass(frozen=True, slots=True)
 class ManifestRow:
-    """One stage output: an :class:`RunIdentity` + where it was written."""
+    """One stage output: an :class:`RunIdentity` + where/when it was written.
+
+    Rows are an *index* (one per ``(stage, output_path)``), not a history — a
+    re-run overwrites the output file and upserts (replaces) the row, recording
+    the new ``config_hash`` (settings), ``git_sha`` (code, or ``"unknown"``
+    without git), and ``created_at`` (when).
+    """
 
     stage: str
     output_path: str
     identity: RunIdentity
     config_hash: str = ""
     git_sha: str = ""
+    created_at: str = field(default_factory=_now_iso)
 
     def __post_init__(self) -> None:
         if self.stage not in _STAGES:
@@ -98,6 +114,7 @@ class ManifestRow:
             "experiment_type": i.experiment_type,
             "config_hash": self.config_hash,
             "git_sha": self.git_sha,
+            "created_at": self.created_at,
         }
 
     @classmethod
@@ -116,12 +133,14 @@ class ManifestRow:
             acquisition=rec.get("acquisition", "DDA") or "DDA",
             precursor_enrichment=_to_opt_float(rec.get("precursor_enrichment")),
         )
+        stage = _STAGE_ALIASES.get(rec["stage"], rec["stage"])
         return cls(
-            stage=rec["stage"],
+            stage=stage,
             output_path=rec["output_path"],
             identity=identity,
             config_hash=rec.get("config_hash", ""),
             git_sha=rec.get("git_sha", ""),
+            created_at=rec.get("created_at", ""),
         )
 
 

@@ -209,10 +209,29 @@ def rollup_proteins(
         .reset_index(drop=True)
     )
     # The collapsed (t, θ) points behind each refit, for the GUI curve view.
-    # Keyed by (experiment, condition, protein); also a stringified mirror so it
-    # survives a DataFrame round-trip where attrs is needed by key lookup.
+    # Keyed by (experiment, condition, protein).
     result.attrs["protein_points"] = points
     return result
+
+
+def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
+    """Long/tidy table of the collapsed ``(t, θ)`` points behind each protein
+    refit — the inverse-variance-weighted fraction-new the GUI curve plots,
+    one row per ``(experiment, condition, protein, labeling_time)``. Built from
+    ``result.attrs["protein_points"]`` (empty when none were attached).
+    """
+    rows = []
+    for (exp, cond, prot), pts in result.attrs.get("protein_points", {}).items():
+        t_list, fs_list = pts
+        for t, fs in zip(t_list, fs_list):
+            rows.append({
+                "experiment": exp, "condition": cond, "protein": prot,
+                "labeling_time": float(t), "fs": float(fs),
+            })
+    return pd.DataFrame(
+        rows,
+        columns=["experiment", "condition", "protein", "labeling_time", "fs"],
+    )
 
 
 # --------------------------------------------------------------------------- #

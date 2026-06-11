@@ -16,6 +16,16 @@ and Zenodo code DOI follow at release.)
 
 #### Changed
 
+- **Rollup outputs/stage renamed** for symmetry with fit: `riana_protein.txt` →
+  **`riana_rollup_proteins.txt`** (+ a new **`riana_rollup_fractions.txt`** with
+  the collapsed inverse-variance-weighted `(t, θ)` the GUI curve plots), and the
+  manifest stage `protein` → **`rollup`**. Pre-rename manifests still load
+  (`protein` aliased to `rollup`).
+- **Manifest rows gain a `created_at` timestamp** (ISO-8601 UTC). The manifest is
+  an *index*, not a history — a re-run overwrites the output and **replaces** its
+  row (`config_hash` = settings, `git_sha` = code or `"unknown"` without git,
+  `created_at` = when).
+
 - **`riana_fit_peptides.txt` is now a scalar summary** — the per-timepoint
   `t`/`fs`/`fs_lower`/`fs_upper` list-cells are dropped from the *written* file
   (the per-timepoint detail, *with* biorep labels, lives in
@@ -57,7 +67,8 @@ and Zenodo code DOI follow at release.)
   writes its outputs **next to the manifest** (the project dir; `-o` is ignored
   there) and records `stage="fit"` rows; **`rollup --manifest`** (the fit dir
   argument is now optional) reads those rows to find the fit outputs, writes
-  `riana_protein.txt` next to the manifest, and records a `stage="protein"` row.
+  `riana_rollup_proteins.txt` (+ `riana_rollup_fractions.txt`) next to the
+  manifest, and records `stage="rollup"` rows.
   So one `--manifest` drives the whole chain and the manifest indexes every
   stage. The GUI Model/Protein tabs follow the same rooting. (Previously `fit`
   never touched the manifest — it was integrate-only despite the documented plan.)
@@ -68,9 +79,12 @@ and Zenodo code DOI follow at release.)
 
 - **`riana rollup`** — rolls the `riana fit` per-peptide outputs up to one
   turnover estimate per `(experiment, condition, protein)`, writing
-  `riana_protein.txt` (a `method` tag + `k_deg`/`ci_lo`/`ci_hi`/`R_squared`, the
-  data-structure counts `n_peptides`/`n_replicates`/`n_timepoints`/`n_points`,
-  and a comparison `peptide_median_k`). `core/protein.py`.
+  `riana_rollup_proteins.txt` (a `method` tag + `k_deg`/`ci_lo`/`ci_hi`/`R_squared`,
+  the data-structure counts `n_peptides`/`n_replicates`/`n_timepoints`/`n_points`,
+  and a comparison `peptide_median_k`) + `riana_rollup_fractions.txt` (the
+  long/tidy collapsed `(t, θ)` behind each refit — the GUI curve substrate).
+  `core/protein.py`. (The manifest stage is `rollup`; older `protein`-stage
+  manifests still read, aliased.)
 - **`--method {weighted, pooled}`** (default `weighted`) — `weighted` is the
   **biorep-aware per-timepoint refit**: within each `(protein,
   biological_replicate, labeling_time)` the peptides' fraction-new θ are collapsed
@@ -97,7 +111,7 @@ and Zenodo code DOI follow at release.)
   survive. Off by default keeps the inverse-variance-only result as a clean A/B baseline.
 - **GUI Protein tab** — a 3rd tab over the same `rollup_proteins` core
   (`gui/protein_tab.py` + the Qt-free `tasks.run_rollup` pool worker): pick a fit
-  output dir, choose parsimony/model/R²-gate, run, write `riana_protein.txt`, and
+  output dir, choose parsimony/model/R²-gate, run, write the rollup outputs, and
   click a protein row to see its collapsed `(t, θ)` points + refit curve.
 
 #### Removed
@@ -114,9 +128,8 @@ and Zenodo code DOI follow at release.)
 - **`riana_fit_fractions.txt`** — `riana fit` now also writes a long-format,
   one-row-per-`(concat, biological_replicate, labeling_time)` table with the
   per-timepoint fraction-new `fs` and prediction-interval bounds `fs_lower` /
-  `fs_upper`. This is the substrate the (upcoming) protein rollup consumes. The
-  wide `riana_fit_peptides.txt` also gains `fs_lower` / `fs_upper` list-cells
-  (aligned to the existing `t` / `fs`) for the GUI curve view.
+  `fs_upper`. This is the substrate the protein rollup consumes. (The wide
+  `riana_fit_peptides.txt` is a scalar summary — see "Output hygiene" above.)
 - **`build_fractions_long`** (`core/fitting.py`) + `out.attrs["fractions_long"]`
   carry the long table through `fit_run` → `fit_project` (tagged with
   `experiment` / `condition`) → CLI without re-deriving θ.

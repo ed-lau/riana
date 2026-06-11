@@ -7,7 +7,7 @@ parameters, the (CPU-bound, bootstrapped) rollup runs on the shared
 ``ProcessPoolExecutor`` via the Qt-free :func:`riana.gui.tasks.run_rollup`
 worker (the *same* :func:`riana.core.protein.rollup_proteins` the CLI calls, so
 the surfaces cannot diverge), and the per-protein table lands in a view and on
-disk as ``riana_protein.txt``.
+disk as ``riana_rollup_proteins.txt`` (+ ``riana_rollup_fractions.txt``).
 
 Reads a *fit output directory* (the ``riana_fit_peptides.txt`` +
 ``riana_fit_fractions.txt`` a `riana fit` run wrote). The per-protein refit
@@ -312,13 +312,14 @@ class ProteinTab(QWidget):
             self._set_running(False)
 
     def _write_output(self, result: pd.DataFrame, params: dict) -> None:
-        # When the fit dir is a project (carries a manifest), write the protein
-        # output there and record a stage='protein' row (the project chain);
+        # When the fit dir is a project (carries a manifest), write the rollup
+        # outputs there and record stage='rollup' rows (the project chain);
         # otherwise honor the Output dir.
+        from riana.core.protein import build_rollup_fractions
+
         fit_dir = Path(params["fit_dir"])
         manifest = fit_dir / "riana_manifest.tsv"
         out_dir = fit_dir if manifest.exists() else Path(params["out_dir"])
-        out_path = out_dir / "riana_protein.txt"
         provenance = make_provenance(
             {k: params[k] for k in (
                 "model", "method", "parsimony", "kp", "kr", "rp",
@@ -327,13 +328,25 @@ class ProteinTab(QWidget):
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},
         )
+        out_path = out_dir / "riana_rollup_proteins.txt"
         write_dataframe_tsv(out_path, result, provenance, include_index=False,
                             float_format=ESTIMATE_FLOAT_FORMAT)
         self._info(f"wrote {out_path}")
+        written = [out_path]
+
+        rollup_fractions = build_rollup_fractions(result)
+        if not rollup_fractions.empty:
+            frac_path = out_dir / "riana_rollup_fractions.txt"
+            write_dataframe_tsv(frac_path, rollup_fractions, provenance,
+                                include_index=False,
+                                float_format=ESTIMATE_FLOAT_FORMAT)
+            self._info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
+            written.append(frac_path)
+
         if manifest.exists():
             from riana.core.pipeline import record_stage_rows
-            record_stage_rows(manifest, "protein", [out_path], result, provenance)
-            self._info(f"recorded protein row in {manifest}")
+            record_stage_rows(manifest, "rollup", written, result, provenance)
+            self._info(f"recorded {len(written)} rollup rows in {manifest}")
 
     def _on_cancel(self) -> None:
         self._cancelled = True

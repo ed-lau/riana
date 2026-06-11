@@ -107,3 +107,29 @@ def test_rejects_future_schema(tmp_path):
 def test_invalid_stage_rejected():
     with pytest.raises(ValueError, match="stage"):
         ManifestRow("bogus", "o", _turnover("s", "d", 0.0))
+
+
+def test_created_at_is_stamped_and_roundtrips(tmp_path):
+    mf = tmp_path / "riana_manifest.tsv"
+    row = ManifestRow("rollup", "out/riana_rollup_proteins.txt",
+                      _turnover("s", "d", 0.0))
+    assert row.created_at and "T" in row.created_at        # ISO timestamp set
+    append_manifest(mf, [row])
+    back = read_manifest(mf)[0]
+    assert back.created_at == row.created_at               # preserved on read
+
+
+def test_legacy_protein_stage_reads_as_rollup(tmp_path):
+    """Pre-rename manifests (stage='protein') still load, mapped to 'rollup'."""
+    mf = tmp_path / "riana_manifest.tsv"
+    # Hand-write a legacy row (no created_at column, old 'protein' stage).
+    mf.write_text(
+        "# manifest_schema 1\n"
+        "stage\toutput_path\texperiment\tsample\tdata_file\n"
+        "protein\triana_protein.txt\texp\t\t\n"
+    )
+    rows = read_manifest(mf)
+    assert len(rows) == 1
+    assert rows[0].stage == "rollup"          # aliased
+    assert rows[0].created_at == ""           # absent in the old file
+    assert len(read_manifest(mf, stage="rollup")) == 1

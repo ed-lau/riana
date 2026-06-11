@@ -404,7 +404,7 @@ def record_stage_rows(
 ) -> list[ManifestRow]:
     """Append one *stage* row per output file to the manifest (idempotent upsert).
 
-    Used by ``fit`` (``stage="fit"``) and ``rollup`` (``stage="protein"``) to
+    Used by ``fit`` (``stage="fit"``) and ``rollup`` (``stage="rollup"``) to
     register their outputs in the same project manifest ``integrate`` wrote — so
     a single ``--manifest`` drives the whole ``integrate → fit → rollup`` chain.
     """

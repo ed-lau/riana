@@ -191,8 +191,11 @@ def test_fit_and_rollup_via_manifest_chain(tmp_path):
     r2 = runner.invoke(app, [
         "rollup", "--manifest", str(mf), "--min-peptides", "1"])
     assert r2.exit_code == 0, r2.output
-    assert (tmp_path / "riana_protein.txt").exists()
-    assert len(read_manifest(mf, stage="protein")) == 1
+    assert (tmp_path / "riana_rollup_proteins.txt").exists()
+    assert (tmp_path / "riana_rollup_fractions.txt").exists()
+    rollup_rows = read_manifest(mf, stage="rollup")
+    assert len(rollup_rows) == 2                       # proteins + fractions
+    assert all(r.created_at for r in rollup_rows)      # timestamped
 
 
 def test_rollup_requires_exactly_one_input_source(tmp_path):

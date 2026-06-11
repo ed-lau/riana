@@ -29,7 +29,7 @@
 > biorep, t, fs, fs_lower, fs_upper)` with prediction-interval bounds from a
 > unified residual bootstrap; this is the substrate the protein rollup
 > inverse-variance-weights. **Track C protein rollup — `unique` first cut shipped**
-> (2026-06-10): `riana rollup` writes `riana_protein.txt` (median-of-peptide-k +
+> (2026-06-10): `riana rollup` writes `riana_rollup_proteins.txt` (median-of-peptide-k +
 > the biorep-aware per-timepoint weighted refit), parsimony is now a
 > summarize-time decision (`integrate --unique` removed so integrate extracts all
 > peptides). **`--parsimony isoform` + the GUI Protein tab are shipped too**
@@ -843,7 +843,7 @@ vs DIA-NN parquet).
 - **Manifest project chain (SHIPPED 2026-06-10).** `fit --manifest` /
   `rollup --manifest` now root outputs at the **manifest's folder** (the project
   dir; `-o` ignored there with a warning) and write back their `stage="fit"` /
-  `stage="protein"` rows (`record_stage_rows` + `fit_outputs_from_manifest` in
+  `stage="rollup"` rows (`record_stage_rows` + `fit_outputs_from_manifest` in
   `core/pipeline.py`), so one `--manifest` drives `integrate → fit → rollup` and
   the manifest indexes every stage. `rollup`'s `FIT_DIR` argument is now optional
   (XOR `--manifest`). The aggregate fit/protein rows carry a coarse
@@ -960,7 +960,8 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   *supplied* — both are fixed today, so meaningful two-compartment use needs real
   precursor priors. Unlikely near-term.
 - **Protein rollup** (new milestone). **Shipped 2026-06-10** — `riana rollup`
-  (`core/protein.py`) writes `riana_protein.txt` (a `method` tag + one `k_deg` /
+  (`core/protein.py`) writes `riana_rollup_proteins.txt` + `riana_rollup_fractions.txt`
+  (a `method` tag + one `k_deg` /
   CI / R², the structure counts `n_peptides` / `n_replicates` / `n_timepoints` /
   `n_points`, and a comparison `peptide_median_k`), grouped by `(experiment,
   condition, protein)`; `--parsimony {unique, isoform}`;
