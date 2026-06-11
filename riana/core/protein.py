@@ -92,8 +92,8 @@ _GROUP_KEYS = ["experiment", "condition", "protein"]
 #: peptides' fitted k, carried for comparison regardless of method.
 PROTEIN_COLUMNS = [
     "experiment", "condition", "protein", "method",
-    "n_peptides", "n_points", "k_deg", "ci_lo", "ci_hi", "R_squared",
-    "peptide_median_k",
+    "n_peptides", "n_replicates", "n_timepoints", "n_points",
+    "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
 ]
 
 
@@ -426,6 +426,8 @@ def _refit_table(
 
     def _one(item):
         keys, grp = item
+        n_rep = int(grp["biological_replicate"].nunique())
+        n_tp = int(grp["labeling_time"].nunique())
         if method == "pooled":
             # All peptide×timepoint θ points, no collapse (pseudoreplication).
             fs = grp["fs"].to_numpy(dtype=float)
@@ -452,7 +454,17 @@ def _refit_table(
             n_boot=n_boot, boot_ci_pct=boot_ci_pct,
             rng=_group_rng(random_state, keys),
         )
-        return keys, fit, (t_list, fs_list)
+        if fit is None:
+            return keys, None, None
+        exp, cond, prot = keys
+        k, r2, lo, hi = fit
+        row = {
+            "experiment": exp, "condition": cond, "protein": prot,
+            "n_replicates": n_rep, "n_timepoints": n_tp,
+            "n_points": int(len(t_list)), "k_deg": k,
+            "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
+        }
+        return keys, row, (t_list, fs_list)
 
     if threads <= 1 or len(groups) <= 1:
         computed = [_one(g) for g in groups]
@@ -462,21 +474,15 @@ def _refit_table(
 
     rows = []
     points: dict = {}
-    for keys, fit, pts in computed:
-        if fit is None:
+    for keys, row, pts in computed:
+        if row is None:
             continue
-        k, r2, lo, hi = fit
-        exp, cond, prot = keys
-        t_list, fs_list = pts
-        rows.append({
-            "experiment": exp, "condition": cond, "protein": prot,
-            "n_points": int(len(t_list)), "k_deg": k,
-            "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
-        })
-        points[(exp, cond, prot)] = (t_list, fs_list)
+        rows.append(row)
+        points[keys] = pts
     table = pd.DataFrame(
         rows, columns=_GROUP_KEYS + [
-            "n_points", "k_deg", "ci_lo", "ci_hi", "R_squared"]
+            "n_replicates", "n_timepoints", "n_points",
+            "k_deg", "ci_lo", "ci_hi", "R_squared"]
     )
     return table, points
 

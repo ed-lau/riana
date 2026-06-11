@@ -174,7 +174,9 @@ def test_pooled_method_uses_all_points():
 def test_bioreps_are_independent_refit_points():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2))
     out = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
-    assert out.loc["P0", "n_points"] == 10
+    assert out.loc["P0", "n_points"] == 10        # 2 bioreps x 5 timepoints
+    assert out.loc["P0", "n_replicates"] == 2
+    assert out.loc["P0", "n_timepoints"] == 5
     assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
 
 

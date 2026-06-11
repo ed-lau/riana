@@ -12,6 +12,21 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Output hygiene (fit / rollup)
+
+#### Changed
+
+- **`riana_fit_peptides.txt` is now a scalar summary** — the per-timepoint
+  `t`/`fs`/`fs_lower`/`fs_upper` list-cells are dropped from the *written* file
+  (the per-timepoint detail, *with* biorep labels, lives in
+  `riana_fit_fractions.txt`). The in-memory result keeps them so the GUI curve is
+  unaffected. `core/fitting.peptide_summary`.
+- **Estimate outputs are rounded to ~6 significant figures** (`%.6g`) — the fit
+  peptides / fractions and protein files. Readable and well beyond the precision
+  of k / θ / R² (reproducibility is guaranteed by the provenance header, not
+  bit-exact floats). The integrate `_riana.txt` is left full-precision (its
+  `isoN_obs_mz` needs ppm-level digits, and it is parity-gated).
+
 ### Track E — GUI rewiring onto core/pipeline
 
 #### Changed
@@ -53,8 +68,9 @@ and Zenodo code DOI follow at release.)
 
 - **`riana rollup`** — rolls the `riana fit` per-peptide outputs up to one
   turnover estimate per `(experiment, condition, protein)`, writing
-  `riana_protein.txt` (a `method` tag + `k_deg`/`ci_lo`/`ci_hi`/`R_squared`,
-  `n_peptides`/`n_points`, and a comparison `peptide_median_k`). `core/protein.py`.
+  `riana_protein.txt` (a `method` tag + `k_deg`/`ci_lo`/`ci_hi`/`R_squared`, the
+  data-structure counts `n_peptides`/`n_replicates`/`n_timepoints`/`n_points`,
+  and a comparison `peptide_median_k`). `core/protein.py`.
 - **`--method {weighted, pooled}`** (default `weighted`) — `weighted` is the
   **biorep-aware per-timepoint refit**: within each `(protein,
   biological_replicate, labeling_time)` the peptides' fraction-new θ are collapsed

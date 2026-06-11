@@ -49,7 +49,11 @@ from PySide6.QtCore import QModelIndex, Qt
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
 from riana.gui.tasks import run_rollup
-from riana.io.writers import make_provenance, write_dataframe_tsv
+from riana.io.writers import (
+    ESTIMATE_FLOAT_FORMAT,
+    make_provenance,
+    write_dataframe_tsv,
+)
 
 _PEPTIDES_FILE = "riana_fit_peptides.txt"
 _FRACTIONS_FILE = "riana_fit_fractions.txt"
@@ -323,7 +327,8 @@ class ProteinTab(QWidget):
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},
         )
-        write_dataframe_tsv(out_path, result, provenance, include_index=False)
+        write_dataframe_tsv(out_path, result, provenance, include_index=False,
+                            float_format=ESTIMATE_FLOAT_FORMAT)
         self._info(f"wrote {out_path}")
         if manifest.exists():
             from riana.core.pipeline import record_stage_rows

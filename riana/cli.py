@@ -400,8 +400,11 @@ def fit(
     from riana.config import FitConfig
     from riana.core.fitting import (
         available_coefficient_presets, fit_run, load_aa_coefficients,
+        peptide_summary,
     )
-    from riana.io.writers import make_provenance, write_dataframe_tsv
+    from riana.io.writers import (
+        ESTIMATE_FLOAT_FORMAT, make_provenance, write_dataframe_tsv,
+    )
     from riana.logger import get_logger
 
     if thread > (os.cpu_count() or 1):
@@ -479,7 +482,10 @@ def fit(
         id_source=id_source,
         extra={"model": model, "label": label, "coefficients": str(coefficients)},
     )
-    write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
+    # Write the scalar per-peptide summary (the per-timepoint detail lives in the
+    # fractions file); estimates rounded to ~6 sig figs.
+    write_dataframe_tsv(out_path, peptide_summary(result_df), provenance,
+                        include_index=True, float_format=ESTIMATE_FLOAT_FORMAT)
     logger.info(f"wrote {out_path}")
     written = [out_path]
 
@@ -488,7 +494,9 @@ def fit(
     fractions = result_df.attrs.get("fractions_long")
     if fractions is not None and not fractions.empty:
         frac_path = Path(out) / "riana_fit_fractions.txt"
-        write_dataframe_tsv(frac_path, fractions, provenance, include_index=False)
+        write_dataframe_tsv(frac_path, fractions, provenance,
+                            include_index=False,
+                            float_format=ESTIMATE_FLOAT_FORMAT)
         logger.info(
             f"wrote {frac_path} ({len(fractions)} peptide-timepoints)")
         written.append(frac_path)
@@ -586,7 +594,9 @@ def rollup(
     from riana.core.pipeline import fit_outputs_from_manifest, record_stage_rows
     from riana.core.protein import rollup_proteins
     from riana.exceptions import DataError
-    from riana.io.writers import make_provenance, write_dataframe_tsv
+    from riana.io.writers import (
+        ESTIMATE_FLOAT_FORMAT, make_provenance, write_dataframe_tsv,
+    )
     from riana.logger import get_logger
 
     if (manifest is None) == (fit_dir is None):
@@ -647,7 +657,8 @@ def rollup(
         id_source=id_source,
         extra={"method": method, "parsimony": parsimony, "model": model},
     )
-    write_dataframe_tsv(out_path, result, provenance, include_index=False)
+    write_dataframe_tsv(out_path, result, provenance, include_index=False,
+                        float_format=ESTIMATE_FLOAT_FORMAT)
     logger.info(f"wrote {out_path}")
 
     # Record the stage='protein' row so the manifest indexes the whole chain.

@@ -961,8 +961,9 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   precursor priors. Unlikely near-term.
 - **Protein rollup** (new milestone). **Shipped 2026-06-10** — `riana rollup`
   (`core/protein.py`) writes `riana_protein.txt` (a `method` tag + one `k_deg` /
-  CI / R², `n_peptides` / `n_points`, and a comparison `peptide_median_k`),
-  grouped by `(experiment, condition, protein)`; `--parsimony {unique, isoform}`;
+  CI / R², the structure counts `n_peptides` / `n_replicates` / `n_timepoints` /
+  `n_points`, and a comparison `peptide_median_k`), grouped by `(experiment,
+  condition, protein)`; `--parsimony {unique, isoform}`;
   an optional peptide R² admission gate (`--min-r2`, off by default, with a JCI
   slow-turnover admit); threaded refit (`--thread`); and a **GUI Protein tab**
   (`gui/protein_tab.py` + `tasks.run_rollup`) with a per-protein refit **curve**.

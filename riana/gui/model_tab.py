@@ -47,10 +47,15 @@ from qasync import asyncSlot
 
 from riana.config import FitConfig
 from riana.core.fitting import available_coefficient_presets
+from riana.core.fitting import peptide_summary
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
 from riana.gui.tasks import run_fit, run_fit_manifest
-from riana.io.writers import make_provenance, write_dataframe_tsv
+from riana.io.writers import (
+    ESTIMATE_FLOAT_FORMAT,
+    make_provenance,
+    write_dataframe_tsv,
+)
 
 # Result columns to show in the table (the per-peptide ``t`` / ``fs`` lists are
 # kept off-screen and used only for the curve plot).
@@ -398,7 +403,9 @@ class ModelTab(QWidget):
                    "coefficients": str(coefficients)},
         )
         out_path = out_dir / "riana_fit_peptides.txt"
-        write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
+        write_dataframe_tsv(out_path, peptide_summary(result_df), provenance,
+                            include_index=True,
+                            float_format=ESTIMATE_FLOAT_FORMAT)
         self._info(f"wrote {out_path}")
         written = [out_path]
 
@@ -406,7 +413,8 @@ class ModelTab(QWidget):
         if fractions is not None and not fractions.empty:
             frac_path = out_dir / "riana_fit_fractions.txt"
             write_dataframe_tsv(frac_path, fractions, provenance,
-                                include_index=False)
+                                include_index=False,
+                                float_format=ESTIMATE_FLOAT_FORMAT)
             self._info(f"wrote {frac_path} ({len(fractions)} peptide-timepoints)")
             written.append(frac_path)
 

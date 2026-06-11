@@ -175,10 +175,18 @@ def test_fit_and_rollup_via_manifest_chain(tmp_path):
         "fit", "--manifest", str(mf), "--coefficients", str(coeff_csv),
         "-o", str(elsewhere), "-q", "0.05", "-d", "3"])
     assert r.exit_code == 0, r.output
-    assert (tmp_path / "riana_fit_peptides.txt").exists()      # next to manifest
+    pep_file = tmp_path / "riana_fit_peptides.txt"
+    assert pep_file.exists()                                    # next to manifest
     assert (tmp_path / "riana_fit_fractions.txt").exists()
     assert not (elsewhere / "riana_fit_peptides.txt").exists()  # -o ignored
     assert len(read_manifest(mf, stage="fit")) == 2
+
+    # The peptides file is the scalar summary (per-timepoint detail is in the
+    # fractions file), and estimates are trimmed (no 10+-digit float tails).
+    pep_cols = set(pd.read_table(pep_file, comment="#").columns)
+    assert not ({"t", "fs", "fs_lower", "fs_upper"} & pep_cols)
+    import re
+    assert not re.search(r"\d\.\d{10,}", pep_file.read_text())
 
     r2 = runner.invoke(app, [
         "rollup", "--manifest", str(mf), "--min-peptides", "1"])

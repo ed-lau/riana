@@ -24,6 +24,13 @@ from pathlib import Path
 
 from riana import __version__
 
+#: Float format for the *estimate* outputs (fit peptides / fractions / protein).
+#: ~6 significant figures — readable and well beyond the measurement precision of
+#: k / θ / R² (reproducibility is guaranteed by the provenance header, not
+#: bit-exact floats). NOT used for integrate ``_riana.txt``, whose ``isoN_obs_mz``
+#: needs ppm-level digits (and which is parity-gated).
+ESTIMATE_FLOAT_FORMAT = "%.6g"
+
 
 @dataclass(frozen=True, slots=True)
 class Provenance:
@@ -128,6 +135,7 @@ def write_dataframe_tsv(
     provenance: Provenance,
     *,
     include_index: bool = True,
+    float_format: str | None = None,
 ) -> None:
     """Write a ``pandas.DataFrame`` to *path* as TSV with the provenance header.
 
@@ -146,13 +154,15 @@ def write_dataframe_tsv(
         include_index: write ``df.index`` as the first column. Defaults
             true because the legacy ``_riana.txt`` and
             ``riana_fit_peptides.txt`` schemas both rely on the index.
+        float_format: optional ``DataFrame.to_csv`` float format (e.g.
+            :data:`ESTIMATE_FLOAT_FORMAT`). ``None`` keeps full float64 precision.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="") as f:
         for line in provenance.comment_lines():
             f.write(line + "\n")
-        df.to_csv(f, sep="\t", index=include_index)
+        df.to_csv(f, sep="\t", index=include_index, float_format=float_format)
 
 
 def write_json(

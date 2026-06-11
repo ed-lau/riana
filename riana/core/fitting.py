@@ -527,6 +527,21 @@ _FRACTIONS_LONG_COLUMNS = [
     "fs", "fs_lower", "fs_upper",
 ]
 
+#: Per-timepoint list-cell columns on the wide per-peptide frame. They duplicate
+#: the tidy ``riana_fit_fractions.txt`` (and lose its biorep labels), so they are
+#: dropped when *writing* ``riana_fit_peptides.txt`` but kept in-memory (the GUI
+#: curve reads ``t``/``fs`` from the result frame, not the file).
+_PER_TIMEPOINT_COLS = ("t", "fs", "fs_lower", "fs_upper")
+
+
+def peptide_summary(result_df: pd.DataFrame) -> pd.DataFrame:
+    """The wide per-peptide frame as a scalar summary for ``riana_fit_peptides.txt``.
+
+    Drops the per-timepoint list-cells (:data:`_PER_TIMEPOINT_COLS`) — the
+    per-timepoint detail (with biorep labels) lives in ``riana_fit_fractions.txt``.
+    """
+    return result_df.drop(columns=list(_PER_TIMEPOINT_COLS), errors="ignore")
+
 
 def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
     """Explode per-peptide fits into the M5 long-format fraction-new table.

@@ -276,6 +276,25 @@ def test_prediction_interval_widens_with_scatter():
     assert w_noisy > w_clean
 
 
+def test_peptide_summary_drops_per_timepoint_list_cells():
+    """The written peptides summary is scalar (no t/fs lists); the in-memory
+    result keeps them for the GUI curve."""
+    from riana.core.fitting import peptide_summary
+
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
+
+    summary = peptide_summary(result)
+    assert not ({"t", "fs", "fs_lower", "fs_upper"} & set(summary.columns))
+    assert {"k_deg", "R_squared", "spep", "protein id"} <= set(summary.columns)
+    # The in-memory result is untouched (GUI curve reads t/fs from it).
+    assert {"t", "fs"} <= set(result.columns)
+
+
 def test_load_aa_coefficients_reads_csv(tmp_path):
     """load_aa_coefficients reads d2o_aa_coefficients CSVs."""
     csv = tmp_path / "coeffs.csv"
