@@ -43,9 +43,22 @@
 > plan/dispatch/finalize so the GUI Integrate tab drives the same per-run unit
 > over its own pool (Workers spinbox, no nested pools) + an SDRF path; GUI Model
 > gained a manifest path (`fit_project`) — integrate/fit now go through
-> `core/pipeline` on both surfaces. Next: rollup threading (deferred), harmonic-mean /
-> cross-sample Δk estimators, Track B fidelity (gateable by Track D), M6b when its
-> data lands. Maintainer: Edward Lau. Last reviewed: 2026-06-10.
+> `core/pipeline` on both surfaces. **Also shipped (2026-06-11):** rollup
+> `--thread`; the **manifest project chain** (`fit`/`rollup --manifest` root at the
+> manifest dir + write `stage="fit"`/`"rollup"` rows, each with a `created_at`);
+> rollup **`--method {weighted, pooled}`** (point estimators dropped; the median
+> stays as a `peptide_median_k` column; `n_replicates`/`n_timepoints` added); the
+> GUI **SDRF mass-tolerance reflect**; **output hygiene** (slim
+> `riana_fit_peptides.txt`, ~6-sig-fig estimate outputs,
+> `riana_protein.txt`→`riana_rollup_proteins.txt` + a tidy `riana_rollup_fractions.txt`);
+> and **crash-resilient integrate** (per-run incremental writes + `integrate
+> --resume`). **Next:** Track C **cross-protein Δk + linearized model** (the
+> atrium-vs-ventricle `data/timeseries_lve_atr` set — one SDRF, two `factor value`
+> conditions — is the fixture, pending a PTM-search re-run); **M7 PTM-aware
+> envelope** (now load-bearing — the new search's phospho-S/Y + protein-N-term-Ac
+> peptidoforms integrate at the *unmodified* m/z until M7); **M6b** DIA-NN when its
+> data lands; Track B fidelity (gateable by Track D). Maintainer: Edward Lau.
+> Last reviewed: 2026-06-11.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
