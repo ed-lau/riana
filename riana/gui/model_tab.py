@@ -49,7 +49,7 @@ from riana.config import FitConfig
 from riana.core.fitting import available_coefficient_presets
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
-from riana.gui.tasks import run_fit
+from riana.gui.tasks import run_fit, run_fit_manifest
 from riana.io.writers import make_provenance, write_dataframe_tsv
 
 # Result columns to show in the table (the per-peptide ``t`` / ``fs`` lists are
@@ -108,6 +108,19 @@ class ModelTab(QWidget):
         file_buttons.addWidget(add_btn)
         file_buttons.addWidget(clear_btn)
         form.addRow("", _row(file_buttons))
+
+        # SDRF/manifest path: when set, fit from the manifest's integrate rows
+        # (curves grouped by (experiment, condition) with the timepoint from the
+        # SDRF identity) instead of the timepoint file list above.
+        self.manifest_edit = QLineEdit()
+        self.manifest_edit.setPlaceholderText(
+            "Optional: riana_manifest.tsv — overrides the file list above")
+        man_row = QHBoxLayout()
+        man_row.addWidget(self.manifest_edit, stretch=1)
+        man_browse = QPushButton("Browse…")
+        man_browse.clicked.connect(self._pick_manifest)
+        man_row.addWidget(man_browse)
+        form.addRow("Manifest", _row(man_row))
 
         # Coefficients: editable combo of bundled presets, or a CSV path.
         self.coeff_combo = QComboBox()
@@ -247,6 +260,14 @@ class ModelTab(QWidget):
         if path:
             self.coeff_combo.setCurrentText(path)
 
+    def _pick_manifest(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select riana_manifest.tsv",
+            filter="Manifest (*.tsv);;All files (*)"
+        )
+        if path:
+            self.manifest_edit.setText(path)
+
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
         if path:
@@ -291,9 +312,15 @@ class ModelTab(QWidget):
             self._fail(str(exc))
             return
 
+        manifest = self.manifest_edit.text().strip()
         files = self._selected_files()
-        if not files:
-            self._fail("Add at least one integrate output (_riana.txt) file.")
+        if manifest:
+            if not Path(manifest).is_file():
+                self._fail("The manifest path is set but is not a file.")
+                return
+        elif not files:
+            self._fail(
+                "Add timepoint _riana.txt files, or set a manifest (SDRF path).")
             return
 
         coefficients = self.coeff_combo.currentText().strip() or None
@@ -312,17 +339,23 @@ class ModelTab(QWidget):
         self.progress.setRange(0, 0)  # busy
         loop = asyncio.get_running_loop()
         try:
-            self._info(f"fitting {len(files)} timepoint file(s) …")
-            self._future = loop.run_in_executor(
-                self.pool, run_fit, config, files, coefficients
-            )
+            if manifest:
+                self._info(f"fitting from manifest {manifest} …")
+                self._future = loop.run_in_executor(
+                    self.pool, run_fit_manifest, config, manifest, coefficients)
+                id_source = manifest
+            else:
+                self._info(f"fitting {len(files)} timepoint file(s) …")
+                self._future = loop.run_in_executor(
+                    self.pool, run_fit, config, files, coefficients)
+                id_source = ",".join(files)
             result_df = await self._future
 
             if self._cancelled:
                 self._info("cancelled.")
                 return
 
-            self._write_output(config, result_df, files, coefficients)
+            self._write_output(config, result_df, id_source, coefficients)
             self._result_df = result_df
             self._last_config = config
             self._populate_results(result_df)
@@ -343,17 +376,26 @@ class ModelTab(QWidget):
             self.progress.setValue(1)
             self._set_running(False)
 
-    def _write_output(self, config, result_df, files, coefficients) -> None:
-        """Write ``riana_fit_peptides.txt`` exactly as riana.cli.fit does."""
-        out_path = Path(config.out_dir) / "riana_fit_peptides.txt"
+    def _write_output(self, config, result_df, id_source, coefficients) -> None:
+        """Write ``riana_fit_peptides.txt`` (+ the M5 ``riana_fit_fractions.txt``)
+        exactly as riana.cli.fit does."""
+        out_dir = Path(config.out_dir)
         provenance = make_provenance(
             dataclasses.asdict(config),
-            id_source=",".join(files),
+            id_source=str(id_source),
             extra={"model": config.model, "label": config.label,
                    "coefficients": str(coefficients)},
         )
+        out_path = out_dir / "riana_fit_peptides.txt"
         write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
         self._info(f"wrote {out_path}")
+
+        fractions = result_df.attrs.get("fractions_long")
+        if fractions is not None and not fractions.empty:
+            frac_path = out_dir / "riana_fit_fractions.txt"
+            write_dataframe_tsv(frac_path, fractions, provenance,
+                                include_index=False)
+            self._info(f"wrote {frac_path} ({len(fractions)} peptide-timepoints)")
 
     def _populate_results(self, result_df: pd.DataFrame) -> None:
         display = result_df.reset_index()
@@ -377,6 +419,8 @@ class ModelTab(QWidget):
         if concat not in self._result_df.index:
             return
         row = self._result_df.loc[concat]
+        if isinstance(row, pd.DataFrame):  # manifest path: same peptide, >1 group
+            row = row.iloc[0]
         cfg = self._last_config
         kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
         self.curve.plot_fit(

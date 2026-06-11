@@ -108,6 +108,50 @@ def run_fit(
     return fit_run(config, dfs, coeffs)
 
 
+def plan_sdrf_integration(
+    config: IntegrationConfig,
+    sdrf_path: str,
+    mzml_dir: str,
+    mztab_path: str,
+) -> list:
+    """Read the SDRF and plan the per-run integrate tasks (worker side).
+
+    Mirrors :func:`riana.cli.integrate`'s SDRF planning (``read_sdrf`` →
+    :func:`riana.core.pipeline.plan_integration`) off the Qt event loop, since
+    the mzTab parse is the slow part. Returns the list of
+    :class:`riana.core.pipeline.RunTask` (picklable) the Integrate tab then
+    dispatches over its *own* shared pool — so the GUI gets cross-file
+    parallelism without nesting a process pool inside ``integrate_project``.
+    """
+    from riana.core.pipeline import plan_integration
+    from riana.io.sdrf import read_sdrf
+
+    sdrf = read_sdrf(sdrf_path)
+    return plan_integration(config, sdrf, mzml_dir, mztab_path)
+
+
+def run_fit_manifest(
+    config: FitConfig,
+    manifest_path: str,
+    coefficients: str | None,
+) -> pd.DataFrame:
+    """Fit every curve indexed by a manifest (worker side; the SDRF fit path).
+
+    Mirrors :func:`riana.cli.fit`'s ``--manifest`` branch — load the coefficient
+    table, then :func:`riana.core.pipeline.fit_project`, which groups the
+    manifest's ``integrate`` rows into curves by ``(experiment, condition)`` with
+    the timepoint from the SDRF identity. ``fit_project`` fits serially per curve
+    (each curve's ``fit_run`` uses an in-process thread pool), so there is no
+    nested process pool to worry about. The per-timepoint long table rides on
+    ``df.attrs["fractions_long"]``.
+    """
+    from riana.core.fitting import load_aa_coefficients
+    from riana.core.pipeline import fit_project
+
+    coeffs = load_aa_coefficients(coefficients) if coefficients else {}
+    return fit_project(config, manifest_path, coeffs)
+
+
 def run_rollup(
     fit_dir: str,
     model: str,

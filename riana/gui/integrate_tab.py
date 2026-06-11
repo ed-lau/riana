@@ -1,15 +1,23 @@
 # -*- coding: utf-8 -*-
 
 """The Integrate tab: build an :class:`IntegrationConfig` from a form, run the
-integration asynchronously over the fractions, and show progress / log / results
-/ per-fraction drift, with a click-to-inspect chromatogram.
+integration asynchronously, and show progress / log / results / per-fraction
+drift, with a click-to-inspect chromatogram.
+
+Two intake paths, matching the CLI: with an **SDRF** the search-ID file is read
+as the quantms mzTab and routed through :mod:`riana.core.pipeline` —
+:func:`~riana.core.pipeline.plan_integration` (in a worker) builds the per-run
+tasks, this tab dispatches each over its *own* shared pool, then
+:func:`~riana.core.pipeline.finalize_run` writes one identity-stamped
+``<stem>_riana.txt`` per run and a ``riana_manifest.tsv``. Without an SDRF it is
+the demoted single-mzML Percolator path. Both are **file-parallel** (the
+*Workers* control, bounded by one mzML in memory per concurrent run) on top of
+the per-run *Threads*.
 
 The form builds the *same* frozen :class:`~riana.config.IntegrationConfig` the
-CLI builds, so its ``__post_init__`` is the single shared validator — a bad
-value surfaces here exactly as it does on the command line. CPU work is awaited
-on the shared ``ProcessPoolExecutor`` via the Qt-free
-:mod:`riana.gui.tasks` workers, one fraction at a time, so the UI stays
-responsive and progress is honest.
+CLI builds, so its ``__post_init__`` is the single shared validator. CPU work is
+awaited on the shared ``ProcessPoolExecutor`` via the Qt-free
+:mod:`riana.gui.tasks` workers so the UI stays responsive.
 """
 
 from __future__ import annotations
@@ -45,9 +53,16 @@ from PySide6.QtWidgets import (
 from qasync import asyncSlot
 
 from riana.config import IntegrationConfig
+from riana.core.pipeline import finalize_run
 from riana.gui.chromatogram import ChromatogramView
 from riana.gui.models import DataFrameTableModel
-from riana.gui.tasks import extract_trace, integrate_fraction, read_psms
+from riana.gui.tasks import (
+    extract_trace,
+    integrate_fraction,
+    plan_sdrf_integration,
+    read_psms,
+)
+from riana.io.manifest import MANIFEST_FILENAME, append_manifest
 from riana.io.mzml import list_mzml_files, mzml_stem
 from riana.io.percolator import file_indices, fraction_psms
 from riana.io.writers import make_provenance, write_dataframe_tsv
@@ -105,10 +120,17 @@ class IntegrateTab(QWidget):
         form.addRow("mzML folder", self._path_row(self.mzml_edit, self._pick_mzml))
 
         self.id_edit = QLineEdit()
-        self.id_edit.setPlaceholderText("percolator.target.psms.txt")
-        form.addRow("Percolator id", self._path_row(self.id_edit, self._pick_id))
+        self.id_edit.setPlaceholderText("percolator psms.txt — or the mzTab when an SDRF is set")
+        form.addRow("Search ID", self._path_row(self.id_edit, self._pick_id))
+
+        self.sdrf_edit = QLineEdit()
+        self.sdrf_edit.setPlaceholderText("Optional: SDRF .tsv — enables the identity/manifest path")
+        form.addRow("SDRF", self._path_row(self.sdrf_edit, self._pick_sdrf))
 
         self.sample_edit = QLineEdit("time0")
+        self.sample_edit.setToolTip(
+            "Percolator (no-SDRF) path only — must end in a digit (e.g. time0). "
+            "Ignored when an SDRF is set (identity comes from the SDRF).")
         form.addRow("Sample", self.sample_edit)
 
         self.iso_edit = QLineEdit("0 1 2 3 4 5")
@@ -152,7 +174,16 @@ class IntegrateTab(QWidget):
         self.thread_spin = QSpinBox()
         self.thread_spin.setRange(1, os.cpu_count() or 1)
         self.thread_spin.setValue(max(1, min(default_threads, os.cpu_count() or 1)))
+        self.thread_spin.setToolTip("Per-run peptide threads (within one mzML).")
         form.addRow("Threads", self.thread_spin)
+
+        self.workers_spin = QSpinBox()
+        self.workers_spin.setRange(1, os.cpu_count() or 1)
+        self.workers_spin.setValue(1)
+        self.workers_spin.setToolTip(
+            "Runs/files integrated concurrently (one mzML in memory each; "
+            "2-4 suits a many-timepoint series). Distinct from Threads.")
+        form.addRow("Workers (files)", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
         form.addRow("Output dir", self._path_row(self.out_edit, self._pick_out))
@@ -216,10 +247,19 @@ class IntegrateTab(QWidget):
 
     def _pick_id(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Percolator id file", filter="PSMs (*.txt);;All files (*)"
+            self, "Select search-ID file (Percolator psms or mzTab)",
+            filter="Search ID (*.txt *.mzTab);;All files (*)"
         )
         if path:
             self.id_edit.setText(path)
+
+    def _pick_sdrf(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select SDRF samplesheet",
+            filter="SDRF (*.tsv *.sdrf.tsv);;All files (*)"
+        )
+        if path:
+            self.sdrf_edit.setText(path)
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
@@ -285,75 +325,157 @@ class IntegrateTab(QWidget):
             self._fail(str(exc))
             return
 
-        sample = config.sample
-        if not sample or not sample[-1].isdigit():
-            self._fail(f"Sample must end with a number (got {sample!r}).")
-            return
-
         mzml_dir = self.mzml_edit.text().strip()
         id_path = self.id_edit.text().strip()
+        sdrf_path = self.sdrf_edit.text().strip()
+        workers = int(self.workers_spin.value())
         if not mzml_dir or not Path(mzml_dir).is_dir():
             self._fail("Select a valid mzML folder.")
             return
         if not id_path or not Path(id_path).is_file():
-            self._fail("Select a valid Percolator id file.")
+            self._fail("Select a valid search-ID file (Percolator psms, or the "
+                       "mzTab when an SDRF is set).")
             return
-
-        mzml_files = list_mzml_files(mzml_dir)
-        if not mzml_files:
-            self._fail(f"No mzML files in {mzml_dir}.")
+        if sdrf_path and not Path(sdrf_path).is_file():
+            self._fail("The SDRF path is set but is not a file.")
             return
 
         os.makedirs(config.out_dir, exist_ok=True)
         self._set_running(True)
-        loop = asyncio.get_running_loop()
         try:
-            self._info(f"reading PSMs from {id_path} …")
-            psms = await loop.run_in_executor(
-                self.pool, read_psms, id_path, sample, ()
-            )
-            indices = file_indices(psms)
-            if len(mzml_files) != len(indices):
-                self._fail(
-                    f"mzML count ({len(mzml_files)}) != distinct file_idx count "
-                    f"({len(indices)}) in the id file."
-                )
-                return
-
-            self.progress.setRange(0, len(indices))
-            frames: list[pd.DataFrame] = []
-            for done, idx in enumerate(indices):
-                if self._cancelled:
-                    self._info("cancelled.")
-                    break
-                label = mzml_stem(mzml_files[idx])
-                mzml_file = os.path.join(mzml_dir, mzml_files[idx])
-                self._fraction_mzml[idx] = mzml_file
-                self._info(f"integrating fraction {idx}: {label} …")
-
-                fraction = fraction_psms(psms, idx)
-                df, drift = await loop.run_in_executor(
-                    self.pool, integrate_fraction, config, fraction, mzml_file, label
-                )
-                self._write_outputs(config, df, drift, id_path, label)
-                frames.append(df)
-                self._update_drift(idx, drift, config.ppm_alert)
-                self.progress.setValue(done + 1)
-
-            if frames:
-                self.model.set_dataframe(pd.concat(frames, ignore_index=True))
-                self.chromatogram.show_placeholder(
-                    "Select a peptide row to view its chromatogram."
-                )
-                self._last_config = config
-                self._info(
-                    f"done — {len(self.model.dataframe)} rows across "
-                    f"{len(frames)} fraction(s)."
-                )
+            if sdrf_path:
+                await self._run_sdrf(config, sdrf_path, mzml_dir, id_path, workers)
+            else:
+                await self._run_percolator(config, mzml_dir, id_path, workers)
         except Exception as exc:  # surface worker/IO errors instead of crashing
             self._fail(f"{type(exc).__name__}: {exc}")
         finally:
             self._set_running(False)
+
+    async def _run_sdrf(self, config, sdrf_path, mzml_dir, mztab_path, workers):
+        """SDRF/manifest path — the *same* core/pipeline plan + per-run unit the
+        CLI uses, dispatched over this tab's shared pool (no nested pools)."""
+        loop = asyncio.get_running_loop()
+        self._info(f"planning runs from SDRF {sdrf_path} …")
+        tasks = await loop.run_in_executor(
+            self.pool, plan_sdrf_integration, config, sdrf_path, mzml_dir,
+            mztab_path,
+        )
+        if not tasks:
+            self._fail("No runs to integrate from the SDRF / mzTab.")
+            return
+        for t in tasks:
+            self._fraction_mzml[t.file_idx] = t.mzml_path
+
+        async def run_one(task):
+            df, drift = await loop.run_in_executor(
+                self.pool, integrate_fraction, config, task.psms,
+                task.mzml_path, task.stem,
+            )
+            return task.file_idx, df, drift
+
+        results = await self._gather_runs(tasks, workers, run_one)
+        if self._cancelled:
+            self._info("cancelled — outputs not written.")
+            return
+        # Finalize in file_idx order (deterministic) + append the manifest, the
+        # same outputs integrate_project writes.
+        out_dir = Path(config.out_dir)
+        rows, frames = [], []
+        for task in sorted(tasks, key=lambda x: x.file_idx):
+            df, drift = results[task.file_idx]
+            rows.append(finalize_run(config, task, df, out_dir, mztab_path))
+            self._info(f"wrote {rows[-1].output_path}")
+            self._update_drift(task.file_idx, drift, config.ppm_alert)
+            frames.append(df)
+        append_manifest(out_dir / MANIFEST_FILENAME, rows)
+        self._info(f"appended {len(rows)} integrate rows to the manifest")
+        self._finish_table(frames, config)
+
+    async def _run_percolator(self, config, mzml_dir, id_path, workers):
+        """Demoted single-mzML Percolator path; now also file-parallel."""
+        sample = config.sample
+        if not sample or not sample[-1].isdigit():
+            self._fail(f"Sample must end with a number (got {sample!r}).")
+            return
+        mzml_files = list_mzml_files(mzml_dir)
+        if not mzml_files:
+            self._fail(f"No mzML files in {mzml_dir}.")
+            return
+        loop = asyncio.get_running_loop()
+        self._info(f"reading PSMs from {id_path} …")
+        psms = await loop.run_in_executor(self.pool, read_psms, id_path, sample, ())
+        indices = file_indices(psms)
+        if len(mzml_files) != len(indices):
+            self._fail(
+                f"mzML count ({len(mzml_files)}) != distinct file_idx count "
+                f"({len(indices)}) in the id file."
+            )
+            return
+        runs = []
+        for idx in indices:
+            mzml_file = os.path.join(mzml_dir, mzml_files[idx])
+            self._fraction_mzml[idx] = mzml_file
+            runs.append((idx, mzml_stem(mzml_files[idx]), mzml_file,
+                         fraction_psms(psms, idx)))
+
+        async def run_one(run):
+            idx, label, mzml_file, fraction = run
+            df, drift = await loop.run_in_executor(
+                self.pool, integrate_fraction, config, fraction, mzml_file, label)
+            return idx, df, drift
+
+        results = await self._gather_runs(runs, workers, run_one)
+        if self._cancelled:
+            self._info("cancelled — outputs not written.")
+            return
+        frames = []
+        for idx, label, _mzml_file, _fraction in runs:
+            df, drift = results[idx]
+            self._write_outputs(config, df, drift, id_path, label)
+            self._update_drift(idx, drift, config.ppm_alert)
+            frames.append(df)
+        self._finish_table(frames, config)
+
+    async def _gather_runs(self, items, workers, run_one):
+        """Run ``run_one(item)`` over *items*, ≤ *workers* concurrent, updating
+        progress as each finishes.
+
+        ``run_one`` returns ``(key, df, drift)``; returns ``{key: (df, drift)}``.
+        Parallelism uses this tab's shared pool bounded by a semaphore (one mzML
+        per concurrent run). Cancellation is best-effort: in-flight runs finish
+        (a pool task can't be killed) but the caller discards the output via
+        ``self._cancelled``.
+        """
+        sem = asyncio.Semaphore(max(1, int(workers)))
+
+        async def _wrapped(item):
+            async with sem:
+                return await run_one(item)
+
+        self.progress.setRange(0, len(items))
+        results: dict = {}
+        done = 0
+        for coro in asyncio.as_completed([_wrapped(it) for it in items]):
+            key, df, drift = await coro      # always await — no orphan coroutines
+            results[key] = (df, drift)
+            done += 1
+            self.progress.setValue(done)
+            if not self._cancelled:
+                self._info(f"integrated run {key}")
+        return results
+
+    def _finish_table(self, frames, config) -> None:
+        if not frames:
+            return
+        self.model.set_dataframe(pd.concat(frames, ignore_index=True))
+        self.chromatogram.show_placeholder(
+            "Select a peptide row to view its chromatogram."
+        )
+        self._last_config = config
+        self._info(
+            f"done — {len(self.model.dataframe)} rows across {len(frames)} run(s)."
+        )
 
     def _write_outputs(self, config, df, drift, id_path, label) -> None:
         """Write ``<sample>_riana.txt`` (+ drift sidecar) exactly as the CLI does."""
@@ -373,7 +495,7 @@ class IntegrateTab(QWidget):
     def _on_cancel(self) -> None:
         self._cancelled = True
         self.cancel_button.setEnabled(False)
-        self._info("cancelling after the current fraction …")
+        self._info("cancelling — in-flight runs finish, but outputs are discarded …")
 
     # --- chromatogram on selection ----------------------------------------- #
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:

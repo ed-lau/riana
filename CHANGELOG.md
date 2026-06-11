@@ -12,6 +12,23 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Track E — GUI rewiring onto core/pipeline
+
+#### Changed
+
+- **`integrate_project` split into plan / dispatch / finalize** — `plan_integration`
+  (SDRF+mzTab → per-run `RunTask`s), an executor-agnostic `_dispatch_runs`, and
+  `finalize_run` (write `<stem>_riana.txt` + manifest row). CLI behavior is
+  unchanged; the split lets the GUI drive the *same* per-run unit over its own pool.
+- **GUI Integrate tab** now goes through `core/pipeline`: an **SDRF** field routes
+  the search-ID file as the quantms mzTab (identity-stamped per-run outputs +
+  `riana_manifest.tsv`), and both paths are **file-parallel** via a *Workers*
+  spinbox (`asyncio.as_completed` over the shared pool, bounded one-mzML-per-run —
+  no nested process pools), on top of the per-run *Threads*.
+- **GUI Model tab** gained a **Manifest** field (`fit_project` via the new
+  `tasks.run_fit_manifest` worker) and now also writes the M5
+  `riana_fit_fractions.txt`.
+
 ### Track C — protein rollup
 
 #### Added

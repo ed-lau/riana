@@ -39,9 +39,13 @@
 > fixes + an optional `--min-r2` gate); the GUI grew a 3rd **Protein** tab over
 > the same `rollup_proteins` core, with a per-protein refit curve on row select.
 > **M6b is parked** pending DIA mzMLs + a DIA-NN version/parquet fix (see memory).
-> Next: harmonic-mean / cross-sample Δk estimators, Track E GUI rewiring onto
-> `core/pipeline.py`, Track B fidelity (gateable by Track D), M6b when its data
-> lands. Maintainer: Edward Lau. Last reviewed: 2026-06-10.
+> **Track E GUI rewiring shipped** (2026-06-10): `integrate_project` split into
+> plan/dispatch/finalize so the GUI Integrate tab drives the same per-run unit
+> over its own pool (Workers spinbox, no nested pools) + an SDRF path; GUI Model
+> gained a manifest path (`fit_project`) — integrate/fit now go through
+> `core/pipeline` on both surfaces. Next: rollup threading (deferred), harmonic-mean /
+> cross-sample Δk estimators, Track B fidelity (gateable by Track D), M6b when its
+> data lands. Maintainer: Edward Lau. Last reviewed: 2026-06-10.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -820,13 +824,21 @@ vs DIA-NN parquet).
   of an MS2 scan; DDA/DIA auto-detected from the SDRF. Riana still extracts MS1
   isotopologues from the mzML itself — DIA-NN is "just another ID + RT source."
   Test data lands under `data/timeseries_dia` (Track D TODO).
-- **Integrate concurrency.** The GUI currently awaits one fraction at a time
-  (off-main-thread but serial; the thread spinbox does not drive cross-file
-  parallelism). Bound-parallelize files (a semaphore over 2–4) against the
-  one-fraction-in-memory ceiling, wire the spinbox, and show per-file progress
-  text. (Engine lives here; the GUI surfaces it — Track E.) *Done engine-side:*
-  `integrate_project(max_workers=)` + `riana integrate -W/--workers` (CLI only;
-  GUI rewiring still TODO).
+- **Integrate concurrency + GUI rewiring (Track E, SHIPPED 2026-06-10).**
+  `integrate_project` was split into `plan_integration` (SDRF+mzTab → per-run
+  `RunTask`s) / executor-agnostic `_dispatch_runs` / `finalize_run`. The GUI
+  Integrate tab now drives the *same* plan + per-run unit over its **own** shared
+  pool via `asyncio.as_completed` bounded by a *Workers* spinbox (one mzML per
+  concurrent run) — cross-file parallelism with **no nested process pools** —
+  and gained an **SDRF** field that routes the search-ID file through
+  `core/pipeline` (identity-stamped `<stem>_riana.txt` per run + manifest), on
+  top of the per-run *Threads*. The GUI Model tab gained a **Manifest** field
+  (`fit_project` via `tasks.run_fit_manifest`) and now also writes the M5
+  `riana_fit_fractions.txt`. So integrate/fit go through `core/pipeline` on both
+  surfaces. *Still TODO:* rollup threading (the per-protein bootstrap refit is
+  serial — parallelize with per-protein RNG reseeding, wire to `-t`/the spinbox);
+  the SDRF mass-tolerance resolution the CLI does (the GUI uses the spinbox value
+  explicitly).
 
 > **⚠️ quantms input gotcha — mzML filenames MUST NOT be prefixes of one another
 > (verified 2026-06-08, quantms/OpenMS ~1.7.0).** ConsensusID/ProteomicsLFQ

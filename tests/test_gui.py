@@ -31,8 +31,10 @@ from riana.core.integration import PeptideTrace
 from riana.gui.tasks import (
     extract_trace,
     integrate_fraction,
+    plan_sdrf_integration,
     read_psms,
     run_fit,
+    run_fit_manifest,
     run_rollup,
 )
 from riana.io.percolator import file_indices, fraction_psms
@@ -195,6 +197,54 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
     assert len(a_t) == len(a_fs) > 0
 
 
+@pytest.mark.skipif(not MZML.exists(), reason="sample1 BSA mzML missing")
+def test_plan_sdrf_integration_worker_builds_runtasks(tmp_path):
+    """The Integrate-tab SDRF planning worker resolves SDRF+mzTab -> RunTasks."""
+    from tests.test_pipeline import _BSA_MZTAB, _BSA_SDRF
+
+    mztab = tmp_path / "bsa.mzTab"
+    mztab.write_text(_BSA_MZTAB)
+    sdrf = tmp_path / "bsa.sdrf.tsv"
+    sdrf.write_text(_BSA_SDRF)
+    config = IntegrationConfig(
+        isotopomers=(0, 1, 2, 3, 4, 5), mass_tol_ppm=25, peak_rt="ms2",
+        integration_half_width=1.0, extraction_half_width=1.0,
+    )
+    tasks = plan_sdrf_integration(config, str(sdrf), str(SAMPLE1), str(mztab))
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.stem == "20180216_BSA"
+    assert task.identity.sample == "bsa_t0"
+    assert task.psms and task.mzml_path.endswith(".mzML.gz")
+
+
+def test_run_fit_manifest_worker_fits_from_manifest(tmp_path):
+    """The Model-tab manifest worker fits curves from a manifest via fit_project."""
+    from riana.io.manifest import append_manifest
+    from tests.test_pipeline import (
+        _coeffs,
+        _integrate_rows_from_dfs,
+        _make_timepoint_dfs,
+    )
+
+    coeffs = _coeffs()
+    rows = _integrate_rows_from_dfs(
+        tmp_path, _make_timepoint_dfs(coeffs), condition="control")
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    coeff_csv = tmp_path / "coeffs.csv"
+    pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
+                 ).to_csv(coeff_csv, index=False)
+
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    result = run_fit_manifest(config, str(mf), str(coeff_csv))
+    assert {"k_deg", "condition", "experiment"} <= set(result.columns)
+    assert set(result["condition"]) == {"control"}
+    # M5 long table rides along for the GUI to write riana_fit_fractions.txt.
+    assert "fractions_long" in result.attrs and not result.attrs["fractions_long"].empty
+
+
 # --- Headless Qt smoke ------------------------------------------------------- #
 
 pytest.importorskip("PySide6")
@@ -265,6 +315,16 @@ def test_build_config_defaults_round_trip(main_window):
     assert cfg.isotopomers == (0, 1, 2, 3, 4, 5)
     # apex default: ehw = integration_half_width (0.15) + 0.33 apex offset.
     assert cfg.extraction_half_width == pytest.approx(0.48)
+
+
+def test_integrate_tab_has_sdrf_and_workers(main_window):
+    tab = main_window.integrate_tab
+    assert tab.sdrf_edit.text() == ""              # SDRF path (optional) wired
+    assert tab.workers_spin.value() == 1           # cross-file workers control
+
+
+def test_model_tab_has_manifest_field(main_window):
+    assert main_window.model_tab.manifest_edit.text() == ""
 
 
 def test_build_config_surfaces_post_init_validation(main_window):

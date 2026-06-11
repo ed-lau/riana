@@ -49,6 +49,92 @@ _LOGGER = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 # integrate
 # --------------------------------------------------------------------------- #
+@dataclasses.dataclass(frozen=True)
+class RunTask:
+    """One run to integrate: its identity, mzML path, and per-run PSMs.
+
+    The unit of the integrate *plan*. Picklable (``PSMRecord`` / ``RunIdentity``
+    are frozen dataclasses), so the GUI can carry tasks back from a planning
+    worker and submit each to its *own* shared pool — the executor-agnostic half
+    of the plan/dispatch split (Track E), which is how the GUI gets cross-file
+    parallelism without nesting a process pool inside ``integrate_project``.
+    """
+
+    file_idx: int
+    stem: str
+    identity: RunIdentity
+    mzml_path: str
+    psms: list[PSMRecord]
+
+
+def plan_integration(
+    config: IntegrationConfig,
+    sdrf: SdrfTable,
+    mzml_dir: str | os.PathLike[str],
+    mztab_path: str | os.PathLike[str],
+) -> list[RunTask]:
+    """Resolve the SDRF + mzTab into per-run :class:`RunTask`s (no integration).
+
+    The cheap planning half of :func:`integrate_project`: parse the mzTab, group
+    PSMs by run, attach each run's SDRF identity, and resolve its mzML — failing
+    fast on a missing identity / mzML before any (long) integration starts. The
+    CLI (:func:`integrate_project`) and the GUI build the *same* tasks here, so
+    the identity/manifest logic can't drift between the surfaces.
+    """
+    all_psms, file_index_map = read_mztab(
+        mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
+    )
+    if not all_psms:
+        raise DataError(f"no PSMs parsed from {mztab_path}")
+
+    mzml_index = _index_mzml_dir(mzml_dir)
+    by_file_idx = _group_by_file_idx(all_psms)
+
+    tasks: list[RunTask] = []
+    for file_idx in sorted(by_file_idx):
+        stem = file_index_map.get(file_idx, "")
+        identity = sdrf.sample_map.get(stem)
+        if identity is None:  # read_mztab already guards this; defensive.
+            raise DataError(f"ms_run {file_idx} ({stem!r}) has no SDRF identity.")
+        if stem not in mzml_index:
+            raise DataError(
+                f"no mzML for run {stem!r} in {mzml_dir} "
+                f"(have {sorted(mzml_index)[:5]}...)."
+            )
+        fraction = _assign_pep_ids(by_file_idx[file_idx])
+        tasks.append(RunTask(file_idx, stem, identity, mzml_index[stem], fraction))
+    return tasks
+
+
+def finalize_run(
+    config: IntegrationConfig,
+    task: RunTask,
+    df: pd.DataFrame,
+    out_dir: str | os.PathLike[str],
+    mztab_path: str | os.PathLike[str],
+) -> ManifestRow:
+    """Write one run's ``<stem>_riana.txt`` (identity-stamped) + its manifest row.
+
+    The finalize half of the plan/dispatch split — pure, fast file I/O, so the
+    GUI can call it on the main side after gathering each run's integrated frame
+    from its pool.
+    """
+    out_file = Path(out_dir) / f"{task.stem}_riana.txt"
+    provenance = make_provenance(
+        dataclasses.asdict(config),
+        id_source=str(mztab_path),
+        extra=identity_to_extra(task.identity),
+    )
+    write_dataframe_tsv(out_file, df, provenance, include_index=True)
+    return ManifestRow(
+        stage="integrate",
+        output_path=str(out_file),
+        identity=task.identity,
+        config_hash=provenance.config_hash,
+        git_sha=provenance.git_sha,
+    )
+
+
 def integrate_project(
     config: IntegrationConfig,
     sdrf: SdrfTable,
@@ -64,7 +150,8 @@ def integrate_project(
 
     Writes one ``<mzml_stem>_riana.txt`` per run (full identity in its provenance
     header) and appends an ``integrate`` row per run to the manifest. Returns the
-    rows it wrote.
+    rows it wrote. Thin orchestration over :func:`plan_integration` →
+    :func:`_dispatch_runs` → :func:`finalize_run`.
 
     Args:
         max_workers: number of runs to integrate concurrently. Each run holds one
@@ -82,76 +169,53 @@ def integrate_project(
     if manifest_path is None:
         manifest_path = out_dir / MANIFEST_FILENAME
 
-    all_psms, file_index_map = read_mztab(
-        mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
-    )
-    if not all_psms:
-        raise DataError(f"no PSMs parsed from {mztab_path}")
-
-    mzml_index = _index_mzml_dir(mzml_dir)
-    by_file_idx = _group_by_file_idx(all_psms)
-
-    # Resolve identity + mzML path for every run up front so a missing SDRF
-    # entry / mzML fails before any (potentially long) integration starts.
-    plan: list[tuple[int, str, RunIdentity, str, list[PSMRecord]]] = []
-    for file_idx in sorted(by_file_idx):
-        stem = file_index_map.get(file_idx, "")
-        identity = sdrf.sample_map.get(stem)
-        if identity is None:  # read_mztab already guards this; defensive.
-            raise DataError(f"ms_run {file_idx} ({stem!r}) has no SDRF identity.")
-        if stem not in mzml_index:
-            raise DataError(
-                f"no mzML for run {stem!r} in {mzml_dir} "
-                f"(have {sorted(mzml_index)[:5]}...)."
-            )
-        fraction = _assign_pep_ids(by_file_idx[file_idx])
-        plan.append((file_idx, stem, identity, mzml_index[stem], fraction))
-
-    n_parallel = max(1, min(max_workers, len(plan)))
-    if n_parallel > 1:
-        log.info("integrating %d runs, %d at a time", len(plan), n_parallel)
-        dfs: dict[int, pd.DataFrame] = {}
-        with futures.ProcessPoolExecutor(max_workers=n_parallel) as pool:
-            future_to_idx = {
-                pool.submit(_integrate_one_run, config, mzml_path, fraction, stem):
-                (file_idx, stem)
-                for file_idx, stem, _identity, mzml_path, fraction in plan
-            }
-            for fut in futures.as_completed(future_to_idx):
-                file_idx, stem = future_to_idx[fut]
-                dfs[file_idx] = fut.result()
-                log.info("integrated run %s", stem)
-    else:
-        dfs = {}
-        for file_idx, stem, identity, mzml_path, fraction in plan:
-            log.info("integrating run %s (%s)", stem, _identity_brief(identity))
-            dfs[file_idx] = _integrate_one_run(config, mzml_path, fraction, stem)
+    tasks = plan_integration(config, sdrf, mzml_dir, mztab_path)
+    dfs = _dispatch_runs(config, tasks, max_workers, log)
 
     # Write outputs + manifest in file_idx order — deterministic regardless of
     # which worker finished first.
     rows: list[ManifestRow] = []
-    for file_idx, stem, identity, _mzml_path, _fraction in plan:
-        out_file = out_dir / f"{stem}_riana.txt"
-        provenance = make_provenance(
-            dataclasses.asdict(config),
-            id_source=str(mztab_path),
-            extra=identity_to_extra(identity),
-        )
-        write_dataframe_tsv(out_file, dfs[file_idx], provenance, include_index=True)
-        rows.append(
-            ManifestRow(
-                stage="integrate",
-                output_path=str(out_file),
-                identity=identity,
-                config_hash=provenance.config_hash,
-                git_sha=provenance.git_sha,
-            )
-        )
-        log.info("wrote %s", out_file)
+    for task in tasks:
+        row = finalize_run(config, task, dfs[task.file_idx], out_dir, mztab_path)
+        rows.append(row)
+        log.info("wrote %s", row.output_path)
 
     append_manifest(manifest_path, rows)
     log.info("appended %d integrate rows to %s", len(rows), manifest_path)
     return rows
+
+
+def _dispatch_runs(
+    config: IntegrationConfig,
+    tasks: list[RunTask],
+    max_workers: int,
+    log: logging.Logger,
+) -> dict[int, pd.DataFrame]:
+    """Run each :class:`RunTask` → ``{file_idx: integrated frame}``.
+
+    The default ProcessPool dispatch behind :func:`integrate_project` (the CLI).
+    The GUI instead dispatches the same tasks over its *own* shared pool, so the
+    two surfaces never nest process pools.
+    """
+    n_parallel = max(1, min(max_workers, len(tasks)))
+    dfs: dict[int, pd.DataFrame] = {}
+    if n_parallel > 1:
+        log.info("integrating %d runs, %d at a time", len(tasks), n_parallel)
+        with futures.ProcessPoolExecutor(max_workers=n_parallel) as pool:
+            future_to_task = {
+                pool.submit(
+                    _integrate_one_run, config, t.mzml_path, t.psms, t.stem): t
+                for t in tasks
+            }
+            for fut in futures.as_completed(future_to_task):
+                t = future_to_task[fut]
+                dfs[t.file_idx] = fut.result()
+                log.info("integrated run %s", t.stem)
+    else:
+        for t in tasks:
+            log.info("integrating run %s (%s)", t.stem, _identity_brief(t.identity))
+            dfs[t.file_idx] = _integrate_one_run(config, t.mzml_path, t.psms, t.stem)
+    return dfs
 
 
 def _integrate_one_run(
