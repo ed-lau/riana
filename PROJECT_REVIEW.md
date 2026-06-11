@@ -835,10 +835,13 @@ vs DIA-NN parquet).
   top of the per-run *Threads*. The GUI Model tab gained a **Manifest** field
   (`fit_project` via `tasks.run_fit_manifest`) and now also writes the M5
   `riana_fit_fractions.txt`. So integrate/fit go through `core/pipeline` on both
-  surfaces. *Still TODO:* rollup threading (the per-protein bootstrap refit is
-  serial — parallelize with per-protein RNG reseeding, wire to `-t`/the spinbox);
-  the SDRF mass-tolerance resolution the CLI does (the GUI uses the spinbox value
-  explicitly).
+  surfaces. **Rollup threading shipped** (2026-06-10): the per-protein refit is
+  dispatched over `--thread` / the Protein-tab spinbox with per-protein RNG
+  streams (`_group_rng`), so the result is identical regardless of thread count.
+  *Still TODO:* the SDRF mass-tolerance resolution the CLI does (the GUI uses the
+  spinbox value explicitly); **fit/rollup do not yet write their `stage="fit"` /
+  `stage="protein"` manifest rows** (the manifest is integrate-only today — see
+  the manifest-workflow note below).
 
 > **⚠️ quantms input gotcha — mzML filenames MUST NOT be prefixes of one another
 > (verified 2026-06-08, quantms/OpenMS ~1.7.0).** ConsensusID/ProteomicsLFQ

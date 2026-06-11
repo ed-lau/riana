@@ -43,8 +43,10 @@ legacy single-curve path has neither, so both default to ``""``.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+from concurrent import futures
 from functools import partial
 from typing import Mapping
 
@@ -96,6 +98,7 @@ def rollup_proteins(
     alt_k: float = 0.025,
     alt_se: float = 0.05,
     alt_r2: float = 0.0,
+    threads: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
     random_state: int = 1337,
@@ -128,6 +131,10 @@ def rollup_proteins(
         alt_k / alt_se / alt_r2: the slow-turnover admit thresholds (only used
             when ``min_r2`` is set). ``SE`` is the fit's ``sd`` (bootstrap k_deg
             std).
+        threads: worker threads for the per-protein refit (the expensive
+            ``curve_fit`` × bootstrap). Each protein gets an independent RNG
+            stream seeded from ``random_state``, so the result is **identical**
+            regardless of ``threads`` (and of completion order).
         n_boot / boot_ci_pct / random_state: bootstrap CI controls.
 
     Returns:
@@ -161,14 +168,14 @@ def rollup_proteins(
         peptides = peptides[peptides["concat"].isin(admitted)].copy()
         fractions = fractions[fractions["concat"].isin(admitted)].copy()
 
-    rng = np.random.default_rng(random_state)
-
     med = _median_table(peptides, min_peptides=min_peptides,
-                        n_boot=n_boot, boot_ci_pct=boot_ci_pct, rng=rng)
+                        n_boot=n_boot, boot_ci_pct=boot_ci_pct,
+                        random_state=random_state)
     refit, points = _refit_table(
         fractions, model_fn=model_fn, kinetic_kwargs=kk,
         min_peptides=min_peptides, min_points=min_points,
-        n_boot=n_boot, boot_ci_pct=boot_ci_pct, rng=rng,
+        n_boot=n_boot, boot_ci_pct=boot_ci_pct, random_state=random_state,
+        threads=threads,
     )
 
     out = pd.merge(med, refit, on=_GROUP_KEYS, how="outer")
@@ -317,6 +324,19 @@ def _r2_admitted(
     return set(peptides.loc[keep, "concat"])
 
 
+def _group_rng(random_state: int, key) -> np.random.Generator:
+    """An independent RNG stream for one protein group, stable across runs/threads.
+
+    Seeds ``default_rng`` from ``random_state`` + a content hash of the group key
+    (``hashlib``, not the salted built-in ``hash``), so each ``(experiment,
+    condition, protein)`` bootstraps from a fixed, order-independent stream — the
+    rollup result is identical whether it ran on 1 thread or N.
+    """
+    digest = hashlib.blake2b(repr(key).encode(), digest_size=8).digest()
+    return np.random.default_rng(
+        [int(random_state), int.from_bytes(digest, "little")])
+
+
 # --------------------------------------------------------------------------- #
 # estimator 1 — median of peptide k_deg
 # --------------------------------------------------------------------------- #
@@ -326,7 +346,7 @@ def _median_table(
     min_peptides: int,
     n_boot: int,
     boot_ci_pct: tuple[float, float],
-    rng: np.random.Generator,
+    random_state: int,
 ) -> pd.DataFrame:
     if "k_deg" not in peptides.columns:
         raise DataError("peptides input is missing the 'k_deg' column.")
@@ -337,6 +357,7 @@ def _median_table(
         if len(ks) < min_peptides:
             continue
         if len(ks) >= 3:
+            rng = _group_rng(random_state, keys)
             boot = [float(np.median(ks[rng.integers(0, len(ks), len(ks))]))
                     for _ in range(n_boot)]
             lo, hi = (float(p) for p in np.percentile(boot, boot_ci_pct))
@@ -366,21 +387,30 @@ def _refit_table(
     min_points: int,
     n_boot: int,
     boot_ci_pct: tuple[float, float],
-    rng: np.random.Generator,
+    random_state: int,
+    threads: int = 1,
 ) -> tuple[pd.DataFrame, dict]:
     """Returns ``(refit table, points)`` where ``points`` maps
     ``(experiment, condition, protein)`` → the collapsed ``(t_list, fs_list)``
-    the refit was fit on — the substrate for the GUI's per-protein curve."""
+    the refit was fit on — the substrate for the GUI's per-protein curve.
+
+    Each protein is an independent work unit (collapse + ``curve_fit`` +
+    bootstrap), dispatched over ``threads`` workers; per-group RNG streams keep
+    the result identical regardless of thread count or completion order.
+    """
     need = {"concat", "biological_replicate", "labeling_time",
             "fs", "fs_lower", "fs_upper"}
     missing = need - set(fractions.columns)
     if missing:
         raise DataError(f"fractions input is missing columns {sorted(missing)}.")
-    rows = []
-    points: dict = {}
-    for keys, grp in fractions.groupby(_GROUP_KEYS, sort=False):
-        if grp["concat"].nunique() < min_peptides:
-            continue
+
+    groups = [
+        (keys, grp) for keys, grp in fractions.groupby(_GROUP_KEYS, sort=False)
+        if grp["concat"].nunique() >= min_peptides
+    ]
+
+    def _one(item):
+        keys, grp = item
         # Collapse peptides within each (biorep, timepoint) to one θ.
         t_list, fs_list = [], []
         for (_br, t), cell in grp.groupby(
@@ -394,16 +424,29 @@ def _refit_table(
                 t_list.append(float(t))
                 fs_list.append(theta)
         if len(t_list) < min_points:
-            continue
+            return keys, None, None
         fit = _fit_kdeg(
             np.asarray(t_list), np.asarray(fs_list),
             model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
-            n_boot=n_boot, boot_ci_pct=boot_ci_pct, rng=rng,
+            n_boot=n_boot, boot_ci_pct=boot_ci_pct,
+            rng=_group_rng(random_state, keys),
         )
+        return keys, fit, (t_list, fs_list)
+
+    if threads <= 1 or len(groups) <= 1:
+        computed = [_one(g) for g in groups]
+    else:
+        with futures.ThreadPoolExecutor(max_workers=threads) as ex:
+            computed = list(ex.map(_one, groups))
+
+    rows = []
+    points: dict = {}
+    for keys, fit, pts in computed:
         if fit is None:
             continue
         k, r2, lo, hi = fit
         exp, cond, prot = keys
+        t_list, fs_list = pts
         rows.append({
             "experiment": exp, "condition": cond, "protein": prot,
             "n_points": int(len(t_list)), "k_deg_refit": k,

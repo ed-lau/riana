@@ -240,6 +240,15 @@ def test_r2_gate_off_by_default_keeps_everything():
     assert out_on.loc["P0", "n_peptides"] == 2  # the R²=0.2 peptide gated out
 
 
+def test_rollup_threads_give_identical_result():
+    """Per-protein RNG streams make the rollup independent of thread count."""
+    pep, frac = _make_frames(
+        {"sp|P0|X": 0.3, "sp|P1|Y": 0.6, "sp|P2|Z": 0.9}, n_pep=4)
+    a = rollup_proteins(pep, frac, n_boot=100, threads=1)
+    b = rollup_proteins(pep, frac, n_boot=100, threads=4)
+    pd.testing.assert_frame_equal(a, b)
+
+
 def test_unknown_model_and_parsimony_raise():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     with pytest.raises(DataError, match="model"):

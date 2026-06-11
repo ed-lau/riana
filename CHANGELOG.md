@@ -29,6 +29,12 @@ and Zenodo code DOI follow at release.)
   `tasks.run_fit_manifest` worker) and now also writes the M5
   `riana_fit_fractions.txt`.
 
+#### Added
+
+- **`riana rollup --thread`** (+ a Protein-tab Threads spinbox) — the per-protein
+  refit (`curve_fit` × bootstrap) now runs over a thread pool. Per-protein RNG
+  streams (`_group_rng`) keep the result identical regardless of thread count.
+
 ### Track C — protein rollup
 
 #### Added

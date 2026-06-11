@@ -535,6 +535,9 @@ def rollup(
         0.05, "--alt-se",
         help="Slow-turnover admit: max k_deg bootstrap SE (the 'sd' column) for "
         "a low-R² peptide to still be kept (only with --min-r2)."),
+    thread: int = typer.Option(
+        1, "-t", "--thread",
+        help="Worker threads for the per-protein refit [default: 1]."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -574,7 +577,7 @@ def rollup(
             kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_r2=min_r2,
-            alt_k=float(alt_k), alt_se=float(alt_se),
+            alt_k=float(alt_k), alt_se=float(alt_se), threads=int(thread),
         )
     except (DataError, NotImplementedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
