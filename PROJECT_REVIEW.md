@@ -826,7 +826,11 @@ vs DIA-NN parquet).
   Test data lands under `data/timeseries_dia` (Track D TODO).
 - **Integrate concurrency + GUI rewiring (Track E, SHIPPED 2026-06-10).**
   `integrate_project` was split into `plan_integration` (SDRF+mzTab → per-run
-  `RunTask`s) / executor-agnostic `_dispatch_runs` / `finalize_run`. The GUI
+  `RunTask`s) / `_integrate_results` (yields each frame as it finishes) /
+  `finalize_run`. **Crash-resilient (2026-06-11):** the main process writes each
+  run's `_riana.txt` + appends its manifest row *as that run completes* (workers
+  only integrate), so an interruption keeps finished runs; `integrate --resume`
+  skips runs already in the manifest at the current `config_hash`. The GUI
   Integrate tab now drives the *same* plan + per-run unit over its **own** shared
   pool via `asyncio.as_completed` bounded by a *Workers* spinbox (one mzML per
   concurrent run) — cross-file parallelism with **no nested process pools** —

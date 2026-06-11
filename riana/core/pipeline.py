@@ -40,7 +40,7 @@ from riana.io.manifest import MANIFEST_FILENAME, ManifestRow, append_manifest, r
 from riana.io.mzml import IndexedMzML, list_mzml_files, mzml_stem
 from riana.io.mztab import read_mztab
 from riana.io.sdrf import SdrfTable
-from riana.io.writers import make_provenance, write_dataframe_tsv
+from riana.io.writers import hash_config, make_provenance, write_dataframe_tsv
 from riana.records import PSMRecord, RunIdentity
 
 _LOGGER = logging.getLogger(__name__)
@@ -144,24 +144,32 @@ def integrate_project(
     *,
     manifest_path: str | os.PathLike[str] | None = None,
     max_workers: int = 1,
+    resume: bool = False,
     logger: logging.Logger | None = None,
 ) -> list[ManifestRow]:
     """Integrate every run in *mztab_path*, keyed by the *sdrf* identity.
 
     Writes one ``<mzml_stem>_riana.txt`` per run (full identity in its provenance
     header) and appends an ``integrate`` row per run to the manifest. Returns the
-    rows it wrote. Thin orchestration over :func:`plan_integration` →
-    :func:`_dispatch_runs` → :func:`finalize_run`.
+    rows for every run (kept + freshly written), in ``file_idx`` order.
+
+    **Crash-resilient:** workers only *integrate* (return the frame); the **main
+    process writes each ``_riana.txt`` + appends its manifest row as that run
+    completes** — so an interruption keeps the runs already finished (the manifest
+    is always sorted on write, so the final result is independent of completion
+    order). All file/manifest I/O is in this process, so there are no concurrent
+    manifest writers.
 
     Args:
         max_workers: number of runs to integrate concurrently. Each run holds one
-            mzML in memory, so this is the file-parallelism knob bounded by the
-            one-mzML-per-worker memory ceiling (Track A; pick 2–4 for the big
-            animal time series, where a dozen ~350 MB mzMLs are embarrassingly
-            parallel). ``1`` (default) keeps the serial, deterministic path the
-            tests pin. Output files and manifest rows are always written in
-            ``file_idx`` order regardless of completion order, so the result is
-            independent of *max_workers*.
+            mzML in memory (one-mzML-per-worker ceiling; pick 2–4 for the big
+            animal time series). ``1`` (default) is the serial path the tests pin.
+        resume: when true, skip any run whose ``<stem>_riana.txt`` already exists
+            **and** whose manifest ``integrate`` row matches the current
+            ``config_hash`` (settings) — re-running an interrupted run continues
+            where it stopped. Assumes the *same* SDRF / mzTab inputs (a settings
+            change re-runs everything; the user owns input identity). Default
+            false keeps the always-fresh behavior.
     """
     log = logger or _LOGGER
     out_dir = Path(out_dir)
@@ -170,35 +178,70 @@ def integrate_project(
         manifest_path = out_dir / MANIFEST_FILENAME
 
     tasks = plan_integration(config, sdrf, mzml_dir, mztab_path)
-    dfs = _dispatch_runs(config, tasks, max_workers, log)
+    current_hash = hash_config(dataclasses.asdict(config))
+    to_run, kept = _resume_partition(
+        tasks, manifest_path, out_dir, current_hash, resume, log)
 
-    # Write outputs + manifest in file_idx order — deterministic regardless of
-    # which worker finished first.
-    rows: list[ManifestRow] = []
-    for task in tasks:
-        row = finalize_run(config, task, dfs[task.file_idx], out_dir, mztab_path)
-        rows.append(row)
+    # Integrate the remaining runs, writing each run's output + recording its
+    # manifest row AS IT COMPLETES so an interruption keeps finished runs.
+    new_rows: dict[int, ManifestRow] = {}
+    for task, df in _integrate_results(config, to_run, max_workers, log):
+        row = finalize_run(config, task, df, out_dir, mztab_path)
+        append_manifest(manifest_path, [row])
+        new_rows[task.file_idx] = row
         log.info("wrote %s", row.output_path)
 
-    append_manifest(manifest_path, rows)
-    log.info("appended %d integrate rows to %s", len(rows), manifest_path)
-    return rows
+    by_idx = {**kept, **new_rows}
+    return [by_idx[t.file_idx] for t in tasks if t.file_idx in by_idx]
 
 
-def _dispatch_runs(
+def _resume_partition(
+    tasks: list[RunTask],
+    manifest_path: str | os.PathLike[str],
+    out_dir: Path,
+    current_hash: str,
+    resume: bool,
+    log: logging.Logger,
+) -> tuple[list[RunTask], dict[int, ManifestRow]]:
+    """Split *tasks* into ``(to_run, {file_idx: kept_row})``.
+
+    With ``resume``, a run whose ``<stem>_riana.txt`` exists and whose manifest
+    ``integrate`` row matches *current_hash* is kept (skipped); everything else
+    runs. Without it, every task runs.
+    """
+    kept: dict[int, ManifestRow] = {}
+    if not resume or not Path(manifest_path).exists():
+        return list(tasks), kept
+    prev = {r.output_path: r for r in read_manifest(manifest_path)
+            if r.stage == "integrate"}
+    to_run: list[RunTask] = []
+    for task in tasks:
+        out_file = out_dir / f"{task.stem}_riana.txt"
+        row = prev.get(str(out_file))
+        if row is not None and row.config_hash == current_hash and out_file.exists():
+            kept[task.file_idx] = row
+            log.info("resume: keeping %s (already integrated)", task.stem)
+        else:
+            to_run.append(task)
+    log.info("resume: %d kept, %d to integrate", len(kept), len(to_run))
+    return to_run, kept
+
+
+def _integrate_results(
     config: IntegrationConfig,
     tasks: list[RunTask],
     max_workers: int,
     log: logging.Logger,
-) -> dict[int, pd.DataFrame]:
-    """Run each :class:`RunTask` → ``{file_idx: integrated frame}``.
+):
+    """Yield ``(task, df)`` as each run finishes — serial or over a ProcessPool.
 
-    The default ProcessPool dispatch behind :func:`integrate_project` (the CLI).
-    The GUI instead dispatches the same tasks over its *own* shared pool, so the
-    two surfaces never nest process pools.
+    Workers only integrate (return the frame); the caller does all file/manifest
+    writes in the main process, so writes are incremental and uncontended, and
+    the GUI (which dispatches over its *own* pool) never nests process pools.
     """
+    if not tasks:
+        return
     n_parallel = max(1, min(max_workers, len(tasks)))
-    dfs: dict[int, pd.DataFrame] = {}
     if n_parallel > 1:
         log.info("integrating %d runs, %d at a time", len(tasks), n_parallel)
         with futures.ProcessPoolExecutor(max_workers=n_parallel) as pool:
@@ -208,14 +251,14 @@ def _dispatch_runs(
                 for t in tasks
             }
             for fut in futures.as_completed(future_to_task):
-                t = future_to_task[fut]
-                dfs[t.file_idx] = fut.result()
-                log.info("integrated run %s", t.stem)
+                task = future_to_task[fut]
+                yield task, fut.result()
     else:
-        for t in tasks:
-            log.info("integrating run %s (%s)", t.stem, _identity_brief(t.identity))
-            dfs[t.file_idx] = _integrate_one_run(config, t.mzml_path, t.psms, t.stem)
-    return dfs
+        for task in tasks:
+            log.info("integrating run %s (%s)",
+                     task.stem, _identity_brief(task.identity))
+            yield task, _integrate_one_run(
+                config, task.mzml_path, task.psms, task.stem)
 
 
 def _integrate_one_run(

@@ -291,6 +291,62 @@ def test_integrate_project_end_to_end(tmp_path):
     assert (body["sample"] == "bsa_t0").all()
 
 
+@pytest.mark.skipif(not BSA_MZML.exists(), reason="sample1 BSA mzML missing")
+def test_integrate_project_resume_skips_done_runs(tmp_path):
+    """`resume=True` keeps an already-integrated run (file not rewritten)."""
+    import time
+
+    mztab = tmp_path / "bsa.mzTab"
+    mztab.write_text(_BSA_MZTAB)
+    (tmp_path / "bsa.sdrf.tsv").write_text(_BSA_SDRF)
+    sdrf = read_sdrf(tmp_path / "bsa.sdrf.tsv")
+    config = IntegrationConfig(
+        isotopomers=(0, 1, 2, 3, 4, 5), mass_tol_ppm=25, peak_rt="ms2",
+        integration_half_width=1.0, extraction_half_width=1.0, out_dir=str(tmp_path),
+    )
+    integrate_project(config, sdrf, SAMPLE1, mztab, tmp_path)
+    out_file = tmp_path / "20180216_BSA_riana.txt"
+    mtime = out_file.stat().st_mtime_ns
+
+    time.sleep(0.01)
+    rows = integrate_project(config, sdrf, SAMPLE1, mztab, tmp_path, resume=True)
+    assert len(rows) == 1                              # the kept run is returned
+    assert out_file.stat().st_mtime_ns == mtime        # not rewritten
+
+
+def test_resume_partition_logic(tmp_path):
+    """The resume filter: keep done runs (file + matching config_hash), run rest."""
+    import logging
+
+    from riana.core.pipeline import RunTask, _resume_partition
+    from riana.io.manifest import ManifestRow, append_manifest
+
+    ident0 = RunIdentity(experiment="e", sample="s0", data_file="r0")
+    t0 = RunTask(0, "r0", ident0, "a.mzML", [])
+    t1 = RunTask(1, "r1", RunIdentity(experiment="e", sample="s1", data_file="r1"),
+                 "b.mzML", [])
+    tasks = [t0, t1]
+    (tmp_path / "r0_riana.txt").write_text("done")     # r0 output exists
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, [ManifestRow(
+        "integrate", str(tmp_path / "r0_riana.txt"), ident0, config_hash="H")])
+    log = logging.getLogger("t")
+
+    # resume + matching hash -> r0 kept, r1 runs.
+    to_run, kept = _resume_partition(tasks, mf, tmp_path, "H", True, log)
+    assert [t.stem for t in to_run] == ["r1"] and set(kept) == {0}
+    # different hash (settings changed) -> both run.
+    to_run2, kept2 = _resume_partition(tasks, mf, tmp_path, "OTHER", True, log)
+    assert {t.stem for t in to_run2} == {"r0", "r1"} and kept2 == {}
+    # resume=False -> everything runs.
+    to_run3, _ = _resume_partition(tasks, mf, tmp_path, "H", False, log)
+    assert len(to_run3) == 2
+    # output file missing -> not kept even if the manifest row matches.
+    (tmp_path / "r0_riana.txt").unlink()
+    to_run4, kept4 = _resume_partition(tasks, mf, tmp_path, "H", True, log)
+    assert {t.stem for t in to_run4} == {"r0", "r1"} and kept4 == {}
+
+
 def test_record_stage_rows_and_fit_outputs_roundtrip(tmp_path):
     """fit/rollup register their outputs as stage rows; rollup finds them back."""
     from riana.core.pipeline import (

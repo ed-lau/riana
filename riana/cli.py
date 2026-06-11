@@ -174,6 +174,12 @@ def integrate(
         "mzTab spectra_ref scans reconcile with this mzML's retention times "
         "(catches the quantms filename-prefix scan-scramble / wrong mzML↔mzTab "
         "pairing). Only disable for a run you know is correctly paired."),
+    resume: bool = typer.Option(
+        False, "--resume",
+        help="On the --sdrf path, skip runs already integrated in the output's "
+        "manifest at the current settings (each run's <stem>_riana.txt is written "
+        "as it finishes, so a crashed run resumes where it stopped). Assumes the "
+        "same SDRF/mzTab inputs."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -283,7 +289,7 @@ def integrate(
             )
             integrate_project(
                 config, sdrf_table, mzml_path, id_path, out,
-                max_workers=int(workers), logger=logger,
+                max_workers=int(workers), resume=bool(resume), logger=logger,
             )
         except DataError as exc:
             raise typer.BadParameter(str(exc)) from exc

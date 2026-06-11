@@ -42,9 +42,15 @@ and Zenodo code DOI follow at release.)
 #### Changed
 
 - **`integrate_project` split into plan / dispatch / finalize** — `plan_integration`
-  (SDRF+mzTab → per-run `RunTask`s), an executor-agnostic `_dispatch_runs`, and
-  `finalize_run` (write `<stem>_riana.txt` + manifest row). CLI behavior is
-  unchanged; the split lets the GUI drive the *same* per-run unit over its own pool.
+  (SDRF+mzTab → per-run `RunTask`s), `_integrate_results` (yields each frame as it
+  finishes), and `finalize_run` (write `<stem>_riana.txt` + manifest row). The
+  split lets the GUI drive the *same* per-run unit over its own pool.
+- **Integrate is now crash-resilient.** The main process **writes each run's
+  `_riana.txt` + appends its manifest row as that run completes** (workers only
+  integrate), so an interruption keeps the runs already finished — the old
+  buffer-all-then-write design lost everything on a kill. New **`integrate
+  --resume`** skips runs already in the manifest at the current `config_hash`
+  (same SDRF/mzTab inputs assumed), so a crashed run continues where it stopped.
 - **GUI Integrate tab** now goes through `core/pipeline`: an **SDRF** field routes
   the search-ID file as the quantms mzTab (identity-stamped per-run outputs +
   `riana_manifest.tsv`), and both paths are **file-parallel** via a *Workers*
