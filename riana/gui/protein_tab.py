@@ -300,7 +300,13 @@ class ProteinTab(QWidget):
             self._set_running(False)
 
     def _write_output(self, result: pd.DataFrame, params: dict) -> None:
-        out_path = Path(params["out_dir"]) / "riana_protein.txt"
+        # When the fit dir is a project (carries a manifest), write the protein
+        # output there and record a stage='protein' row (the project chain);
+        # otherwise honor the Output dir.
+        fit_dir = Path(params["fit_dir"])
+        manifest = fit_dir / "riana_manifest.tsv"
+        out_dir = fit_dir if manifest.exists() else Path(params["out_dir"])
+        out_path = out_dir / "riana_protein.txt"
         provenance = make_provenance(
             {k: params[k] for k in (
                 "model", "parsimony", "kp", "kr", "rp",
@@ -310,6 +316,10 @@ class ProteinTab(QWidget):
         )
         write_dataframe_tsv(out_path, result, provenance, include_index=False)
         self._info(f"wrote {out_path}")
+        if manifest.exists():
+            from riana.core.pipeline import record_stage_rows
+            record_stage_rows(manifest, "protein", [out_path], result, provenance)
+            self._info(f"recorded protein row in {manifest}")
 
     def _on_cancel(self) -> None:
         self._cancelled = True

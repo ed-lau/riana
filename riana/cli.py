@@ -454,6 +454,15 @@ def fit(
     if manifest is not None:
         from riana.core.pipeline import fit_project
 
+        # The manifest's folder IS the project: write outputs next to it and
+        # update that manifest, so a single --manifest drives integrate→fit→
+        # rollup. -o is ignored on this path (warn if it was set elsewhere).
+        proj_dir = Path(manifest).resolve().parent
+        if Path(out).resolve() != proj_dir and str(out) != ".":
+            logger.warning(
+                "--manifest: outputs go next to the manifest (%s); ignoring -o %s",
+                proj_dir, out)
+        out = proj_dir
         logger.info(f"fitting from manifest {manifest}")
         result_df = fit_project(config, manifest, coeffs, logger=logger)
         id_source = str(manifest)
@@ -463,6 +472,7 @@ def fit(
         result_df = fit_run(config, dfs, coeffs)
         id_source = ",".join(str(p) for p in riana_path)
 
+    os.makedirs(out, exist_ok=True)
     out_path = Path(out) / "riana_fit_peptides.txt"
     provenance = make_provenance(
         dataclasses.asdict(config),
@@ -471,6 +481,7 @@ def fit(
     )
     write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
     logger.info(f"wrote {out_path}")
+    written = [out_path]
 
     # M5: per-timepoint fraction-new (long format, one row per peptide-timepoint
     # with prediction-interval bounds) — the substrate for the protein rollup.
@@ -480,6 +491,15 @@ def fit(
         write_dataframe_tsv(frac_path, fractions, provenance, include_index=False)
         logger.info(
             f"wrote {frac_path} ({len(fractions)} peptide-timepoints)")
+        written.append(frac_path)
+
+    # Record stage="fit" rows so `rollup --manifest` can find these outputs and
+    # the manifest is the single project index (the integrate→fit→rollup chain).
+    if manifest is not None:
+        from riana.core.pipeline import record_stage_rows
+
+        record_stage_rows(manifest, "fit", written, result_df, provenance)
+        logger.info(f"recorded {len(written)} fit rows in {manifest}")
 
     n_fitted = int(result_df["k_deg"].notna().sum())
     n_well = int((result_df["R_squared"] >= 0.9).sum())
@@ -492,11 +512,16 @@ def fit(
 # --------------------------------------------------------------------------- #
 @app.command()
 def rollup(
-    fit_dir: Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+    fit_dir: Optional[Path] = typer.Argument(
+        None, exists=True, file_okay=False, dir_okay=True, readable=True,
         help="Directory holding riana_fit_peptides.txt + riana_fit_fractions.txt "
-        "from `riana fit`.",
+        "from `riana fit`. Omit when using --manifest.",
     ),
+    manifest: Optional[Path] = typer.Option(
+        None, "--manifest", exists=True, dir_okay=False, readable=True,
+        help="riana_manifest.tsv (the SDRF/project path). Finds the fit outputs "
+        "from its stage='fit' rows, writes riana_protein.txt next to the "
+        "manifest, and records a stage='protein' row. -o is ignored here."),
     model: str = typer.Option(
         "simple", "-m", "--model",
         help="Kinetic model for the protein refit — match how the peptides were "
@@ -545,29 +570,54 @@ def rollup(
 
     Two estimates per (experiment, condition, protein): the median of the
     peptides' k_deg, and a biorep-aware per-timepoint inverse-variance weighted
-    refit over the M5 fraction-new substrate. Reads the `riana fit` outputs in
-    *fit_dir* and writes ``riana_protein.txt``.
+    refit over the M5 fraction-new substrate. Reads the `riana fit` outputs —
+    from *fit_dir*, or via --manifest (the project path) — and writes
+    ``riana_protein.txt`` (+ a stage='protein' manifest row on the --manifest path).
     """
-    import dataclasses
-
     import pandas as pd
 
+    from riana.core.pipeline import fit_outputs_from_manifest, record_stage_rows
     from riana.core.protein import rollup_proteins
     from riana.exceptions import DataError
     from riana.io.writers import make_provenance, write_dataframe_tsv
     from riana.logger import get_logger
 
-    pep_path = fit_dir / "riana_fit_peptides.txt"
-    frac_path = fit_dir / "riana_fit_fractions.txt"
-    for p in (pep_path, frac_path):
-        if not p.exists():
-            raise typer.BadParameter(
-                f"{p.name} not found in {fit_dir}. Run `riana fit` there first.")
+    if (manifest is None) == (fit_dir is None):
+        raise typer.BadParameter(
+            "provide either FIT_DIR (the fit output folder) or --manifest, "
+            "not both / neither.")
+
+    ignored_out = None
+    if manifest is not None:
+        # The manifest's folder is the project: locate the fit outputs from its
+        # stage='fit' rows, write next to it, ignore -o.
+        try:
+            pep_path, frac_path = (Path(p) for p in
+                                   fit_outputs_from_manifest(manifest))
+        except DataError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        proj_dir = Path(manifest).resolve().parent
+        if Path(out).resolve() != proj_dir and str(out) != ".":
+            ignored_out = out
+        out = proj_dir
+        id_source = str(manifest)
+    else:
+        pep_path = fit_dir / "riana_fit_peptides.txt"
+        frac_path = fit_dir / "riana_fit_fractions.txt"
+        for p in (pep_path, frac_path):
+            if not p.exists():
+                raise typer.BadParameter(
+                    f"{p.name} not found in {fit_dir}. Run `riana fit` first.")
+        id_source = str(fit_dir)
 
     os.makedirs(out, exist_ok=True)
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info(f"rollup (parsimony={parsimony}, model={model})")
+    if ignored_out is not None:
+        logger.warning(
+            "--manifest: riana_protein.txt goes next to the manifest (%s); "
+            "ignoring -o %s", out, ignored_out)
 
     peptides = pd.read_table(pep_path, comment="#")
     fractions = pd.read_table(frac_path, comment="#")
@@ -587,11 +637,17 @@ def rollup(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
          "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se},
-        id_source=str(fit_dir),
+        id_source=id_source,
         extra={"parsimony": parsimony, "model": model},
     )
     write_dataframe_tsv(out_path, result, provenance, include_index=False)
     logger.info(f"wrote {out_path}")
+
+    # Record the stage='protein' row so the manifest indexes the whole chain.
+    if manifest is not None:
+        record_stage_rows(manifest, "protein", [out_path], result, provenance)
+        logger.info(f"recorded protein row in {manifest}")
+
     n_med = int(result["k_deg_median"].notna().sum())
     n_refit = int(result["k_deg_refit"].notna().sum())
     logger.info(

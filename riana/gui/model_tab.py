@@ -355,7 +355,8 @@ class ModelTab(QWidget):
                 self._info("cancelled.")
                 return
 
-            self._write_output(config, result_df, id_source, coefficients)
+            self._write_output(config, result_df, id_source, coefficients,
+                               manifest or None)
             self._result_df = result_df
             self._last_config = config
             self._populate_results(result_df)
@@ -376,10 +377,20 @@ class ModelTab(QWidget):
             self.progress.setValue(1)
             self._set_running(False)
 
-    def _write_output(self, config, result_df, id_source, coefficients) -> None:
+    def _write_output(self, config, result_df, id_source, coefficients,
+                      manifest=None) -> None:
         """Write ``riana_fit_peptides.txt`` (+ the M5 ``riana_fit_fractions.txt``)
-        exactly as riana.cli.fit does."""
-        out_dir = Path(config.out_dir)
+        exactly as riana.cli.fit does. On the manifest path, root the outputs at
+        the manifest's folder (ignore the Output dir) and record stage='fit' rows.
+        """
+        if manifest:
+            out_dir = Path(manifest).resolve().parent
+            if Path(config.out_dir).resolve() != out_dir:
+                self._info(
+                    f"manifest path: writing next to the manifest ({out_dir}); "
+                    f"ignoring Output dir {config.out_dir}")
+        else:
+            out_dir = Path(config.out_dir)
         provenance = make_provenance(
             dataclasses.asdict(config),
             id_source=str(id_source),
@@ -389,6 +400,7 @@ class ModelTab(QWidget):
         out_path = out_dir / "riana_fit_peptides.txt"
         write_dataframe_tsv(out_path, result_df, provenance, include_index=True)
         self._info(f"wrote {out_path}")
+        written = [out_path]
 
         fractions = result_df.attrs.get("fractions_long")
         if fractions is not None and not fractions.empty:
@@ -396,6 +408,12 @@ class ModelTab(QWidget):
             write_dataframe_tsv(frac_path, fractions, provenance,
                                 include_index=False)
             self._info(f"wrote {frac_path} ({len(fractions)} peptide-timepoints)")
+            written.append(frac_path)
+
+        if manifest:
+            from riana.core.pipeline import record_stage_rows
+            record_stage_rows(manifest, "fit", written, result_df, provenance)
+            self._info(f"recorded {len(written)} fit rows in {manifest}")
 
     def _populate_results(self, result_df: pd.DataFrame) -> None:
         display = result_df.reset_index()

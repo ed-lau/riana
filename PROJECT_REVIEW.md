@@ -839,9 +839,16 @@ vs DIA-NN parquet).
   dispatched over `--thread` / the Protein-tab spinbox with per-protein RNG
   streams (`_group_rng`), so the result is identical regardless of thread count.
   *Still TODO:* the SDRF mass-tolerance resolution the CLI does (the GUI uses the
-  spinbox value explicitly); **fit/rollup do not yet write their `stage="fit"` /
-  `stage="protein"` manifest rows** (the manifest is integrate-only today — see
-  the manifest-workflow note below).
+  spinbox value explicitly).
+- **Manifest project chain (SHIPPED 2026-06-10).** `fit --manifest` /
+  `rollup --manifest` now root outputs at the **manifest's folder** (the project
+  dir; `-o` ignored there with a warning) and write back their `stage="fit"` /
+  `stage="protein"` rows (`record_stage_rows` + `fit_outputs_from_manifest` in
+  `core/pipeline.py`), so one `--manifest` drives `integrate → fit → rollup` and
+  the manifest indexes every stage. `rollup`'s `FIT_DIR` argument is now optional
+  (XOR `--manifest`). The aggregate fit/protein rows carry a coarse
+  experiment-level identity (`aggregate_identity`) — indexing/provenance only.
+  (Closes the gap where `fit` never updated the manifest despite the M6a plan.)
 
 > **⚠️ quantms input gotcha — mzML filenames MUST NOT be prefixes of one another
 > (verified 2026-06-08, quantms/OpenMS ~1.7.0).** ConsensusID/ProteomicsLFQ

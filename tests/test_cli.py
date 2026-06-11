@@ -151,6 +151,48 @@ def test_fit_resolves_bundled_preset(tmp_path):
     assert "isotopomers" in msg                    # reached fit_run's guard
 
 
+def test_fit_and_rollup_via_manifest_chain(tmp_path):
+    """fit --manifest writes next to the manifest (ignoring -o) + records fit
+    rows; rollup --manifest reads them and records the protein row."""
+    from riana.io.manifest import append_manifest, read_manifest
+    from tests.test_pipeline import (
+        _coeffs,
+        _integrate_rows_from_dfs,
+        _make_timepoint_dfs,
+    )
+
+    coeffs = _coeffs()
+    rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs),
+                                    condition="control")
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    coeff_csv = tmp_path / "coeffs.csv"
+    pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
+                 ).to_csv(coeff_csv, index=False)
+    elsewhere = tmp_path / "elsewhere"
+
+    r = runner.invoke(app, [
+        "fit", "--manifest", str(mf), "--coefficients", str(coeff_csv),
+        "-o", str(elsewhere), "-q", "0.05", "-d", "3"])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "riana_fit_peptides.txt").exists()      # next to manifest
+    assert (tmp_path / "riana_fit_fractions.txt").exists()
+    assert not (elsewhere / "riana_fit_peptides.txt").exists()  # -o ignored
+    assert len(read_manifest(mf, stage="fit")) == 2
+
+    r2 = runner.invoke(app, [
+        "rollup", "--manifest", str(mf), "--min-peptides", "1"])
+    assert r2.exit_code == 0, r2.output
+    assert (tmp_path / "riana_protein.txt").exists()
+    assert len(read_manifest(mf, stage="protein")) == 1
+
+
+def test_rollup_requires_exactly_one_input_source(tmp_path):
+    result = runner.invoke(app, ["rollup"])  # neither FIT_DIR nor --manifest
+    assert result.exit_code != 0
+    assert "either FIT_DIR" in result.output
+
+
 def test_gui_subcommand_is_registered():
     """`riana gui --help` exits 0 — the subcommand is wired (M4 Phase 2).
 

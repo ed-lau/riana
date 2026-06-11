@@ -291,6 +291,49 @@ def test_integrate_project_end_to_end(tmp_path):
     assert (body["sample"] == "bsa_t0").all()
 
 
+def test_record_stage_rows_and_fit_outputs_roundtrip(tmp_path):
+    """fit/rollup register their outputs as stage rows; rollup finds them back."""
+    from riana.core.pipeline import (
+        aggregate_identity,
+        fit_outputs_from_manifest,
+        record_stage_rows,
+    )
+    from riana.io.writers import make_provenance
+
+    coeffs = _coeffs()
+    rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs),
+                                    condition="control")
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+
+    result = pd.DataFrame(
+        {"k_deg": [0.5], "experiment": ["syn"], "condition": ["control"]})
+    ident = aggregate_identity(result)
+    assert ident.experiment == "syn" and ident.condition == "control"
+
+    prov = make_provenance({"x": 1})
+    pep = tmp_path / "riana_fit_peptides.txt"
+    pep.write_text("x")
+    frac = tmp_path / "riana_fit_fractions.txt"
+    frac.write_text("x")
+    record_stage_rows(mf, "fit", [pep, frac], result, prov)
+
+    got_pep, got_frac = fit_outputs_from_manifest(mf)
+    assert Path(got_pep).name == "riana_fit_peptides.txt"
+    assert Path(got_frac).name == "riana_fit_fractions.txt"
+    # The integrate rows are preserved alongside the new fit rows.
+    assert len(read_manifest(mf, stage="integrate")) == len(_TIMES)
+    assert len(read_manifest(mf, stage="fit")) == 2
+
+
+def test_aggregate_identity_blanks_mixed_groups():
+    from riana.core.pipeline import aggregate_identity
+    mixed = pd.DataFrame({"experiment": ["a", "b"], "condition": ["x", "x"]})
+    ident = aggregate_identity(mixed)
+    assert ident.experiment == ""          # >1 experiment -> blank
+    assert ident.condition == "x"          # single condition -> kept
+
+
 def test_identity_to_extra_omits_none():
     cal = RunIdentity(experiment="c", sample="s", data_file="d",
                       mixing_proportion=0.5)

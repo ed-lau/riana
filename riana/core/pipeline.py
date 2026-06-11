@@ -371,6 +371,82 @@ def fit_project(
 
 
 # --------------------------------------------------------------------------- #
+# manifest stage rows (fit / protein) — the project-directory chain
+# --------------------------------------------------------------------------- #
+def aggregate_identity(result_df: pd.DataFrame) -> RunIdentity:
+    """A coarse, experiment-level identity for an aggregate fit / protein output.
+
+    Fit and rollup each emit one file spanning many curves, so there is no
+    per-run identity to record on its manifest row; carry the common
+    ``experiment`` (and ``condition`` when single), leaving the run-specific
+    fields default. This is for manifest *indexing/provenance* only — downstream
+    stages group off the file's own ``experiment`` / ``condition`` columns, not
+    this identity.
+    """
+    def _single(col: str) -> str:
+        if col in result_df.columns:
+            vals = sorted({str(v) for v in result_df[col].dropna().unique()})
+            return vals[0] if len(vals) == 1 else ""
+        return ""
+
+    return RunIdentity(
+        experiment=_single("experiment"), sample="", data_file="",
+        condition=_single("condition"),
+    )
+
+
+def record_stage_rows(
+    manifest_path: str | os.PathLike[str],
+    stage: str,
+    output_paths: list[str | os.PathLike[str]],
+    result_df: pd.DataFrame,
+    provenance,
+) -> list[ManifestRow]:
+    """Append one *stage* row per output file to the manifest (idempotent upsert).
+
+    Used by ``fit`` (``stage="fit"``) and ``rollup`` (``stage="protein"``) to
+    register their outputs in the same project manifest ``integrate`` wrote — so
+    a single ``--manifest`` drives the whole ``integrate → fit → rollup`` chain.
+    """
+    identity = aggregate_identity(result_df)
+    rows = [
+        ManifestRow(
+            stage=stage, output_path=str(p), identity=identity,
+            config_hash=provenance.config_hash, git_sha=provenance.git_sha,
+        )
+        for p in output_paths
+    ]
+    append_manifest(manifest_path, rows)
+    return rows
+
+
+def fit_outputs_from_manifest(
+    manifest_path: str | os.PathLike[str],
+) -> tuple[str, str]:
+    """Locate the ``riana_fit_peptides.txt`` / ``riana_fit_fractions.txt`` paths
+    from a manifest's ``stage == "fit"`` rows (for ``rollup --manifest``)."""
+    rows = read_manifest(manifest_path, stage="fit")
+    if not rows:
+        raise DataError(
+            f"no fit rows in manifest {manifest_path} — run `riana fit "
+            "--manifest` first."
+        )
+    peptides = next(
+        (r.output_path for r in rows
+         if r.output_path.endswith("fit_peptides.txt")), None)
+    fractions = next(
+        (r.output_path for r in rows
+         if r.output_path.endswith("fit_fractions.txt")), None)
+    if peptides is None or fractions is None:
+        raise DataError(
+            f"manifest {manifest_path} fit rows are missing the peptides and/or "
+            "fractions output (expected riana_fit_peptides.txt + "
+            "riana_fit_fractions.txt)."
+        )
+    return peptides, fractions
+
+
+# --------------------------------------------------------------------------- #
 # internals
 # --------------------------------------------------------------------------- #
 def _merge_fractions(frames: list[pd.DataFrame]) -> pd.DataFrame:

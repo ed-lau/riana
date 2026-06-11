@@ -34,6 +34,14 @@ and Zenodo code DOI follow at release.)
 - **`riana rollup --thread`** (+ a Protein-tab Threads spinbox) — the per-protein
   refit (`curve_fit` × bootstrap) now runs over a thread pool. Per-protein RNG
   streams (`_group_rng`) keep the result identical regardless of thread count.
+- **Manifest project chain (`integrate → fit → rollup`).** `fit --manifest` now
+  writes its outputs **next to the manifest** (the project dir; `-o` is ignored
+  there) and records `stage="fit"` rows; **`rollup --manifest`** (the fit dir
+  argument is now optional) reads those rows to find the fit outputs, writes
+  `riana_protein.txt` next to the manifest, and records a `stage="protein"` row.
+  So one `--manifest` drives the whole chain and the manifest indexes every
+  stage. The GUI Model/Protein tabs follow the same rooting. (Previously `fit`
+  never touched the manifest — it was integrate-only despite the documented plan.)
 
 ### Track C — protein rollup
 

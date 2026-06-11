@@ -8,8 +8,13 @@ manifest rather than re-reading the SDRF or parsing identity out of filenames.
 
 Identity is *header-authoritative*: integrate freezes the full identity into each
 output's provenance header (reproducible, SDRF-independent at fit time) **and**
-records it here for indexing. Fit reads ``stage == "integrate"`` rows, groups by
-:attr:`RunIdentity.curve_key`, and writes back its own ``stage == "fit"`` rows.
+records it here for indexing. ``fit --manifest`` reads ``stage == "integrate"``
+rows, groups by ``(experiment, condition)``, and writes back its own ``stage ==
+"fit"`` rows; ``rollup --manifest`` reads those and writes a ``stage == "protein"``
+row — so the manifest's folder is the project and one ``--manifest`` drives the
+whole ``integrate → fit → rollup`` chain. The fit/protein rows carry a *coarse*
+experiment-level identity (the aggregate output spans many curves), used for
+indexing/provenance only; downstream grouping is off the file columns.
 
 The file is schema-versioned (``# manifest_schema 1`` on the first line) so the
 breaking output-granularity change and any future format change are detectable
