@@ -187,10 +187,10 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
 
     proteins, points = run_rollup(
         str(fit_dir), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
-    assert {"protein", "k_deg_median", "k_deg_refit"} <= set(proteins.columns)
+    assert {"protein", "method", "k_deg", "peptide_median_k"} <= set(proteins.columns)
     # Each synthetic peptide maps to its own protein (proteotypic) -> 5 proteins.
     assert len(proteins) == len(_TEST_PEPTIDES)
-    assert int(proteins["k_deg_refit"].notna().sum()) >= 1
+    assert int(proteins["k_deg"].notna().sum()) >= 1
     # The collapsed (t, θ) points behind each refit ride alongside (the curve).
     assert len(points) >= 1
     a_t, a_fs = next(iter(points.values()))
@@ -289,10 +289,9 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
     tab = main_window.protein_tab
     result = pd.DataFrame({
         "experiment": [""], "condition": [""], "protein": ["P1"],
-        "n_peptides": [3], "k_deg_median": [0.40],
-        "k_median_lo": [0.3], "k_median_hi": [0.5],
-        "n_points": [4], "k_deg_refit": [0.42],
-        "k_refit_lo": [0.3], "k_refit_hi": [0.5], "R_squared_refit": [0.98],
+        "method": ["weighted"], "n_peptides": [3], "n_points": [4],
+        "k_deg": [0.42], "ci_lo": [0.3], "ci_hi": [0.5], "R_squared": [0.98],
+        "peptide_median_k": [0.40],
     })
     tab._result_df = result
     tab._points = {("", "", "P1"): ([0.0, 1.0, 2.0, 3.0],

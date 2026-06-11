@@ -526,6 +526,13 @@ def rollup(
         "simple", "-m", "--model",
         help="Kinetic model for the protein refit — match how the peptides were "
         "fit (simple, guan, fornasiero)."),
+    method: str = typer.Option(
+        "weighted", "--method",
+        help="Protein estimator. 'weighted' (default): biorep-aware per-timepoint "
+        "inverse-variance collapse, then one refit (pseudoreplication-safe). "
+        "'pooled': fit all peptide×timepoint points directly (pseudoreplication; "
+        "for comparison). The median of peptide k is always carried as "
+        "peptide_median_k for reference."),
     parsimony: str = typer.Option(
         "unique", "--parsimony",
         help="Protein attribution at summarize time. 'unique' (default): only "
@@ -613,7 +620,7 @@ def rollup(
     os.makedirs(out, exist_ok=True)
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
-    logger.info(f"rollup (parsimony={parsimony}, model={model})")
+    logger.info(f"rollup (method={method}, parsimony={parsimony}, model={model})")
     if ignored_out is not None:
         logger.warning(
             "--manifest: riana_protein.txt goes next to the manifest (%s); "
@@ -623,7 +630,7 @@ def rollup(
     fractions = pd.read_table(frac_path, comment="#")
     try:
         result = rollup_proteins(
-            peptides, fractions, model=model,
+            peptides, fractions, model=model, method=method,
             kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_r2=min_r2,
@@ -636,9 +643,9 @@ def rollup(
     provenance = make_provenance(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
-         "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se},
+         "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se, "method": method},
         id_source=id_source,
-        extra={"parsimony": parsimony, "model": model},
+        extra={"method": method, "parsimony": parsimony, "model": model},
     )
     write_dataframe_tsv(out_path, result, provenance, include_index=False)
     logger.info(f"wrote {out_path}")
@@ -648,10 +655,9 @@ def rollup(
         record_stage_rows(manifest, "protein", [out_path], result, provenance)
         logger.info(f"recorded protein row in {manifest}")
 
-    n_med = int(result["k_deg_median"].notna().sum())
-    n_refit = int(result["k_deg_refit"].notna().sum())
+    n_fit = int(result["k_deg"].notna().sum())
     logger.info(
-        f"{len(result)} proteins: {n_med} with a median-k, {n_refit} with a refit")
+        f"{len(result)} proteins ({method}); {n_fit} with a fitted k_deg")
     logger.handlers.clear()
 
 

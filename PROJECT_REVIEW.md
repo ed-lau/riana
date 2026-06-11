@@ -960,16 +960,23 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   *supplied* — both are fixed today, so meaningful two-compartment use needs real
   precursor priors. Unlikely near-term.
 - **Protein rollup** (new milestone). **Shipped 2026-06-10** — `riana rollup`
-  (`core/protein.py`) writes `riana_protein.txt` with the **median-of-peptide-k**
-  and the **biorep-aware per-timepoint inverse-variance weighted refit** (σ from
-  the M5 prediction interval), grouped by `(experiment, condition, protein)`;
-  both `--parsimony unique` and `--parsimony isoform`; an optional peptide R²
-  admission gate (`--min-r2`, off by default, with a JCI slow-turnover admit);
-  and a **GUI Protein tab** (`gui/protein_tab.py` + `tasks.run_rollup`) with a
-  per-protein collapsed-`(t, θ)` + refit **curve** on row selection. Still TODO:
-  the harmonic-mean point estimator, the linearized cross-sample Δk test, and
-  manifest stage-row wiring (rollup reads the fit output files directly for
-  now). No standard method, so offer a menu and let the user choose:
+  (`core/protein.py`) writes `riana_protein.txt` (a `method` tag + one `k_deg` /
+  CI / R², `n_peptides` / `n_points`, and a comparison `peptide_median_k`),
+  grouped by `(experiment, condition, protein)`; `--parsimony {unique, isoform}`;
+  an optional peptide R² admission gate (`--min-r2`, off by default, with a JCI
+  slow-turnover admit); threaded refit (`--thread`); and a **GUI Protein tab**
+  (`gui/protein_tab.py` + `tasks.run_rollup`) with a per-protein refit **curve**.
+  **`--method` (decided 2026-06-10, after evaluating the menu below):**
+  `weighted` (default, the biorep-aware inverse-variance per-timepoint collapse)
+  or `pooled` (all peptide×timepoint points, pseudoreplication-naive, for
+  comparison). The **point estimators were dropped as methods** — median/harmonic
+  over peptide k are a trivial `groupby` the user does on the peptide file (and
+  harmonic is outlier-sensitive on the low-k tail); the median is still carried
+  as a `peptide_median_k` column. **Next milestone:** the **linearized
+  `log(1−θ) = −kt` fit + cross-sample Δk test** — *not* weaker (strong basis;
+  estimates marginal means + a two-group Δk in one linear model), it's the
+  genuinely new statistical capability. (Manifest stage-row wiring is now done —
+  see the manifest project chain above.) The menu that was evaluated:
   - **Parsimony is a summarize-time decision, not integrate-time** (locked
     2026-06-10). A shared peptide's envelope blends both proteins' turnover, so
     its isotope signature can't be attributed — the rollup is unique-by-default.

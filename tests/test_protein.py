@@ -146,27 +146,36 @@ def test_unique_parsimony_drops_shared_peptides():
     assert set(out["protein"]) == {"P0"}
 
 
-def test_median_estimator_recovers_planted_k():
+def test_peptide_median_k_column_recovers_planted_k():
     pep, frac = _make_frames({"sp|P0|X": 0.3, "sp|P1|Y": 0.8}, n_pep=4)
     out = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
-    assert out.loc["P0", "k_deg_median"] == pytest.approx(0.3, abs=1e-9)
-    assert out.loc["P1", "k_deg_median"] == pytest.approx(0.8, abs=1e-9)
+    assert out.loc["P0", "peptide_median_k"] == pytest.approx(0.3, abs=1e-9)
+    assert out.loc["P1", "peptide_median_k"] == pytest.approx(0.8, abs=1e-9)
     assert out.loc["P0", "n_peptides"] == 4
 
 
-def test_refit_recovers_planted_k():
+def test_weighted_refit_recovers_planted_k():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     out = rollup_proteins(pep, frac, n_boot=50).set_index("protein")
-    assert out.loc["P0", "k_deg_refit"] == pytest.approx(0.5, abs=0.02)
-    assert out.loc["P0", "R_squared_refit"] > 0.999
-    assert out.loc["P0", "n_points"] == 5
+    assert (out["method"] == "weighted").all()
+    assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
+    assert out.loc["P0", "R_squared"] > 0.999
+    assert out.loc["P0", "n_points"] == 5         # collapsed (biorep, t) cells
+
+
+def test_pooled_method_uses_all_points():
+    pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=3)  # 3 peptides x 5 t
+    out = rollup_proteins(pep, frac, method="pooled", n_boot=50).set_index("protein")
+    assert (out["method"] == "pooled").all()
+    assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
+    assert out.loc["P0", "n_points"] == 15        # all peptide×timepoint points
 
 
 def test_bioreps_are_independent_refit_points():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2))
     out = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
     assert out.loc["P0", "n_points"] == 10
-    assert out.loc["P0", "k_deg_refit"] == pytest.approx(0.5, abs=0.02)
+    assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
 
 
 def test_weighted_theta_favours_tighter_ci():
@@ -249,9 +258,11 @@ def test_rollup_threads_give_identical_result():
     pd.testing.assert_frame_equal(a, b)
 
 
-def test_unknown_model_and_parsimony_raise():
+def test_unknown_model_parsimony_method_raise():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     with pytest.raises(DataError, match="model"):
         rollup_proteins(pep, frac, model="nope")
     with pytest.raises(DataError, match="parsimony"):
         rollup_proteins(pep, frac, parsimony="razor")
+    with pytest.raises(DataError, match="method"):
+        rollup_proteins(pep, frac, method="bogus")

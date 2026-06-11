@@ -165,6 +165,7 @@ def run_rollup(
     alt_k: float = 0.025,
     alt_se: float = 0.05,
     threads: int = 1,
+    method: str = "weighted",
 ) -> tuple[pd.DataFrame, dict]:
     """Read the ``riana fit`` outputs in *fit_dir* and roll peptides up to proteins.
 
@@ -188,7 +189,7 @@ def run_rollup(
     peptides = pd.read_table(fd / "riana_fit_peptides.txt", comment="#")
     fractions = pd.read_table(fd / "riana_fit_fractions.txt", comment="#")
     result = rollup_proteins(
-        peptides, fractions, model=model,
+        peptides, fractions, model=model, method=method,
         kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
         parsimony=parsimony, min_peptides=int(min_peptides),
         min_points=int(min_points), min_r2=min_r2,

@@ -4,19 +4,27 @@
 
 Rolls the `riana fit` per-peptide outputs up to one turnover estimate per
 protein, grouped by ``(experiment, condition, protein)`` so side-by-side groups
-stay distinct. Two estimators land side by side (the user picked both):
+stay distinct. One ``k_deg`` per protein from the selected ``method``:
 
-1. **Median of peptide ``k_deg``** — a robust, distribution-free point estimate
-   (+ a peptide-resampling bootstrap CI). The cheap cross-check.
-2. **Biorep-aware per-timepoint weighted refit** — the pseudoreplication-safe
-   default and the reason M5 was built. Within each
-   ``(protein, biological_replicate, labeling_time)`` the peptides' fraction-new
-   θ are collapsed by an **inverse-variance weighted average** (σ from the M5
-   prediction interval, ``σ ≈ (fs_upper − fs_lower) / 3.29`` for the 5–95 band),
-   then **one** protein ``k_deg`` is fit to the collapsed ``(t, θ)`` points
-   *across timepoints AND bioreps* — different biological replicates stay
-   independent points, giving the refit honest degrees of freedom. CI via the
-   same residual bootstrap :func:`riana.core.fitting.fit_run` uses.
+- **``"weighted"`` (default)** — the pseudoreplication-safe refit and the reason
+  M5 was built. Within each ``(protein, biological_replicate, labeling_time)``
+  the peptides' fraction-new θ are collapsed by an **inverse-variance weighted
+  average** (σ from the M5 prediction interval, ``σ ≈ (fs_upper − fs_lower) /
+  3.29`` for the 5–95 band), then **one** protein ``k_deg`` is fit to the
+  collapsed ``(t, θ)`` points *across timepoints AND bioreps* — different
+  biological replicates stay independent points, giving the refit honest
+  degrees of freedom.
+- **``"pooled"``** — fit one ``k_deg`` to **all** peptide×timepoint θ points
+  with no collapse. The pseudoreplication-naive stance (peptides treated as
+  independent replicates ⇒ over-confident CI); kept for comparison, **not
+  recommended**.
+
+CI via the residual bootstrap :func:`riana.core.fitting.fit_run` uses. A
+near-free **``peptide_median_k``** column (median of the peptides' fitted k) is
+carried for comparison regardless of method — point estimators over peptide k
+are a trivial ``groupby`` the user can also do on the peptide file. (Harmonic
+mean was dropped: DIY *and* outlier-sensitive on the low-k tail. The linearized
+``log(1−θ) = −kt`` fit + a cross-sample Δk test are a deferred milestone.)
 
 **Parsimony is a summarize-time decision** (a shared peptide's envelope blends
 both proteins' turnover, so its signature can't be attributed):
@@ -72,13 +80,20 @@ _K_DEG_BOUNDS = ([1e-4], [10.0])
 _PI_SPAN_SIGMA = 2.0 * 1.6448536269514722  # ≈ 3.2897
 
 _PARSIMONY = ("unique", "isoform")
+#: Rollup estimators. ``weighted`` (default) = the biorep-aware per-timepoint
+#: inverse-variance collapse then refit (pseudoreplication-safe). ``pooled`` =
+#: fit one k to *all* peptide×timepoint θ points with no collapse — the
+#: pseudoreplication-naive stance (kept for comparison, not recommended).
+_METHODS = ("weighted", "pooled")
 _GROUP_KEYS = ["experiment", "condition", "protein"]
 
-#: Output column order for ``riana_protein.txt``.
+#: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
+#: the selected ``method``; ``peptide_median_k`` is the near-free median of the
+#: peptides' fitted k, carried for comparison regardless of method.
 PROTEIN_COLUMNS = [
-    "experiment", "condition", "protein",
-    "n_peptides", "k_deg_median", "k_median_lo", "k_median_hi",
-    "n_points", "k_deg_refit", "k_refit_lo", "k_refit_hi", "R_squared_refit",
+    "experiment", "condition", "protein", "method",
+    "n_peptides", "n_points", "k_deg", "ci_lo", "ci_hi", "R_squared",
+    "peptide_median_k",
 ]
 
 
@@ -92,6 +107,7 @@ def rollup_proteins(
     model: str = "simple",
     kinetic_kwargs: Mapping[str, float] | None = None,
     parsimony: str = "unique",
+    method: str = "weighted",
     min_peptides: int = 2,
     min_points: int = 3,
     min_r2: float | None = None,
@@ -131,6 +147,9 @@ def rollup_proteins(
         alt_k / alt_se / alt_r2: the slow-turnover admit thresholds (only used
             when ``min_r2`` is set). ``SE`` is the fit's ``sd`` (bootstrap k_deg
             std).
+        method: ``"weighted"`` (default, the inverse-variance per-timepoint
+            collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
+            pseudoreplication-naive).
         threads: worker threads for the per-protein refit (the expensive
             ``curve_fit`` × bootstrap). Each protein gets an independent RNG
             stream seeded from ``random_state``, so the result is **identical**
@@ -138,11 +157,11 @@ def rollup_proteins(
         n_boot / boot_ci_pct / random_state: bootstrap CI controls.
 
     Returns:
-        One row per ``(experiment, condition, protein)`` with both estimators'
-        ``k_deg`` + CIs; an estimator's columns are ``NaN`` where it could not
-        run. ``result.attrs["protein_points"]`` maps each
-        ``(experiment, condition, protein)`` to the collapsed ``(t_list,
-        fs_list)`` its refit used (the GUI per-protein curve).
+        One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
+        selected estimator's ``k_deg`` / ``ci_lo`` / ``ci_hi`` / ``R_squared``
+        (``NaN`` where it could not fit), ``n_peptides`` / ``n_points``, and the
+        comparison ``peptide_median_k``. ``result.attrs["protein_points"]`` maps
+        each protein to the ``(t_list, fs_list)`` its refit used (GUI curve).
     """
     if model not in _MODELS:
         raise DataError(
@@ -150,6 +169,9 @@ def rollup_proteins(
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")
+    if method not in _METHODS:
+        raise DataError(
+            f"method must be one of {list(_METHODS)}, got {method!r}")
     model_fn = _MODELS[model]
     kk = dict(a_0=0.0, a_max=1.0, **dict(kinetic_kwargs or {}))
 
@@ -168,17 +190,16 @@ def rollup_proteins(
         peptides = peptides[peptides["concat"].isin(admitted)].copy()
         fractions = fractions[fractions["concat"].isin(admitted)].copy()
 
-    med = _median_table(peptides, min_peptides=min_peptides,
-                        n_boot=n_boot, boot_ci_pct=boot_ci_pct,
-                        random_state=random_state)
+    stats = _peptide_stats(peptides, min_peptides=min_peptides)
     refit, points = _refit_table(
-        fractions, model_fn=model_fn, kinetic_kwargs=kk,
+        fractions, model_fn=model_fn, kinetic_kwargs=kk, method=method,
         min_peptides=min_peptides, min_points=min_points,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, random_state=random_state,
         threads=threads,
     )
 
-    out = pd.merge(med, refit, on=_GROUP_KEYS, how="outer")
+    out = pd.merge(stats, refit, on=_GROUP_KEYS, how="outer")
+    out["method"] = method
     for col in PROTEIN_COLUMNS:
         if col not in out.columns:
             out[col] = np.nan
@@ -338,51 +359,43 @@ def _group_rng(random_state: int, key) -> np.random.Generator:
 
 
 # --------------------------------------------------------------------------- #
-# estimator 1 — median of peptide k_deg
+# per-protein peptide stats (n_peptides + the comparison median-k)
 # --------------------------------------------------------------------------- #
-def _median_table(
-    peptides: pd.DataFrame,
-    *,
-    min_peptides: int,
-    n_boot: int,
-    boot_ci_pct: tuple[float, float],
-    random_state: int,
-) -> pd.DataFrame:
+def _peptide_stats(peptides: pd.DataFrame, *, min_peptides: int) -> pd.DataFrame:
+    """Per-protein peptide count + the near-free ``peptide_median_k``.
+
+    ``n_peptides`` is the distinct attributed peptides; ``peptide_median_k`` is
+    the median of their fitted ``k_deg`` — a trivial comparison column (not the
+    headline estimate; that comes from the refit ``method``).
+    """
     if "k_deg" not in peptides.columns:
         raise DataError("peptides input is missing the 'k_deg' column.")
     rows = []
     for keys, grp in peptides.groupby(_GROUP_KEYS, sort=False):
+        n_pep = grp["concat"].nunique()
+        if n_pep < min_peptides:
+            continue
         ks = grp["k_deg"].to_numpy(dtype=float)
         ks = ks[np.isfinite(ks)]
-        if len(ks) < min_peptides:
-            continue
-        if len(ks) >= 3:
-            rng = _group_rng(random_state, keys)
-            boot = [float(np.median(ks[rng.integers(0, len(ks), len(ks))]))
-                    for _ in range(n_boot)]
-            lo, hi = (float(p) for p in np.percentile(boot, boot_ci_pct))
-        else:
-            lo = hi = float("nan")
         exp, cond, prot = keys
         rows.append({
             "experiment": exp, "condition": cond, "protein": prot,
-            "n_peptides": int(len(ks)), "k_deg_median": float(np.median(ks)),
-            "k_median_lo": lo, "k_median_hi": hi,
+            "n_peptides": int(n_pep),
+            "peptide_median_k": float(np.median(ks)) if len(ks) else float("nan"),
         })
     return pd.DataFrame(
-        rows, columns=_GROUP_KEYS + [
-            "n_peptides", "k_deg_median", "k_median_lo", "k_median_hi"]
-    )
+        rows, columns=_GROUP_KEYS + ["n_peptides", "peptide_median_k"])
 
 
 # --------------------------------------------------------------------------- #
-# estimator 2 — biorep-aware per-timepoint weighted refit
+# the protein refit (method = weighted collapse | pooled points)
 # --------------------------------------------------------------------------- #
 def _refit_table(
     fractions: pd.DataFrame,
     *,
     model_fn,
     kinetic_kwargs: dict,
+    method: str,
     min_peptides: int,
     min_points: int,
     n_boot: int,
@@ -391,12 +404,14 @@ def _refit_table(
     threads: int = 1,
 ) -> tuple[pd.DataFrame, dict]:
     """Returns ``(refit table, points)`` where ``points`` maps
-    ``(experiment, condition, protein)`` → the collapsed ``(t_list, fs_list)``
-    the refit was fit on — the substrate for the GUI's per-protein curve.
+    ``(experiment, condition, protein)`` → the ``(t_list, fs_list)`` the refit
+    was fit on — the substrate for the GUI's per-protein curve.
 
-    Each protein is an independent work unit (collapse + ``curve_fit`` +
-    bootstrap), dispatched over ``threads`` workers; per-group RNG streams keep
-    the result identical regardless of thread count or completion order.
+    ``method="weighted"`` collapses peptides within each (biorep, timepoint) by
+    inverse-variance before fitting; ``method="pooled"`` fits all peptide×
+    timepoint points directly (pseudoreplication). Each protein is an
+    independent work unit dispatched over ``threads`` workers; per-group RNG
+    streams keep the result identical regardless of thread count.
     """
     need = {"concat", "biological_replicate", "labeling_time",
             "fs", "fs_lower", "fs_upper"}
@@ -411,18 +426,24 @@ def _refit_table(
 
     def _one(item):
         keys, grp = item
-        # Collapse peptides within each (biorep, timepoint) to one θ.
-        t_list, fs_list = [], []
-        for (_br, t), cell in grp.groupby(
-            ["biological_replicate", "labeling_time"], sort=False
-        ):
-            theta = _weighted_theta(
-                cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
-                cell["fs_upper"].to_numpy(),
-            )
-            if np.isfinite(theta):
-                t_list.append(float(t))
-                fs_list.append(theta)
+        if method == "pooled":
+            # All peptide×timepoint θ points, no collapse (pseudoreplication).
+            fs = grp["fs"].to_numpy(dtype=float)
+            t = grp["labeling_time"].to_numpy(dtype=float)
+            keep = np.isfinite(fs) & np.isfinite(t)
+            t_list, fs_list = t[keep].tolist(), fs[keep].tolist()
+        else:  # weighted: collapse peptides within each (biorep, timepoint).
+            t_list, fs_list = [], []
+            for (_br, t), cell in grp.groupby(
+                ["biological_replicate", "labeling_time"], sort=False
+            ):
+                theta = _weighted_theta(
+                    cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
+                    cell["fs_upper"].to_numpy(),
+                )
+                if np.isfinite(theta):
+                    t_list.append(float(t))
+                    fs_list.append(theta)
         if len(t_list) < min_points:
             return keys, None, None
         fit = _fit_kdeg(
@@ -449,14 +470,13 @@ def _refit_table(
         t_list, fs_list = pts
         rows.append({
             "experiment": exp, "condition": cond, "protein": prot,
-            "n_points": int(len(t_list)), "k_deg_refit": k,
-            "k_refit_lo": lo, "k_refit_hi": hi, "R_squared_refit": r2,
+            "n_points": int(len(t_list)), "k_deg": k,
+            "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
         })
         points[(exp, cond, prot)] = (t_list, fs_list)
     table = pd.DataFrame(
         rows, columns=_GROUP_KEYS + [
-            "n_points", "k_deg_refit", "k_refit_lo", "k_refit_hi",
-            "R_squared_refit"]
+            "n_points", "k_deg", "ci_lo", "ci_hi", "R_squared"]
     )
     return table, points
 

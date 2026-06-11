@@ -98,6 +98,14 @@ class ProteinTab(QWidget):
         dir_row.addWidget(browse)
         form.addRow("Fit output dir", _row(dir_row))
 
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["weighted", "pooled"])
+        self.method_combo.setToolTip(
+            "weighted (default): biorep-aware per-timepoint inverse-variance "
+            "collapse, then refit. pooled: all peptide×timepoint points "
+            "(pseudoreplication; for comparison).")
+        form.addRow("Method", self.method_combo)
+
         self.parsimony_combo = QComboBox()
         self.parsimony_combo.addItems(["unique", "isoform"])
         form.addRow("Parsimony", self.parsimony_combo)
@@ -225,6 +233,7 @@ class ProteinTab(QWidget):
         r2 = float(self.min_r2_spin.value())
         return {
             "fit_dir": self.fit_dir_edit.text().strip(),
+            "method": self.method_combo.currentText(),
             "parsimony": self.parsimony_combo.currentText(),
             "model": self.model_combo.currentText(),
             "kp": float(self.kp_spin.value()),
@@ -270,7 +279,7 @@ class ProteinTab(QWidget):
                 self.pool, run_rollup, str(fit_dir), p["model"],
                 p["kp"], p["kr"], p["rp"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_r2"],
-                0.025, 0.05, p["threads"],
+                0.025, 0.05, p["threads"], p["method"],
             )
             result, points = await self._future
             if self._cancelled:
@@ -282,11 +291,10 @@ class ProteinTab(QWidget):
             self._last_params = p
             self.model.set_dataframe(result)
             self.curve.show_placeholder("Select a protein row to view its refit.")
-            n_med = int(result["k_deg_median"].notna().sum())
-            n_refit = int(result["k_deg_refit"].notna().sum())
+            n_fit = int(result["k_deg"].notna().sum())
             self.summary_label.setText(
-                f"{len(result)} proteins; {n_med} with a median-k, "
-                f"{n_refit} with a refit."
+                f"{len(result)} proteins ({p['method']}); "
+                f"{n_fit} with a fitted k_deg."
             )
             self._info("done.")
         except asyncio.CancelledError:
@@ -309,10 +317,11 @@ class ProteinTab(QWidget):
         out_path = out_dir / "riana_protein.txt"
         provenance = make_provenance(
             {k: params[k] for k in (
-                "model", "parsimony", "kp", "kr", "rp",
+                "model", "method", "parsimony", "kp", "kr", "rp",
                 "min_peptides", "min_points", "min_r2")},
             id_source=params["fit_dir"],
-            extra={"parsimony": params["parsimony"], "model": params["model"]},
+            extra={"method": params["method"], "parsimony": params["parsimony"],
+                   "model": params["model"]},
         )
         write_dataframe_tsv(out_path, result, provenance, include_index=False)
         self._info(f"wrote {out_path}")
@@ -335,7 +344,7 @@ class ProteinTab(QWidget):
         row = self.model.dataframe.iloc[current.row()]
         key = (row["experiment"], row["condition"], row["protein"])
         pts = self._points.get(key)
-        k = row.get("k_deg_refit")
+        k = row.get("k_deg")
         if pts is None or k is None or pd.isna(k):
             self.curve.show_placeholder(f"{row['protein']}: no refit to show.")
             return

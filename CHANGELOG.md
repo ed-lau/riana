@@ -53,13 +53,18 @@ and Zenodo code DOI follow at release.)
 
 - **`riana rollup`** — rolls the `riana fit` per-peptide outputs up to one
   turnover estimate per `(experiment, condition, protein)`, writing
-  `riana_protein.txt`. Two estimators side by side: (1) **median** of the
-  peptides' `k_deg` (+ a peptide-bootstrap CI); (2) a **biorep-aware
-  per-timepoint weighted refit** — within each `(protein, biological_replicate,
-  labeling_time)` the peptides' fraction-new θ are collapsed by an
-  inverse-variance weighted average (σ from the M5 prediction interval), then one
-  protein `k_deg` is fit to the collapsed `(t, θ)` points across timepoints *and*
-  bioreps (different bioreps stay independent points). `core/protein.py`.
+  `riana_protein.txt` (a `method` tag + `k_deg`/`ci_lo`/`ci_hi`/`R_squared`,
+  `n_peptides`/`n_points`, and a comparison `peptide_median_k`). `core/protein.py`.
+- **`--method {weighted, pooled}`** (default `weighted`) — `weighted` is the
+  **biorep-aware per-timepoint refit**: within each `(protein,
+  biological_replicate, labeling_time)` the peptides' fraction-new θ are collapsed
+  by an inverse-variance weighted average (σ from the M5 prediction interval),
+  then one `k_deg` is fit to the collapsed `(t, θ)` across timepoints *and*
+  bioreps (independent points → honest dof). `pooled` fits all peptide×timepoint
+  points directly (pseudoreplication; for comparison). The median/harmonic point
+  estimators were dropped as standalone methods (trivially DIY on the peptide
+  file; the median is still carried as `peptide_median_k`). The linearized fit +
+  a cross-sample Δk test are a deferred follow-up.
 - **`--parsimony {unique, isoform}`** (default `unique`) — protein attribution is
   a **summarize-time** decision: a shared peptide's envelope blends both
   proteins' turnover, so it can't be attributed. `unique` keeps only
