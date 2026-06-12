@@ -921,6 +921,18 @@ vs DIA-NN parquet).
 > anchor to reconcile against; the DIA analog (reported RT within mzML bounds +
 > run-column matches the paired mzML) is a separate, weaker check for M6b.
 
+- **Re-explore match-between-runs (MBR) for the mzTab/DDA path (spiked 2026-06-12,
+  mid-term).** DDA misses peptides stochastically across the time series, so a
+  turnover curve can lose timepoints to identification gaps rather than real
+  absence. MBR (transfer an ID/RT to runs where the peptide was observed but not
+  picked for MS2) would fill those. **First step is measurement, not code:
+  compare the per-peptide missingness of the DIA vs DDA sets** (`runs/lve_dia` vs
+  `runs/lve`/`lve_atr`) — DIA-NN already does cross-run propagation, so DIA is
+  likely complete enough to *not* need MBR; quantify the gap before building
+  anything. If warranted, scope MBR at the intake layer (it is an ID-assembly
+  concern, hence Track A) — there is a stale `data/mbr_test` fixture from the
+  pre-rewrite era to revisit. Pairs with the Track D missingness metric.
+
 #### Track B — integration fidelity (research cluster)
 
 Plan these together — they are complementary integration-fidelity levers, and
@@ -1062,11 +1074,47 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     peptides of the same protein in the *same animal* are pseudoreplicates;
     *different* `characteristics[biological replicate]` are genuine replicates and
     stay as independent points, giving the refit honest degrees of freedom.
-  - **Linearized + cross-sample** (simple model only): per-timepoint weighted
-    average → `log(1−θ) = −kt` → k by OLS; two samples → a shared-variance
-    linear model giving marginal-mean k and a Δk test. (Guan/Fornasiero add a
-    precursor-rise term and are not linearizable — their cross-sample
-    equivalent needs nonlinear mixed-effects, deferred.)
+  - **`linear simple` — a new rollup model (NEXT build; design fixed 2026-06-12,
+    user).** A *model choice* alongside `simple`/`guan`/`fornasiero` and **mutually
+    exclusive with them by nature**: those are nonlinear ODE fits via scipy
+    `curve_fit`; `linear simple` is OLS in φ-space. Selecting it switches the
+    rollup refit **and the plot** into φ = `log(1 − θ)` (linear) space.
+    - *Transform.* φ = `log(1 − θ)`; clamp θ to ~[0.01, 0.99] and drop non-finite
+      (the R reference does this). φ = 0 at t = 0, so the line is **through the
+      origin**.
+    - *Model.* Per protein, the no-intercept interaction OLS
+      `φ ~ 0 + day + day:condition` (R: `lm(protein_clearance ~ 0 + day + day:treatment)`):
+      the per-condition slope is `−k`, and the `day:condition` term is the **Δslope
+      = −Δk**. Two conditions → marginal-mean k per condition (with CI) + a pairwise
+      Δk contrast p-value, then **Benjamini-Hochberg** across all proteins, filter
+      `p_adj < 0.05`. Reference (do **not** follow — study-specific compartment /
+      strain / JCAST aspects no longer apply): `data/notebook/03_R_linearmodel_reference.Rmd`.
+    - *⚠️ Plateau truncation (required, the key deviation from the R reference;
+      user 2026-06-12).* Once φ saturates (θ near its measurement ceiling, φ ≈ −4),
+      later timepoints are noise around the floor, not slope — including them
+      **breaks linearity and drags the through-origin slope flat**. So per curve,
+      **truncate at/after the first timepoint that reaches saturation**. **Knobs
+      (user wants these exposed):** a configurable **φ limit** (the truncation
+      threshold) — `−3…−4` is sensible (≈ θ 0.95–0.99; beyond that is measurement
+      noise) — plus the θ clamp. The nonlinear models **need** the plateau (their
+      asymptote parameter fits it), so truncation is **linear-only**. This is
+      **inseparable from `linear simple`**; build them together, not as a
+      follow-on.
+    - *EMMEANS — use statsmodels (user decision 2026-06-12).* numpy/scipy have
+      **no** emmeans/emtrends/marginal-means machinery (scipy.stats stops at
+      `linregress` / `ttest` / `f_oneway`). Although this simple fixed-effects
+      design *could* be hand-rolled (β=`lstsq`, cov=`σ²(XᵀX)⁻¹`, contrast
+      `cᵀβ ± t·√(cᵀ cov c)`, BH ~5 lines), the user prefers **adding statsmodels
+      as a dependency** and building on it (`OLS.t_test`/`f_test` for the contrasts
+      + `stats.multitest.multipletests` for BH): we will want it later anyway (the
+      R notes defer mixed / `limma`-style models — "limma later"), and a
+      well-established package is easier to maintain than bespoke contrast math.
+      → add `statsmodels` to deps when `linear simple` lands.
+    - *Why linear is not weaker* (user, prior): strong mathematical basis; it
+      estimates marginal-mean k **and** a two-group Δk in one model — the genuinely
+      new statistical capability. Guan/Fornasiero add a precursor-rise term and are
+      not linearizable, so their cross-sample equivalent needs nonlinear
+      mixed-effects (deferred).
   Reads both the fit and integrate outputs via the stage-aware manifest; groups
   samples by `factor value[...]` (condition/group) and supports opening multiple
   groups side-by-side for visual comparison — the substrate for the deferred
@@ -1087,7 +1135,66 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   the backbone and don't change). `_fit_one_concat` already separates
   `seq_with_mods` from `seq`; M7 threads the mods alongside instead of dropping
   them. Prioritize only for PTM-focused datasets (e.g. labelled
-  phosphoproteomics).
+  phosphoproteomics). Three concrete pieces (user context, 2026-06-11):
+  1. **Atom accounting in the forward model.** A mod's extra atoms must be added
+     to the IsoSpec `formula` *even though the mod is not D₂O-labeled* (we don't
+     know its enrichment, and the forward model mixes initial + fully-labeled
+     envelopes — the extra C/H/O/N/S still shape the envelope and shift the
+     channel masses). The envelope formula comes from `count_atoms` →
+     `IsoParamsFromDict({"C":…,"H":…,…})` in `algorithms/isotope_dist.py`; M7 adds
+     each parsed mod's composition there. Scope a starter set — **N-term Acetyl,
+     Met-Ox, deamidation (N/Q), phospho (S/T/Y)** — not all of UniMod. Need a
+     UniMod composition source: either read the ontology or keep a small curated
+     `mod_atoms` table (today `constants.mod_atoms` has only `IAA`).
+  2. **Generalize Carbamidomethyl(C) to a normal UniMod.** Today it is special-
+     cased: `count_atoms(iaa=True)` adds `mod_atoms['IAA']=[2,3,1,1,0]` per
+     cysteine, so C is effectively `[5,8,2,2,1]` (actual C `[3,5,1,1,1]` + IAA) in
+     the forward model. M7 should route CAM through the same per-mod composition
+     machinery as any other UniMod (`UNIMOD:4`) rather than the hardcoded `iaa`
+     flag — one code path for all fixed/variable mods.
+  3. **Proteoform-aware rollup.** A phosphopeptide must **not** collapse into its
+     unmodified protein (that hides the PTM's effect on turnover). At rollup,
+     count the PTM-site residues and append them to the accession as a distinct
+     proteoform key, e.g. `P12345_pS235`, so each modified form rolls up as its
+     own unit. User has R scripts to reference for the site-naming convention.
+     This extends `core/protein.py` parsimony, which today keys on bare
+     accession.
+
+  Non-obvious structural implications (noticed while grounding in the code,
+  2026-06-11):
+  - **Two separate fixes, don't conflate.** (a) *Integrate-side target m/z* —
+    today `mass_calc.calculate_ion_mz` recomputes from the **bare** sequence, so a
+    modified PSM is extracted at the unmodified m/z (the reason we currently
+    *drop* it). M7 must add the mod mass to the extraction target. (b) *Fit-side
+    envelope shape* — the mod atoms must enter the IsoSpec `formula`. The drop
+    sidesteps both; M7 needs both.
+  - **Phosphorus is not in the `[C,H,O,N,S]` atom vector.** `count_atoms` returns
+    5 elements and `constants.iso_abundances` is 5-long; phospho (HPO₃) adds a
+    **P** (and 3 O, 1 H). P is monoisotopic so it does not broaden the envelope,
+    but supporting it means extending the atom vector + abundance list, not just
+    the mod table. The 3 O *do* affect envelope shape.
+  - **Mod hydrogens default to non-labelable.** The forward solver subtracts
+    `num_labeling_sites` (from `label_deuterium_de`/`label_oxygens`) from H before
+    handing to IsoSpec. Conservative default: mod-contributed atoms are static
+    (not added to the labelable count) since the mod's D₂O enrichment is unknown
+    — matches the user's "account for the atoms even if not necessarily enriched."
+  - **Site localization gates the proteoform key — and both primary formats give
+    the protein-coordinate site directly (no FASTA needed).** Checked 2026-06-11:
+    - *mzTab* carries `start`/`end` (the peptide's protein-coordinate start) plus
+      the peptide-relative mod position in the `modifications` column
+      (`pos-UNIMOD:id`, 1-based, 0 = N-term), so the protein site =
+      `start + pos − 1` (e.g. MYL4 `start=93` + Ox at pos 10 → M102; TITIN
+      `start=34473` + Phospho at pos 4 → S34476). Shared peptides carry a
+      comma-separated `start` per accession.
+    - *DIA-NN parquet* carries `Protein.Sites` **pre-formatted** as `[acc:res+pos]`
+      (e.g. `[Q9Z1P6:M87]`, multi-site `[P55264:C139,C142]`) plus
+      `PTM.Site.Confidence` (1.0 = confident) and `Site.Occupancy.Probabilities`.
+      It also lists CAM cysteine sites, so the proteoform-key builder must filter
+      to the variable mods of interest.
+    - *Percolator* (demoted/testing tier) has no protein-coordinate site — **drop
+      PTM support there** (user decision 2026-06-11) rather than require a FASTA.
+    Only confidently-localized sites become distinct `_pS###` keys; decide a
+    bucket/drop policy for ambiguous ones (gate on DIA-NN `PTM.Site.Confidence`).
 
 #### Track D — validation infrastructure (unblocked by M6a)
 
@@ -1143,6 +1250,29 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   test (rec below).
 - **Modernize look** — low priority, ready-made only (a QSS theme or
   `qt-material` / `qtmodern`).
+- **Wire `-W/--workers` into the GUI fit + rollup forms (spiked 2026-06-12,
+  short-term).** The CLI now has process-level `-W` on both `fit` (Track C) and
+  `rollup` (shipped 2026-06-12); the GUI still drives them thread-only via
+  `gui/tasks.run_fit` / `run_rollup` (`threads=`). Add a workers control to both
+  forms and pass `workers=` through `gui/tasks` — but mind the GUI's
+  "dispatch over its own pool" model (it must not nest a `ProcessPoolExecutor`
+  inside a pool worker; the plan/dispatch split in `core/pipeline` is the pattern
+  to follow). Quick win once the nesting is handled.
+- **Expose the hidden integrate knobs in CLI + GUI as clearly-marked *advanced*
+  options (spiked 2026-06-12, short-term).** Several `IntegrationConfig` knobs the
+  CLI already takes (`--peak-rt`, `--apex-selection`, `--integration-half-width`
+  vs `--extraction-half-width`, `--baseline`, `--smoothing`, `--mass-difference`)
+  are power-user dials that are easy to mis-set; the GUI exposes only a subset.
+  Audit the full knob set, surface them all (CLI help + a collapsible "Advanced"
+  group in the GUI forms), and **label them advanced** so the default path stays
+  simple. Pairs with the smoothing-in-GUI item above.
+- **GUI-framework feasibility report — is Qt a ceiling? (spiked 2026-06-12,
+  long-term.)** If pyqtgraph/Qt limits graphing or interactivity as the protein /
+  Δk / φ-space views grow, write a feasibility note comparing alternatives
+  (Electron + JS charting, Tauri, a web/server split, Dash/Streamlit for the
+  analysis surfaces) against the cost of leaving the native PySide6 app. Decision
+  doc only — no migration implied; revisit only if a concrete Qt limit blocks a
+  needed view.
 
 #### Persist the integration signal (optional sidecar)
 

@@ -230,6 +230,42 @@ def test_fit_project_long_keeps_bioreps_separate(tmp_path):
     assert len(long) == 2 * 8 * len(_TEST_PEPTIDES)
 
 
+def test_fit_project_two_conditions_concat(tmp_path):
+    """Regression: a two-condition fit must not crash at the final concat.
+
+    Each per-curve result frame carries its fractions_long table on ``.attrs``;
+    ``pd.concat`` → ``__finalize__`` reconciles ``.attrs`` by equality-comparing
+    values across frames, which raised "Can only compare identically-labeled"
+    on the differently-shaped DataFrames once there was >1 curve (the Δk path).
+    Single-condition fits never reconciled attrs across frames, so this slipped
+    through until the two-condition lve_atr fixture.
+    """
+    coeffs = _coeffs()
+    rows = []
+    # Distinct file stems per condition (real LVE/ATR runs are distinct mzMLs);
+    # the manifest keys on output_path, so a shared stem would collapse to one.
+    for cond in ("control", "atrium"):
+        for ti, df in zip(_TIMES, _make_timepoint_dfs(coeffs)):
+            stem = f"{cond}_t{ti:.4f}"
+            path = tmp_path / f"{stem}_riana.txt"
+            df.to_csv(path, sep="\t", index=False)
+            rows.append(ManifestRow("integrate", str(path), RunIdentity(
+                experiment="syn", sample=stem, data_file=stem,
+                labeling_time=float(ti), labeling_time_unit="au",
+                condition=cond)))
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06, threads=1)
+    out = fit_project(config, mf, coeffs, n_boot=20)
+    # Both curves survive the concat, tagged distinctly.
+    assert set(out["condition"]) == {"control", "atrium"}
+    long = out.attrs["fractions_long"]
+    assert set(long["condition"]) == {"control", "atrium"}
+    # Each condition contributes its own 8 timepoints × peptides.
+    assert len(long) == 2 * 8 * len(_TEST_PEPTIDES)
+
+
 # --- integrate_project end-to-end on the real BSA mzML -----------------------
 
 # retention_time values (541.1 s @ scan 4408, 732.6 s @ scan 6838) are the BSA

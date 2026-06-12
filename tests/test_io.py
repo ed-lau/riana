@@ -159,6 +159,40 @@ def test_mztab_keeps_decoys_when_flag_off(tmp_path):
     assert len(records) == 3
 
 
+_MODS_MZTAB = _MINIMAL_MZTAB + (
+    # Carbamidomethyl (UNIMOD:4) is fixed → kept (folded into the recomputed mass).
+    "PSM\tGEIEHHCSGLHR\t3\tsp|P00004|TEST4_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"
+    "0.01\t7-UNIMOD:4\t40.0\t2\t400.0\t400.0\t"
+    "ms_run[1]:controllerType=0 controllerNumber=1 scan=404\tK\tR\t1\t12\t"
+    "0.01\t0.001\t0\tGEIEHHC(Carbamidomethyl)SGLHR\n"
+    # Oxidation (UNIMOD:35) is variable → dropped (would target the unmodified m/z).
+    "PSM\tVLGKPKPEEMSSK\t4\tsp|P00005|TEST5_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"
+    "0.01\t10-UNIMOD:35\t41.0\t2\t450.0\t450.0\t"
+    "ms_run[1]:controllerType=0 controllerNumber=1 scan=405\tK\tR\t1\t13\t"
+    "0.01\t0.001\t0\tVLGKPKPEEM(Oxidation)SSK\n"
+)
+
+
+def test_mztab_drops_variable_mods_by_default(tmp_path):
+    """A variable-mod peptidoform (Oxidation) is dropped — it would integrate at
+    the unmodified m/z until M7 — while the fixed Carbamidomethyl is kept."""
+    fixture = tmp_path / "mods.mzTab"
+    fixture.write_text(_MODS_MZTAB)
+    records, _ = iomztab.read_mztab(fixture, sample="syn")
+    seqs = {r.sequence for r in records}
+    assert "GEIEHHCSGLHR" in seqs   # fixed Carbamidomethyl kept
+    assert "VLGKPKPEEMSSK" not in seqs  # variable Oxidation dropped
+
+
+def test_mztab_keeps_variable_mods_when_flag_off(tmp_path):
+    fixture = tmp_path / "mods.mzTab"
+    fixture.write_text(_MODS_MZTAB)
+    records, _ = iomztab.read_mztab(
+        fixture, sample="syn", drop_variable_mods=False)
+    seqs = {r.sequence for r in records}
+    assert {"GEIEHHCSGLHR", "VLGKPKPEEMSSK"} <= seqs
+
+
 def test_mztab_attaches_identity_from_sample_map(tmp_path):
     """The M6a primary path: a sample_map keyed by mzML stem tags each PSM with
     its run identity and sets PSMRecord.sample to the SDRF source name."""

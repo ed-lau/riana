@@ -410,6 +410,12 @@ def fit_project(
                 long[col] = val
             long_frames.append(long)
         result = result.copy()
+        # Drop the per-curve fractions_long DataFrame from .attrs before concat:
+        # pandas' concat → __finalize__ reconciles .attrs by equality-comparing
+        # values across frames, which raises on differently-shaped DataFrames once
+        # there is >1 curve (the two-condition Δk path). It is already captured in
+        # long_frames; out.attrs["fractions_long"] is rebuilt after the concat.
+        result.attrs.pop("fractions_long", None)
         for col, val in zip(GROUP_KEY_COLUMNS, group_key):
             result[col] = val
         results.append(result)

@@ -260,6 +260,16 @@ def test_rollup_threads_give_identical_result():
     pd.testing.assert_frame_equal(a, b)
 
 
+def test_rollup_workers_give_identical_result():
+    """Process workers (-W) must give the same result as serial — the per-protein
+    RNG stream is seeded from the group key, not worker count or order."""
+    pep, frac = _make_frames(
+        {"sp|P0|X": 0.3, "sp|P1|Y": 0.6, "sp|P2|Z": 0.9}, n_pep=4)
+    a = rollup_proteins(pep, frac, n_boot=100, workers=1)
+    b = rollup_proteins(pep, frac, n_boot=100, workers=2)
+    pd.testing.assert_frame_equal(a, b)
+
+
 def test_unknown_model_parsimony_method_raise():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     with pytest.raises(DataError, match="model"):

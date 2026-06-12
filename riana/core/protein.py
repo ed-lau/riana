@@ -120,6 +120,7 @@ def rollup_proteins(
     alt_se: float = 0.05,
     alt_r2: float = 0.0,
     threads: int = 1,
+    workers: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
     random_state: int = 1337,
@@ -155,10 +156,13 @@ def rollup_proteins(
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
             collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
             pseudoreplication-naive).
-        threads: worker threads for the per-protein refit (the expensive
-            ``curve_fit`` × bootstrap). Each protein gets an independent RNG
-            stream seeded from ``random_state``, so the result is **identical**
-            regardless of ``threads`` (and of completion order).
+        threads: worker *threads* for the per-protein refit. The refit
+            (``curve_fit`` × bootstrap) is GIL-bound, so threads give little
+            speedup — prefer ``workers``.
+        workers: worker *processes* for the per-protein refit — the real lever
+            for the GIL-bound refit. Each protein gets an independent RNG stream
+            seeded from ``random_state``, so the result is **identical**
+            regardless of ``workers`` / ``threads`` (and of completion order).
         n_boot / boot_ci_pct / random_state: bootstrap CI controls.
 
     Returns:
@@ -200,7 +204,7 @@ def rollup_proteins(
         fractions, model_fn=model_fn, kinetic_kwargs=kk, method=method,
         min_peptides=min_peptides, min_points=min_points,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, random_state=random_state,
-        threads=threads,
+        threads=threads, workers=workers,
     )
 
     out = pd.merge(stats, refit, on=_GROUP_KEYS, how="outer")
@@ -426,6 +430,7 @@ def _refit_table(
     boot_ci_pct: tuple[float, float],
     random_state: int,
     threads: int = 1,
+    workers: int = 1,
 ) -> tuple[pd.DataFrame, dict]:
     """Returns ``(refit table, points)`` where ``points`` maps
     ``(experiment, condition, protein)`` → the ``(t_list, fs_list)`` the refit
@@ -433,9 +438,11 @@ def _refit_table(
 
     ``method="weighted"`` collapses peptides within each (biorep, timepoint) by
     inverse-variance before fitting; ``method="pooled"`` fits all peptide×
-    timepoint points directly (pseudoreplication). Each protein is an
-    independent work unit dispatched over ``threads`` workers; per-group RNG
-    streams keep the result identical regardless of thread count.
+    timepoint points directly (pseudoreplication). Each protein is an independent
+    work unit; the per-protein ``curve_fit`` × bootstrap is GIL-bound, so
+    ``workers`` (process-level, the real lever) is preferred over ``threads``.
+    Per-group RNG streams keep the result identical regardless of worker/thread
+    count and completion order.
     """
     need = {"concat", "biological_replicate", "labeling_time",
             "fs", "fs_lower", "fs_upper"}
@@ -448,53 +455,33 @@ def _refit_table(
         if grp["concat"].nunique() >= min_peptides
     ]
 
-    def _one(item):
-        keys, grp = item
-        n_rep = int(grp["biological_replicate"].nunique())
-        n_tp = int(grp["labeling_time"].nunique())
-        if method == "pooled":
-            # All peptide×timepoint θ points, no collapse (pseudoreplication).
-            fs = grp["fs"].to_numpy(dtype=float)
-            t = grp["labeling_time"].to_numpy(dtype=float)
-            keep = np.isfinite(fs) & np.isfinite(t)
-            t_list, fs_list = t[keep].tolist(), fs[keep].tolist()
-        else:  # weighted: collapse peptides within each (biorep, timepoint).
-            t_list, fs_list = [], []
-            for (_br, t), cell in grp.groupby(
-                ["biological_replicate", "labeling_time"], sort=False
-            ):
-                theta = _weighted_theta(
-                    cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
-                    cell["fs_upper"].to_numpy(),
-                )
-                if np.isfinite(theta):
-                    t_list.append(float(t))
-                    fs_list.append(theta)
-        if len(t_list) < min_points:
-            return keys, None, None
-        fit = _fit_kdeg(
-            np.asarray(t_list), np.asarray(fs_list),
-            model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
-            n_boot=n_boot, boot_ci_pct=boot_ci_pct,
-            rng=_group_rng(random_state, keys),
-        )
-        if fit is None:
-            return keys, None, None
-        exp, cond, prot = keys
-        k, r2, lo, hi = fit
-        row = {
-            "experiment": exp, "condition": cond, "protein": prot,
-            "n_replicates": n_rep, "n_timepoints": n_tp,
-            "n_points": int(len(t_list)), "k_deg": k,
-            "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
-        }
-        return keys, row, (t_list, fs_list)
+    refit_one = partial(
+        _refit_one_group, model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
+        method=method, min_points=min_points, n_boot=n_boot,
+        boot_ci_pct=boot_ci_pct, random_state=random_state,
+    )
 
-    if threads <= 1 or len(groups) <= 1:
-        computed = [_one(g) for g in groups]
-    else:
+    if workers > 1 and len(groups) > 1:
+        # Process-level parallelism — the real lever for the GIL-bound refit
+        # (curve_fit + per-protein residual bootstrap). The group frames are
+        # pickled to each worker ONCE via the initializer; only an integer index
+        # crosses per task. The per-group RNG makes the result worker-count-
+        # independent. Mirrors the fit -W pattern (core/fitting.py).
+        init_args = (groups, model_fn, kinetic_kwargs, method, min_points,
+                     n_boot, boot_ci_pct, random_state)
+        chunk = max(1, len(groups) // (workers * 8))
+        with futures.ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_refit_worker,
+            initargs=init_args,
+        ) as ex:
+            computed = list(ex.map(
+                _refit_one_group_worker, range(len(groups)), chunksize=chunk))
+    elif threads > 1 and len(groups) > 1:
         with futures.ThreadPoolExecutor(max_workers=threads) as ex:
-            computed = list(ex.map(_one, groups))
+            computed = list(ex.map(refit_one, groups))
+    else:
+        computed = [refit_one(g) for g in groups]
 
     rows = []
     points: dict = {}
@@ -509,6 +496,93 @@ def _refit_table(
             "k_deg", "ci_lo", "ci_hi", "R_squared"]
     )
     return table, points
+
+
+def _refit_one_group(
+    item,
+    *,
+    model_fn,
+    kinetic_kwargs: dict,
+    method: str,
+    min_points: int,
+    n_boot: int,
+    boot_ci_pct: tuple[float, float],
+    random_state: int,
+):
+    """Refit one ``(experiment, condition, protein)`` group → ``(keys, row, pts)``.
+
+    Module-level (not a closure) so it pickles for the ``ProcessPoolExecutor``
+    on spawn-start platforms (macOS). The per-group RNG (``_group_rng``) makes the
+    result independent of worker/thread count and completion order.
+    """
+    keys, grp = item
+    n_rep = int(grp["biological_replicate"].nunique())
+    n_tp = int(grp["labeling_time"].nunique())
+    if method == "pooled":
+        # All peptide×timepoint θ points, no collapse (pseudoreplication).
+        fs = grp["fs"].to_numpy(dtype=float)
+        t = grp["labeling_time"].to_numpy(dtype=float)
+        keep = np.isfinite(fs) & np.isfinite(t)
+        t_list, fs_list = t[keep].tolist(), fs[keep].tolist()
+    else:  # weighted: collapse peptides within each (biorep, timepoint).
+        t_list, fs_list = [], []
+        for (_br, t), cell in grp.groupby(
+            ["biological_replicate", "labeling_time"], sort=False
+        ):
+            theta = _weighted_theta(
+                cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
+                cell["fs_upper"].to_numpy(),
+            )
+            if np.isfinite(theta):
+                t_list.append(float(t))
+                fs_list.append(theta)
+    if len(t_list) < min_points:
+        return keys, None, None
+    fit = _fit_kdeg(
+        np.asarray(t_list), np.asarray(fs_list),
+        model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
+        n_boot=n_boot, boot_ci_pct=boot_ci_pct,
+        rng=_group_rng(random_state, keys),
+    )
+    if fit is None:
+        return keys, None, None
+    exp, cond, prot = keys
+    k, r2, lo, hi = fit
+    row = {
+        "experiment": exp, "condition": cond, "protein": prot,
+        "n_replicates": n_rep, "n_timepoints": n_tp,
+        "n_points": int(len(t_list)), "k_deg": k,
+        "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
+    }
+    return keys, row, (t_list, fs_list)
+
+
+# --- process-pool plumbing (mirrors core/fitting._init_fit_worker) -----------
+# Each worker holds the group list + shared refit config in a module global, set
+# ONCE by the pool initializer, so only an integer index crosses the boundary per
+# task (not every group frame, per task).
+_REFIT_WORKER_STATE: dict[str, object] = {}
+
+
+def _init_refit_worker(
+    groups, model_fn, kinetic_kwargs, method, min_points,
+    n_boot, boot_ci_pct, random_state,
+) -> None:
+    _REFIT_WORKER_STATE.update(
+        groups=groups, model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
+        method=method, min_points=min_points, n_boot=n_boot,
+        boot_ci_pct=boot_ci_pct, random_state=random_state,
+    )
+
+
+def _refit_one_group_worker(index: int):
+    s = _REFIT_WORKER_STATE
+    return _refit_one_group(
+        s["groups"][index], model_fn=s["model_fn"],
+        kinetic_kwargs=s["kinetic_kwargs"], method=s["method"],
+        min_points=s["min_points"], n_boot=s["n_boot"],
+        boot_ci_pct=s["boot_ci_pct"], random_state=s["random_state"],
+    )
 
 
 def _weighted_theta(

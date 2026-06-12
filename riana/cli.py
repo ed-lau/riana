@@ -596,7 +596,14 @@ def rollup(
         "a low-R² peptide to still be kept (only with --min-r2)."),
     thread: int = typer.Option(
         1, "-t", "--thread",
-        help="Worker threads for the per-protein refit [default: 1]."),
+        help="Worker threads for the per-protein refit [default: 1]. Note: the "
+        "refit is GIL-bound (curve_fit + bootstrap), so threads give little "
+        "speedup — prefer -W/--workers."),
+    workers: int = typer.Option(
+        1, "-W", "--workers", metavar="N",
+        help="Worker *processes* for the per-protein refit [default: 1]. The real "
+        "lever for the GIL-bound rollup: dispatches proteins over a process pool. "
+        "Results are identical regardless of N (per-protein deterministic seed)."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -622,6 +629,9 @@ def rollup(
         raise typer.BadParameter(
             "provide either FIT_DIR (the fit output folder) or --manifest, "
             "not both / neither.")
+    if workers > (os.cpu_count() or 1):
+        raise typer.BadParameter(
+            f"--workers {workers} exceeds CPU count ({os.cpu_count()}).")
 
     ignored_out = None
     if manifest is not None:
@@ -663,7 +673,8 @@ def rollup(
             kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_r2=min_r2,
-            alt_k=float(alt_k), alt_se=float(alt_se), threads=int(thread),
+            alt_k=float(alt_k), alt_se=float(alt_se),
+            threads=int(thread), workers=int(workers),
         )
     except (DataError, NotImplementedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
