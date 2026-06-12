@@ -149,6 +149,44 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     np.testing.assert_allclose(np.sort(spep_arr), np.sort(expected), atol=1e-9)
 
 
+def test_fit_run_workers_deterministic():
+    """The process-pool fit (``workers>1``) must match the serial path exactly.
+
+    The per-peptide bootstrap is seeded from a content hash of the ``concat``
+    (not the worker), so ``-W`` changes throughput, never the numbers. Noise is
+    injected so residuals — hence the bootstrap CIs — are non-zero and the seed
+    is actually observable.
+    """
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    iso_cols = ["iso0", "iso1", "iso2", "iso3", "iso4", "iso5"]
+    rng = np.random.default_rng(7)
+    for df in dfs:
+        noisy = df[iso_cols].to_numpy() * (1 + rng.normal(0, 0.02, df[iso_cols].shape))
+        df[iso_cols] = noisy
+
+    serial = fit_run(
+        FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                  ria_max=0.06, workers=1),
+        dfs, coeffs, n_boot=50, random_state=42,
+    ).sort_index()
+    pooled = fit_run(
+        FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                  ria_max=0.06, workers=2),
+        dfs, coeffs, n_boot=50, random_state=42,
+    ).sort_index()
+
+    assert list(serial.index) == list(pooled.index)
+    for col in ("k_deg", "R_squared", "ci_lo", "ci_hi", "spep"):
+        np.testing.assert_allclose(
+            pd.to_numeric(serial[col], errors="coerce").to_numpy(),
+            pd.to_numeric(pooled[col], errors="coerce").to_numpy(),
+            rtol=1e-9, atol=1e-9, equal_nan=True,
+            err_msg=f"{col} differs between workers=1 and workers=2",
+        )
+
+
 def test_fit_run_filters_by_depth():
     """Peptides with fewer than `depth` timepoints are filtered out."""
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)

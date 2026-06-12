@@ -44,6 +44,13 @@ dev = [
     "pytest>=7",
     "pytest-cov>=4",
     "pytest-qt>=4",
+    "pyarrow>=14",
+]
+# DIA intake (M6b). Reading the DIA-NN report.parquet needs pyarrow; kept
+# optional so a DDA-only install stays lightweight (io.diann imports it lazily
+# and raises a clear install hint if missing).
+dia = [
+    "pyarrow>=14",
 ]
 # Qt GUI (M4 Phase 2). Kept optional so the core CLI stays lightweight:
 # PySide6 (LGPL) for widgets, qasync to bridge asyncio with the Qt event loop,

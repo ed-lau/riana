@@ -38,6 +38,7 @@ gate through Week 4; Phase F5 wires ``--engine new`` to dispatch here.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.resources
 import logging
 import re
@@ -70,6 +71,19 @@ _K_DEG_BOUNDS = ([1e-4], [10.0])
 
 _DEFAULT_N_BOOT = 200
 _DEFAULT_BOOT_CI_PCT = (5.0, 95.0)
+
+
+def _concat_seed(base_seed: int, concat: str) -> int:
+    """A stable bootstrap seed for one peptide ``concat``.
+
+    Uses a content hash (``hashlib``, **not** the salted built-in ``hash``) so
+    the per-peptide bootstrap stream is identical across runs *and* across the
+    process-pool fit (:attr:`riana.config.FitConfig.workers`) — a given peptide
+    seeds the same regardless of which worker draws it or how many there are.
+    Mirrors :func:`riana.core.protein._group_rng`.
+    """
+    digest = hashlib.blake2b(concat.encode(), digest_size=8).digest()
+    return (base_seed ^ int.from_bytes(digest, "big")) & 0xFFFFFFFFFFFFFFFF
 
 #: Isotopomer channels the D2O envelope solver currently needs in the integrate
 #: output. :func:`algorithms.isotope_dist.solve_fs_d2o` matches the observed
@@ -260,11 +274,26 @@ def fit_run(
         base_seed=random_state,
     )
 
-    if config.threads <= 1:
-        results = [fit_partial(c) for c in concat_list]
-    else:
+    if config.workers > 1:
+        # Process-level parallelism — the real lever for the GIL-bound fit
+        # (IsoSpec FS + per-peptide residual bootstrap). The shared inputs (the
+        # frame, coefficients, ...) are pickled to each worker ONCE via the
+        # initializer; only the lightweight concat strings cross per task. The
+        # per-concat seed makes the result independent of worker count.
+        init_args = (rdf, model_fn, config, dict(aa_coefficients),
+                     time_column, n_boot, boot_ci_pct, random_state)
+        chunk = max(1, len(concat_list) // (config.workers * 8))
+        with futures.ProcessPoolExecutor(
+            max_workers=config.workers,
+            initializer=_init_fit_worker,
+            initargs=init_args,
+        ) as ex:
+            results = list(ex.map(_fit_one_concat_worker, concat_list, chunksize=chunk))
+    elif config.threads > 1:
         with futures.ThreadPoolExecutor(max_workers=config.threads) as ex:
             results = list(ex.map(fit_partial, concat_list))
+    else:
+        results = [fit_partial(c) for c in concat_list]
 
     _LOGGER.info(
         "fit_run: %d peptides processed, %d converged",
@@ -283,6 +312,34 @@ def fit_run(
 # ---------------------------------------------------------------------------
 # Per-peptide internals
 # ---------------------------------------------------------------------------
+
+
+# --- process-pool plumbing ---------------------------------------------------
+# Each worker holds the shared fit inputs in a module global, set ONCE by the
+# pool initializer, so only concat strings cross the boundary per task (not the
+# 100k-row frame, per task). Module-level (not closures) so they pickle for
+# ``ProcessPoolExecutor`` on spawn-start platforms (macOS).
+_FIT_WORKER_STATE: dict[str, object] = {}
+
+
+def _init_fit_worker(
+    rdf, model_fn, config, aa_coefficients,
+    time_column, n_boot, boot_ci_pct, base_seed,
+) -> None:
+    _FIT_WORKER_STATE.update(
+        rdf=rdf, model_fn=model_fn, config=config,
+        aa_coefficients=aa_coefficients, time_column=time_column,
+        n_boot=n_boot, boot_ci_pct=boot_ci_pct, base_seed=base_seed,
+    )
+
+
+def _fit_one_concat_worker(concat: str) -> "FitResult | None":
+    s = _FIT_WORKER_STATE
+    return _fit_one_concat(
+        concat, rdf=s["rdf"], model_fn=s["model_fn"], config=s["config"],
+        aa_coefficients=s["aa_coefficients"], time_column=s["time_column"],
+        n_boot=s["n_boot"], boot_ci_pct=s["boot_ci_pct"], base_seed=s["base_seed"],
+    )
 
 
 def _fit_one_concat(
@@ -424,7 +481,7 @@ def _fit_one_concat(
     # every timepoint in the design (vs. a pairs bootstrap that can drop one) is
     # more robust on a sparse 3-5 point turnover curve; on noise-free data the
     # residuals — hence the band — collapse to ~0.
-    rng = np.random.default_rng(base_seed ^ (hash(concat) & 0xFFFFFFFF))
+    rng = np.random.default_rng(_concat_seed(base_seed, concat))
     t_fit = t_arr[fit_mask]
     fs_fit = fs_arr[fit_mask]
     n_pts = len(t_fit)

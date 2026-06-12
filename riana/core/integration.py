@@ -130,6 +130,76 @@ def check_scan_rt_consistency(
     )
 
 
+def resolve_rt_anchored_scans(
+    psms: Sequence[PSMRecord],
+    mzml: IndexedMzML,
+    *,
+    bounds_tol_min: float = 1.0,
+    file_label: str | None = None,
+) -> list[PSMRecord]:
+    """Map RT-anchored (DIA) PSMs to the nearest MS1 scan in *mzml*.
+
+    The DIA intake (:mod:`riana.io.diann`) has no MS2 scan to anchor on, so it
+    emits ``scan = -1`` and carries DIA-NN's apex into ``retention_time``
+    (seconds). Here each such PSM's RT is resolved to the nearest MS1 scan in
+    *this* mzML, so the downstream scan-based extraction runs unchanged. PSMs
+    that already carry a real scan (the DDA path) are returned untouched — this
+    is a no-op there.
+
+    The resolved scan is at most one MS1 cycle off the true apex (the
+    ``searchsorted - 1`` precursor-cycle lookup), which the apex finder
+    (``apex_search_half_width`` ≫ a cycle) absorbs by re-centring on the MS1
+    apex. As a sanity check we count PSMs whose reported RT falls outside the
+    mzML's MS1 RT span (± ``bounds_tol_min``): a large fraction means the report
+    was paired with the wrong mzML, and we raise.
+
+    This replaces the scan↔RT scramble guard for DIA, which is circular there
+    (the scan is *derived* from the RT, so it always reconciles).
+    """
+    label = file_label or _mzml_basename(mzml)
+    rt_idx = mzml.rt_idx
+    scan_idx = mzml.scan_idx
+    if len(rt_idx) == 0:
+        raise DataError(f"{label}: mzML has no MS1 scans to anchor DIA RTs to.")
+
+    out = list(psms)
+    todo = [i for i, p in enumerate(out) if p.scan < 0 and p.retention_time > 0]
+    if not todo:
+        return out
+
+    rt_min = np.array([out[i].retention_time / 60.0 for i in todo], dtype=np.float64)
+    # rt_idx is ascending (MS1 RTs increase) → nearest via searchsorted.
+    pos = np.clip(np.searchsorted(rt_idx, rt_min), 1, len(rt_idx) - 1)
+    take_left = (rt_min - rt_idx[pos - 1]) <= (rt_idx[pos] - rt_min)
+    nearest = np.where(take_left, pos - 1, pos)
+    resolved_scans = scan_idx[nearest]
+
+    rt_lo, rt_hi = float(rt_idx.min()), float(rt_idx.max())
+    oob = int(np.sum((rt_min < rt_lo - bounds_tol_min) | (rt_min > rt_hi + bounds_tol_min)))
+    frac_oob = oob / len(todo)
+    if frac_oob > 0.5:
+        raise DataError(
+            f"{label}: {frac_oob:.0%} of DIA PSM apex RTs fall outside this "
+            f"mzML's MS1 RT span [{rt_lo:.1f}, {rt_hi:.1f}] min (± "
+            f"{bounds_tol_min:.1f}). The DIA-NN report is most likely paired "
+            "with the wrong mzML — check the SDRF `comment[data file]` ↔ mzML "
+            "names."
+        )
+    if oob:
+        _LOGGER.warning(
+            "%s: %d/%d DIA PSM apex RTs outside the mzML MS1 span "
+            "[%.1f, %.1f] min — integrated at the nearest edge scan.",
+            label, oob, len(todo), rt_lo, rt_hi,
+        )
+
+    for k, i in enumerate(todo):
+        out[i] = replace(out[i], scan=int(resolved_scans[k]))
+    _LOGGER.info(
+        "%s: resolved %d DIA PSMs to MS1 scans by apex RT.", label, len(todo)
+    )
+    return out
+
+
 def integrate_run(
     config: IntegrationConfig,
     psms: Sequence[PSMRecord],
@@ -163,10 +233,21 @@ def integrate_run(
             file_label or _mzml_basename(mzml), config.mass_tol_ppm,
         )
 
+    # DIA (RT-anchored) intake: io.diann emits scan=-1 because DIA has no MS2
+    # scan, carrying DIA-NN's apex in retention_time. Resolve each to the
+    # nearest MS1 scan in THIS mzML (+ an RT-in-bounds check) so the scan-based
+    # extraction below runs unchanged; the apex finder then re-centres on the
+    # true MS1 apex. No-op on the DDA path (every PSM already has a real scan).
+    rt_anchored = any(p.scan < 0 for p in psms)
+    if rt_anchored:
+        psms = resolve_rt_anchored_scans(psms, mzml, file_label=file_label)
+
     # Intake scan↔RT guard (Track A): before integrating, verify the mzTab
     # spectra_ref scans actually index THIS mzML. Runs on the full PSM set
     # (best statistics) and no-ops on the Percolator path (no retention_time).
-    if config.check_scan_rt:
+    # Skipped for DIA: the scan was just *derived* from the RT, so the check is
+    # circular (resolve_rt_anchored_scans does the RT-in-bounds check instead).
+    if config.check_scan_rt and not rt_anchored:
         label = file_label or _mzml_basename(mzml)
         check = check_scan_rt_consistency(psms, mzml, config.scan_rt_tol_min)
         if check.n_checked > 0 and not check.ok:

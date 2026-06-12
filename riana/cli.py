@@ -87,15 +87,17 @@ def integrate(
     id_path: Path = typer.Argument(
         ..., exists=True, dir_okay=False, readable=True,
         help="The search-ID file: a Percolator target psms.txt (single-mzML "
-        "path), or — with --sdrf — the quantms mzTab covering every run.",
+        "path), or — with --sdrf — the quantms mzTab (DDA) / DIA-NN "
+        "report.parquet (DIA) covering every run.",
     ),
     sdrf: Optional[Path] = typer.Option(
         None, "--sdrf", exists=True, dir_okay=False, readable=True,
         help="SDRF samplesheet (the primary path). Drives identity-keyed "
-        "intake: id_path is read as an mzTab, one <mzml_stem>_riana.txt is "
-        "written per run with its full identity in the header, and a "
-        "riana_manifest.tsv is written/updated. Without --sdrf, id_path is a "
-        "Percolator file (the demoted single-mzML tier).",
+        "intake: id_path is read as an mzTab (DDA) or DIA-NN report.parquet "
+        "(when the SDRF declares DIA), one <mzml_stem>_riana.txt is written per "
+        "run with its full identity in the header, and a riana_manifest.tsv is "
+        "written/updated. Without --sdrf, id_path is a Percolator file (the "
+        "demoted single-mzML tier).",
     ),
     sample: str = typer.Option(
         "time0", "-s", "--sample",
@@ -396,7 +398,14 @@ def fit(
         "isotopomer channels to reduce co-eluting-contaminant sensitivity. "
         "Currently ignored — the full integrated envelope is used."),
     thread: int = typer.Option(
-        1, "-t", "--thread", help="Worker threads [default: 1]."),
+        1, "-t", "--thread", help="Worker threads [default: 1]. Note: the fit is "
+        "largely GIL-bound (IsoSpec FS + bootstrap), so threads give little "
+        "speedup — prefer -W/--workers."),
+    workers: int = typer.Option(
+        1, "-W", "--workers", metavar="N",
+        help="Worker *processes* for the per-peptide fit [default: 1]. The real "
+        "lever for a big fit: dispatches over a process pool to sidestep the GIL. "
+        "Results are identical regardless of N (per-peptide deterministic seed)."),
 ) -> None:
     """Fit kinetic models to a D2O-labeling integrate time series."""
     import dataclasses
@@ -416,6 +425,9 @@ def fit(
     if thread > (os.cpu_count() or 1):
         raise typer.BadParameter(
             f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
+    if workers > (os.cpu_count() or 1):
+        raise typer.BadParameter(
+            f"--workers {workers} exceeds CPU count ({os.cpu_count()}).")
 
     if (manifest is None) == (not riana_path):
         raise typer.BadParameter(
@@ -442,6 +454,7 @@ def fit(
             ria_max=float(ria),
             fs_formula=fs,
             threads=int(thread),
+            workers=int(workers),
             out_dir=str(out),
         )
     except ValueError as exc:

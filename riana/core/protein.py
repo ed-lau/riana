@@ -64,6 +64,7 @@ from scipy.optimize import curve_fit
 
 from riana.core import models
 from riana.exceptions import DataError
+from riana.records import GROUP_KEY_COLUMNS, PROTEIN_KEY_COLUMNS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,13 +86,17 @@ _PARSIMONY = ("unique", "isoform")
 #: fit one k to *all* peptide×timepoint θ points with no collapse — the
 #: pseudoreplication-naive stance (kept for comparison, not recommended).
 _METHODS = ("weighted", "pooled")
-_GROUP_KEYS = ["experiment", "condition", "protein"]
+#: The rollup grouping key — ``(experiment, condition, protein)``, defined once
+#: in :mod:`riana.records` (:data:`PROTEIN_KEY_COLUMNS`) and shared with the fit
+#: recombination so the stages can't drift. (Distinct from ``PROTEIN_COLUMNS``
+#: below, which is the *output* schema.)
+_GROUP_KEYS = list(PROTEIN_KEY_COLUMNS)
 
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
 #: the selected ``method``; ``peptide_median_k`` is the near-free median of the
 #: peptides' fitted k, carried for comparison regardless of method.
 PROTEIN_COLUMNS = [
-    "experiment", "condition", "protein", "method",
+    *PROTEIN_KEY_COLUMNS, "method",
     "n_peptides", "n_replicates", "n_timepoints", "n_points",
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
 ]
@@ -230,7 +235,7 @@ def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
             })
     return pd.DataFrame(
         rows,
-        columns=["experiment", "condition", "protein", "labeling_time", "fs"],
+        columns=[*PROTEIN_KEY_COLUMNS, "labeling_time", "fs"],
     )
 
 
@@ -330,9 +335,9 @@ def _apply_parsimony(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
 
 
 def _ensure_group_cols(df: pd.DataFrame) -> pd.DataFrame:
-    """Guarantee ``experiment`` / ``condition`` exist (legacy path has neither)."""
+    """Guarantee the group key columns exist (the legacy path has neither)."""
     df = df.copy()
-    for c in ("experiment", "condition"):
+    for c in GROUP_KEY_COLUMNS:
         df[c] = df[c].fillna("") if c in df.columns else ""
     return df
 

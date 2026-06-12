@@ -41,7 +41,12 @@ from riana.io.mzml import IndexedMzML, list_mzml_files, mzml_stem
 from riana.io.mztab import read_mztab
 from riana.io.sdrf import SdrfTable
 from riana.io.writers import hash_config, make_provenance, write_dataframe_tsv
-from riana.records import PSMRecord, RunIdentity
+from riana.records import (
+    CURVE_KEY_COLUMNS,
+    GROUP_KEY_COLUMNS,
+    PSMRecord,
+    RunIdentity,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,15 +80,24 @@ def plan_integration(
 ) -> list[RunTask]:
     """Resolve the SDRF + mzTab into per-run :class:`RunTask`s (no integration).
 
-    The cheap planning half of :func:`integrate_project`: parse the mzTab, group
-    PSMs by run, attach each run's SDRF identity, and resolve its mzML — failing
-    fast on a missing identity / mzML before any (long) integration starts. The
-    CLI (:func:`integrate_project`) and the GUI build the *same* tasks here, so
-    the identity/manifest logic can't drift between the surfaces.
+    The cheap planning half of :func:`integrate_project`: parse the ID file
+    (DDA mzTab or — when the SDRF declares ``acquisition == "DIA"`` — a DIA-NN
+    ``report.parquet``), group PSMs by run, attach each run's SDRF identity, and
+    resolve its mzML — failing fast on a missing identity / mzML before any
+    (long) integration starts. The CLI (:func:`integrate_project`) and the GUI
+    build the *same* tasks here, so the identity/manifest logic can't drift
+    between the surfaces.
     """
-    all_psms, file_index_map = read_mztab(
-        mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
-    )
+    if sdrf.acquisition == "DIA":
+        from riana.io.diann import read_diann
+
+        all_psms, file_index_map = read_diann(
+            mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
+        )
+    else:
+        all_psms, file_index_map = read_mztab(
+            mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
+        )
     if not all_psms:
         raise DataError(f"no PSMs parsed from {mztab_path}")
 
@@ -338,7 +352,7 @@ def recombine_for_fit(
             biological_replicate=int(ident.biological_replicate),
             fraction=int(ident.fraction),
         )
-        curves.setdefault((ident.experiment, ident.condition), []).append(df)
+        curves.setdefault(ident.group_key, []).append(df)
 
     return {key: _merge_fractions(frames) for key, frames in curves.items()}
 
@@ -368,7 +382,8 @@ def fit_project(
 
     results: list[pd.DataFrame] = []
     long_frames: list[pd.DataFrame] = []
-    for (experiment, condition), frame in sorted(curves.items()):
+    for group_key, frame in sorted(curves.items()):
+        experiment, condition = group_key
         log.info(
             "fitting curve experiment=%s condition=%s (%d rows)",
             experiment, condition or "-", len(frame),
@@ -391,12 +406,12 @@ def fit_project(
         long = result.attrs.get("fractions_long")
         if long is not None and not long.empty:
             long = long.copy()
-            long["experiment"] = experiment
-            long["condition"] = condition
+            for col, val in zip(GROUP_KEY_COLUMNS, group_key):
+                long[col] = val
             long_frames.append(long)
         result = result.copy()
-        result["experiment"] = experiment
-        result["condition"] = condition
+        for col, val in zip(GROUP_KEY_COLUMNS, group_key):
+            result[col] = val
         results.append(result)
 
     if not results:
@@ -405,6 +420,17 @@ def fit_project(
             "(check --q-value / --depth and that runs have ≥ depth timepoints)."
         )
     out = pd.concat(results)
+    # Each row is one fitted peptide curve, uniquely identified by
+    # CURVE_KEY_COLUMNS (experiment, condition, concat) — the per-curve key the
+    # rollup keys on. Guard against an accidental collision (e.g. two curves with
+    # the same concat that failed to be tagged with distinct conditions).
+    curve_id = out.reset_index()[list(CURVE_KEY_COLUMNS)]
+    if curve_id.duplicated().any():
+        n = int(curve_id.duplicated().sum())
+        raise DataError(
+            f"{n} duplicate {tuple(CURVE_KEY_COLUMNS)} rows in the fit output — "
+            "a curve-key collision (two conditions tagged the same?)."
+        )
     out.attrs["fractions_long"] = (
         pd.concat(long_frames, ignore_index=True)
         if long_frames

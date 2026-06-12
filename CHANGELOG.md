@@ -12,6 +12,125 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### M6b — DIA-NN parquet intake (Track A)
+
+#### Added
+
+- **`riana/io/diann.py` — DIA-NN `report.parquet` intake.** The DIA counterpart
+  of `io/mztab.py`: reads a quantms-diann DIA-NN report (≥ 2.2.0; validated on
+  **2.5.0** with the `diann` parquet output), disaggregates it by the `Run`
+  column, and attaches each run's `RunIdentity` from the **same `io/sdrf.py`**
+  (DIA is auto-detected from `comment[proteomics data acquisition method]`), so
+  every `PSMRecord` carries its full identity exactly like the DDA path. The
+  peptide mass is recomputed via `mass_calc.calculate_ion_mz` (Carbamidomethyl(C)
+  counted) so the m/z target derivation is identical across DDA/DIA;
+  `Precursor.Mz` is used only as a self-check (logged median |ppm|). `Protein.Ids`
+  (`;`-joined) is normalized to Riana's `,` convention. Decoys are dropped
+  (the report is already FDR-filtered, so this is defensive).
+- **RT-anchored extraction (`core/integration.resolve_rt_anchored_scans`).** DIA
+  has no precursor-specific MS2 scan to anchor on, so `io/diann` emits `scan = -1`
+  and carries DIA-NN's inferred apex `RT` in `PSMRecord.retention_time`. At
+  integrate time each PSM's apex RT is resolved to the nearest MS1 scan in *this*
+  mzML, and the **existing scan-based extraction runs unchanged** — DIA-NN is
+  "just another ID + RT source"; Riana still pulls the MS1 isotopologues from the
+  mzML, and the apex finder re-centres on the true MS1 apex (the ≤1-cycle anchor
+  offset is well inside `apex_search_half_width`). The integrator detects the DIA
+  case from `scan < 0` (a no-op on the DDA path).
+- **`dia` install extra** (`pyarrow`), lazily imported in `io/diann` so a
+  DDA-only install stays lightweight (with a clear `pip install riana[dia]` hint
+  if the parquet path is used without it).
+
+#### Changed
+
+- **`plan_integration` dispatches the ID reader on `SdrfTable.acquisition`** —
+  DIA → `read_diann` (parquet), else `read_mztab` (mzTab). Both CLI and GUI build
+  the same per-run `RunTask`s, so the DIA path comes for free on both surfaces.
+- **The intake scan↔RT scramble guard is skipped for DIA** (it is circular there:
+  the scan is *derived* from the reported RT, so it always reconciles).
+  `resolve_rt_anchored_scans` does an **RT-in-bounds** check instead — raising
+  when most of a report's apex RTs fall outside the paired mzML's MS1 RT span,
+  the DIA analog of a wrong mzML↔report pairing.
+
+#### Caveat (M7)
+
+- DIA peptidoforms carrying a **variable modification** (e.g. Oxidation(M),
+  `UniMod:35`) are **dropped by default** (`drop_variable_mods`) — like the DDA
+  mzTab path, the envelope is keyed on the *stripped* sequence, so a variable-mod
+  form would integrate at the unmodified m/z until M7 threads mods into the
+  envelope. On the validated cardiac DIA set this is ~1.8% of rows and costs only
+  the few precursors seen *exclusively* as a modified form.
+
+#### Validation
+
+- Cardiac in-vivo D₂O DIA set (mouse left ventricle, 9 runs = 3 timepoints
+  {3, 7, 14 days} × 3 biological replicates; DIA-NN 2.5.0, 10 ppm from the SDRF).
+  Ran the full `integrate → fit → rollup` chain end-to-end.
+  - **Intake/extraction is clean:** 196,310 PSMs across the 9 runs (~20–24k
+    precursors/run after the ~1.8% variable-mod drop); **98.5% of rows extract a
+    non-zero m0** (<0.1% all-zero) and the median |m0 ppm error| is **0.8–2.1 ppm
+    per run** — i.e. the RT→MS1 anchor lands the right precursor on-target. (The
+    ~1.5% MS1 miss is expected: DIA-NN IDs off MS2, so some precursors have
+    weak/absent MS1.)
+  - **Fit R² is lower than DDA, as anticipated for MS1-on-DIA:** 24,827 peptides
+    converged; R²med **≈0.42**, ≥0.8 **≈22%** (vs the DDA LVE turnover baseline
+    R²med ~0.87 / ≥0.8 ~61% at the same 10 ppm) — DIA's wide-window MS1 imports
+    co-eluting interference into the m1–m5 channels, and the curve is only 3
+    timepoints at RIA 4.6%. **The central estimate is sound:** k_deg median
+    **0.080/day** (IQR 0.036–0.176; 94% in a plausible range), biologically
+    reasonable for cardiac turnover. There is no DDA counterpart of these exact
+    samples, so this is a "roughly against other datasets" sanity check, not a
+    paired benchmark.
+  - **The pooled R² is dominated by replicate spread, not extraction** (internal
+    A/B): the 3 bioreps are *independent animals* (terminal sampling) pooled into
+    one 9-point curve, so it absorbs inter-animal variance. Re-fitting each
+    replicate alone (a clean 3-point curve) ~doubles the headline: R²med
+    0.42→**0.68–0.72**, ≥0.8 21.5%→**38–42%**, while k_deg median is unchanged
+    (0.068–0.075/day). So the central estimate is stable and the pooled-curve
+    scatter is a study-design property (also the source of within-protein curve
+    spread), not a DIA intake defect.
+
+### Run-identity keys — formalize the fit/rollup grouping (Track A follow-up)
+
+#### Changed
+
+- **`RunIdentity.curve_key` → `RunIdentity.group_key`**, fixed to
+  `(experiment, condition)` — the *actual* run-grouping `recombine_for_fit` uses.
+  The old `curve_key = (experiment, sample, biological_replicate)` was **unused
+  and wrong**: `sample` is per-run (it would have split every run into its own
+  curve) and biological replicates are *pooled* as independent points, not
+  separated.
+- **The fit/rollup grouping keys are defined once** in `riana.records` —
+  `GROUP_KEY_COLUMNS = (experiment, condition)`, `CURVE_KEY_COLUMNS = (…, concat)`
+  (one fitted peptide curve — "per concat per condition"), `PROTEIN_KEY_COLUMNS =
+  (…, protein)`. `recombine_for_fit` / `fit_project` (group), `core.protein`
+  (`_GROUP_KEYS`, output schema), and `fit_project`'s curve-uniqueness guard all
+  reference these instead of re-listing column names, so the stages can't drift.
+  The typed `RunIdentity` is still unpacked into columns at fit recombination by
+  design — a curve/protein spans many runs, so it is not one identity object.
+
+### Fit — process-level parallelism (`riana fit -W/--workers`)
+
+#### Added
+
+- **`riana fit -W/--workers N` — process-pool fit.** The per-peptide fit
+  (IsoSpec forward-model FS + residual-bootstrap CIs) is **GIL-bound**, so the
+  existing `-t/--thread` path barely scales (measured ~1.25 effective cores at
+  `-t 8` on the cardiac DIA set, 28,916 peptides). `-W` dispatches `fit_run`'s
+  per-concat map over a `ProcessPoolExecutor` (shared frame/coefficients pickled
+  once via a pool initializer; only `concat` strings cross per task), reaching
+  ~8× on 8 workers. `FitConfig.workers`; threaded/serial stays the default.
+- The GUI Model tab is unaffected (it builds `FitConfig` with the default
+  `workers=1`).
+
+#### Changed / Fixed
+
+- **Bootstrap seeding is now content-stable** — the per-peptide RNG seeds from
+  `hashlib.blake2b(concat)` (`core.fitting._concat_seed`) instead of the
+  process-salted built-in `hash()`. This makes the bootstrap CIs **identical
+  regardless of `-W` (and reproducible run-to-run)**, mirroring the rollup's
+  `_group_rng`; a test pins `workers=1 ≡ workers=2`. (The old `hash()` seed was
+  silently non-reproducible across processes/runs.)
+
 ### Output hygiene (fit / rollup)
 
 #### Changed

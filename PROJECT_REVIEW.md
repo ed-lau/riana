@@ -38,7 +38,16 @@
 > adapted from `02_R_parsimony_reference.Rmd` with Riana-`,` / NA-fallback / `-N`+`-J`-suffix
 > fixes + an optional `--min-r2` gate); the GUI grew a 3rd **Protein** tab over
 > the same `rollup_proteins` core, with a per-protein refit curve on row select.
-> **M6b is parked** pending DIA mzMLs + a DIA-NN version/parquet fix (see memory).
+> **M6b (DIA-NN parquet intake) is SHIPPED** (2026-06-11): `io/diann.py` reads the
+> DIA-NN `report.parquet` (validated on 2.5.0), `plan_integration` dispatches the
+> reader on `SdrfTable.acquisition`, and DIA's apex RT is resolved to the nearest
+> MS1 scan (`resolve_rt_anchored_scans`) so the scan-based extraction runs
+> unchanged. Validated end-to-end on a cardiac in-vivo DIA set (98.5% m0
+> coverage, ~1–2 ppm mass accuracy; fit R²med ~0.42 — lower than DDA's ~0.87, as
+> expected for MS1-on-DIA, but k_deg median 0.08/day is biologically sound).
+> Also shipped alongside: **`riana fit -W/--workers`** (process-pool fit — the
+> GIL-bound IsoSpec/bootstrap fit went ~1.25→~7.8 effective cores; deterministic
+> per-concat seed).
 > **Track E GUI rewiring shipped** (2026-06-10): `integrate_project` split into
 > plan/dispatch/finalize so the GUI Integrate tab drives the same per-run unit
 > over its own pool (Workers spinbox, no nested pools) + an SDRF path; GUI Model
@@ -56,9 +65,9 @@
 > atrium-vs-ventricle `data/timeseries_lve_atr` set — one SDRF, two `factor value`
 > conditions — is the fixture, pending a PTM-search re-run); **M7 PTM-aware
 > envelope** (now load-bearing — the new search's phospho-S/Y + protein-N-term-Ac
-> peptidoforms integrate at the *unmodified* m/z until M7); **M6b** DIA-NN when its
-> data lands; Track B fidelity (gateable by Track D). Maintainer: Edward Lau.
-> Last reviewed: 2026-06-11.
+> peptidoforms integrate at the *unmodified* m/z until M7); Track B fidelity
+> (gateable by Track D). (**M6b DIA-NN intake shipped 2026-06-11** — see above.)
+> Maintainer: Edward Lau. Last reviewed: 2026-06-11.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -830,13 +839,27 @@ vs DIA-NN parquet).
   θ 0.16→0.10, out-of-range θ 27%→8%; all current mzMLs are MS1 centroid. The
   search tolerance IS the right integration window for centroid data. A
   profile-mode mzML triggers an intake warning.)*
-- **M6b — DIA-NN parquet intake** (fast-follow). `io/diann.py` over the DIA-NN
-  `report.parquet` (DIA-NN ≥ 2.2.0, as emitted by quantms-diann); the quantms-diann
-  run also ships its own SDRF (the DIA variant above), so disaggregation reuses
-  the same `io/sdrf.py` — only the parquet reader is new. An RT-apex prior instead
-  of an MS2 scan; DDA/DIA auto-detected from the SDRF. Riana still extracts MS1
-  isotopologues from the mzML itself — DIA-NN is "just another ID + RT source."
-  Test data lands under `data/timeseries_dia` (Track D TODO).
+- **M6b — DIA-NN parquet intake. SHIPPED (2026-06-11, branch `m3-rewrite`).**
+  `io/diann.py` reads the DIA-NN `report.parquet` (validated on **2.5.0** with the
+  `diann` parquet output, ≥ 2.2.0 as emitted by quantms-diann); `plan_integration`
+  dispatches the reader on `SdrfTable.acquisition` (DIA → parquet, else mzTab), so
+  the same `io/sdrf.py` spine and both CLI + GUI surfaces get DIA for free — only
+  the parquet reader is new. DIA has **no MS2 anchor**, so the reader emits
+  `scan = -1` + carries DIA-NN's apex `RT`, and `core/integration.resolve_rt_anchored_scans`
+  maps it to the nearest MS1 scan in the mzML at integrate time (+ an RT-in-bounds
+  wrong-mzML check); the scan↔RT scramble guard is skipped for DIA (circular
+  there). Riana still extracts the MS1 isotopologues itself — DIA-NN is "just
+  another ID + RT source." **Variable-mod peptidoforms are dropped** (the M7
+  caveat — they'd integrate at the unmodified m/z; ~1.8% on the cardiac set).
+  Needs `pyarrow` (the `[dia]` extra, lazily imported). Validated end-to-end
+  (`integrate → fit → rollup`) on the cardiac in-vivo DIA set under
+  `data/timeseries_dia` → `runs/lve_dia`: **98.5% m0 coverage, ~1–2 ppm mass
+  accuracy** (extraction is on-target), fit **R²med ~0.42 / ≥0.8 ~22%** (lower
+  than the DDA LVE ~0.87 / ~61% — DIA's wide-window MS1 imports co-eluting
+  interference into m1–m5, and the curve is 3 timepoints at RIA 4.6%), but
+  **k_deg median 0.08/day** is biologically sound. *Open follow-ups:* a stronger
+  DIA-specific QC than RT-in-bounds; if DIA turnover matters, an MS1-interference-
+  robust envelope matcher (overlaps the Track B adaptive-N_ISO matcher).
 - **Integrate concurrency + GUI rewiring (Track E, SHIPPED 2026-06-10).**
   `integrate_project` was split into `plan_integration` (SDRF+mzTab → per-run
   `RunTask`s) / `_integrate_results` (yields each frame as it finishes) /

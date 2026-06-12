@@ -89,11 +89,36 @@ class RunIdentity:
         )
 
     @property
-    def curve_key(self) -> tuple[str, str, int]:
-        """The grouping key for one kinetic curve: ``(experiment, sample,
-        biological_replicate)``. Fractions and timepoints of the same curve
-        share this key; different bioreps are genuine replicates (kept apart)."""
-        return (self.experiment, self.sample, self.biological_replicate)
+    def group_key(self) -> tuple[str, str]:
+        """The run-grouping key — ``(experiment, condition)``.
+
+        All runs of one condition (every biological replicate **and** timepoint)
+        pool into one kinetic-curve *set*;
+        :func:`riana.core.pipeline.recombine_for_fit` groups on this, and it is
+        the shared prefix of the per-curve (:data:`CURVE_KEY_COLUMNS`) and
+        per-protein (:data:`PROTEIN_KEY_COLUMNS`) keys.
+
+        Replaces the earlier ``curve_key`` = ``(experiment, sample,
+        biological_replicate)``, which was both unused and wrong: ``sample`` is
+        per-run (so it would split every run into its own curve), and biological
+        replicates are *pooled* as independent points, not separated.
+        """
+        return (self.experiment, self.condition)
+
+
+# The fit/rollup stages group on identity-derived **DataFrame columns** (the
+# typed RunIdentity is unpacked into columns at fit recombination — pushing the
+# object further is dishonest, since a curve/protein spans many runs). These name
+# the grouping keys **once** so the stages reference one definition instead of
+# re-listing column names. ``GROUP_KEY_COLUMNS`` mirrors
+# :attr:`RunIdentity.group_key`.
+#: One fitted curve *set* — every replicate/timepoint of a condition.
+GROUP_KEY_COLUMNS: tuple[str, ...] = ("experiment", "condition")
+#: One fitted peptide kinetic curve (a ``riana_fit_peptides.txt`` row identity):
+#: a peptide-charge within a condition — "per concat per experiment/condition".
+CURVE_KEY_COLUMNS: tuple[str, ...] = (*GROUP_KEY_COLUMNS, "concat")
+#: One rolled-up protein (the ``core.protein`` grouping key).
+PROTEIN_KEY_COLUMNS: tuple[str, ...] = (*GROUP_KEY_COLUMNS, "protein")
 
 
 @dataclass(frozen=True, slots=True)
