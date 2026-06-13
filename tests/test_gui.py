@@ -355,6 +355,26 @@ def test_protein_tab_linear_plots_phi_space(main_window):
     assert "Δk" in tab.curve.plot.getPlotItem().titleLabel.text
 
 
+def test_curve_view_draws_ci_ribbon(main_window):
+    """plot_fit / plot_linear shade a CI ribbon (FillBetweenItem) when the k CI
+    bounds are given, without adding extra data series (PlotDataItem)."""
+    from pyqtgraph import FillBetweenItem, PlotDataItem
+
+    cv = main_window.protein_tab.curve
+    cv.plot_fit("PEP", [0, 1, 2, 4, 8], [0, 0.3, 0.5, 0.7, 0.85], 0.2,
+                "simple", {}, ci_lo=0.15, ci_hi=0.25)
+    items = cv.plot.getPlotItem().items
+    assert sum(isinstance(i, FillBetweenItem) for i in items) == 1
+    assert sum(isinstance(i, PlotDataItem) for i in items) == 2  # points + fit line
+
+    cv.plot_linear("P1", {
+        "control": ([0, 1, 2, 4, 8], [0, .05, .1, .18, .3], 0.05, 0.04, 0.06),
+        "atrium": ([0, 1, 2, 4, 8], [0, .1, .19, .33, .55], 0.10, 0.09, 0.11),
+    }, phi_limit=-4.0, delta_k=0.05)
+    items = cv.plot.getPlotItem().items
+    assert sum(isinstance(i, FillBetweenItem) for i in items) == 2  # one per condition
+
+
 def test_build_config_defaults_round_trip(main_window):
     cfg = main_window.integrate_tab.build_config()
     assert isinstance(cfg, IntegrationConfig)

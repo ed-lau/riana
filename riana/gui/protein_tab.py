@@ -428,6 +428,8 @@ class ProteinTab(QWidget):
         self.curve.plot_fit(
             str(row["protein"]), list(t_list), list(fs_list),
             float(k), p.get("model", "simple"), kinetic,
+            ci_lo=_safe_float(row.get("ci_lo")),
+            ci_hi=_safe_float(row.get("ci_hi")),
         )
 
     def _plot_linear_row(self, row, p: dict) -> None:
@@ -445,7 +447,8 @@ class ProteinTab(QWidget):
                 continue
             t_list, theta_list = pts
             per_condition[str(r["condition"])] = (
-                list(t_list), list(theta_list), r.get("k_deg"))
+                list(t_list), list(theta_list), r.get("k_deg"),
+                _safe_float(r.get("ci_lo")), _safe_float(r.get("ci_hi")))
         if not per_condition:
             self.curve.show_placeholder(f"{prot}: no points to show.")
             return
@@ -476,3 +479,14 @@ def _row(layout) -> QWidget:
     layout.setContentsMargins(0, 0, 0, 0)
     w.setLayout(layout)
     return w
+
+
+def _safe_float(value) -> float | None:
+    """Coerce a (possibly missing / NaN) cell to float, else None."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f  # drop NaN

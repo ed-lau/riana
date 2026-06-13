@@ -37,6 +37,15 @@ _LOGGER = logging.getLogger(__name__)
 
 #: Output columns of :func:`fit_linear_deltak`, one row per
 #: ``(experiment, protein, condition)``.
+#:
+#: **CI provenance — analytic, NOT bootstrap.** ``ci_lo`` / ``ci_hi`` (per-condition
+#: k) and ``delta_k_se`` / ``delta_k_p`` (the Δk contrast) come from the OLS
+#: coefficient covariance via statsmodels (``conf_int`` / ``t_test``), i.e. a
+#: closed-form t-distribution interval. This is deliberately different from the
+#: nonlinear models (``simple`` / ``guan`` / ``fornasiero``), whose CIs are a
+#: residual bootstrap in :func:`riana.core.protein._fit_kdeg`. The linearized
+#: model has a closed-form covariance, so bootstrapping it would add nothing —
+#: ``n_boot`` / ``random_state`` are ignored on this path.
 LINEAR_COLUMNS = [
     "experiment", "condition", "protein",
     "n_points", "k_deg", "ci_lo", "ci_hi", "R_squared",

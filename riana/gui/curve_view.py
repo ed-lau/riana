@@ -59,8 +59,14 @@ class CurveView(QWidget):
         k_deg: float,
         model_name: str,
         kinetic_kwargs: dict,
+        ci_lo: float | None = None,
+        ci_hi: float | None = None,
     ) -> None:
-        """Scatter the (t, fs) data and overlay the fitted model curve."""
+        """Scatter the (t, fs) data and overlay the fitted model curve.
+
+        When ``ci_lo`` / ``ci_hi`` (the k_deg CI) are given, a shaded ribbon
+        between the model curves at those k bounds shows the fit uncertainty.
+        """
         self.plot.clear()
         if not t:
             self.show_placeholder(f"{concat}: no fitted data points.")
@@ -76,14 +82,37 @@ class CurveView(QWidget):
         if k_deg is not None and math.isfinite(k_deg):
             model_fn = _MODEL_FNS.get(model_name, models.one_exponent)
             grid = np.linspace(0.0, max(t), 200)
-            curve = model_fn(grid, k_deg=k_deg, a_0=0.0, a_max=1.0, **kinetic_kwargs)
+
+            def _curve(k):
+                return np.asarray(
+                    model_fn(grid, k_deg=k, a_0=0.0, a_max=1.0, **kinetic_kwargs),
+                    dtype=float)
+
+            # CI ribbon: higher k ⇒ higher θ, so ci_hi is the upper edge.
+            if (ci_lo is not None and ci_hi is not None
+                    and math.isfinite(ci_lo) and math.isfinite(ci_hi)):
+                self._ci_band(grid, _curve(ci_lo), _curve(ci_hi), (214, 39, 40))
             self.plot.plot(
-                grid, np.asarray(curve, dtype=float),
+                grid, _curve(k_deg),
                 pen=pg.mkPen("#d62728", width=2), name=f"fit (k_deg={k_deg:.3g})",
             )
         self.plot.setYRange(0.0, 1.0)
         self.plot.setLabel("left", "Fraction new")
         self.plot.setTitle(concat)
+
+    def _ci_band(self, x, lower, upper, rgb: tuple) -> None:
+        """Shade a confidence ribbon between *lower* and *upper* over *x*.
+
+        Uses ``PlotCurveItem`` boundaries (faint edges) + a translucent
+        ``FillBetweenItem`` — deliberately not ``PlotDataItem``, so the band does
+        not count as a data series.
+        """
+        edge = pg.mkPen(rgb + (110,), width=1)
+        lo = pg.PlotCurveItem(np.asarray(x), np.asarray(lower, dtype=float), pen=edge)
+        hi = pg.PlotCurveItem(np.asarray(x), np.asarray(upper, dtype=float), pen=edge)
+        self.plot.addItem(lo)
+        self.plot.addItem(hi)
+        self.plot.addItem(pg.FillBetweenItem(lo, hi, brush=pg.mkBrush(rgb + (55,))))
 
     def plot_linear(
         self,
@@ -96,11 +125,13 @@ class CurveView(QWidget):
     ) -> None:
         """φ-space view for the ``linear simple`` model — overlay each condition.
 
-        ``per_condition`` maps ``condition → (t_list, theta_list, k_deg)``. For
-        each condition we plot the clearance φ = log(1 − θ) points (saturated
-        points past ``phi_limit`` drawn hollow, as they are dropped from the fit)
-        and the fitted through-origin line φ = −k·t. The slope difference between
-        the lines *is* the cross-sample Δk, which the title reports.
+        ``per_condition`` maps ``condition → (t_list, theta_list, k_deg[, ci_lo,
+        ci_hi])``. For each condition we plot the clearance φ = log(1 − θ) points
+        (saturated points past ``phi_limit`` drawn hollow, as they are dropped
+        from the fit) and the fitted through-origin line φ = −k·t — with a shaded
+        ribbon between the lines at the k CI bounds when ``ci_lo`` / ``ci_hi`` are
+        given. The slope difference between the lines *is* the cross-sample Δk,
+        which the title reports.
         """
         from riana.core.linear_model import to_phi
 
@@ -111,10 +142,13 @@ class CurveView(QWidget):
 
         t_max = 1.0
         for i, cond in enumerate(sorted(per_condition)):
-            t_list, theta_list, k = per_condition[cond]
+            vals = per_condition[cond]
+            t_list, theta_list, k = vals[0], vals[1], vals[2]
+            ci_lo, ci_hi = (vals[3], vals[4]) if len(vals) >= 5 else (None, None)
             if not t_list:
                 continue
             colour = _CONDITION_COLOURS[i % len(_CONDITION_COLOURS)]
+            rgb = pg.mkColor(colour).getRgb()[:3]
             t = np.asarray(t_list, dtype=float)
             phi = to_phi(np.asarray(theta_list, dtype=float))
             t_max = max(t_max, float(t.max()))
@@ -129,6 +163,12 @@ class CurveView(QWidget):
                     symbolSize=8, symbolBrush=None, symbolPen=colour)
             if k is not None and math.isfinite(k):
                 grid = np.linspace(0.0, t_max, 100)
+                # CI ribbon: φ = −k·t, so higher k ⇒ lower (more negative) φ;
+                # ci_hi is the lower edge, ci_lo the upper.
+                if (ci_lo is not None and ci_hi is not None
+                        and math.isfinite(ci_lo) and math.isfinite(ci_hi)):
+                    self._ci_band(grid, -float(ci_hi) * grid,
+                                  -float(ci_lo) * grid, rgb)
                 self.plot.plot(
                     grid, (-float(k) * grid).tolist(),
                     pen=pg.mkPen(colour, width=2),

@@ -1082,7 +1082,11 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     (reuses the weighted/pooled collapse via the extracted `_collapse_group` /
     `_collapse_long`); CLI `--model "linear simple"` + `--phi-limit` (default −4) +
     `--reference-condition`; output schema `PROTEIN_LINEAR_COLUMNS` (per-condition
-    k + `delta_k`/`delta_k_se`/`delta_k_p`/`delta_k_p_adj`). **Validated on
+    k + `delta_k`/`delta_k_se`/`delta_k_p`/`delta_k_p_adj`). **CI provenance:**
+    analytic (statsmodels `conf_int` / `t_test` on the OLS coefficient
+    covariance), **not** the residual bootstrap the nonlinear models use — the
+    linearized model has a closed-form covariance, so `n_boot`/`random_state` are
+    ignored on this path. **Validated on
     `runs/lve_atr`:** 780 proteins in both chambers, atrium 1.24× faster, 71%
     faster in atrium, **410 significant at BH p_adj<0.05** (347 of them
     atrium-faster) — consistent with the descriptive paired Δk. Tests:
@@ -1324,6 +1328,13 @@ not the raw XIC, so the two are decoupled.
 - **Repo hygiene** (also §4.5): remove the stray root outputs
   (`riana_fit_peptides.txt` etc.), `riana_website/` (mode 0700), the committed
   `docs/` Quarto HTML, and move 1 GB+ of personal outputs out of `data/`.
+- **User-facing docs refresh — post-M3, still stale (large TODO).** The narrative
+  docs were not redone after the M3/M4 rewrite, so they lag the current CLI/GUI,
+  the SDRF/manifest model, the rollup, and now `linear simple`. Until that
+  happens, the **docstrings are the source of truth** and should carry the
+  non-obvious contracts explicitly — e.g. `linear simple` CIs are analytic, not
+  bootstrap (now noted in `core/linear_model.py`). Track a full docs pass as its
+  own chunk of work, not a side-effect of feature PRs.
 - **Snakemake — retire the bundled `workflow/Snakefile`** (supersedes §4.4). With
   Percolator demoted and quantms / DIA-NN handling search + ID end-to-end
   upstream, Riana's own pipeline collapses to a linear `integrate → fit →

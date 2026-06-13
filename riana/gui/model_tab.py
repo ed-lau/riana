@@ -469,6 +469,8 @@ class ModelTab(QWidget):
         self.curve.plot_fit(
             str(concat), list(row["t"]), list(row["fs"]),
             float(row["k_deg"]), cfg.model, kinetic,
+            ci_lo=_safe_float(row.get("ci_lo")),
+            ci_hi=_safe_float(row.get("ci_hi")),
         )
 
     # --- small helpers ------------------------------------------------------ #
@@ -492,3 +494,14 @@ def _row(layout) -> QWidget:
     layout.setContentsMargins(0, 0, 0, 0)
     w.setLayout(layout)
     return w
+
+
+def _safe_float(value) -> float | None:
+    """Coerce a (possibly missing / NaN) cell to float, else None."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f  # drop NaN
