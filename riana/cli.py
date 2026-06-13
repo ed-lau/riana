@@ -552,7 +552,19 @@ def rollup(
     model: str = typer.Option(
         "simple", "-m", "--model",
         help="Kinetic model for the protein refit — match how the peptides were "
-        "fit (simple, guan, fornasiero)."),
+        "fit (simple, guan, fornasiero). Or 'linear simple': the linearized "
+        "φ=log(1−θ) cross-sample model — fits a protein's conditions jointly for a "
+        "per-condition k and a Δk test (writes delta_k / delta_k_p / "
+        "delta_k_p_adj). Mutually exclusive with the ODE models."),
+    phi_limit: float = typer.Option(
+        -4.0, "--phi-limit", metavar="PHI",
+        help="['linear simple' only] Plateau-truncation threshold in φ-space: "
+        "points with φ=log(1−θ) at/below this are dropped per curve (saturated "
+        "tail = measurement noise, not slope). −4 ≈ θ 0.98, −3 ≈ θ 0.95."),
+    reference_condition: str = typer.Option(
+        None, "--reference-condition", metavar="COND",
+        help="['linear simple' only] Baseline condition for the Δk contrast — "
+        "delta_k = k(other) − k(reference). Default: alphabetically first."),
     method: str = typer.Option(
         "weighted", "--method",
         help="Protein estimator. 'weighted' (default): biorep-aware per-timepoint "
@@ -675,6 +687,7 @@ def rollup(
             min_points=int(min_points), min_r2=min_r2,
             alt_k=float(alt_k), alt_se=float(alt_se),
             threads=int(thread), workers=int(workers),
+            phi_limit=float(phi_limit), reference_condition=reference_condition,
         )
     except (DataError, NotImplementedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -683,7 +696,8 @@ def rollup(
     provenance = make_provenance(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
-         "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se, "method": method},
+         "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se, "method": method,
+         "phi_limit": phi_limit, "reference_condition": reference_condition},
         id_source=id_source,
         extra={"method": method, "parsimony": parsimony, "model": model},
     )

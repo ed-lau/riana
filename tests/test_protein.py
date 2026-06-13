@@ -270,6 +270,58 @@ def test_rollup_workers_give_identical_result():
     pd.testing.assert_frame_equal(a, b)
 
 
+def _make_two_condition_frames(k_by_prot_cond, *, n_pep=3,
+                               times=(0, 1, 2, 3, 4, 6, 8, 10)):
+    """(peptides, fractions) with a `condition` column and per-(protein,condition)
+    kinetics — the substrate for the linear-simple Δk path."""
+    pep_rows, frac_rows = [], []
+    for pi, (prot, by_cond) in enumerate(k_by_prot_cond.items()):
+        for cond, k in by_cond.items():
+            for j in range(n_pep):
+                concat = f"PEP{pi}_{cond}_{j}_2"
+                pep_rows.append({"concat": concat, "protein id": prot,
+                                 "k_deg": k, "condition": cond})
+                for t in times:
+                    theta = 1.0 - np.exp(-k * t)
+                    frac_rows.append({
+                        "concat": concat, "protein id": prot, "condition": cond,
+                        "biological_replicate": 1, "labeling_time": float(t),
+                        "fs": theta, "fs_lower": theta - 0.01,
+                        "fs_upper": theta + 0.01})
+    return pd.DataFrame(pep_rows), pd.DataFrame(frac_rows)
+
+
+def test_rollup_linear_simple_delta_k():
+    """The `linear simple` model: per-condition φ-slope k + a cross-condition Δk
+    test, in the PROTEIN_LINEAR_COLUMNS schema."""
+    from riana.core.protein import PROTEIN_LINEAR_COLUMNS
+    pep, frac = _make_two_condition_frames({
+        "sp|P0|X": {"control": 0.05, "atrium": 0.10},   # atrium faster
+        "sp|P1|Y": {"control": 0.08, "atrium": 0.08},   # no difference
+    })
+    res = rollup_proteins(pep, frac, model="linear simple",
+                          reference_condition="control", min_peptides=2)
+    assert list(res.columns) == PROTEIN_LINEAR_COLUMNS
+    assert (res["method"] == "linear simple").all()
+    k = res.set_index(["protein", "condition"])["k_deg"]
+    assert k[("P0", "control")] == pytest.approx(0.05, abs=0.01)
+    assert k[("P0", "atrium")] == pytest.approx(0.10, abs=0.01)
+    dk = res.dropna(subset=["delta_k"]).drop_duplicates("protein").set_index("protein")
+    # P0: atrium − control ≈ +0.05 and significant; P1: ≈ 0.
+    assert dk.loc["P0", "delta_k"] == pytest.approx(0.05, abs=0.01)
+    assert dk.loc["P0", "delta_k_p_adj"] < 0.05
+    assert abs(dk.loc["P1", "delta_k"]) < 0.01
+    # BH p_adj present for every protein that has a Δk.
+    assert dk["delta_k_p_adj"].notna().all()
+
+
+def test_rollup_linear_simple_is_a_valid_model():
+    """`linear simple` must not be rejected as an unknown model."""
+    pep, frac = _make_two_condition_frames(
+        {"sp|P0|X": {"control": 0.05, "atrium": 0.09}})
+    rollup_proteins(pep, frac, model="linear simple", min_peptides=2)  # no raise
+
+
 def test_unknown_model_parsimony_method_raise():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     with pytest.raises(DataError, match="model"):

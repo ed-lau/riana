@@ -1074,11 +1074,22 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     peptides of the same protein in the *same animal* are pseudoreplicates;
     *different* `characteristics[biological replicate]` are genuine replicates and
     stay as independent points, giving the refit honest degrees of freedom.
-  - **`linear simple` — a new rollup model (NEXT build; design fixed 2026-06-12,
-    user).** A *model choice* alongside `simple`/`guan`/`fornasiero` and **mutually
-    exclusive with them by nature**: those are nonlinear ODE fits via scipy
-    `curve_fit`; `linear simple` is OLS in φ-space. Selecting it switches the
-    rollup refit **and the plot** into φ = `log(1 − θ)` (linear) space.
+  - **`linear simple` — a new rollup model (SHIPPED 2026-06-12).** A *model choice*
+    alongside `simple`/`guan`/`fornasiero` and **mutually exclusive with them by
+    nature**: those are nonlinear ODE fits via scipy `curve_fit`; `linear simple`
+    is OLS in φ-space. **Implemented:** `core/linear_model.py` (`fit_linear_deltak`
+    + `to_phi` / `truncate_plateau`) driven from `core/protein._rollup_linear`
+    (reuses the weighted/pooled collapse via the extracted `_collapse_group` /
+    `_collapse_long`); CLI `--model "linear simple"` + `--phi-limit` (default −4) +
+    `--reference-condition`; output schema `PROTEIN_LINEAR_COLUMNS` (per-condition
+    k + `delta_k`/`delta_k_se`/`delta_k_p`/`delta_k_p_adj`). **Validated on
+    `runs/lve_atr`:** 780 proteins in both chambers, atrium 1.24× faster, 71%
+    faster in atrium, **410 significant at BH p_adj<0.05** (347 of them
+    atrium-faster) — consistent with the descriptive paired Δk. Tests:
+    `tests/test_linear_model.py` (6) + `test_rollup_linear_simple_delta_k`.
+    **Still to do:** φ-space plotting in the GUI (Track E); >2-condition pairwise
+    contrasts (today the Δk needs exactly two qualifying conditions). The design
+    below records the rationale.
     - *Transform.* φ = `log(1 − θ)`; clamp θ to ~[0.01, 0.99] and drop non-finite
       (the R reference does this). φ = 0 at t = 0, so the line is **through the
       origin**.

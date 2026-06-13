@@ -73,6 +73,11 @@ _MODELS = {
     "guan": models.two_compartment_guan,
     "fornasiero": models.two_compartment_fornasiero,
 }
+#: The linearized cross-sample model — not a ``curve_fit`` ODE like the others, but
+#: an OLS in φ = log(1−θ) space that fits a protein's conditions jointly to yield a
+#: Δk test (:mod:`riana.core.linear_model`). A ``model`` choice, mutually exclusive
+#: with ``_MODELS``.
+LINEAR_MODEL = "linear simple"
 _K_DEG_INIT = 0.5
 _K_DEG_BOUNDS = ([1e-4], [10.0])
 
@@ -101,6 +106,16 @@ PROTEIN_COLUMNS = [
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
 ]
 
+#: Output schema for ``model="linear simple"``: the per-condition protein rows
+#: (k_deg = −slope of φ=log(1−θ), its CI, joint R²) plus the protein-level
+#: cross-condition Δk test (``delta_k`` = k(other) − k(reference), its SE, the
+#: contrast p, and the Benjamini-Hochberg p across proteins).
+PROTEIN_LINEAR_COLUMNS = [
+    *PROTEIN_KEY_COLUMNS, "method", "n_peptides", "n_points",
+    "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
+    "delta_k", "delta_k_se", "delta_k_p", "delta_k_p_adj",
+]
+
 
 # --------------------------------------------------------------------------- #
 # public entry point
@@ -124,6 +139,8 @@ def rollup_proteins(
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
     random_state: int = 1337,
+    phi_limit: float = -4.0,
+    reference_condition: str | None = None,
 ) -> pd.DataFrame:
     """Roll per-peptide fits up to one ``k_deg`` per ``(experiment, condition,
     protein)`` via the median and the biorep-aware weighted refit.
@@ -163,7 +180,11 @@ def rollup_proteins(
             for the GIL-bound refit. Each protein gets an independent RNG stream
             seeded from ``random_state``, so the result is **identical**
             regardless of ``workers`` / ``threads`` (and of completion order).
-        n_boot / boot_ci_pct / random_state: bootstrap CI controls.
+        n_boot / boot_ci_pct / random_state: bootstrap CI controls (ignored by
+            ``model="linear simple"``, whose CIs are analytic).
+        phi_limit / reference_condition: only for ``model="linear simple"`` — the
+            plateau-truncation threshold in φ-space (default −4 ≈ θ 0.98) and the
+            Δk reference condition (default the alphabetically-first).
 
     Returns:
         One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
@@ -171,17 +192,19 @@ def rollup_proteins(
         (``NaN`` where it could not fit), ``n_peptides`` / ``n_points``, and the
         comparison ``peptide_median_k``. ``result.attrs["protein_points"]`` maps
         each protein to the ``(t_list, fs_list)`` its refit used (GUI curve).
+        ``model="linear simple"`` instead returns the :data:`PROTEIN_LINEAR_COLUMNS`
+        schema (per-condition φ-slope k + the protein-level Δk test).
     """
-    if model not in _MODELS:
+    if model not in _MODELS and model != LINEAR_MODEL:
         raise DataError(
-            f"unknown kinetic model {model!r}; expected one of {sorted(_MODELS)}")
+            f"unknown kinetic model {model!r}; expected one of "
+            f"{sorted(_MODELS) + [LINEAR_MODEL]}")
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")
     if method not in _METHODS:
         raise DataError(
             f"method must be one of {list(_METHODS)}, got {method!r}")
-    model_fn = _MODELS[model]
     kk = dict(a_0=0.0, a_max=1.0, **dict(kinetic_kwargs or {}))
 
     peptides = _ensure_group_cols(peptides)
@@ -200,6 +223,14 @@ def rollup_proteins(
         fractions = fractions[fractions["concat"].isin(admitted)].copy()
 
     stats = _peptide_stats(peptides, min_peptides=min_peptides)
+
+    if model == LINEAR_MODEL:
+        return _rollup_linear(
+            stats, fractions, method=method, min_peptides=min_peptides,
+            min_points=min_points, phi_limit=phi_limit,
+            reference_condition=reference_condition)
+
+    model_fn = _MODELS[model]
     refit, points = _refit_table(
         fractions, model_fn=model_fn, kinetic_kwargs=kk, method=method,
         min_peptides=min_peptides, min_points=min_points,
@@ -219,6 +250,49 @@ def rollup_proteins(
     )
     # The collapsed (t, θ) points behind each refit, for the GUI curve view.
     # Keyed by (experiment, condition, protein).
+    result.attrs["protein_points"] = points
+    return result
+
+
+def _rollup_linear(
+    stats: pd.DataFrame,
+    fractions: pd.DataFrame,
+    *,
+    method: str,
+    min_peptides: int,
+    min_points: int,
+    phi_limit: float,
+    reference_condition: str | None,
+) -> pd.DataFrame:
+    """The ``model="linear simple"`` path — φ-space OLS + cross-condition Δk.
+
+    Collapses peptides to the same ``(condition, t, θ)`` points the weighted/pooled
+    refit uses, then fits each protein's conditions **jointly** in φ = log(1−θ)
+    space (:func:`riana.core.linear_model.fit_linear_deltak`) for a per-condition
+    k and a Δk test. Returns the :data:`PROTEIN_LINEAR_COLUMNS` schema and attaches
+    the collapsed points for the GUI/fractions output (plotted in φ-space).
+    """
+    from riana.core.linear_model import fit_linear_deltak
+
+    long = _collapse_long(fractions, method=method, min_peptides=min_peptides)
+    lin = fit_linear_deltak(
+        long, phi_limit=phi_limit, min_points=min_points,
+        reference_condition=reference_condition)
+
+    out = pd.merge(stats, lin, on=_GROUP_KEYS, how="right")
+    out["method"] = LINEAR_MODEL
+    for col in PROTEIN_LINEAR_COLUMNS:
+        if col not in out.columns:
+            out[col] = np.nan
+    result = (
+        out[PROTEIN_LINEAR_COLUMNS]
+        .sort_values(_GROUP_KEYS)
+        .reset_index(drop=True)
+    )
+    points = {
+        keys: (g["labeling_time"].tolist(), g["theta"].tolist())
+        for keys, g in long.groupby(_GROUP_KEYS, sort=False)
+    }
     result.attrs["protein_points"] = points
     return result
 
@@ -498,6 +572,53 @@ def _refit_table(
     return table, points
 
 
+def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list]:
+    """Collapse one protein group's peptide θ into ``(t_list, fs_list)`` points.
+
+    ``method="pooled"`` keeps every peptide×timepoint θ (pseudoreplication);
+    ``method="weighted"`` collapses peptides within each (biorep, timepoint) by
+    inverse variance. Shared by the nonlinear refit (:func:`_refit_one_group`) and
+    the linear collapse (:func:`_collapse_long`) so both see identical points.
+    """
+    if method == "pooled":
+        fs = grp["fs"].to_numpy(dtype=float)
+        t = grp["labeling_time"].to_numpy(dtype=float)
+        keep = np.isfinite(fs) & np.isfinite(t)
+        return t[keep].tolist(), fs[keep].tolist()
+    t_list, fs_list = [], []
+    for (_br, t), cell in grp.groupby(
+        ["biological_replicate", "labeling_time"], sort=False
+    ):
+        theta = _weighted_theta(
+            cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
+            cell["fs_upper"].to_numpy(),
+        )
+        if np.isfinite(theta):
+            t_list.append(float(t))
+            fs_list.append(theta)
+    return t_list, fs_list
+
+
+def _collapse_long(
+    fractions: pd.DataFrame, *, method: str, min_peptides: int
+) -> pd.DataFrame:
+    """Long table of collapsed ``(experiment, condition, protein, labeling_time,
+    theta)`` points — the substrate the linear (φ-space) model fits, built with
+    the *same* collapse the weighted/pooled refit uses (:func:`_collapse_group`).
+    """
+    rows = []
+    for (exp, cond, prot), grp in fractions.groupby(_GROUP_KEYS, sort=False):
+        if grp["concat"].nunique() < min_peptides:
+            continue
+        t_list, fs_list = _collapse_group(grp, method)
+        for t, fs in zip(t_list, fs_list):
+            rows.append({"experiment": exp, "condition": cond, "protein": prot,
+                         "labeling_time": float(t), "theta": float(fs)})
+    return pd.DataFrame(
+        rows, columns=["experiment", "condition", "protein",
+                       "labeling_time", "theta"])
+
+
 def _refit_one_group(
     item,
     *,
@@ -518,24 +639,7 @@ def _refit_one_group(
     keys, grp = item
     n_rep = int(grp["biological_replicate"].nunique())
     n_tp = int(grp["labeling_time"].nunique())
-    if method == "pooled":
-        # All peptide×timepoint θ points, no collapse (pseudoreplication).
-        fs = grp["fs"].to_numpy(dtype=float)
-        t = grp["labeling_time"].to_numpy(dtype=float)
-        keep = np.isfinite(fs) & np.isfinite(t)
-        t_list, fs_list = t[keep].tolist(), fs[keep].tolist()
-    else:  # weighted: collapse peptides within each (biorep, timepoint).
-        t_list, fs_list = [], []
-        for (_br, t), cell in grp.groupby(
-            ["biological_replicate", "labeling_time"], sort=False
-        ):
-            theta = _weighted_theta(
-                cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
-                cell["fs_upper"].to_numpy(),
-            )
-            if np.isfinite(theta):
-                t_list.append(float(t))
-                fs_list.append(theta)
+    t_list, fs_list = _collapse_group(grp, method)
     if len(t_list) < min_points:
         return keys, None, None
     fit = _fit_kdeg(
