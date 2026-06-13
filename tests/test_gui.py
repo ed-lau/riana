@@ -54,7 +54,7 @@ GOLDEN = SAMPLE1 / "sample1_riana.v0_9_0.txt"
 # The 0.9.0-parity config (ms2 + whole-window), matching test_integration_port.
 _MS2_CONFIG = IntegrationConfig(
     sample="sample1", isotopomers=(0, 6), q_value=1.0,
-    extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+    extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
     peak_rt="ms2", baseline_method="none",
 )
 
@@ -146,7 +146,7 @@ def test_run_fit_worker_fits_synthetic_series(tmp_path):
                  ).to_csv(coeff_csv, index=False)
 
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     result = run_fit(config, paths, str(coeff_csv))
 
     assert len(result) == len(_TEST_PEPTIDES)
@@ -177,7 +177,7 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
                  ).to_csv(coeff_csv, index=False)
 
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     fit_df = run_fit(config, paths, str(coeff_csv))
     fit_dir = tmp_path / "fit"
     fit_dir.mkdir()
@@ -237,7 +237,7 @@ def test_run_fit_manifest_worker_fits_from_manifest(tmp_path):
                  ).to_csv(coeff_csv, index=False)
 
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     result = run_fit_manifest(config, str(mf), str(coeff_csv))
     assert {"k_deg", "condition", "experiment"} <= set(result.columns)
     assert set(result["condition"]) == {"control"}
@@ -262,7 +262,7 @@ def main_window(qtbot):
     from riana.gui.main_window import MainWindow
 
     pool = ThreadPoolExecutor(max_workers=1)
-    window = MainWindow(pool=pool, default_threads=1)
+    window = MainWindow(pool=pool)
     qtbot.addWidget(window)
     yield window
     pool.shutdown(wait=False)

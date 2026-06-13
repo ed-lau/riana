@@ -111,8 +111,6 @@ def integrate(
         "'0 1 2 3 4 5' is the m0-m5 envelope the D2O fit consumes; pick a "
         "custom set for other workflows (e.g. SILAC cluster extraction via -F).",
     ),
-    thread: int = typer.Option(
-        1, "-t", "--thread", help="Worker threads [default: 1]."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
     q_value: float = typer.Option(
@@ -169,7 +167,7 @@ def integrate(
         1, "-W", "--workers", metavar="N",
         help="Runs to integrate concurrently on the --sdrf path (one mzML in "
         "memory per worker; 2-4 suits a many-timepoint time series) [default: "
-        "1]. Distinct from -t/--thread (per-run peptide threads)."),
+        "1]. The parallelism lever — per-run extraction is GIL-bound serial."),
     no_rt_check: bool = typer.Option(
         False, "--no-rt-check",
         help="Disable the intake scan↔RT guard — the per-run check that the "
@@ -196,9 +194,9 @@ def integrate(
     from riana.logger import get_logger
 
     # --- CLI-shaped validation (the dataclass does the numeric domain checks) -
-    if thread > (os.cpu_count() or 1):
+    if workers > (os.cpu_count() or 1):
         raise typer.BadParameter(
-            f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
+            f"--workers {workers} exceeds CPU count ({os.cpu_count()}).")
     # The --sample digit convention is only how the no-SDRF Percolator path
     # encodes the timepoint; with --sdrf the timepoint is an SDRF column.
     if sdrf is None and (not sample or not sample[-1].isdigit()):
@@ -267,7 +265,6 @@ def integrate(
             mass_difference=float(mass_difference),
             ignored_mods=ignored,
             forced_mods=forced,
-            threads=int(thread),
             out_dir=str(out),
             check_scan_rt=not no_rt_check,
         )
@@ -397,15 +394,12 @@ def fit(
         help="Reserved (post-M4): restrict the envelope SSE to a subset of "
         "isotopomer channels to reduce co-eluting-contaminant sensitivity. "
         "Currently ignored — the full integrated envelope is used."),
-    thread: int = typer.Option(
-        1, "-t", "--thread", help="Worker threads [default: 1]. Note: the fit is "
-        "largely GIL-bound (IsoSpec FS + bootstrap), so threads give little "
-        "speedup — prefer -W/--workers."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
-        help="Worker *processes* for the per-peptide fit [default: 1]. The real "
-        "lever for a big fit: dispatches over a process pool to sidestep the GIL. "
-        "Results are identical regardless of N (per-peptide deterministic seed)."),
+        help="Worker *processes* for the per-peptide fit [default: 1]. The "
+        "parallelism lever: dispatches over a process pool to sidestep the GIL "
+        "(the per-peptide fit is GIL-bound). Results are identical regardless of N "
+        "(per-peptide deterministic seed)."),
 ) -> None:
     """Fit kinetic models to a D2O-labeling integrate time series."""
     import dataclasses
@@ -422,9 +416,6 @@ def fit(
     )
     from riana.logger import get_logger
 
-    if thread > (os.cpu_count() or 1):
-        raise typer.BadParameter(
-            f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
     if workers > (os.cpu_count() or 1):
         raise typer.BadParameter(
             f"--workers {workers} exceeds CPU count ({os.cpu_count()}).")
@@ -453,7 +444,6 @@ def fit(
             depth=int(depth),
             ria_max=float(ria),
             fs_formula=fs,
-            threads=int(thread),
             workers=int(workers),
             out_dir=str(out),
         )
@@ -606,16 +596,12 @@ def rollup(
         0.05, "--alt-se",
         help="Slow-turnover admit: max k_deg bootstrap SE (the 'sd' column) for "
         "a low-R² peptide to still be kept (only with --min-r2)."),
-    thread: int = typer.Option(
-        1, "-t", "--thread",
-        help="Worker threads for the per-protein refit [default: 1]. Note: the "
-        "refit is GIL-bound (curve_fit + bootstrap), so threads give little "
-        "speedup — prefer -W/--workers."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
-        help="Worker *processes* for the per-protein refit [default: 1]. The real "
-        "lever for the GIL-bound rollup: dispatches proteins over a process pool. "
-        "Results are identical regardless of N (per-protein deterministic seed)."),
+        help="Worker *processes* for the per-protein refit [default: 1]. The "
+        "parallelism lever for the GIL-bound rollup: dispatches proteins over a "
+        "process pool. Results are identical regardless of N (per-protein "
+        "deterministic seed)."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -685,8 +671,7 @@ def rollup(
             kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_r2=min_r2,
-            alt_k=float(alt_k), alt_se=float(alt_se),
-            threads=int(thread), workers=int(workers),
+            alt_k=float(alt_k), alt_se=float(alt_se), workers=int(workers),
             phi_limit=float(phi_limit), reference_condition=reference_condition,
         )
     except (DataError, NotImplementedError) as exc:
@@ -732,20 +717,13 @@ def rollup(
 # gui
 # --------------------------------------------------------------------------- #
 @app.command()
-def gui(
-    thread: int = typer.Option(
-        1, "-t", "--thread",
-        help="Seed the Integrate form's worker-thread field [default: 1]."),
-) -> None:
+def gui() -> None:
     """Launch the PySide6 GUI (requires the optional ``[gui]`` extra).
 
     The GUI forms build the *same* frozen IntegrationConfig/FitConfig as the CLI,
     so both surfaces validate identically. PySide6/qasync/pyqtgraph are imported
     lazily here so they never load on the core CLI path.
     """
-    if thread > (os.cpu_count() or 1):
-        raise typer.BadParameter(
-            f"--thread {thread} exceeds CPU count ({os.cpu_count()}).")
     # Import from riana.gui.app (not the lazy riana.gui wrapper): this is the
     # import that actually pulls in PySide6/qasync/pyqtgraph, so a missing
     # [gui] extra is caught here with a clean message instead of a traceback.
@@ -757,7 +735,7 @@ def gui(
             "    pip install 'riana[gui]'\n"
             f"(import failed: {exc})"
         ) from exc
-    raise typer.Exit(code=run_gui(threads=int(thread)))
+    raise typer.Exit(code=run_gui())
 
 
 def main() -> None:

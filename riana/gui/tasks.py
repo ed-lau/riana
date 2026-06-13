@@ -164,7 +164,6 @@ def run_rollup(
     min_r2: float | None = None,
     alt_k: float = 0.025,
     alt_se: float = 0.05,
-    threads: int = 1,
     method: str = "weighted",
     workers: int = 1,
     phi_limit: float = -4.0,
@@ -204,7 +203,7 @@ def run_rollup(
         kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
         parsimony=parsimony, min_peptides=int(min_peptides),
         min_points=int(min_points), min_r2=min_r2,
-        alt_k=float(alt_k), alt_se=float(alt_se), threads=int(threads),
+        alt_k=float(alt_k), alt_se=float(alt_se),
         workers=int(workers), phi_limit=float(phi_limit),
         reference_condition=reference_condition,
     )

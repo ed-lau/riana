@@ -121,7 +121,7 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(
         model="simple", label="hw", q_value=0.05, depth=3,
-        ria_max=0.06, threads=1,
+        ria_max=0.06,
     )
 
     result = fit_run(config, dfs, coeffs, n_boot=50, random_state=42)
@@ -196,7 +196,7 @@ def test_fit_run_filters_by_depth():
     short_dfs = dfs[:2]
     config = FitConfig(
         model="simple", label="hw", q_value=0.05, depth=3,
-        ria_max=0.06, threads=1,
+        ria_max=0.06,
     )
     with pytest.raises(ValueError, match="No peptides survive"):
         fit_run(config, short_dfs, coeffs, n_boot=10)
@@ -208,7 +208,7 @@ def test_fit_run_rejects_unknown_model():
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
     bad_config = FitConfig(
         model="simple", label="hw", q_value=0.05, depth=3,
-        ria_max=0.06, threads=1,
+        ria_max=0.06,
     )
     object.__setattr__(bad_config, "model", "nonexistent")
     with pytest.raises(ValueError, match="unknown kinetic model"):
@@ -224,7 +224,7 @@ def test_fit_run_requires_canonical_isotopomers():
     # Drop the higher isotopomers so only m0-m3 remain (mimics too-narrow --iso).
     dfs = [df.drop(columns=["iso4", "iso5"]) for df in dfs]
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     with pytest.raises(ValueError, match="isotopomers"):
         fit_run(config, dfs, coeffs, n_boot=10)
 
@@ -248,7 +248,7 @@ def test_fit_run_handles_bracketed_modification_strings():
 
     config = FitConfig(
         model="simple", label="hw", q_value=0.05, depth=3,
-        ria_max=0.06, threads=1,
+        ria_max=0.06,
     )
     result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
 
@@ -266,7 +266,7 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     result = fit_run(config, dfs, coeffs, n_boot=200, random_state=42)
 
     long = result.attrs["fractions_long"]
@@ -295,7 +295,7 @@ def test_prediction_interval_widens_with_scatter():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     clean = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
 
     rng = np.random.default_rng(0)
     iso_cols = ["iso0", "iso1", "iso2", "iso3", "iso4", "iso5"]
@@ -323,7 +323,7 @@ def test_peptide_summary_drops_per_timepoint_list_cells():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
 
     summary = peptide_summary(result)

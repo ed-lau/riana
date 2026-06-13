@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import logging
 import re
-from concurrent import futures
 from dataclasses import dataclass, replace
 from typing import Sequence
 
@@ -210,7 +209,7 @@ def integrate_run(
     """Integrate one fraction's PSMs against an indexed mzML.
 
     Args:
-        config: pinned configuration (mass tol, isotopomers, threads, ...).
+        config: pinned configuration (mass tol, isotopomers, ...).
         psms: PSMs already filtered to a single fraction. The caller is
             responsible for that — emitted by :func:`io.percolator.fraction_psms`
             or :func:`io.mztab.read_mztab` after a per-file filter.
@@ -307,16 +306,17 @@ def integrate_run(
     forced = tuple(config.forced_mods or (0.0,))
     isos = tuple(config.isotopomers)
 
-    # Threaded per-PSM extraction → list of per-PSM (DataFrame,
-    # mass_accuracy_dict). Same worker pattern as legacy.
+    # Per-PSM extraction → list of per-PSM (DataFrame, mass_accuracy_dict).
+    # Serial: the hot path (pyteomics mzML parse + IsoSpec) is GIL-bound, so
+    # threading it gave no speedup (in fact slower); cross-run parallelism is the
+    # ProcessPool lever (`integrate --workers`), see core/pipeline.
     def _do(idx: int):
         return _extract_per_psm(
             kept[idx], concat_scans, forced, isos, config, mzml,
             anchor_scan=concat_anchor[kept[idx].concat],
         )
 
-    with futures.ThreadPoolExecutor(max_workers=config.threads) as ex:
-        extract_results = list(ex.map(_do, range(len(kept))))
+    extract_results = [_do(i) for i in range(len(kept))]
     intensity_dfs = [r[0] for r in extract_results]
     mass_accuracies = [r[1] for r in extract_results]
 

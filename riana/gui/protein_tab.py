@@ -170,14 +170,6 @@ class ProteinTab(QWidget):
             "peptides are still admitted via k ≤ 0.025 & SE ≤ 0.05.")
         form.addRow("Min R² (0 = off)", self.min_r2_spin)
 
-        self.thread_spin = QSpinBox()
-        self.thread_spin.setRange(1, os.cpu_count() or 1)
-        self.thread_spin.setValue(1)
-        self.thread_spin.setToolTip(
-            "Worker threads for the per-protein refit. The refit is GIL-bound, "
-            "so threads give little speedup — prefer Workers.")
-        form.addRow("Threads", self.thread_spin)
-
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
         self.workers_spin.setValue(1)
@@ -288,7 +280,6 @@ class ProteinTab(QWidget):
             "min_peptides": int(self.min_peptides_spin.value()),
             "min_points": int(self.min_points_spin.value()),
             "min_r2": (r2 if r2 > 0.0 else None),   # 0 = off
-            "threads": int(self.thread_spin.value()),
             "workers": int(self.workers_spin.value()),
             "phi_limit": float(self.phi_limit_spin.value()),
             "reference_condition": self.reference_edit.text().strip() or None,
@@ -333,7 +324,7 @@ class ProteinTab(QWidget):
                 executor, run_rollup, str(fit_dir), p["model"],
                 p["kp"], p["kr"], p["rp"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_r2"],
-                0.025, 0.05, p["threads"], p["method"],
+                0.025, 0.05, p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
             )
             result, points = await self._future

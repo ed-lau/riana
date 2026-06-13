@@ -12,6 +12,20 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Parallelism — `-W/--workers` everywhere; `-t/--thread` removed
+
+#### Removed
+
+- **`-t/--thread` removed from `integrate`, `fit`, and `rollup`** (and the
+  `threads` field on `IntegrationConfig`/`FitConfig`, and the GUI "Threads"
+  spins). Measured 2026-06-13: thread-level parallelism gave **no** speedup and
+  was often *slower* than serial — the hot loops hold the GIL (IsoSpec FS, scipy
+  `curve_fit` + bootstrap, and pyteomics' mzML XML parse). rollup `-t 8` ran 551s
+  vs ~435s serial / 60s at `-W 8`; integrate degraded monotonically (719 → 806 →
+  1156 → 1548s for threads 1→2→4→8). **Use `-W/--workers`** (process-level), the
+  real lever: `integrate -W` across files, `fit -W` across peptides, `rollup -W`
+  across proteins — all deterministic regardless of N.
+
 ### M6b — DIA-NN parquet intake (Track A)
 
 #### Added

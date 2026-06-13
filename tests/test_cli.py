@@ -42,7 +42,7 @@ def test_integrate_ms2_runs_and_writes_output(tmp_path):
         "-s", "sample1", "-o", str(tmp_path),
         "-i", "0 6", "-q", "1.0",
         "--peak-rt", "ms2", "--integration-half-width", "1.0",
-        "-m", "50", "-t", "1",
+        "-m", "50",
     ])
     assert result.exit_code == 0, result.output
     out = tmp_path / "sample1_riana.txt"

@@ -120,7 +120,7 @@ def relabel_inputs(inputs_dir: Path, gt: pd.DataFrame, pt_map: pd.DataFrame,
 
 
 def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: str,
-                  depth: int, q_value: float, threads: int,
+                  depth: int, q_value: float, workers: int,
                   coefficients: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     if label == 'hw' and coefficients is None:
@@ -133,7 +133,7 @@ def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: str,
         '-r', str(ria),
         '-q', str(q_value),
         '-d', str(depth),
-        '-t', str(threads),
+        '-W', str(workers),
         '-o', str(out_dir),
     ]
     if coefficients is not None:
@@ -217,7 +217,7 @@ def main() -> None:
                         help="labeling chemistry [default: hw]")
     parser.add_argument('--depth', type=int, default=3)
     parser.add_argument('--q-value', type=float, default=0.01)
-    parser.add_argument('--threads', type=int, default=4)
+    parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--coefficients', type=str, default=None,
                         help='per-AA coefficient table for `riana fit` — a '
                              'bundled preset (commerford|ac16|ipsc|cm) or a CSV '
@@ -243,7 +243,7 @@ def main() -> None:
         fit_out = Path(td) / 'fit_out'
         result_path = run_riana_fit(files, fit_out, ria=args.ria,
                                     label=args.label, depth=args.depth,
-                                    q_value=args.q_value, threads=args.threads,
+                                    q_value=args.q_value, workers=args.workers,
                                     coefficients=args.coefficients)
         # M3 Week 4: riana_fit_peptides.txt carries a provenance header.
         fit_df = pd.read_csv(result_path, sep='\t', comment='#')

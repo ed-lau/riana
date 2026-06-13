@@ -179,7 +179,7 @@ def fit_run(
 
     Args:
         config: :class:`riana.config.FitConfig` (model, label, depth,
-            q-value, k_p / k_r / r_p, ria_max, threads).
+            q-value, k_p / k_r / r_p, ria_max, workers).
         integrate_dfs: one or more ``pandas.DataFrame`` in the ``_riana.txt``
             schema (``concat`` / ``sample`` / ``percolator q-value`` / ``isoN``).
         aa_coefficients: ``{aa_letter: coefficient}`` for per-peptide Spep
@@ -289,10 +289,9 @@ def fit_run(
             initargs=init_args,
         ) as ex:
             results = list(ex.map(_fit_one_concat_worker, concat_list, chunksize=chunk))
-    elif config.threads > 1:
-        with futures.ThreadPoolExecutor(max_workers=config.threads) as ex:
-            results = list(ex.map(fit_partial, concat_list))
     else:
+        # Serial: the per-peptide IsoSpec FS + residual bootstrap is GIL-bound, so
+        # threading it gave no speedup; `workers` (processes) is the only lever.
         results = [fit_partial(c) for c in concat_list]
 
     _LOGGER.info(

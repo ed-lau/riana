@@ -66,7 +66,6 @@ INTEGRATE_ARGS = [
     "-q", "0.01",
     "-r", "0.33",
     "-m", "15",
-    "-t", "4",
 ]
 
 # The Crux Percolator column order ``ReadPercolator`` expects when it reads

@@ -27,13 +27,11 @@ class MainWindow(QMainWindow):
 
     Args:
         pool: the shared process pool every tab submits CPU work to.
-        default_threads: seeds the Integrate form's thread field.
     """
 
     def __init__(
         self,
         pool: ProcessPoolExecutor,
-        default_threads: int = 1,
     ) -> None:
         super().__init__()
         self.pool = pool
@@ -41,12 +39,8 @@ class MainWindow(QMainWindow):
         self.resize(1100, 720)
 
         tabs = QTabWidget()
-        self.integrate_tab = IntegrateTab(
-            pool=pool, default_threads=default_threads, status_cb=self._status
-        )
-        self.model_tab = ModelTab(
-            pool=pool, default_threads=default_threads, status_cb=self._status
-        )
+        self.integrate_tab = IntegrateTab(pool=pool, status_cb=self._status)
+        self.model_tab = ModelTab(pool=pool, status_cb=self._status)
         self.protein_tab = ProteinTab(pool=pool, status_cb=self._status)
         tabs.addTab(self.integrate_tab, "Integrate")
         tabs.addTab(self.model_tab, "Model")

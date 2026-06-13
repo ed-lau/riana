@@ -75,7 +75,6 @@ class IntegrateTab(QWidget):
     def __init__(
         self,
         pool,
-        default_threads: int = 1,
         status_cb: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__()
@@ -86,13 +85,13 @@ class IntegrateTab(QWidget):
         # file_idx -> mzML path, for on-demand chromatogram extraction.
         self._fraction_mzml: dict[int, str] = {}
 
-        self._build_ui(default_threads)
+        self._build_ui()
 
     # --- UI construction ---------------------------------------------------- #
-    def _build_ui(self, default_threads: int) -> None:
+    def _build_ui(self) -> None:
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        splitter.addWidget(self._build_form(default_threads))
+        splitter.addWidget(self._build_form())
         splitter.addWidget(self._build_results())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -111,7 +110,7 @@ class IntegrateTab(QWidget):
         layout.addWidget(button)
         return row
 
-    def _build_form(self, default_threads: int) -> QWidget:
+    def _build_form(self) -> QWidget:
         box = QGroupBox("Integrate")
         form = QFormLayout(box)
 
@@ -178,18 +177,12 @@ class IntegrateTab(QWidget):
         self.ppm_alert_spin.setSuffix(" ppm")
         form.addRow("Drift alert", self.ppm_alert_spin)
 
-        self.thread_spin = QSpinBox()
-        self.thread_spin.setRange(1, os.cpu_count() or 1)
-        self.thread_spin.setValue(max(1, min(default_threads, os.cpu_count() or 1)))
-        self.thread_spin.setToolTip("Per-run peptide threads (within one mzML).")
-        form.addRow("Threads", self.thread_spin)
-
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
         self.workers_spin.setValue(1)
         self.workers_spin.setToolTip(
             "Runs/files integrated concurrently (one mzML in memory each; "
-            "2-4 suits a many-timepoint series). Distinct from Threads.")
+            "2-4 suits a many-timepoint series). The parallelism lever.")
         form.addRow("Workers (files)", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
@@ -328,7 +321,6 @@ class IntegrateTab(QWidget):
             apex_selection=self.apex_combo.currentText(),
             q_value=float(self.qvalue_spin.value()),
             ppm_alert=float(self.ppm_alert_spin.value()),
-            threads=int(self.thread_spin.value()),
             out_dir=self.out_edit.text().strip() or ".",
         )
 

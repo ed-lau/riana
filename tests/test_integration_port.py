@@ -67,7 +67,7 @@ def legacy_sample1_output() -> pd.DataFrame:
 def test_sample1_iso0_iso6_within_rtol(legacy_sample1_output):
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
-        extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
         peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(
@@ -110,7 +110,7 @@ def test_ac16_time0_matches_committed_baseline():
     """The bigger real-data check: ac16 time0, 9 isotopomers including 6."""
     config = IntegrationConfig(
         sample="time0", isotopomers=(0, 1, 2, 3, 4, 5), q_value=0.01,
-        extraction_half_width=0.33, mass_tol_ppm=15, threads=4, forced_mods=(0.0,),
+        extraction_half_width=0.33, mass_tol_ppm=15, forced_mods=(0.0,),
         peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(AC16_PSMS, sample="time0")
@@ -158,7 +158,7 @@ def test_sample1_detected_pipeline_runs_and_is_smaller_than_fixed():
     )
     base = dict(
         sample="sample1", isotopomers=(0, 1, 2, 3, 4, 5), q_value=1.0,
-        extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
     )
     fixed_cfg = IntegrationConfig(**base, peak_rt="ms2",
                                   baseline_method="none")
@@ -205,7 +205,7 @@ def test_sample1_mass_accuracy_columns_populated():
     """
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
-        extraction_half_width=1.0, mass_tol_ppm=50, threads=1, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
         peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(
@@ -254,7 +254,6 @@ def test_cli_integrate_produces_compatible_output(tmp_path):
         "-q", "1.0",
         "-r", "1.0",
         "-m", "50",
-        "-t", "1",
     ]
     subprocess.run(cmd, check=True, capture_output=True)
 

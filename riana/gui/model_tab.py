@@ -69,7 +69,6 @@ class ModelTab(QWidget):
     def __init__(
         self,
         pool,
-        default_threads: int = 1,
         status_cb: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__()
@@ -81,12 +80,12 @@ class ModelTab(QWidget):
         self._result_df: pd.DataFrame | None = None
         self._last_config: FitConfig | None = None
 
-        self._build_ui(default_threads)
+        self._build_ui()
 
     # --- UI construction ---------------------------------------------------- #
-    def _build_ui(self, default_threads: int) -> None:
+    def _build_ui(self) -> None:
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._build_form(default_threads))
+        splitter.addWidget(self._build_form())
         splitter.addWidget(self._build_results())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -94,7 +93,7 @@ class ModelTab(QWidget):
         outer = QVBoxLayout(self)
         outer.addWidget(splitter)
 
-    def _build_form(self, default_threads: int) -> QWidget:
+    def _build_form(self) -> QWidget:
         box = QGroupBox("Fit")
         form = QFormLayout(box)
 
@@ -175,14 +174,6 @@ class ModelTab(QWidget):
         form.addRow("k_r (fornasiero)", self.kr_spin)
         self.rp_spin = self._rate_spin(10.0)
         form.addRow("r_p (fornasiero)", self.rp_spin)
-
-        self.thread_spin = QSpinBox()
-        self.thread_spin.setRange(1, os.cpu_count() or 1)
-        self.thread_spin.setValue(max(1, min(default_threads, os.cpu_count() or 1)))
-        self.thread_spin.setToolTip(
-            "Per-peptide threads. The fit is GIL-bound (IsoSpec + bootstrap), so "
-            "threads give little speedup — prefer Workers.")
-        form.addRow("Threads", self.thread_spin)
 
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
@@ -307,7 +298,6 @@ class ModelTab(QWidget):
             q_value=float(self.qvalue_spin.value()),
             depth=int(self.depth_spin.value()),
             ria_max=float(self.ria_spin.value()),
-            threads=int(self.thread_spin.value()),
             workers=int(self.workers_spin.value()),
             out_dir=self.out_edit.text().strip() or ".",
         )

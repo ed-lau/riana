@@ -16,8 +16,8 @@ from __future__ import annotations
 __all__ = ["run_gui"]
 
 
-def run_gui(threads: int = 1) -> int:
+def run_gui() -> int:
     """Launch the GUI. Lazy re-export of :func:`riana.gui.app.run_gui`."""
     from riana.gui.app import run_gui as _run_gui
 
-    return _run_gui(threads=threads)
+    return _run_gui()

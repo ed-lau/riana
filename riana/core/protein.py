@@ -134,7 +134,6 @@ def rollup_proteins(
     alt_k: float = 0.025,
     alt_se: float = 0.05,
     alt_r2: float = 0.0,
-    threads: int = 1,
     workers: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
@@ -173,13 +172,11 @@ def rollup_proteins(
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
             collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
             pseudoreplication-naive).
-        threads: worker *threads* for the per-protein refit. The refit
-            (``curve_fit`` × bootstrap) is GIL-bound, so threads give little
-            speedup — prefer ``workers``.
-        workers: worker *processes* for the per-protein refit — the real lever
-            for the GIL-bound refit. Each protein gets an independent RNG stream
-            seeded from ``random_state``, so the result is **identical**
-            regardless of ``workers`` / ``threads`` (and of completion order).
+        workers: worker *processes* for the per-protein refit — the parallelism
+            lever for the GIL-bound refit (``curve_fit`` × bootstrap). Each protein
+            gets an independent RNG stream seeded from ``random_state``, so the
+            result is **identical** regardless of ``workers`` (and of completion
+            order).
         n_boot / boot_ci_pct / random_state: bootstrap CI controls (ignored by
             ``model="linear simple"``, whose CIs are analytic).
         phi_limit / reference_condition: only for ``model="linear simple"`` — the
@@ -235,7 +232,7 @@ def rollup_proteins(
         fractions, model_fn=model_fn, kinetic_kwargs=kk, method=method,
         min_peptides=min_peptides, min_points=min_points,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, random_state=random_state,
-        threads=threads, workers=workers,
+        workers=workers,
     )
 
     out = pd.merge(stats, refit, on=_GROUP_KEYS, how="outer")
@@ -503,7 +500,6 @@ def _refit_table(
     n_boot: int,
     boot_ci_pct: tuple[float, float],
     random_state: int,
-    threads: int = 1,
     workers: int = 1,
 ) -> tuple[pd.DataFrame, dict]:
     """Returns ``(refit table, points)`` where ``points`` maps
@@ -514,9 +510,8 @@ def _refit_table(
     inverse-variance before fitting; ``method="pooled"`` fits all peptide×
     timepoint points directly (pseudoreplication). Each protein is an independent
     work unit; the per-protein ``curve_fit`` × bootstrap is GIL-bound, so
-    ``workers`` (process-level, the real lever) is preferred over ``threads``.
-    Per-group RNG streams keep the result identical regardless of worker/thread
-    count and completion order.
+    ``workers`` (process-level) is the parallelism lever. Per-group RNG streams
+    keep the result identical regardless of worker count and completion order.
     """
     need = {"concat", "biological_replicate", "labeling_time",
             "fs", "fs_lower", "fs_upper"}
@@ -551,10 +546,9 @@ def _refit_table(
         ) as ex:
             computed = list(ex.map(
                 _refit_one_group_worker, range(len(groups)), chunksize=chunk))
-    elif threads > 1 and len(groups) > 1:
-        with futures.ThreadPoolExecutor(max_workers=threads) as ex:
-            computed = list(ex.map(refit_one, groups))
     else:
+        # Serial: the per-protein curve_fit + bootstrap is GIL-bound, so threading
+        # gave no speedup; `workers` (processes) is the only parallelism lever.
         computed = [refit_one(g) for g in groups]
 
     rows = []

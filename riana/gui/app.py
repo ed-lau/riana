@@ -20,13 +20,11 @@ from PySide6.QtWidgets import QApplication
 from riana.gui.main_window import MainWindow
 
 
-def run_gui(threads: int = 1) -> int:
+def run_gui() -> int:
     """Create the QApplication, run the qasync loop, return the exit code.
 
-    Args:
-        threads: seeds the Integrate form's worker-thread field. CPU work runs
-            in worker *processes*; this is the per-fraction in-process thread
-            count handed to :class:`~riana.config.IntegrationConfig`.
+    CPU work runs in worker *processes* (the shared ``ProcessPoolExecutor`` /
+    each tab's ``-W`` workers); there is no thread knob.
     """
     app = QApplication.instance() or QApplication(sys.argv)
 
@@ -40,7 +38,7 @@ def run_gui(threads: int = 1) -> int:
     close_event = asyncio.Event()
     app.aboutToQuit.connect(close_event.set)
 
-    window = MainWindow(pool=pool, default_threads=threads)
+    window = MainWindow(pool=pool)
     window.show()
 
     try:

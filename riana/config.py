@@ -75,8 +75,6 @@ class IntegrationConfig:
     ignored_mods: tuple[float, ...] = ()
     #: -F / --forced_mods. Modification masses always added (e.g. SILAC).
     forced_mods: tuple[float, ...] = (0.0,)
-    #: -t / --thread. Worker count for the per-peptide integration map.
-    threads: int = 1
     #: -o / --out. Output directory.
     out_dir: str = "."
     #: No CLI flag in 0.9.0 — the pipeline hardcodes ``use_range=True`` (span the
@@ -184,8 +182,6 @@ class IntegrationConfig:
             raise ValueError(f"q_value must be in [0, 1], got {self.q_value}")
         if self.smoothing is not None and (self.smoothing < 3 or self.smoothing % 2 == 0):
             raise ValueError(f"smoothing must be an odd integer >= 3, got {self.smoothing}")
-        if self.threads < 1:
-            raise ValueError(f"threads must be >= 1, got {self.threads}")
         if self.peak_rt not in ("ms2", "apex", "consensus"):
             raise ValueError(
                 f"peak_rt must be 'ms2', 'apex' or 'consensus', got {self.peak_rt!r}")
@@ -274,12 +270,6 @@ class FitConfig:
     #: envelope is used. Kept on the config so the post-M4 wiring is a localized
     #: change. (Not the legacy fine-structure-ratio meaning.)
     fs_formula: str | None = None
-    #: -t / --thread. Thread count for the per-peptide fit map. The fit's hot
-    #: loop (the per-peptide residual bootstrap + ``scipy.curve_fit``, on top of
-    #: the IsoSpec forward-model FS) is largely **GIL-bound**, so threads give
-    #: little speedup — measured ~1.25 effective cores at ``threads=8``. Prefer
-    #: :attr:`workers` (process-level) to actually parallelize a big fit.
-    threads: int = 1
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded
@@ -299,7 +289,5 @@ class FitConfig:
             raise ValueError(f"q_value must be in [0, 1], got {self.q_value}")
         if self.depth < 1:
             raise ValueError(f"depth must be >= 1, got {self.depth}")
-        if self.threads < 1:
-            raise ValueError(f"threads must be >= 1, got {self.threads}")
         if self.workers < 1:
             raise ValueError(f"workers must be >= 1, got {self.workers}")

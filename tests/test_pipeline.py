@@ -165,7 +165,7 @@ def test_manifest_fit_matches_legacy_kdeg(tmp_path):
     coeffs = _coeffs()
     dfs = _make_timepoint_dfs(coeffs)
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
 
     # Legacy positional path: time parsed from the sample string.
     legacy = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
@@ -223,7 +223,7 @@ def test_fit_project_long_keeps_bioreps_separate(tmp_path):
     mf = tmp_path / "riana_manifest.tsv"
     append_manifest(mf, rows)
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     long = fit_project(config, mf, coeffs, n_boot=20).attrs["fractions_long"]
     assert set(long["biological_replicate"]) == {1, 2}
     # Each (peptide, biorep) contributes its own 8 timepoints.
@@ -256,7 +256,7 @@ def test_fit_project_two_conditions_concat(tmp_path):
     mf = tmp_path / "riana_manifest.tsv"
     append_manifest(mf, rows)
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
-                       ria_max=0.06, threads=1)
+                       ria_max=0.06)
     out = fit_project(config, mf, coeffs, n_boot=20)
     # Both curves survive the concat, tagged distinctly.
     assert set(out["condition"]) == {"control", "atrium"}
