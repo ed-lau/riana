@@ -179,7 +179,19 @@ class ModelTab(QWidget):
         self.thread_spin = QSpinBox()
         self.thread_spin.setRange(1, os.cpu_count() or 1)
         self.thread_spin.setValue(max(1, min(default_threads, os.cpu_count() or 1)))
+        self.thread_spin.setToolTip(
+            "Per-peptide threads. The fit is GIL-bound (IsoSpec + bootstrap), so "
+            "threads give little speedup — prefer Workers.")
         form.addRow("Threads", self.thread_spin)
+
+        self.workers_spin = QSpinBox()
+        self.workers_spin.setRange(1, os.cpu_count() or 1)
+        self.workers_spin.setValue(1)
+        self.workers_spin.setToolTip(
+            "Worker *processes* for the per-peptide fit — the real lever for the "
+            "GIL-bound fit. Result is identical regardless of N. When >1 the fit "
+            "runs off the shared pool (no nested pools).")
+        form.addRow("Workers", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
         out_row = QHBoxLayout()
@@ -296,6 +308,7 @@ class ModelTab(QWidget):
             depth=int(self.depth_spin.value()),
             ria_max=float(self.ria_spin.value()),
             threads=int(self.thread_spin.value()),
+            workers=int(self.workers_spin.value()),
             out_dir=self.out_edit.text().strip() or ".",
         )
 
@@ -343,16 +356,20 @@ class ModelTab(QWidget):
         self._set_running(True)
         self.progress.setRange(0, 0)  # busy
         loop = asyncio.get_running_loop()
+        # workers>1 spawns a ProcessPool inside fit_run; run it on a main-process
+        # thread (executor=None) so that pool is NOT nested inside a shared-pool
+        # worker (which breaks: BrokenProcessPool).
+        executor = None if config.workers > 1 else self.pool
         try:
             if manifest:
                 self._info(f"fitting from manifest {manifest} …")
                 self._future = loop.run_in_executor(
-                    self.pool, run_fit_manifest, config, manifest, coefficients)
+                    executor, run_fit_manifest, config, manifest, coefficients)
                 id_source = manifest
             else:
                 self._info(f"fitting {len(files)} timepoint file(s) …")
                 self._future = loop.run_in_executor(
-                    self.pool, run_fit, config, files, coefficients)
+                    executor, run_fit, config, files, coefficients)
                 id_source = ",".join(files)
             result_df = await self._future
 

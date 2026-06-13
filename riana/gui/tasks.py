@@ -166,6 +166,9 @@ def run_rollup(
     alt_se: float = 0.05,
     threads: int = 1,
     method: str = "weighted",
+    workers: int = 1,
+    phi_limit: float = -4.0,
+    reference_condition: str | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Read the ``riana fit`` outputs in *fit_dir* and roll peptides up to proteins.
 
@@ -174,6 +177,14 @@ def run_rollup(
     :func:`riana.core.protein.rollup_proteins`, so the GUI and CLI cannot
     diverge. Errors (bad model/parsimony, missing files) propagate for the tab
     to surface.
+
+    ``workers`` (process-level parallelism) is forwarded to ``rollup_proteins``.
+    **The tab must dispatch this on a main-process thread when ``workers > 1``**
+    (``run_in_executor(None, …)``), not the shared ``ProcessPoolExecutor`` — a
+    pool worker spawning its own pool is a nested pool, which breaks
+    (``BrokenProcessPool``). On a thread the pool is created from the main
+    process. ``phi_limit`` / ``reference_condition`` apply only to
+    ``model="linear simple"``.
 
     Returns ``(protein_table, points)`` — ``points`` is the
     ``{(experiment, condition, protein): (t_list, fs_list)}`` collapsed-refit
@@ -194,5 +205,7 @@ def run_rollup(
         parsimony=parsimony, min_peptides=int(min_peptides),
         min_points=int(min_points), min_r2=min_r2,
         alt_k=float(alt_k), alt_se=float(alt_se), threads=int(threads),
+        workers=int(workers), phi_limit=float(phi_limit),
+        reference_condition=reference_condition,
     )
     return result, result.attrs.get("protein_points", {})

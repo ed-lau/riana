@@ -92,6 +92,7 @@ class ProteinTab(QWidget):
     def _build_form(self) -> QWidget:
         box = QGroupBox("Protein rollup")
         form = QFormLayout(box)
+        self._form = form
 
         self.fit_dir_edit = QLineEdit("")
         self.fit_dir_edit.setPlaceholderText("folder with riana_fit_*.txt")
@@ -115,7 +116,12 @@ class ProteinTab(QWidget):
         form.addRow("Parsimony", self.parsimony_combo)
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["simple", "guan", "fornasiero"])
+        self.model_combo.addItems(["simple", "guan", "fornasiero", "linear simple"])
+        self.model_combo.setToolTip(
+            "simple/guan/fornasiero: nonlinear curve_fit. 'linear simple': the "
+            "linearized φ=log(1−θ) cross-sample model — per-condition k + a Δk "
+            "test (writes delta_k / delta_k_p_adj), plotted in φ-space.")
+        self.model_combo.currentTextChanged.connect(self._on_model_changed)
         form.addRow("Model", self.model_combo)
 
         self.kp_spin = self._rate_spin(0.5)
@@ -124,6 +130,23 @@ class ProteinTab(QWidget):
         form.addRow("k_r (fornasiero)", self.kr_spin)
         self.rp_spin = self._rate_spin(10.0)
         form.addRow("r_p (fornasiero)", self.rp_spin)
+
+        # 'linear simple' only: plateau truncation + Δk reference condition.
+        self.phi_limit_spin = QDoubleSpinBox()
+        self.phi_limit_spin.setDecimals(1)
+        self.phi_limit_spin.setRange(-10.0, -1.0)
+        self.phi_limit_spin.setSingleStep(0.5)
+        self.phi_limit_spin.setValue(-4.0)
+        self.phi_limit_spin.setToolTip(
+            "['linear simple'] Plateau truncation: drop points with φ=log(1−θ) "
+            "at/below this (saturated tail = noise, not slope). −4 ≈ θ 0.98.")
+        form.addRow("φ-limit (linear)", self.phi_limit_spin)
+        self.reference_edit = QLineEdit("")
+        self.reference_edit.setPlaceholderText("optional, e.g. control")
+        self.reference_edit.setToolTip(
+            "['linear simple'] Δk reference condition: delta_k = k(other) − "
+            "k(reference). Blank = alphabetically first.")
+        form.addRow("Reference cond. (linear)", self.reference_edit)
 
         self.min_peptides_spin = QSpinBox()
         self.min_peptides_spin.setRange(1, 1000)
@@ -151,9 +174,18 @@ class ProteinTab(QWidget):
         self.thread_spin.setRange(1, os.cpu_count() or 1)
         self.thread_spin.setValue(1)
         self.thread_spin.setToolTip(
-            "Worker threads for the per-protein refit (result is identical "
-            "regardless of thread count).")
+            "Worker threads for the per-protein refit. The refit is GIL-bound, "
+            "so threads give little speedup — prefer Workers.")
         form.addRow("Threads", self.thread_spin)
+
+        self.workers_spin = QSpinBox()
+        self.workers_spin.setRange(1, os.cpu_count() or 1)
+        self.workers_spin.setValue(1)
+        self.workers_spin.setToolTip(
+            "Worker *processes* for the per-protein refit — the real lever for "
+            "the GIL-bound rollup. Result is identical regardless of N. When >1 "
+            "the rollup runs off the shared pool (no nested pools).")
+        form.addRow("Workers", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
         out_row = QHBoxLayout()
@@ -177,6 +209,7 @@ class ProteinTab(QWidget):
         self.error_label.setStyleSheet("color: #b00020;")
         self.error_label.setWordWrap(True)
         form.addRow(self.error_label)
+        self._on_model_changed(self.model_combo.currentText())  # initial visibility
         return box
 
     def _rate_spin(self, value: float) -> QDoubleSpinBox:
@@ -186,6 +219,15 @@ class ProteinTab(QWidget):
         spin.setSingleStep(0.05)
         spin.setValue(value)
         return spin
+
+    def _on_model_changed(self, model: str) -> None:
+        """Show the ODE rate knobs for the nonlinear models, the φ knobs for the
+        linear model — they are mutually exclusive."""
+        linear = model == "linear simple"
+        for w in (self.kp_spin, self.kr_spin, self.rp_spin):
+            self._form.setRowVisible(w, not linear)
+        for w in (self.phi_limit_spin, self.reference_edit):
+            self._form.setRowVisible(w, linear)
 
     def _build_results(self) -> QWidget:
         panel = QWidget()
@@ -247,6 +289,9 @@ class ProteinTab(QWidget):
             "min_points": int(self.min_points_spin.value()),
             "min_r2": (r2 if r2 > 0.0 else None),   # 0 = off
             "threads": int(self.thread_spin.value()),
+            "workers": int(self.workers_spin.value()),
+            "phi_limit": float(self.phi_limit_spin.value()),
+            "reference_condition": self.reference_edit.text().strip() or None,
             "out_dir": self.out_edit.text().strip() or ".",
         }
 
@@ -278,12 +323,18 @@ class ProteinTab(QWidget):
         self.progress.setRange(0, 0)  # busy
         loop = asyncio.get_running_loop()
         try:
-            self._info(f"rolling up {fit_dir} (parsimony={p['parsimony']}) …")
+            self._info(f"rolling up {fit_dir} (model={p['model']}, "
+                       f"parsimony={p['parsimony']}) …")
+            # workers>1 spawns a ProcessPool inside rollup_proteins; run it on a
+            # main-process thread (executor=None) so that pool is NOT nested
+            # inside a shared-pool worker (which breaks: BrokenProcessPool).
+            executor = None if p["workers"] > 1 else self.pool
             self._future = loop.run_in_executor(
-                self.pool, run_rollup, str(fit_dir), p["model"],
+                executor, run_rollup, str(fit_dir), p["model"],
                 p["kp"], p["kr"], p["rp"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_r2"],
                 0.025, 0.05, p["threads"], p["method"],
+                p["workers"], p["phi_limit"], p["reference_condition"],
             )
             result, points = await self._future
             if self._cancelled:
@@ -323,7 +374,8 @@ class ProteinTab(QWidget):
         provenance = make_provenance(
             {k: params[k] for k in (
                 "model", "method", "parsimony", "kp", "kr", "rp",
-                "min_peptides", "min_points", "min_r2")},
+                "min_peptides", "min_points", "min_r2",
+                "phi_limit", "reference_condition")},
             id_source=params["fit_dir"],
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},
@@ -360,6 +412,10 @@ class ProteinTab(QWidget):
         if not current.isValid() or self._running or self._result_df is None:
             return
         row = self.model.dataframe.iloc[current.row()]
+        p = self._last_params or {}
+        if p.get("model") == "linear simple":
+            self._plot_linear_row(row, p)
+            return
         key = (row["experiment"], row["condition"], row["protein"])
         pts = self._points.get(key)
         k = row.get("k_deg")
@@ -367,12 +423,36 @@ class ProteinTab(QWidget):
             self.curve.show_placeholder(f"{row['protein']}: no refit to show.")
             return
         t_list, fs_list = pts
-        p = self._last_params or {}
         kinetic = dict(k_p=p.get("kp", 0.5), k_r=p.get("kr", 0.05),
                        r_p=p.get("rp", 10.0))
         self.curve.plot_fit(
             str(row["protein"]), list(t_list), list(fs_list),
             float(k), p.get("model", "simple"), kinetic,
+        )
+
+    def _plot_linear_row(self, row, p: dict) -> None:
+        """Overlay every condition of the selected protein in φ-space (the Δk
+        view): each condition's clearance points + its through-origin k line."""
+        exp, prot = row["experiment"], row["protein"]
+        sub = self._result_df[
+            (self._result_df["experiment"] == exp)
+            & (self._result_df["protein"] == prot)
+        ]
+        per_condition: dict = {}
+        for _, r in sub.iterrows():
+            pts = self._points.get((exp, r["condition"], prot))
+            if pts is None:
+                continue
+            t_list, theta_list = pts
+            per_condition[str(r["condition"])] = (
+                list(t_list), list(theta_list), r.get("k_deg"))
+        if not per_condition:
+            self.curve.show_placeholder(f"{prot}: no points to show.")
+            return
+        self.curve.plot_linear(
+            str(prot), per_condition,
+            phi_limit=float(p.get("phi_limit", -4.0)),
+            delta_k=row.get("delta_k"), delta_k_p_adj=row.get("delta_k_p_adj"),
         )
 
     # --- small helpers ------------------------------------------------------ #

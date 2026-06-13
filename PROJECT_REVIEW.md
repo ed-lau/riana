@@ -1087,8 +1087,16 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     faster in atrium, **410 significant at BH p_adj<0.05** (347 of them
     atrium-faster) — consistent with the descriptive paired Δk. Tests:
     `tests/test_linear_model.py` (6) + `test_rollup_linear_simple_delta_k`.
-    **Still to do:** φ-space plotting in the GUI (Track E); >2-condition pairwise
-    contrasts (today the Δk needs exactly two qualifying conditions). The design
+    **GUI φ-space plotting — DONE 2026-06-13:** "linear simple" is selectable in
+    the Protein tab Model combo (φ-limit + reference-condition knobs shown only for
+    it); selecting a protein row overlays both conditions in φ-space via
+    `CurveView.plot_linear` (clearance points with truncated points hollow, the
+    through-origin k line per condition, the φ-limit threshold line, and the
+    Δk + p_adj in the title). **Parked — >2-condition pairwise contrasts:** the Δk
+    needs exactly two qualifying conditions today; the >2-condition pairwise/Tukey
+    case is deferred until there is a good ≥3-condition test dataset (user,
+    2026-06-13). `fit_linear_deltak` already emits per-condition k for any N and
+    leaves `delta_k`/p NaN when ≠2, so the path is forward-compatible. The design
     below records the rationale.
     - *Transform.* φ = `log(1 − θ)`; clamp θ to ~[0.01, 0.99] and drop non-finite
       (the R reference does this). φ = 0 at t = 0, so the line is **through the
@@ -1261,14 +1269,16 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   test (rec below).
 - **Modernize look** — low priority, ready-made only (a QSS theme or
   `qt-material` / `qtmodern`).
-- **Wire `-W/--workers` into the GUI fit + rollup forms (spiked 2026-06-12,
-  short-term).** The CLI now has process-level `-W` on both `fit` (Track C) and
-  `rollup` (shipped 2026-06-12); the GUI still drives them thread-only via
-  `gui/tasks.run_fit` / `run_rollup` (`threads=`). Add a workers control to both
-  forms and pass `workers=` through `gui/tasks` — but mind the GUI's
-  "dispatch over its own pool" model (it must not nest a `ProcessPoolExecutor`
-  inside a pool worker; the plan/dispatch split in `core/pipeline` is the pattern
-  to follow). Quick win once the nesting is handled.
+- **`-W/--workers` in the GUI fit + rollup forms — DONE 2026-06-13.** Integrate
+  already had it (the "Workers (files)" spin + semaphore dispatch over the shared
+  pool). Added a **Workers** spin to the Model (fit) and Protein (rollup) tabs.
+  **Nesting guard (verified the hard way — a `ProcessPoolExecutor` inside a pool
+  worker raises `BrokenProcessPool` here):** when `workers > 1` the tab dispatches
+  the run on a **main-process thread** (`run_in_executor(None, …)`) so `fit_run` /
+  `rollup_proteins` create their pool from the *main* process, not nested inside a
+  shared-pool worker; `workers == 1` keeps the shared pool (one CPU task off the
+  main process). Per-peptide/-protein deterministic seeds keep the result
+  worker-count-independent.
 - **Expose the hidden integrate knobs in CLI + GUI as clearly-marked *advanced*
   options (spiked 2026-06-12, short-term).** Several `IntegrationConfig` knobs the
   CLI already takes (`--peak-rt`, `--apex-selection`, `--integration-half-width`

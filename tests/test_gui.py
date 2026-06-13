@@ -307,6 +307,54 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
     assert tab.curve.plot.getPlotItem().titleLabel.text == "P1"
 
 
+def test_protein_tab_linear_model_toggles_and_params(main_window):
+    """Selecting 'linear simple' swaps the ODE rate knobs for the φ knobs and
+    surfaces them in build_params."""
+    tab = main_window.protein_tab
+    tab.model_combo.setCurrentText("linear simple")
+    assert tab.phi_limit_spin.isVisibleTo(tab)
+    assert not tab.kp_spin.isVisibleTo(tab)
+    tab.reference_edit.setText("control")
+    params = tab.build_params()
+    assert params["model"] == "linear simple"
+    assert params["phi_limit"] == -4.0
+    assert params["reference_condition"] == "control"
+    assert "workers" in params
+
+
+def test_protein_tab_linear_plots_phi_space(main_window):
+    """A linear-simple protein row overlays both conditions in φ-space (each a
+    points scatter + a through-origin k line) with the Δk in the title."""
+    from pyqtgraph import PlotDataItem
+
+    tab = main_window.protein_tab
+    tab.model_combo.setCurrentText("linear simple")
+    result = pd.DataFrame({
+        "experiment": ["e", "e"], "condition": ["control", "atrium"],
+        "protein": ["P1", "P1"], "method": ["linear simple"] * 2,
+        "n_peptides": [3, 3], "n_points": [5, 5],
+        "k_deg": [0.05, 0.10], "ci_lo": [0.04, 0.09], "ci_hi": [0.06, 0.11],
+        "R_squared": [0.98, 0.98], "peptide_median_k": [0.05, 0.10],
+        "delta_k": [0.05, 0.05], "delta_k_se": [0.005, 0.005],
+        "delta_k_p": [1e-9, 1e-9], "delta_k_p_adj": [1e-9, 1e-9],
+    })
+    tab._result_df = result
+    tab._points = {
+        ("e", "control", "P1"): ([0.0, 1, 2, 4, 8], [0.0, 0.05, 0.1, 0.18, 0.3]),
+        ("e", "atrium", "P1"): ([0.0, 1, 2, 4, 8], [0.0, 0.1, 0.19, 0.33, 0.55]),
+    }
+    tab._last_params = tab.build_params()
+    tab.model.set_dataframe(result)
+
+    tab.table.setCurrentIndex(tab.model.index(0, 0))
+
+    curves = [it for it in tab.curve.plot.getPlotItem().items
+              if isinstance(it, PlotDataItem)]
+    # Two conditions × (points scatter + k line) = 4 data items.
+    assert len(curves) >= 4
+    assert "Δk" in tab.curve.plot.getPlotItem().titleLabel.text
+
+
 def test_build_config_defaults_round_trip(main_window):
     cfg = main_window.integrate_tab.build_config()
     assert isinstance(cfg, IntegrationConfig)
