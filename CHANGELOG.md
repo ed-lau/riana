@@ -26,6 +26,53 @@ and Zenodo code DOI follow at release.)
   real lever: `integrate -W` across files, `fit -W` across peptides, `rollup -W`
   across proteins — all deterministic regardless of N.
 
+### Track C — `linear simple` model + cross-sample Δk
+
+#### Added
+
+- **`riana rollup --model "linear simple"` — the linearized cross-sample Δk
+  model** (`core/linear_model.py`). A model choice mutually exclusive with the
+  nonlinear ODE models: transforms fraction-new θ → clearance φ = `log(1 − θ)`
+  (linear through the origin for the simple model) and fits a protein's conditions
+  **jointly** in one no-intercept OLS with a `day:condition` interaction
+  (statsmodels), yielding a per-condition `k_deg` (= −slope) **and** a pairwise
+  **Δk** test with a shared-variance p-value, then Benjamini-Hochberg across
+  proteins. Output schema `PROTEIN_LINEAR_COLUMNS` adds `delta_k` / `delta_k_se` /
+  `delta_k_p` / `delta_k_p_adj`. CIs are **analytic** (statsmodels `conf_int` /
+  `t_test`), not the residual bootstrap the nonlinear models use. New flags
+  `--phi-limit` (plateau truncation, default −4 ≈ θ 0.98 — linear-only, since the
+  saturated tail is floor-noise that flattens the through-origin slope) and
+  `--reference-condition`. Adds a `statsmodels>=0.14` dependency. Validated on
+  `data/timeseries_lve_atr` (atrium vs ventricle: 780 proteins in both chambers,
+  atrium 1.24× faster, 410 significant at BH p_adj<0.05).
+- **`riana rollup -W/--workers`** — process-level parallelism for the GIL-bound
+  per-protein refit (mirrors `fit -W`); byte-identical to serial, ~7.2× cores.
+
+#### Fixed
+
+- **Two-condition `fit_project` crash** — the final `pd.concat` of per-curve
+  frames raised `Can only compare identically-labeled` because each frame carried
+  a `fractions_long` DataFrame on `.attrs` (pandas reconciles attrs by equality
+  across frames once there is >1 curve). Now dropped before the concat.
+
+### Track A / E — variable-mod drop + GUI φ-space visualization
+
+#### Added
+
+- **`io/mztab` variable-mod drop** (`drop_variable_mods`, default on) — mirrors
+  the DIA-NN path: PSM rows carrying a non-fixed UniMod (Oxidation, Phospho,
+  N-term Acetyl, …) in the `modifications` column are dropped rather than
+  integrated at the *unmodified* m/z until M7. Carbamidomethyl (`UNIMOD:4`) is
+  kept. On the `timeseries_lve_atr` PTM search this drops ~2.3% of PSMs.
+- **GUI φ-space plotting + CI ribbons** — the Protein tab's Model combo offers
+  `linear simple` (with φ-limit + reference-condition knobs shown only for it);
+  selecting a protein overlays both conditions in φ-space (`CurveView.plot_linear`)
+  with the through-origin k lines, truncated points drawn hollow, and the Δk +
+  p_adj in the title. Both the θ-space fit curves and φ-space lines now shade a
+  **confidence ribbon** from each k CI. The fit and rollup tabs gained a
+  **Workers** spin (dispatched on a main-process thread when >1 to avoid nested
+  pools).
+
 ### M6b — DIA-NN parquet intake (Track A)
 
 #### Added

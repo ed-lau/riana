@@ -52,22 +52,32 @@
 > plan/dispatch/finalize so the GUI Integrate tab drives the same per-run unit
 > over its own pool (Workers spinbox, no nested pools) + an SDRF path; GUI Model
 > gained a manifest path (`fit_project`) — integrate/fit now go through
-> `core/pipeline` on both surfaces. **Also shipped (2026-06-11):** rollup
-> `--thread`; the **manifest project chain** (`fit`/`rollup --manifest` root at the
-> manifest dir + write `stage="fit"`/`"rollup"` rows, each with a `created_at`);
-> rollup **`--method {weighted, pooled}`** (point estimators dropped; the median
-> stays as a `peptide_median_k` column; `n_replicates`/`n_timepoints` added); the
-> GUI **SDRF mass-tolerance reflect**; **output hygiene** (slim
-> `riana_fit_peptides.txt`, ~6-sig-fig estimate outputs,
-> `riana_protein.txt`→`riana_rollup_proteins.txt` + a tidy `riana_rollup_fractions.txt`);
-> and **crash-resilient integrate** (per-run incremental writes + `integrate
-> --resume`). **Next:** Track C **cross-protein Δk + linearized model** (the
-> atrium-vs-ventricle `data/timeseries_lve_atr` set — one SDRF, two `factor value`
-> conditions — is the fixture, pending a PTM-search re-run); **M7 PTM-aware
-> envelope** (now load-bearing — the new search's phospho-S/Y + protein-N-term-Ac
-> peptidoforms integrate at the *unmodified* m/z until M7); Track B fidelity
-> (gateable by Track D). (**M6b DIA-NN intake shipped 2026-06-11** — see above.)
-> Maintainer: Edward Lau. Last reviewed: 2026-06-11.
+> `core/pipeline` on both surfaces. **Also shipped (2026-06-11):** the **manifest
+> project chain** (`fit`/`rollup --manifest` root at the manifest dir + write
+> `stage="fit"`/`"rollup"` rows, each with a `created_at`); rollup **`--method
+> {weighted, pooled}`** (point estimators dropped; the median stays as a
+> `peptide_median_k` column; `n_replicates`/`n_timepoints` added); the GUI **SDRF
+> mass-tolerance reflect**; **output hygiene** (slim `riana_fit_peptides.txt`,
+> ~6-sig-fig estimate outputs, `riana_protein.txt`→`riana_rollup_proteins.txt` + a
+> tidy `riana_rollup_fractions.txt`); and **crash-resilient integrate** (per-run
+> incremental writes + `integrate --resume`). **Shipped 2026-06-12/13 (this
+> session):** the **`io/mztab` variable-mod drop** (mirrors `io/diann`, so the
+> PTM-search `timeseries_lve_atr` set integrates its unmodified peptidoforms
+> cleanly); **rollup `-W/--workers`** (process pool, ~7.2× cores, byte-identical);
+> the **`linear simple` rollup model** — the cross-sample Δk milestone: φ=log(1−θ)
+> through-origin OLS fit jointly across a protein's conditions → per-condition k +
+> a **Δk test** (statsmodels, analytic CIs) + Benjamini-Hochberg, with linear-only
+> plateau truncation (`--phi-limit`); validated on `data/timeseries_lve_atr`
+> (atrium vs ventricle: 780 proteins both chambers, atrium 1.24× faster, 410
+> significant at BH p_adj<0.05); the **GUI φ-space plot + CI ribbons** (and `-W` in
+> the fit/rollup tabs); and the **removal of `-t/--thread`** everywhere (GIL-bound,
+> no speedup — `-W` is the sole parallelism lever). **Next:** **M7 PTM-aware
+> envelope** (now the headline gap — thread parsed mod masses through the IsoSpec
+> envelope so modified peptidoforms integrate at the *correct* m/z, plus
+> proteoform-aware rollup keys; design in §3 Track C + `m7_ptm_envelope_design`),
+> then the parked/short-term items (see §3 "Handoff — ordered priorities"). Track
+> B fidelity gateable by Track D.
+> Maintainer: Edward Lau. Last reviewed: 2026-06-13.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -752,6 +762,53 @@ carrier for both acquisition modes — DDA via quantms and DIA via quantms-diann
 which emits its own SDRF (a near-identical variant, a few columns different) —
 so the identity model is shared; only the PSM/quant file format differs (mzTab
 vs DIA-NN parquet).
+
+#### Handoff — ordered priorities (next sessions, as of 2026-06-13)
+
+The Track C cross-sample Δk milestone (`linear simple`) is **done**; the headline
+gap is now M7. Recommended order:
+
+1. **M7 — PTM-aware envelope (next; the headline).** Load-bearing: variable-mod
+   peptidoforms are currently *dropped* (the `io/mztab`/`io/diann`
+   `drop_variable_mods` interim) because they would integrate at the unmodified
+   m/z. Full design in Track C below + `[[m7_ptm_envelope_design]]`. Stage it: (a)
+   **forward-model atom accounting** — add each parsed mod's composition to the
+   IsoSpec envelope *and* the integrate-side target m/z (two separate fixes; note
+   **phosphorus is not in the `[C,H,O,N,S]` vector** — extend it), generalizing
+   the hardcoded Carbamidomethyl to a normal UniMod; scope a starter mod set
+   (N-term Ac, Met-Ox, deamidation, phospho-S/T/Y); (b) **proteoform-aware rollup
+   keys** (`P12345_pS235`) so PTM forms don't collapse into the unmodified protein
+   — both mzTab (`start`+pos) and DIA-NN (`Protein.Sites`) already carry the
+   protein-coordinate site, **no FASTA needed**. Substrate: `data/timeseries_lve_atr`
+   (PTM search already in hand).
+2. **Expose hidden integrate knobs as clearly-marked *advanced* options
+   (short-term, cheap, independent).** Audit the full `IntegrationConfig` knob set
+   (`--peak-rt`, `--apex-selection`, `--integration-half-width` vs
+   `--extraction-half-width`, `--baseline`, `--smoothing`, …); surface them in CLI
+   help + a collapsible "Advanced" group in the GUI forms (pairs with the
+   smoothing-in-GUI Track E item). Good warm-up; improves the fidelity work.
+3. **Cut a real `1.0.0` tag + repo hygiene (deliberate hygiene chunk).** A clean
+   line in the sand before more features pile on (move 1 GB+ of personal outputs
+   out of `data/`, drop stray root outputs — see Cross-cutting chores). Can follow
+   M7 but shouldn't slip indefinitely.
+4. **Match-between-runs re-explore for the mzTab/DDA path (mid-term).** Start with
+   the *measurement* — compare per-peptide missingness DIA vs DDA (`runs/lve_dia`
+   vs `runs/lve`) — before building anything; DIA-NN already propagates, so DDA is
+   where MBR would pay. Track A item below.
+5. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
+   Stale post-M3; docstrings are the interim source of truth.
+
+**Parked / blocked (do when unblocked, not ahead of the above):**
+- **>2-condition pairwise Δk contrasts** — `fit_linear_deltak` handles exactly two
+  qualifying conditions today; the pairwise/Tukey extension is **blocked on a good
+  ≥3-condition test dataset** (user to provide). Forward-compatible (per-condition
+  k for any N; Δk left NaN when ≠2).
+- **Track B integration fidelity** + the `calibration` 4th model + guan/fornasiero
+  validation — demand-driven, gateable by the Track D within-protein-θ bench.
+- **o18 rewrite** — needs the NB90b frozen coefficient table; `fit --label o18`
+  errors until then.
+- **GUI framework feasibility (Electron/Tauri/web)** — long-term decision doc, only
+  if Qt becomes a concrete graphing ceiling.
 
 #### Locked decisions (2026-06-07)
 
