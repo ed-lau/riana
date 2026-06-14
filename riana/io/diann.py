@@ -35,14 +35,16 @@ Field mapping (DIA-NN parquet → :class:`PSMRecord`):
 - ``Protein.Ids`` (``;``-joined) → ``protein_id`` (normalized to ``,`` to match
   the rest of Riana / the rollup parsimony).
 
-**Variable modifications (M7 caveat).** Like the DDA mzTab path, the envelope is
-keyed on the *stripped* sequence, so a variable-mod peptidoform (e.g.
-Oxidation(M), ``UniMod:35``) would integrate at the **unmodified** m/z. Until M7
-threads variable mods into the envelope, ``drop_variable_mods`` (default true)
-filters those peptidoforms out rather than mis-target them. The fixed
-Carbamidomethyl(C) (``UniMod:4``) is kept — it is folded into the recomputed
-peptide mass. On the validated cardiac DIA set this drops ~1.8% of rows and
-costs only the few precursors observed *exclusively* as an oxidized form.
+**Variable modifications (M7).** Like the DDA mzTab path, DIA-NN's inline
+``(UniMod:N)`` tokens are folded into the sequence as ``[UNIMOD:N]`` tokens by
+:func:`_encode_peptidoform`, so a starter-set peptidoform (N-term Acetyl
+``UniMod:1``, Phospho ``UniMod:21``) integrates at the *modified* m/z and the
+envelope sees the mod's atoms. The fixed Carbamidomethyl(C) (``UniMod:4``) is
+stripped, not tokenized — it is folded per-cysteine in ``mass_calc``. A
+peptidoform carrying any mod outside the fixed + starter sets (e.g. Oxidation
+``UniMod:35``) is dropped when ``drop_variable_mods`` is true (default); on the
+cardiac DIA set that is ~1.8% of rows (precursors seen *only* as an oxidized
+form).
 
 Decoy filtering: rows with ``Decoy == 1`` are dropped by default. DIA-NN's
 report is already FDR-filtered (Q.Value ≤ 0.01), so in practice every row is a
@@ -66,11 +68,10 @@ from riana.records import PSMRecord, RunIdentity
 
 _LOGGER = logging.getLogger(__name__)
 
-# A UniMod token inside a DIA-NN Modified.Sequence, e.g. ``(UniMod:35)``.
-_UNIMOD_RE = re.compile(r"\(UniMod:(\d+)\)")
-# Carbamidomethyl — the fixed cysteine mod the calibration/turnover searches use;
-# folded into the recomputed peptide mass, so it is NOT a "variable" peptidoform.
-_FIXED_UNIMODS = frozenset({"4"})
+# An inline UniMod token in a DIA-NN Modified.Sequence, e.g. the ``(UniMod:4)``
+# in ``AAC(UniMod:4)DEFK`` — positioned right after its residue (N-term mods
+# lead the string), so the same string both locates and identifies the mod.
+_UNIMOD_RE = re.compile(r"\(UniMod:(\d+)\)", re.IGNORECASE)
 
 # The parquet columns this reader needs (a subset — DIA-NN emits ~70).
 _COLUMNS = [
@@ -103,9 +104,11 @@ def read_diann(
             is tagged with the identity of its ``Run`` (joined on the stem), and
             ``PSMRecord.sample`` is set to that run's ``source name``.
         drop_decoys: when true (default), rows with ``Decoy == 1`` are skipped.
-        drop_variable_mods: when true (default), peptidoforms carrying a
-            non-fixed UniMod (e.g. Oxidation) are dropped — they would otherwise
-            integrate at the unmodified m/z until M7 (see module docstring).
+        drop_variable_mods: when true (default), a peptidoform carrying a mod the
+            v1 forward model can't account for (anything outside the fixed +
+            starter UniMod sets, e.g. Oxidation) is dropped; starter-set mods are
+            always folded into the sequence as ``[UNIMOD:N]`` tokens (see module
+            docstring). With it off, such a peptidoform is kept bare.
 
     Returns:
         ``(records, file_index_map)`` — the PSMs and a ``{file_idx: Run}``
@@ -150,15 +153,7 @@ def read_diann(
         df = df[df["Decoy"] == 0]
 
     n_before = len(df)
-    if drop_variable_mods:
-        df = df[df["modified_sequence"].map(_only_fixed_mods)]
-        n_dropped = n_before - len(df)
-        if n_dropped:
-            _LOGGER.info(
-                "io.diann: dropped %d/%d variable-mod peptidoforms "
-                "(integrate at the unmodified m/z until M7); keeping %d.",
-                n_dropped, n_before, len(df),
-            )
+    n_dropped = 0
 
     # file_idx by sorted Run order — stable and order-independent of the SDRF.
     runs = sorted(df["Run"].unique())
@@ -179,7 +174,18 @@ def read_diann(
     for row in df.itertuples(index=False):
         run = str(row.Run)
         identity = sample_map[run]
-        sequence = str(row.sequence)
+        # Fold variable mods into the sequence as [UNIMOD:N] tokens (or drop a
+        # peptidoform the v1 forward model can't account for). ``drop_variable_mods``
+        # gates only the drop; with it off, an unmodelable peptidoform is kept
+        # bare (integrates at a partial m/z — an escape hatch, not recommended).
+        encoded = _encode_peptidoform(row.modified_sequence)
+        if encoded is None:
+            if drop_variable_mods:
+                n_dropped += 1
+                continue
+            sequence = str(row.sequence)
+        else:
+            sequence = encoded
         charge = int(row.charge)
         peptide_mass = float(
             accmass.calculate_ion_mz(sequence)
@@ -211,6 +217,13 @@ def read_diann(
             )
         )
 
+    if n_dropped:
+        _LOGGER.info(
+            "io.diann: dropped %d/%d peptidoforms carrying a mod outside the M7 "
+            "v1 set (kept %d); starter-set mods (N-term Acetyl, Phospho) are "
+            "encoded as [UNIMOD:N] and integrated at the modified m/z.",
+            n_dropped, n_before, len(records),
+        )
     if mz_ppm_diffs:
         median_ppm = float(np.median(np.abs(mz_ppm_diffs)))
         if median_ppm > 50.0:
@@ -227,16 +240,33 @@ def read_diann(
     return records, file_index_map
 
 
-def _only_fixed_mods(modified_sequence: object) -> bool:
-    """True when every UniMod in *modified_sequence* is a fixed mod we keep.
+def _encode_peptidoform(modified_sequence: object) -> str | None:
+    """Turn a DIA-NN ``Modified.Sequence`` into a ``[UNIMOD:N]``-tagged sequence.
 
-    A bare (unmodified) sequence trivially qualifies. Carbamidomethyl (UniMod:4)
-    is fixed and folded into the recomputed peptide mass, so it is kept; any
-    other UniMod (Oxidation, N-term acetyl, ...) marks a variable peptidoform we
-    drop until M7.
+    DIA-NN inlines its mods as ``(UniMod:N)`` right after the modified residue.
+    Returns:
+
+    - the bare residues when there are no mods, or only the fixed Carbamidomethyl
+      (``UniMod:4``) — CAM is folded per-cysteine by ``mass_calc`` and the inline
+      token is stripped so it is not double-counted;
+    - the residues with ``[UNIMOD:N]`` tokens at each starter-set variable mod
+      (N-term Acetyl ``1``, Phospho ``21``), in place, so it integrates at the
+      modified m/z and the envelope sees the mod's atoms;
+    - ``None`` to **drop** the peptidoform when it carries any mod outside
+      ``FIXED_UNIMODS`` ∪ ``STARTER_VARIABLE_UNIMODS``. Mirrors
+      :func:`riana.io.mztab._encode_peptidoform`.
     """
-    toks = _UNIMOD_RE.findall(str(modified_sequence))
-    return all(t in _FIXED_UNIMODS for t in toks)
+    s = str(modified_sequence)
+    ids = [int(u) for u in _UNIMOD_RE.findall(s)]
+    if any(u not in constants.FIXED_UNIMODS | constants.STARTER_VARIABLE_UNIMODS
+           for u in ids):
+        return None
+
+    def _replace(match: re.Match) -> str:
+        u = int(match.group(1))
+        return "" if u in constants.FIXED_UNIMODS else f"[UNIMOD:{u}]"
+
+    return _UNIMOD_RE.sub(_replace, s)
 
 
 def _normalize_accessions(protein_ids: object) -> str:

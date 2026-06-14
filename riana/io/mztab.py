@@ -17,17 +17,19 @@ Field mapping (quantms PSM section → :class:`PSMRecord`):
   bit-for-bit with the Percolator path's recompute — Carbamidomethyl(C) is
   always counted (it is the only fixed mod the calibration set uses).
 
-**Variable modifications (M7 caveat).** The envelope is keyed on the *stripped*
-``sequence``, so a variable-mod peptidoform (Oxidation(M) ``UNIMOD:35``,
-Phospho(S) ``UNIMOD:21``, N-term Acetyl ``UNIMOD:1``, …) would integrate at the
-**unmodified** m/z. Until M7 threads variable mods into the envelope,
-``drop_variable_mods`` (default true) filters those PSM rows out via the mzTab
-``modifications`` column (``pos-UNIMOD:id``, comma-joined) rather than
-mis-target them. The fixed Carbamidomethyl(C) (``UNIMOD:4``) is kept — it is
-folded into the recomputed peptide mass. This mirrors the DIA-NN path's
-``drop_variable_mods`` (:mod:`riana.io.diann`), so a variable-mod search
-(e.g. ``timeseries_lve_atr``) integrates only its unmodified peptidoforms on
-both the DDA and DIA surfaces.
+**Variable modifications (M7).** The mzTab ``modifications`` column
+(``pos-UNIMOD:id``, comma-joined; pos 0 = N-term) is folded into the
+``sequence`` as ``[UNIMOD:N]`` tokens by :func:`_encode_peptidoform`, so a
+starter-set peptidoform — N-term Acetyl (``UNIMOD:1``), Phospho-S/T/Y
+(``UNIMOD:21``) — integrates at the *modified* m/z and the downstream IsoSpec
+envelope sees the mod's atoms. The fixed Carbamidomethyl(C) (``UNIMOD:4``) is
+NOT tokenized: it is folded per-cysteine in ``mass_calc`` and a token would
+double-count it. A peptidoform carrying any mod outside
+``constants.FIXED_UNIMODS`` ∪ ``STARTER_VARIABLE_UNIMODS`` (e.g. Oxidation
+``UNIMOD:35``) is **dropped** when ``drop_variable_mods`` is true (default) —
+the v1 forward model can't account for it yet. Mirrors the DIA-NN path
+(:mod:`riana.io.diann`), so a variable-mod search (e.g. ``timeseries_lve_atr``)
+gets the same peptidoform handling on both the DDA and DIA surfaces.
 - ``opt_global_q-value`` → ``percolator_q_value`` (named ``percolator_*``
   on :class:`PSMRecord` for compatibility — the field carries the q-value
   from whatever ID engine produced the file).
@@ -56,6 +58,7 @@ from pathlib import Path
 
 from pyteomics import mztab
 
+from riana import constants
 from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
 from riana.records import PSMRecord, RunIdentity
@@ -66,13 +69,11 @@ _LOGGER = logging.getLogger(__name__)
 _MS_RUN_RE = re.compile(r"ms_run\[(\d+)\]")
 _SPECTRA_REF_RE = re.compile(r"ms_run\[(\d+)\]:.*?scan=(\d+)")
 _LOCATION_RE = re.compile(r"^(?:file://)?(.*)$")
-# A UniMod token inside an mzTab ``modifications`` cell, e.g. ``7-UNIMOD:4``
-# (``pos-UNIMOD:id``, comma-joined for multiple sites). Matched case-insensitively
-# so it also accepts the DIA-NN-style ``UniMod:`` spelling.
-_UNIMOD_RE = re.compile(r"UNIMOD:(\d+)", re.IGNORECASE)
-# Carbamidomethyl — the fixed cysteine mod the calibration/turnover searches use;
-# folded into the recomputed peptide mass, so it is NOT a "variable" peptidoform.
-_FIXED_UNIMODS = frozenset({"4"})
+# A ``pos-UNIMOD:id`` field inside an mzTab ``modifications`` cell, e.g.
+# ``7-UNIMOD:4`` (comma-joined for multiple sites; pos 0 = N-term, pos≥1 = the
+# 1-based residue index). Matched case-insensitively so it also accepts the
+# DIA-NN-style ``UniMod:`` spelling.
+_MOD_FIELD_RE = re.compile(r"(\d+)-UNIMOD:(\d+)", re.IGNORECASE)
 
 
 def read_mztab(
@@ -96,11 +97,12 @@ def read_mztab(
             record's ``sample`` field with ``identity=None``. Mutually exclusive
             with ``sample_map``.
         drop_decoys: when true (default), rows flagged as decoys are skipped.
-        drop_variable_mods: when true (default), PSM rows carrying a non-fixed
-            UniMod (Oxidation, Phospho, N-term Acetyl, …) in the ``modifications``
-            column are dropped — they would otherwise integrate at the unmodified
-            m/z until M7 (see module docstring). Carbamidomethyl (``UNIMOD:4``)
-            is fixed and kept.
+        drop_variable_mods: when true (default), a peptidoform carrying a mod the
+            v1 forward model can't account for (anything outside the fixed +
+            starter UniMod sets) is dropped; starter-set mods are always folded
+            into the sequence as ``[UNIMOD:N]`` tokens (see module docstring).
+            With it off, such a peptidoform is kept bare (partial m/z) — an
+            escape hatch, not recommended.
 
     Returns:
         ``(records, file_index_map)`` — the PSMs and a ``{file_idx: file_name}``
@@ -148,16 +150,9 @@ def read_mztab(
     if drop_decoys and decoy_col in psm_df.columns:
         psm_df = psm_df[psm_df[decoy_col] == 0]
 
-    if drop_variable_mods and "modifications" in psm_df.columns:
-        n_before = len(psm_df)
-        psm_df = psm_df[psm_df["modifications"].map(_only_fixed_mods)]
-        n_dropped = n_before - len(psm_df)
-        if n_dropped:
-            _LOGGER.info(
-                "io.mztab: dropped %d/%d variable-mod peptidoforms "
-                "(integrate at the unmodified m/z until M7); keeping %d.",
-                n_dropped, n_before, len(psm_df),
-            )
+    has_mod_col = "modifications" in psm_df.columns
+    n_before = len(psm_df)
+    n_dropped = 0
 
     records: list[PSMRecord] = []
     for row in psm_df.to_dict(orient="records"):
@@ -166,7 +161,19 @@ def read_mztab(
         file_name = file_index_map.get(file_idx, "")
         identity = sample_map.get(file_name) if sample_map is not None else None
         record_sample = identity.sample if identity is not None else (sample or "")
+        # Fold variable mods into the sequence as [UNIMOD:N] tokens (or drop a
+        # peptidoform the v1 forward model can't account for). ``drop_variable_mods``
+        # gates only the *drop*: with it off, an unmodelable peptidoform is kept
+        # bare (integrates at a partial m/z — an escape hatch, not recommended).
         sequence = str(row["sequence"])
+        if has_mod_col:
+            encoded = _encode_peptidoform(sequence, row.get("modifications"))
+            if encoded is None:
+                if drop_variable_mods:
+                    n_dropped += 1
+                    continue
+            else:
+                sequence = encoded
         records.append(
             PSMRecord(
                 scan=scan,
@@ -196,6 +203,13 @@ def read_mztab(
                 distinct_matches=0,
             )
         )
+    if n_dropped:
+        _LOGGER.info(
+            "io.mztab: dropped %d/%d peptidoforms carrying a mod outside the M7 "
+            "v1 set (kept %d); starter-set mods (N-term Acetyl, Phospho) are "
+            "encoded as [UNIMOD:N] and integrated at the modified m/z.",
+            n_dropped, n_before, len(records),
+        )
     return records, file_index_map
 
 
@@ -221,22 +235,56 @@ def _build_file_index_map(metadata: dict, source_path: Path) -> dict[int, str]:
     return out
 
 
-def _only_fixed_mods(modifications: object) -> bool:
-    """True when every UniMod in an mzTab ``modifications`` cell is a fixed mod.
+def _encode_peptidoform(sequence: str, modifications: object) -> str | None:
+    """Fold an mzTab ``modifications`` cell into a ``[UNIMOD:N]``-tagged sequence.
 
-    The cell is ``pos-UNIMOD:id`` tokens (comma-joined), or ``None`` / ``"null"``
-    for an unmodified PSM (which trivially qualifies). Carbamidomethyl
-    (``UNIMOD:4``) is fixed and folded into the recomputed peptide mass, so it is
-    kept; any other UniMod (Oxidation, Phospho, N-term Acetyl, …) marks a
-    variable peptidoform dropped until M7. Mirrors
-    :func:`riana.io.diann._only_fixed_mods`.
+    The cell is ``pos-UNIMOD:id`` fields (comma-joined; pos 0 = N-term, pos≥1 =
+    the 1-based residue), or ``None`` / ``"null"`` for an unmodified PSM. Returns:
+
+    - the bare *sequence* when there are no mods, or only the fixed Carbamidomethyl
+      (``UNIMOD:4``) — CAM is folded per-cysteine by ``mass_calc`` and must not be
+      double-counted as a token;
+    - a sequence with ``[UNIMOD:N]`` tokens inserted at each starter-set variable
+      mod (N-term Acetyl ``1``, Phospho ``21``) so it integrates at the modified
+      m/z and the envelope sees the mod's atoms;
+    - ``None`` to **drop** the peptidoform when it carries any mod the v1 forward
+      model can't account for (anything outside ``FIXED_UNIMODS`` ∪
+      ``STARTER_VARIABLE_UNIMODS``). Mirrors :func:`riana.io.diann._encode_peptidoform`.
     """
     if modifications is None:
-        return True
+        return sequence
     s = str(modifications)
     if s.lower() in ("nan", "none", "null", ""):
-        return True
-    return all(t in _FIXED_UNIMODS for t in _UNIMOD_RE.findall(s))
+        return sequence
+    pairs = [(int(p), int(u)) for p, u in _MOD_FIELD_RE.findall(s)]
+    if any(u not in constants.FIXED_UNIMODS | constants.STARTER_VARIABLE_UNIMODS
+           for _, u in pairs):
+        return None
+    variable = [(p, u) for p, u in pairs
+                if u in constants.STARTER_VARIABLE_UNIMODS]
+    if not variable:
+        return sequence
+    return _insert_unimod_tokens(sequence, variable)
+
+
+def _insert_unimod_tokens(sequence: str, variable: list[tuple[int, int]]) -> str:
+    """Insert ``[UNIMOD:N]`` tokens into *sequence* at 1-based positions.
+
+    ``pos <= 0`` is an N-terminal mod (token leads the sequence); ``pos >= 1``
+    places the token immediately after that residue. Multiple mods on one
+    residue keep their listed order.
+    """
+    nterm = "".join(f"[UNIMOD:{u}]" for p, u in variable if p <= 0)
+    by_residue: dict[int, list[str]] = {}
+    for p, u in variable:
+        if p >= 1:
+            by_residue.setdefault(p, []).append(f"[UNIMOD:{u}]")
+    out = [nterm]
+    for i, residue in enumerate(sequence, start=1):
+        out.append(residue)
+        if i in by_residue:
+            out.append("".join(by_residue[i]))
+    return "".join(out)
 
 
 def _parse_spectra_ref(value: str) -> tuple[int, int]:

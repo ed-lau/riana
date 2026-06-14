@@ -102,6 +102,22 @@ mod_atoms = {
     121: [4, 6, 2, 2, 0, 0],    # GlyGly (ubiquitin remnant) — roadmap tier 2
 }
 
+# --- M7 modification policy (UniMod accession ids) ---------------------------
+# Fixed mods folded into the peptide mass + envelope automatically (CAM via the
+# per-cysteine ``iaa`` path in ``mass_calc``), so they are NOT encoded as
+# variable ``[UNIMOD:N]`` tokens on the peptidoform.
+FIXED_UNIMODS = frozenset({4})
+# Variable mods the v1 forward model accounts for — encoded into the
+# peptidoform sequence as ``[UNIMOD:N]`` tokens (protein N-term Acetyl,
+# Phospho-S/T/Y). A peptidoform carrying any other (non-fixed) mod is dropped
+# until that mod's roadmap tier lands.
+STARTER_VARIABLE_UNIMODS = frozenset({1, 21})
+# Mods that earn their own proteoform rollup key (Stage B) instead of folding
+# into the bare protein — the regulated, site-specific-turnover mods. N-term
+# Acetyl (1) is constitutive, so it folds into the bare protein despite being
+# encoded for envelope fidelity.
+BIOLOGICAL_MODS = frozenset({21})
+
 # Commerford, Carsten, and Cronkite 1983 Table 1
 # Number of labelable hydrogen atoms per amino acids
 # Relative specific activity * H/mole

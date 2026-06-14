@@ -158,11 +158,12 @@ def get_envelope(dist, pep_mass: float, n: int = 8) -> list[float]:
 
 
 def _get_init_env(sequence: str, pep_mass: float,
-                  n: int = _DEFAULT_N_ISO) -> np.ndarray:
-    """Natural-abundance envelope, cached by (sequence, n)."""
-    key = ('init', sequence, n)
+                  n: int = _DEFAULT_N_ISO,
+                  mods: tuple[int, ...] = ()) -> np.ndarray:
+    """Natural-abundance envelope, cached by (sequence, mods, n)."""
+    key = ('init', sequence, mods, n)
     if key not in _envelope_cache:
-        dist = get_peptide_distribution(sequence, label=1)
+        dist = get_peptide_distribution(sequence, label=1, mods=mods)
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
     return _envelope_cache[key]
@@ -170,24 +171,26 @@ def _get_init_env(sequence: str, pep_mass: float,
 
 def _get_final_env(sequence: str, pep_mass: float, spep: int,
                    ria_max: float,
-                   n: int = _DEFAULT_N_ISO) -> np.ndarray:
+                   n: int = _DEFAULT_N_ISO,
+                   mods: tuple[int, ...] = ()) -> np.ndarray:
     """Fully-labeled envelope at precursor enrichment ``ria_max``
     with ``spep`` labile sites.
 
-    Cached by (sequence, spep, ria_max-rounded, n). ``ria_max`` is the
+    Cached by (sequence, mods, spep, ria_max-rounded, n). ``ria_max`` is the
     experiment's precursor enrichment (~0.06 for 6% v/v D₂O culture
     media, possibly different for in-vivo / metabolic-water cases).
     """
     # Round ria_max for the cache key so very close values share an
     # envelope; the IsoSpec calc is insensitive to 1e-7 changes anyway.
     ria_key = round(float(ria_max), 6)
-    key = ('final', sequence, spep, ria_key, n)
+    key = ('final', sequence, mods, spep, ria_key, n)
     if key not in _envelope_cache:
         dist = get_peptide_distribution(
             sequence,
             deuterium_enrichment_level=ria_max,
             label=1,
             num_labeling_sites=spep,
+            mods=mods,
         )
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
@@ -201,6 +204,7 @@ def peptide_spep_loss(
     obs_matrix: np.ndarray,        # shape (n_prop, n_iso), normalized per row
     proportions_frac: np.ndarray,  # shape (n_prop,)
     ria_max: float = 0.06,
+    mods: tuple[int, ...] = (),
 ) -> float:
     """SSE across all proportions between normalized observed and predicted
     envelopes — the per-peptide Spep fit objective.
@@ -222,9 +226,9 @@ def peptide_spep_loss(
     frac = spep_float - spep_lo
     n_iso = obs_matrix.shape[1]
 
-    init_env = _get_init_env(sequence, pep_mass, n=n_iso)
-    fenv_lo = _get_final_env(sequence, pep_mass, spep_lo, ria_max, n=n_iso)
-    fenv_hi = _get_final_env(sequence, pep_mass, spep_hi, ria_max, n=n_iso)
+    init_env = _get_init_env(sequence, pep_mass, n=n_iso, mods=mods)
+    fenv_lo = _get_final_env(sequence, pep_mass, spep_lo, ria_max, n=n_iso, mods=mods)
+    fenv_hi = _get_final_env(sequence, pep_mass, spep_hi, ria_max, n=n_iso, mods=mods)
     final_env = (1.0 - frac) * fenv_lo + frac * fenv_hi
 
     init_sum = init_env.sum()
@@ -249,6 +253,7 @@ def solve_fs_d2o(
     spep: int,
     ria_max: float = 0.06,
     n_iso: int = _DEFAULT_N_ISO,
+    mods: tuple[int, ...] = (),
 ) -> float:
     """Per-timepoint fractional synthesis from one observed envelope.
 
@@ -263,9 +268,9 @@ def solve_fs_d2o(
     """
     from scipy.optimize import minimize_scalar  # local import keeps cold path fast
 
-    init_env = np.asarray(_get_init_env(sequence, pep_mass, n=n_iso), dtype=float)
+    init_env = np.asarray(_get_init_env(sequence, pep_mass, n=n_iso, mods=mods), dtype=float)
     final_env = np.asarray(
-        _get_final_env(sequence, pep_mass, spep, ria_max, n=n_iso), dtype=float,
+        _get_final_env(sequence, pep_mass, spep, ria_max, n=n_iso, mods=mods), dtype=float,
     )
     obs = np.asarray(observed_iso[:n_iso], dtype=float)
     obs_total = obs.sum()

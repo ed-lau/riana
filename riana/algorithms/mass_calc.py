@@ -104,6 +104,33 @@ def _calc_atom_mass(atoms: list,
     return mass
 
 
+# A ``[UNIMOD:N]`` token inside a peptidoform sequence (M7). Variable mods are
+# encoded as these bracket tokens at the modified residue (N-term mods lead the
+# sequence), so one token resolves to BOTH the mass (precursor m/z) and the
+# atom composition (IsoSpec envelope) via ``constants.mod_atoms``.
+_UNIMOD_BRACKET_RE = re.compile(r'\[UNIMOD:(\d+)]', re.IGNORECASE)
+
+
+def unimod_mass(unimod_id: int) -> float:
+    """Monoisotopic mass shift of a UniMod modification from its composition.
+
+    Derived from the curated ``constants.mod_atoms`` ``[C,H,O,N,S,P]`` table so
+    mass and envelope composition share a single source. Raises ``KeyError`` for
+    a UniMod id absent from the table (the caller decides whether to drop it).
+    """
+    return _calc_atom_mass(constants.mod_atoms[unimod_id])
+
+
+def parse_unimod_ids(seq: str) -> list[int]:
+    """UniMod accession ids of the ``[UNIMOD:N]`` tokens in *seq*, in order.
+
+    Empty for a bare sequence or one carrying only legacy ``[mass]`` brackets
+    (the demoted Percolator path). Position is preserved by token order, which
+    Stage B uses to recover the protein-coordinate site.
+    """
+    return [int(m) for m in _UNIMOD_BRACKET_RE.findall(seq)]
+
+
 def calculate_ion_mz(seq: str,
                      ion: str = 'M',
                      charge: int = 0,
@@ -127,14 +154,20 @@ def calculate_ion_mz(seq: str,
 
     mass = 0
 
-    # First, strip all mass shifts and add them to the starting mass
-    try:
-        mods = [float(mod[1:-1]) for mod in re.findall(r'\[.*?]', seq)]
-    except ValueError:
-        raise ValueError('Modification contains string characters.')
-
-    # Every bracketed modification mass contributes to the precursor mass.
-    mass += sum(mods)
+    # First, strip all mass shifts and add them to the starting mass. A bracket
+    # is either a ``[UNIMOD:N]`` token (M7 variable mod — mass from the curated
+    # composition table) or a legacy ``[mass]`` float (the demoted Percolator
+    # path). Every bracketed modification contributes to the precursor mass.
+    for tok in re.findall(r'\[.*?]', seq):
+        content = tok[1:-1]
+        unimod = _UNIMOD_BRACKET_RE.fullmatch(tok)
+        if unimod is not None:
+            mass += unimod_mass(int(unimod.group(1)))
+        else:
+            try:
+                mass += float(content)
+            except ValueError:
+                raise ValueError('Modification contains string characters.')
 
     # 2021-05-18 strip all N-terminal n from Comet
     seq = re.sub(r'^n', '', seq)

@@ -193,6 +193,31 @@ def test_mztab_keeps_variable_mods_when_flag_off(tmp_path):
     assert {"GEIEHHCSGLHR", "VLGKPKPEEMSSK"} <= seqs
 
 
+_STARTER_MODS_MZTAB = _MINIMAL_MZTAB + (
+    # Phospho (UNIMOD:21) at residue 8 (the S in GEIEHHC-S-GLHR) — a starter-set
+    # mod: kept and folded into the sequence as a [UNIMOD:21] token, integrated
+    # at the modified m/z.
+    "PSM\tGEIEHHCSGLHR\t6\tsp|P00006|TEST6_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"
+    "0.01\t8-UNIMOD:21\t40.0\t2\t420.0\t420.0\t"
+    "ms_run[1]:controllerType=0 controllerNumber=1 scan=406\tK\tR\t1\t12\t"
+    "0.01\t0.001\t0\tGEIEHHCS(Phospho)GLHR\n"
+)
+
+
+def test_mztab_encodes_starter_set_mods_into_sequence(tmp_path):
+    """A starter-set peptidoform (Phospho) is kept and folded into the sequence
+    as a [UNIMOD:N] token so it integrates at the modified m/z (M7 Stage A2)."""
+    from riana.algorithms.mass_calc import calculate_ion_mz
+    fixture = tmp_path / "starter.mzTab"
+    fixture.write_text(_STARTER_MODS_MZTAB)
+    records, _ = iomztab.read_mztab(fixture, sample="syn")
+    phospho = [r for r in records if r.sequence == "GEIEHHCS[UNIMOD:21]GLHR"]
+    assert len(phospho) == 1
+    # The recomputed precursor mass carries the +HPO3 shift.
+    bare = calculate_ion_mz("GEIEHHCSGLHR")
+    assert phospho[0].peptide_mass - bare == pytest.approx(79.96633, abs=1e-4)
+
+
 def test_mztab_attaches_identity_from_sample_map(tmp_path):
     """The M6a primary path: a sample_map keyed by mzML stem tags each PSM with
     its run identity and sets PSMRecord.sample to the SDRF source name."""

@@ -53,7 +53,7 @@ import pandas as pd
 from scipy.optimize import curve_fit
 
 from riana.algorithms.isotope_dist import solve_fs_d2o, spep_from_coefficients
-from riana.algorithms.mass_calc import calculate_ion_mz
+from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
 from riana.config import FitConfig
 from riana.core import models
 from riana.utils import strip_concat
@@ -397,20 +397,20 @@ def _fit_one_concat(
         else np.ones(len(peptide_rows), dtype=int)
     )
 
-    # Two views of the peptide identifier:
+    # Three views of the peptide identifier:
     # - seq_with_mods: charge stripped, brackets KEPT — calculate_ion_mz
-    #   parses [mass] mods to get the right peptide_mass (e.g. phospho +80).
-    # - seq: brackets and charge stripped — fed to solve_fs_d2o and
-    #   spep_from_coefficients, both of which iterate the sequence and
-    #   require pure AA letters. Stripping brackets here means the IsoSpec
-    #   forward envelope ignores the mod's atomic composition (so the
-    #   envelope is computed for the unmodified backbone). Integration
-    #   still targets the correct precursor m/z because pep_mass IS
-    #   correct; envelope shape is approximated. Treating common PTMs
-    #   (Ox-M, Phos-STY, etc.) as proper IsoSpec inputs is post-M4 work
-    #   (see PROJECT_REVIEW.md "Post-M4 planning anchor").
+    #   parses [UNIMOD:N] / [mass] mods to get the right peptide_mass (e.g.
+    #   phospho +80).
+    # - seq: brackets and charge stripped — fed to spep_from_coefficients and
+    #   solve_fs_d2o's residue iteration; requires pure AA letters.
+    # - mods: the UniMod ids parsed off seq_with_mods (M7). Threaded into
+    #   solve_fs_d2o so the IsoSpec forward envelope reflects the modified
+    #   peptidoform's atom composition, not just the bare backbone. Mod H is
+    #   non-labelable (the mod is not added to Spep — its D₂O enrichment is
+    #   unknown), so Spep stays a function of the bare sequence.
     seq_with_mods = concat.rsplit("_", 1)[0]
     seq = strip_concat(concat)
+    mods = tuple(parse_unimod_ids(seq_with_mods))
     try:
         pep_mass = calculate_ion_mz(seq_with_mods)
     except (KeyError, ValueError):
@@ -434,6 +434,7 @@ def _fit_one_concat(
                 fs_arr[i] = solve_fs_d2o(
                     seq, pep_mass, obs_matrix[i], spep_int,
                     ria_max=float(config.ria_max), n_iso=len(iso_cols),
+                    mods=mods,
                 )
     except (KeyError, ValueError):
         return _null_result(concat, protein_id)
