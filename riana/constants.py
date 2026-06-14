@@ -30,6 +30,7 @@ H_MASS = 1.00782503223
 O_MASS = 15.99491461957
 N_MASS = 14.00307400443
 S_MASS = 31.9720711744
+P_MASS = 30.97376199842  # P31 — monoisotopic (phosphorus is mononuclidic)
 
 # Note: a previous version exposed a ``RIA_D2O`` constant fixed to 6% v/v
 # enrichment from the M2 calibration. That constant has been removed —
@@ -42,40 +43,63 @@ S_MASS = 31.9720711744
 # its own internal copy for independence.
 
 """
-Amino acids: number of carbon, hydrogen, oxygen, nitrogen, sulfur for amino acids
+Amino acids: atom counts as ``[C, H, O, N, S, P]`` per residue.
+
+The 6th element (phosphorus) is M7's atom-vector extension — it is 0 for every
+canonical residue and is contributed only by modifications (phospho). Carrying
+P in the per-residue vector (rather than special-casing it at the mod layer)
+keeps a single shape across ``count_atoms`` / ``_calc_atom_mass`` / the IsoSpec
+``IsoParamsFromDict`` formula. P is monoisotopic, so a P count of 0 leaves both
+mass and envelope byte-identical to the pre-M7 5-element model.
 """
 
 aa_atoms = {
-    'A': [3, 5, 1, 1, 0],
-    'C': [3, 5, 1, 1, 1],
-    'D': [4, 5, 3, 1, 0],
-    'E': [5, 7, 3, 1, 0],
-    'F': [9, 9, 1, 1, 0],
-    'G': [2, 3, 1, 1, 0],
-    'H': [6, 7, 1, 3, 0],
-    'I': [6, 11, 1, 1, 0],
-    'K': [6, 12, 1, 2, 0],
-    'L': [6, 11, 1, 1, 0],
-    'M': [5, 9, 1, 1, 1],
-    'N': [4, 6, 2, 2, 0],
-    'P': [5, 7, 1, 1, 0],
-    'Q': [5, 8, 2, 2, 0],
-    'R': [6, 12, 1, 4, 0],
-    'S': [3, 5, 2, 1, 0],
-    'T': [4, 7, 2, 1, 0],
-    'V': [5, 9, 1, 1, 0],
-    'W': [11, 10, 1, 2, 0],
-    'Y': [9, 9, 2, 1, 0],
+    'A': [3, 5, 1, 1, 0, 0],
+    'C': [3, 5, 1, 1, 1, 0],
+    'D': [4, 5, 3, 1, 0, 0],
+    'E': [5, 7, 3, 1, 0, 0],
+    'F': [9, 9, 1, 1, 0, 0],
+    'G': [2, 3, 1, 1, 0, 0],
+    'H': [6, 7, 1, 3, 0, 0],
+    'I': [6, 11, 1, 1, 0, 0],
+    'K': [6, 12, 1, 2, 0, 0],
+    'L': [6, 11, 1, 1, 0, 0],
+    'M': [5, 9, 1, 1, 1, 0],
+    'N': [4, 6, 2, 2, 0, 0],
+    'P': [5, 7, 1, 1, 0, 0],
+    'Q': [5, 8, 2, 2, 0, 0],
+    'R': [6, 12, 1, 4, 0, 0],
+    'S': [3, 5, 2, 1, 0, 0],
+    'T': [4, 7, 2, 1, 0, 0],
+    'V': [5, 9, 1, 1, 0, 0],
+    'W': [11, 10, 1, 2, 0, 0],
+    'Y': [9, 9, 2, 1, 0, 0],
 
     # TODO: include non-canonical AA
-    'U': [0, 0, 0, 0, 0],  # Selenocysteine
-    'X': [0, 0, 0, 0, 0],
-    'B': [0, 0, 0, 0, 0],  # Asn or Asp
+    'U': [0, 0, 0, 0, 0, 0],  # Selenocysteine
+    'X': [0, 0, 0, 0, 0, 0],
+    'B': [0, 0, 0, 0, 0, 0],  # Asn or Asp
 }
 
-# Carbon, hydrogen, oxygen, nitrogen, sulfur for modifications
+# Modification atom compositions ``[C, H, O, N, S, P]``, keyed by **UniMod
+# accession id** — the single curated source for both the integrate-side mass
+# (``mass_calc``) and the IsoSpec envelope (M7), replacing the old ``'IAA'`` key.
+# Carbamidomethyl (UNIMOD:4) is applied as a fixed mod on every cysteine (see
+# ``mass_calc.count_atoms``); the rest are variable mods threaded per
+# peptidoform. Entries past the v1 starter set (4 / 1 / 21) are pre-seeded from
+# the M7 roadmap (tier annotations) so the table stays the one composition
+# source as later tiers wire in; they are inert until the IO layer stops
+# dropping them.
 mod_atoms = {
-    'IAA': [2, 3, 1, 1, 0],
+    4:   [2, 3, 1, 1, 0, 0],    # Carbamidomethyl (CAM, fixed-C) — was 'IAA'
+    1:   [2, 2, 1, 0, 0, 0],    # Acetyl (protein N-term; tier 1 adds K-ac) — v1
+    21:  [0, 1, 3, 0, 0, 1],    # Phospho (S/T/Y) — v1
+    35:  [0, 0, 1, 0, 0, 0],    # Oxidation (Met) — roadmap tier 1b
+    7:   [0, -1, 1, -1, 0, 0],  # Deamidation (N/Q) — roadmap tier 1b
+    34:  [1, 2, 0, 0, 0, 0],    # Methyl — roadmap tier 1
+    36:  [2, 4, 0, 0, 0, 0],    # Dimethyl — roadmap tier 1
+    37:  [3, 6, 0, 0, 0, 0],    # Trimethyl — roadmap tier 1
+    121: [4, 6, 2, 2, 0, 0],    # GlyGly (ubiquitin remnant) — roadmap tier 2
 }
 
 # Commerford, Carsten, and Cronkite 1983 Table 1
@@ -163,6 +187,7 @@ iso_abundances = [0.9893,  # C12
                   0.9975,  # O16
                   0.99636,  # N14
                   0.9499,  # S32
+                  1.0,  # P31 (phosphorus is mononuclidic — only 31P is stable)
                   ]
 
 """

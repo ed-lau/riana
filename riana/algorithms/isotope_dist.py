@@ -35,6 +35,7 @@ def get_peptide_distribution(peptide: str,
                              deuterium_enrichment_level: float = None,
                              label: int = 1,
                              num_labeling_sites: int = 0,
+                             mods: list = (),
                              ) -> IsoSpecPy.Iso:
 
     """
@@ -44,6 +45,9 @@ def get_peptide_distribution(peptide: str,
     :param deuterium_enrichment_level:  the deuterium enrichment level of the sample
     :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
     :param num_labeling_sites:          the number of labeling sites
+    :param mods:        iterable of UniMod accession ids for variable mods on this
+                        peptidoform (M7); their atom compositions shape the
+                        envelope. Empty by default → bare-backbone envelope.
     :return:                            IsoSpecPy Distribution of atom counts, isotope masses, and isotope probabilities
     """
 
@@ -53,16 +57,18 @@ def get_peptide_distribution(peptide: str,
     if deuterium_enrichment_level is not None:
         assert 0 < deuterium_enrichment_level <= 1, 'Deuterium enrichment level must be greater than 0 and no greater than 1'
 
-    # Get C, H, O, N, S count using the Riana count_atoms function
-    peptide_atoms = count_atoms(peptide)
+    # Get C, H, O, N, S, P count using the Riana count_atoms function
+    peptide_atoms = count_atoms(peptide, mods=mods)
     # print(peptide_atoms)
 
-    # Supply atom counts to IsoSpecPy.IsoParamsFromDict and unpack to get atom counts, isotope masses. and probabilities
+    # Supply atom counts to IsoSpecPy.IsoParamsFromDict and unpack to get atom counts, isotope masses. and probabilities.
+    # P (phosphorus) is monoisotopic so a count of 0 leaves the distribution unchanged.
     atom_count_list, isotope_mass_list, isotope_probability_list, _ = IsoSpecPy.IsoParamsFromDict(formula={"C": peptide_atoms[0],
                                                                                                            "H": peptide_atoms[1],
                                                                                                            "O": peptide_atoms[2],
                                                                                                            "N": peptide_atoms[3],
-                                                                                                           "S": peptide_atoms[4]})
+                                                                                                           "S": peptide_atoms[4],
+                                                                                                           "P": peptide_atoms[5]})
 
     if label == 1 or label == 2:
         # Subtract the number of labeling sites from hydrogen, extend the atom count list with accessible deuterium count

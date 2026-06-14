@@ -771,16 +771,19 @@ gap is now M7. Recommended order:
 1. **M7 — PTM-aware envelope (next; the headline).** Load-bearing: variable-mod
    peptidoforms are currently *dropped* (the `io/mztab`/`io/diann`
    `drop_variable_mods` interim) because they would integrate at the unmodified
-   m/z. Full design in Track C below + `[[m7_ptm_envelope_design]]`. Stage it: (a)
+   m/z. Full design + next-tier roadmap in Track C below +
+   `[[m7_ptm_envelope_design]]`; scope **locked 2026-06-13**. Stage it: (a)
    **forward-model atom accounting** — add each parsed mod's composition to the
-   IsoSpec envelope *and* the integrate-side target m/z (two separate fixes; note
-   **phosphorus is not in the `[C,H,O,N,S]` vector** — extend it), generalizing
-   the hardcoded Carbamidomethyl to a normal UniMod; scope a starter mod set
-   (N-term Ac, Met-Ox, deamidation, phospho-S/T/Y); (b) **proteoform-aware rollup
-   keys** (`P12345_pS235`) so PTM forms don't collapse into the unmodified protein
-   — both mzTab (`start`+pos) and DIA-NN (`Protein.Sites`) already carry the
-   protein-coordinate site, **no FASTA needed**. Substrate: `data/timeseries_lve_atr`
-   (PTM search already in hand).
+   IsoSpec envelope *and* the integrate-side target m/z (two separate fixes),
+   extending the atom vector `[C,H,O,N,S]` → `[C,H,O,N,S,P]` and routing the
+   hardcoded Carbamidomethyl through a curated `UNIMOD:id → [C,H,O,N,S,P]` table;
+   **starter set = phospho-STY + protein N-term Acetyl** (the two
+   reliably-identifiable-in-*un*enriched-data mods); (b) **proteoform-aware rollup
+   keys** (`P12345_pS235` for phospho; N-term Ac / Met-Ox / deamidation / CAM fold
+   into the bare accession) — both mzTab (`start`+pos) and DIA-NN (`Protein.Sites`)
+   already carry the protein-coordinate site, **no FASTA needed**. Also **retires
+   `-X/--ignored_mods` + `-F/--forced_mods`** (SILAC-era). Build order A1 → A3 → A2
+   → B. Substrate: `data/timeseries_lve_atr` (PTM search already in hand).
 2. **Expose hidden integrate knobs as clearly-marked *advanced* options
    (short-term, cheap, independent).** Audit the full `IntegrationConfig` knob set
    (`--peak-rt`, `--apex-selection`, `--integration-half-width` vs
@@ -1222,10 +1225,14 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
      envelopes — the extra C/H/O/N/S still shape the envelope and shift the
      channel masses). The envelope formula comes from `count_atoms` →
      `IsoParamsFromDict({"C":…,"H":…,…})` in `algorithms/isotope_dist.py`; M7 adds
-     each parsed mod's composition there. Scope a starter set — **N-term Acetyl,
-     Met-Ox, deamidation (N/Q), phospho (S/T/Y)** — not all of UniMod. Need a
-     UniMod composition source: either read the ontology or keep a small curated
-     `mod_atoms` table (today `constants.mod_atoms` has only `IAA`).
+     each parsed mod's composition there. **Starter set (locked 2026-06-13):
+     phospho (S/T/Y, `UNIMOD:21` = `[0,1,3,0,0,1]`) + protein N-term Acetyl
+     (`UNIMOD:1` = `[2,2,1,0,0,0]`)** — trimmed to the two highest-value,
+     reliably-identifiable mods (the next tier + its binding constraint are in the
+     roadmap below). **Composition source = a small curated `mod_atoms` table**
+     keyed by UNIMOD id (`{id: [C,H,O,N,S,P]}`), **not** the UniMod XML ontology
+     (too heavy for ~5 entries); today `constants.mod_atoms` holds only `IAA`
+     (which becomes `UNIMOD:4`).
   2. **Generalize Carbamidomethyl(C) to a normal UniMod.** Today it is special-
      cased: `count_atoms(iaa=True)` adds `mod_atoms['IAA']=[2,3,1,1,0]` per
      cysteine, so C is effectively `[5,8,2,2,1]` (actual C `[3,5,1,1,1]` + IAA) in
@@ -1275,6 +1282,74 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
       PTM support there** (user decision 2026-06-11) rather than require a FASTA.
     Only confidently-localized sites become distinct `_pS###` keys; decide a
     bucket/drop policy for ambiguous ones (gate on DIA-NN `PTM.Site.Confidence`).
+
+  **Locked planning decisions (2026-06-13):**
+  - **Phospho is in v1** → extend the atom vector `[C,H,O,N,S]` → `[C,H,O,N,S,P]`
+    across `count_atoms` / `_calc_atom_mass` / `constants` (`aa_atoms`,
+    `iso_abundances`, the mass vector) / the IsoSpec `IsoParamsFromDict` formula.
+    P is monoisotopic (no envelope broadening) but phospho's 3 O *do* shape it.
+  - **Curated UNIMOD-id-keyed `mod_atoms` table** (not the UniMod ontology); CAM
+    routed as `UNIMOD:4`, retiring the `iaa` special-case flag → one code path for
+    fixed and variable mods. Unmodified-peptide masses/envelopes must stay
+    byte-identical; the frozen M2 oracle (`_helpers/forward_model.py`) stays
+    5-element as the independence check and is **not** touched — instead assert
+    production still matches it on unmodified peptides.
+  - **Proteoform rollup = "differential-turnover vs constitutive/artifactual"
+    split** (the bio-vs-artifactual decision, refined). Mods with regulated,
+    site-specific turnover — **phospho** now, K-acetyl / GG later — get distinct
+    `_pS###` proteoform keys. Constitutive or artifactual mods — **protein N-term
+    Acetyl** (co-translational, ~constitutive per N-terminus), **Met-Ox**,
+    **deamidation**, **CAM** — **fold into the bare accession** (same turnover
+    unit), but still get atom accounting so their peptidoforms integrate at the
+    right m/z + envelope instead of being dropped. So N-term Ac is in v1 for
+    *envelope fidelity / peptide retention*, phospho for *proteoform turnover*.
+    A `BIOLOGICAL_MODS` (gets-its-own-key) set in `constants` drives the split.
+  - **Retire BOTH `-X/--ignored_mods` and `-F/--forced_mods`** — SILAC-era
+    dual-channel machinery (SILAC fitting already removed in M4). Drop the CLI
+    options (`cli.py`), the `IntegrationConfig` fields (`config.py`), and the
+    `mod{offset}` channel machinery in `integration.py` (hardcode the single
+    `mod0` path — the current default), plus the `ignored_mods` plumbing through
+    `io/mztab`, `io/diann`, `io/percolator`. Percolator keeps working for
+    unmodified peptides only (no protein-coordinate site → no PTM support there).
+  - **Build order:** **A1 — DONE 2026-06-13** (atom-vector `[C,H,O,N,S]` →
+    `[C,H,O,N,S,P]`; `mod_atoms` now a curated UNIMOD-id table; CAM via
+    `mod_atoms[4]`; `count_atoms(mods=…)` + `get_peptide_distribution(mods=…)`
+    thread variable-mod composition; verified byte-identical on unmodified peptides
+    — mass Δ 0, envelope Δ 3e-18 — and against the frozen 5-element oracle; 178
+    tests pass) → **A3** flag retirement
+    (independent cleanup; removes dead surface before threading) → **A2** thread
+    mods IO→fit (load-bearing; needs a **peptidoform-distinct `concat`** so
+    phospho ≠ the unmodified form of the same sequence; mod H stays out of
+    `num_labeling_sites`) → **B** proteoform rollup. Validate on
+    `data/timeseries_lve_atr` (PTM search in hand).
+
+  **Roadmap — which mods come next, and the binding constraint.** The hard gate is
+  **identifiability in a search over *un*enriched data**: no PTM-enrichment
+  D₂O-labeling dataset exists yet, so we can only measure turnover of PTM forms
+  detectable in the ordinary global-proteome runs. That, not envelope difficulty,
+  is what sequences the list.
+  - *Tier 0 (v1):* **phospho-STY**, **protein N-term Acetyl** — high value, reliably
+    found unenriched (N-term Ac is near-universal/high-stoichiometry; abundant
+    phosphosites do show up without enrichment, just fewer).
+  - *Tier 1 — biological, own key, acceptable unenriched yield:* **Lysine acetylation
+    (K-ac, `UNIMOD:1` — same `[2,2,1,0,0,0]` composition as N-term Ac, side-chain
+    site)**; low stoichiometry unenriched, but abundant metabolic enzymes / histones
+    give real sites → gets its own `_acKxxx` key. **K/R methylation** (mono/di/tri,
+    `UNIMOD:34/36/37` = `[1,2,0,0,0,0]` / `[2,4,…]` / `[3,6,…]`). Cheap once the
+    machinery exists — composition only, no new atom-vector work.
+  - *Tier 1b — artifactual, fold-into-bare, envelope fidelity:* **Met-Ox
+    (`UNIMOD:35` = `[0,0,1,0,0,0]`)** and **deamidation N/Q (`UNIMOD:7` =
+    `[0,-1,1,-1,0,0]`)** — ubiquitous, trivially identified, not turnover units, but
+    accounting their atoms **recovers the abundant modified peptidoforms we
+    currently drop**, raising bare-protein peptide counts. Low-cost follow-on to v1.
+  - *Tier 2 — highest biological value, BLOCKED on data:* **Ubiquitin/ISG15
+    GG-remnant (`UNIMOD:121`, GlyGly = `[4,6,2,2,0,0]`)** — it literally *is* the
+    degradation tag, so it is the most turnover-relevant PTM imaginable, **but**
+    diGly-remnant peptides are essentially undetectable without anti-K-ε-GG
+    enrichment, and no enriched D₂O dataset exists. Deferred until such data lands
+    (same blocker for the acyl class — succinyl / malonyl / crotonyl — that needs
+    enrichment). Worth naming now precisely because the science case is strongest:
+    the moment an enriched D₂O-diGly dataset appears, GG jumps the queue.
 
 #### Track D — validation infrastructure (unblocked by M6a)
 
@@ -1401,6 +1476,19 @@ not the raw XIC, so the two are decoupled.
   orchestration-agnostic so Riana composes into whatever workflow already runs
   quantms.
 - **mypy --strict** rollout (§4.3); `py.typed` already ships.
+- **Test-suite runtime (~931s; profiled 2026-06-13).** ~845s lives in ~7 real-mzML
+  tests, all single-fraction `integrate_run` calls (`test_ac16_time0_matches_
+  committed_baseline` alone is **415s**; six `sample1`/cli integrate tests are
+  51–114s). **`-W` does not help these** — `max_workers` is an `integrate_project`
+  cross-*run* lever, but these integrate one fraction each and `integrate_run`'s
+  per-PSM loop has no internal pool, so `n_parallel = min(workers, 1) = 1`. The
+  effective levers (deferred — recorded, not done): (1) a **`slow` pytest marker**
+  on the heavy real-data regression gates so local dev runs `pytest -m "not slow"`
+  (the 415s ac16 test is already `skipif`-guarded on gitignored heavy inputs, so it
+  only runs where those exist); (2) **`pytest-xdist` (`-n`)** for GIL-free
+  cross-test process parallelism (~2× — the 415s ac16 test becomes the wall-clock
+  pole). Single-fraction `integrate_run` is intentionally left serial (cross-run
+  `-W` covers the multi-file production case).
 
 #### Additional recommendations (added this round)
 

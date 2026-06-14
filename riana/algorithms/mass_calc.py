@@ -17,16 +17,16 @@ def _count_residue_atoms(seq: str,
                          iaa: bool = True,
                          ) -> list:
     """
-    given an peptide sequence, count the atoms of carbon, hydrogen, oxygen, nitrogen, sulfur
+    given an peptide sequence, count the atoms of carbon, hydrogen, oxygen, nitrogen, sulfur, phosphorus
     in the residue
     TODO: add in selenocysteine and allow other modifications
 
     :param seq:     str: amino acid sequence
     :param iaa:     bool: whether cysteins are modified by iodoacetamide
-    :return:        list: atom counts [C, H, O, N, S]
+    :return:        list: atom counts [C, H, O, N, S, P]
     """
 
-    tot_atoms: list = [0, 0, 0, 0, 0]
+    tot_atoms: list = [0, 0, 0, 0, 0, 0]
 
     for char in seq:
         try:
@@ -36,39 +36,58 @@ def _count_residue_atoms(seq: str,
             raise KeyError
 
     if iaa:
+        # Carbamidomethyl (UNIMOD:4) as a fixed mod on every cysteine — the
+        # composition now comes from the unified UniMod-keyed ``mod_atoms``
+        # table (was a dedicated ``'IAA'`` key). M7 will retire this fixed-mod
+        # flag in favour of passing CAM through ``count_atoms(mods=...)`` once
+        # the IO layer threads per-cysteine mods.
         num_cysteines = seq.count('C')
-        mod_atoms = [atom * num_cysteines for atom in constants.mod_atoms['IAA']]
-        tot_atoms = [tot_atoms[i] + mod_atoms[i] for i in range(len(tot_atoms))]
+        cam_atoms = [atom * num_cysteines for atom in constants.mod_atoms[4]]
+        tot_atoms = [tot_atoms[i] + cam_atoms[i] for i in range(len(tot_atoms))]
 
     return tot_atoms
 
 
 def count_atoms(sequence: str,
                 iaa: bool = True,
+                mods: list = (),
                 ) -> list:
     """
     wrapper for _count_residue_atoms that returns the full peptide atom count
 
     :param sequence:    str: peptide seuence
     :param iaa:         bool: whether to add iaa atoms to cysteines
-    :return:            list: atom counts [C, H, O, N, S]
+    :param mods:        iterable of UniMod accession ids (ints) for variable
+                        modifications carried by this peptidoform; each mod's
+                        ``[C, H, O, N, S, P]`` composition (``constants.mod_atoms``)
+                        is added to the envelope formula (M7). Empty by default
+                        so the bare-sequence path stays byte-identical.
+    :return:            list: atom counts [C, H, O, N, S, P]
     """
 
     res_atoms = _count_residue_atoms(sequence, iaa=iaa,  # add iodoacetamide to cysteine
                                      )
 
     # Add one oxygen and two hydrogen for peptide mass
-    terminal_atoms = [0, 2, 1, 0, 0]
+    terminal_atoms = [0, 2, 1, 0, 0, 0]
 
-    return [res_atoms[i] + terminal_atoms[i] for i, v in enumerate(res_atoms)]
+    atoms = [res_atoms[i] + terminal_atoms[i] for i, v in enumerate(res_atoms)]
+
+    # Variable modifications (M7): add each UniMod's atom composition so the
+    # IsoSpec envelope reflects the modified peptidoform, not the bare backbone.
+    for unimod_id in mods:
+        comp = constants.mod_atoms[unimod_id]
+        atoms = [atoms[i] + comp[i] for i in range(len(atoms))]
+
+    return atoms
 
 
 def _calc_atom_mass(atoms: list,
                     ) -> float:
     """
-    given a list of atoms [C, H, O, N, S], return accurate mass
+    given a list of atoms [C, H, O, N, S, P], return accurate mass
 
-    :param atoms:   list [C, H, O, N, S]
+    :param atoms:   list [C, H, O, N, S, P]
     :return:        float accurate monoisotopic mass
     """
 
@@ -76,7 +95,8 @@ def _calc_atom_mass(atoms: list,
                 constants.H_MASS,
                 constants.O_MASS,
                 constants.N_MASS,
-                constants.S_MASS]
+                constants.S_MASS,
+                constants.P_MASS]
 
     # Get dot product between atom list and mass vector
     mass = sum([atoms[i] * mass_vec[i] for i in range(len(atoms))])
@@ -129,11 +149,11 @@ def calculate_ion_mz(seq: str,
 
     # dictionary for complementary atoms to add to ion types
     comp_atom_dict = {
-        'M':  [0, 2, 1, 0, 0],
-        'b':  [0, 0, 0, 0, 0],
-        'y':  [0, 2, 1, 0, 0],
-        'b_': [0, -2, -1, 0, 0],
-        'y_': [0, 0, 0, 0, 0],
+        'M':  [0, 2, 1, 0, 0, 0],
+        'b':  [0, 0, 0, 0, 0, 0],
+        'y':  [0, 2, 1, 0, 0, 0],
+        'b_': [0, -2, -1, 0, 0, 0],
+        'y_': [0, 0, 0, 0, 0, 0],
     }
     comp_atoms = comp_atom_dict[ion]
 
