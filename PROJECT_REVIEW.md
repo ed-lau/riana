@@ -1343,11 +1343,59 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     give real sites → gets its own `_acKxxx` key. **K/R methylation** (mono/di/tri,
     `UNIMOD:34/36/37` = `[1,2,0,0,0,0]` / `[2,4,…]` / `[3,6,…]`). Cheap once the
     machinery exists — composition only, no new atom-vector work.
-  - *Tier 1b — artifactual, fold-into-bare, envelope fidelity:* **Met-Ox
+  - *Tier 1b — artifactual / chemical, fold-into-bare, envelope fidelity:* **Met-Ox
     (`UNIMOD:35` = `[0,0,1,0,0,0]`)** and **deamidation N/Q (`UNIMOD:7` =
     `[0,-1,1,-1,0,0]`)** — ubiquitous, trivially identified, not turnover units, but
     accounting their atoms **recovers the abundant modified peptidoforms we
-    currently drop**, raising bare-protein peptide counts. Low-cost follow-on to v1.
+    currently drop**, raising bare-protein peptide counts. **Chemical mods need a
+    peptide-level merge, not just envelope accounting** — see the boxed design
+    below; deamidation is the harder of the two (isobaric-overlap regime).
+
+  **Chemical-mod handling — integrate-separate, fit-merge (design, user 2026-06-13).**
+  A purely chemical mod (Met-Ox, and the chemical part of deamidation) happens
+  *post-synthesis*, so it does **not** reset the D₂O clock: the oxidized and
+  unoxidized forms of a peptide share the *same* FS-vs-time signature. They should
+  therefore fold into the same proteoform **and the same peptidoform** (one
+  turnover curve), not be fit as two separate underpowered curves.
+  - *Mechanism:* **integrate the forms separately** (each at its own clean m/z +
+    envelope — Met-Ox is +15.995, well resolved; A2 already makes each `[UNIMOD:N]`
+    form a distinct `concat`), then **merge at the fit level** via a
+    *chemical-mod-stripped fit key*: strip chemical mods (Ox) from the grouping key
+    so their per-timepoint FS points land on one curve; keep biological mods
+    (phospho) distinct. Solves the use_range/ms2 "which m/z to integrate?" problem
+    (you never integrate a blended m/z). The fit key is the layer *between* the
+    integrate `concat` and the Stage-B protein/proteoform key.
+  - *Empirical motivation (LVE_ATR PTM search, depth≥4):* of 545 Met peptidoforms
+    seen oxidized, **451** appear as *both* Ox and non-Ox (same cond/charge) — i.e.
+    currently double-fit as two curves; merging gives **4** genuine depth-rescues
+    (neither form alone ≥4) and **51** power-gains (already fittable, +points). The
+    raw "fittable-series count" *drops* under merging (deduplication), so it is the
+    wrong metric — the gain is consolidation/power, not count.
+  - *Deamidation is the hard case — conditionally tractable, mass-gated.* +0.98401 Da
+    (N→D / Q→E) sits only **0.0193 Da below the C13 M+1** (`1.00335`), i.e. a
+    separation of **≈ 19340 / M_neutral ppm** (~19 ppm at 1000 Da → ~6 ppm at
+    3000 Da; charge-independent in ppm, but higher z lands the peak at lower m/z
+    where the Orbitrap resolves better). Because deamidation is **non-stoichiometric
+    and time-correlated** (old/unlabeled protein is most deamidated), an unresolved
+    deam-M0 bleeds into the non-deam M+1 *in lockstep with the labeling state* — a
+    smooth, systematic bias that can warp `k` and pass the R²>0.95 curation silently.
+    Two gates decide separability: (1) MS1 resolution actually centroided them apart
+    (R ≈ M/0.0193 — ~52k at 1000 Da, ~104k at 2000 Da, lost by ~3000 Da or at fast-DIA
+    15–30k MS1), and (2) a tight extraction window (±3–5 ppm, not the default ±10).
+    **Where both hold** (small/mid peptides, high-res MS1, tight window) → it reduces
+    to the Met-Ox case (integrate-separate + fit-merge). **Where they don't** (large
+    peptides, low-res MS1, wide window) → merged centroid, irrecoverable → **flag /
+    exclude the peptide (both forms)**. The *rigorous* alternative for the
+    unresolvable regime — **jointly modelling both forms' FS/D₂O IsoSpec envelopes
+    AND the (unknown, time-varying) deamidation proportion** — is a **standalone
+    side project**, deferred (user 2026-06-13). So the near-term policy is a
+    per-peptide **mass/resolution gate** (`19340/M_neutral` vs the window ppm), not
+    blanket merge or blanket exclude. The bio-vs-chemical distinction is **moot** — both are
+    the identical +0.984 mass shift, unactionable; FS-merge is valid for either, so
+    the only question is separability. When deamidation lands, first measure the MS1
+    resolution + deam-peptide mass distribution (e.g. on LVE) to size the separable
+    fraction. This is a **fit-stage** concern; none of it is in v1 (Ox/deam are
+    dropped), so it does not affect Stage B.
   - *Tier 2 — highest biological value, BLOCKED on data:* **Ubiquitin/ISG15
     GG-remnant (`UNIMOD:121`, GlyGly = `[4,6,2,2,0,0]`)** — it literally *is* the
     degradation tag, so it is the most turnover-relevant PTM imaginable, **but**
