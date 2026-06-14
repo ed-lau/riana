@@ -68,6 +68,52 @@ def _peps(rows):
     return pd.DataFrame(rows, columns=["concat", "protein id"])
 
 
+# --- M7 Stage B proteoform keys ---------------------------------------------- #
+def test_proteoform_key_appends_biological_mod_site():
+    """A biological-mod ('mod sites') suffix is appended to the resolved accession;
+    unmodified and constitutive-mod (N-term Ac → empty) peptidoforms stay bare."""
+    pep = pd.DataFrame([
+        {"concat": "PEPS[UNIMOD:21]K_2", "protein id": "sp|A2ASS6|TITIN_MOUSE",
+         "mod sites": "pS34476"},
+        {"concat": "PEPSK_2", "protein id": "sp|A2ASS6|TITIN_MOUSE", "mod sites": ""},
+        {"concat": "[UNIMOD:1]PEPK_2", "protein id": "sp|A2ASS6|TITIN_MOUSE",
+         "mod sites": ""},
+    ])
+    m = _resolve_parsimony(pep, "unique").set_index("concat")["protein"].to_dict()
+    assert m["PEPS[UNIMOD:21]K_2"] == "A2ASS6_pS34476"
+    assert m["PEPSK_2"] == "A2ASS6"
+    assert m["[UNIMOD:1]PEPK_2"] == "A2ASS6"
+
+
+def test_proteoform_key_is_bare_when_mod_sites_column_absent():
+    """Back-compat: an input without a 'mod sites' column rolls up to the bare
+    accession exactly as before Stage B."""
+    pep = pd.DataFrame([{"concat": "PEPK_2", "protein id": "sp|P1|X"}])
+    m = _resolve_parsimony(pep, "unique").set_index("concat")["protein"].to_dict()
+    assert m["PEPK_2"] == "P1"
+
+
+def test_rollup_separates_phospho_proteoform_from_bare_protein():
+    """Two peptidoforms of one accession — a phospho form and the bare form —
+    roll up as distinct units (P1_pS100 vs P1), not collapsed together."""
+    k, times = 0.3, (0.5, 1.0, 2.0, 3.0, 4.0)
+    pep_rows, frac_rows = [], []
+    for concat, sites in [("BAREPEP_2", ""), ("PHOSPEP_2", "pS100")]:
+        pep_rows.append({"concat": concat, "protein id": "sp|P1|X",
+                         "mod sites": sites, "k_deg": k})
+        for t in times:
+            theta = 1.0 - np.exp(-k * t)
+            frac_rows.append({"concat": concat, "protein id": "sp|P1|X",
+                              "mod sites": sites, "biological_replicate": 1,
+                              "labeling_time": t, "fs": theta,
+                              "fs_lower": theta - 0.01, "fs_upper": theta + 0.01})
+    out = rollup_proteins(pd.DataFrame(pep_rows), pd.DataFrame(frac_rows),
+                          n_boot=20, min_peptides=1)
+    proteins = set(out["protein"])
+    assert "P1" in proteins         # the unmodified form → bare protein
+    assert "P1_pS100" in proteins   # the phosphopeptidoform → its own unit
+
+
 # --- parsimony resolver (unit) ----------------------------------------------- #
 def test_unique_resolver_strips_to_accession_and_drops_shared():
     pep = _peps([

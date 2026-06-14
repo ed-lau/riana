@@ -170,6 +170,14 @@ class PSMRecord:
     #: The full SDRF-sourced run identity (:class:`RunIdentity`). ``None`` on the
     #: demoted single-mzML Percolator path, which has no SDRF.
     identity: RunIdentity | None = None
+    #: M7 Stage B proteoform suffix — ``_``-joined biological-mod site tags in
+    #: protein coordinates (e.g. ``pS34476`` or ``pS34476_pT34480``), empty when
+    #: the peptidoform carries no biological mod. The rollup appends it to the
+    #: parsimony-resolved accession so a phosphopeptidoform rolls up as its own
+    #: turnover unit instead of collapsing into the bare protein. Set by the IO
+    #: reader (mzTab ``start`` + ``modifications``); empty on the Percolator and
+    #: (for now) DIA-NN paths.
+    mod_sites: str = ""
 
     @property
     def concat(self) -> str:

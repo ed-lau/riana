@@ -42,6 +42,16 @@ both proteins' turnover, so its signature can't be attributed):
   the standard UniProt ``-N`` suffix. (The R weights by ``log2(Int)``; we weight
   the θ collapse by the M5 inverse variance instead — see ``_weighted_theta``.)
 
+**Proteoform keys (M7 Stage B).** When the input carries a ``mod sites`` column
+(a per-peptidoform biological-mod suffix in protein coordinates, e.g. ``pS34476``,
+set by the IO reader for phospho — see :func:`riana.io.mztab._proteoform_sites`),
+the resolved ``protein`` becomes ``accession_<suffix>`` so a phosphopeptidoform
+rolls up as its own turnover unit (``A2ASS6_pS34476``) instead of collapsing into
+the bare protein. Two peptides covering the same site share a key (the site is
+protein-coordinate, not peptide-relative). Unmodified peptidoforms and
+constitutive/artifactual mods (N-term Acetyl, etc. → empty suffix) stay on the
+bare accession. Inputs without the column behave exactly as before.
+
 Consumes ``riana_fit_peptides.txt`` (per-peptide ``k_deg`` + ``protein id``) and
 the M5 ``riana_fit_fractions.txt`` (``concat, biological_replicate,
 labeling_time, fs, fs_lower, fs_upper``). The wide and long frames carry
@@ -374,10 +384,24 @@ def _resolve_parsimony(peptides: pd.DataFrame, parsimony: str) -> pd.DataFrame:
     pep = peptides[["concat", "protein id"]].drop_duplicates("concat").copy()
     pep["accs"] = pep["protein id"].map(_accessions)
 
+    # M7 Stage B: a per-concat biological-mod proteoform suffix (e.g. ``pS34476``)
+    # appended to the resolved accession, so a phosphopeptidoform rolls up as its
+    # own unit. Absent column / empty value → bare accession (the pre-B behaviour).
+    if "mod sites" in peptides.columns:
+        sites = peptides[["concat", "mod sites"]].drop_duplicates("concat")
+        site_map = dict(zip(sites["concat"], sites["mod sites"].fillna("")))
+    else:
+        site_map = {}
+
+    def key(concat: str, accession: str) -> str:
+        suffix = str(site_map.get(concat, "") or "")
+        return f"{accession}_{suffix}" if suffix else accession
+
     if parsimony == "unique":
         keep = pep["accs"].map(len) == 1
         out = pep.loc[keep, ["concat"]].copy()
-        out["protein"] = pep.loc[keep, "accs"].map(lambda a: a[0])
+        accs = pep.loc[keep, "accs"].map(lambda a: a[0])
+        out["protein"] = [key(c, a) for c, a in zip(out["concat"], accs)]
         return out.reset_index(drop=True)
 
     # parsimony == "isoform": dataset-wide isoform evidence.
@@ -390,13 +414,13 @@ def _resolve_parsimony(peptides: pd.DataFrame, parsimony: str) -> pd.DataFrame:
     rows = []
     for concat, accs in zip(pep["concat"], pep["accs"]):
         if len(accs) == 1:                            # single accession → keep
-            rows.append((concat, _collapsed(accs)))
+            rows.append((concat, key(concat, _collapsed(accs))))
             continue
         if len({_base(a) for a in accs}) > 1:         # multiple genes → reject
             continue
         if any(_is_isoform(a) and a in isoforms_with_unique for a in accs):
             continue                                  # an isoform is real → reject
-        rows.append((concat, _collapsed(accs)))       # fold into canonical
+        rows.append((concat, key(concat, _collapsed(accs))))  # fold into canonical
     return pd.DataFrame(rows, columns=["concat", "protein"])
 
 

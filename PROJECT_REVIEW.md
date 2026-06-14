@@ -1326,8 +1326,14 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     (independent cleanup; removes dead surface before threading) → **A2** thread
     mods IO→fit (load-bearing; needs a **peptidoform-distinct `concat`** so
     phospho ≠ the unmodified form of the same sequence; mod H stays out of
-    `num_labeling_sites`) → **B** proteoform rollup. Validate on
-    `data/timeseries_lve_atr` (PTM search in hand).
+    `num_labeling_sites`) → **B — DONE 2026-06-13** (proteoform rollup keys:
+    `PSMRecord.mod_sites` = biological-mod site in protein coords — `pS34476` from
+    mzTab `start`+`pos`, BIOLOGICAL_MODS={21} only — threaded IO→integrate(`mod
+    sites` col)→fit→`riana.core.protein._resolve_parsimony`, which appends it so a
+    phosphopeptidoform rolls up as `A2ASS6_pS34476`; N-term Ac / unmodified → bare
+    accession; two peptides covering one site share the key. DIA-NN deferred
+    (no phospho fixture yet). Validated on `data/timeseries_lve_atr` — 259 phospho
+    PSMs keyed; full suite + ac16 byte gate pass).
 
   **Roadmap — which mods come next, and the binding constraint.** The hard gate is
   **identifiability in a search over *un*enriched data**: no PTM-enrichment

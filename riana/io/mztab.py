@@ -165,7 +165,9 @@ def read_mztab(
         # peptidoform the v1 forward model can't account for). ``drop_variable_mods``
         # gates only the *drop*: with it off, an unmodelable peptidoform is kept
         # bare (integrates at a partial m/z — an escape hatch, not recommended).
-        sequence = str(row["sequence"])
+        bare_sequence = str(row["sequence"])
+        sequence = bare_sequence
+        mod_sites = ""
         if has_mod_col:
             encoded = _encode_peptidoform(sequence, row.get("modifications"))
             if encoded is None:
@@ -174,12 +176,18 @@ def read_mztab(
                     continue
             else:
                 sequence = encoded
+            # Proteoform site uses the BARE-sequence positions from the
+            # ``modifications`` cell (the [UNIMOD] tokens shift indices).
+            mod_sites = _proteoform_sites(
+                bare_sequence, row.get("modifications"), row.get("start")
+            )
         records.append(
             PSMRecord(
                 scan=scan,
                 charge=int(row["charge"]),
                 sequence=sequence,
                 peptide_mass=float(accmass.calculate_ion_mz(sequence)),
+                mod_sites=mod_sites,
                 sample=record_sample,
                 file_idx=file_idx,
                 file_name=file_name,
@@ -285,6 +293,42 @@ def _insert_unimod_tokens(sequence: str, variable: list[tuple[int, int]]) -> str
         if i in by_residue:
             out.append("".join(by_residue[i]))
     return "".join(out)
+
+
+def _proteoform_sites(sequence: str, modifications: object, start: object) -> str:
+    """``_``-joined biological-mod proteoform tags in protein coordinates.
+
+    Stage B: e.g. ``pS34476`` (or ``pS34476_pT34480`` for two sites), empty when
+    the peptidoform carries no biological mod (``constants.BIOLOGICAL_MODS`` —
+    phospho today). Site = ``start + pos − 1`` (mzTab ``start`` is the peptide's
+    1-based protein-coordinate start; ``pos`` is the 1-based residue from the
+    ``modifications`` cell), residue = ``sequence[pos−1]``. Only the *fixed*
+    Carbamidomethyl, N-term Acetyl, etc. are excluded — they fold into the bare
+    protein. Shared peptides carry a comma-joined ``start`` per accession; the
+    first is used (the unique-parsimony default drops shared peptides anyway).
+    Returns ``""`` when ``start`` is missing/unparseable so the peptidoform
+    cleanly folds into the bare protein rather than fabricating a site.
+    """
+    if modifications is None:
+        return ""
+    s = str(modifications)
+    if s.lower() in ("nan", "none", "null", ""):
+        return ""
+    bio = [(int(p), int(u)) for p, u in _MOD_FIELD_RE.findall(s)
+           if int(u) in constants.BIOLOGICAL_MODS]
+    if not bio:
+        return ""
+    try:
+        start_pos = int(float(str(start).split(",")[0]))
+    except (ValueError, TypeError):
+        return ""
+    tags: list[str] = []
+    for pos, unimod in sorted(bio):
+        if pos < 1 or pos > len(sequence):
+            continue
+        prefix = constants.MOD_SITE_PREFIX.get(unimod, "")
+        tags.append(f"{prefix}{sequence[pos - 1]}{start_pos + pos - 1}")
+    return "_".join(tags)
 
 
 def _parse_spectra_ref(value: str) -> tuple[int, int]:

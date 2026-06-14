@@ -109,6 +109,9 @@ class FitResult:
     t: list[float]
     fs: list[float]
     protein_id: str
+    #: M7 Stage B proteoform suffix (e.g. ``pS34476``), constant per peptidoform;
+    #: empty when no biological mod. The rollup appends it to the resolved accession.
+    mod_sites: str
     #: M5 per-timepoint prediction-interval bounds, aligned 1:1 with ``t``/``fs``
     #: (the residual-bootstrap band; ``nan`` when the bootstrap did not converge).
     fs_lo: list[float]
@@ -388,6 +391,12 @@ def _fit_one_concat(
         if "protein id" in peptide_rows.columns
         else ""
     )
+    mod_sites = (
+        str(peptide_rows["mod sites"].iloc[0])
+        if "mod sites" in peptide_rows.columns
+        and not pd.isna(peptide_rows["mod sites"].iloc[0])
+        else ""
+    )
     # Per-point biological replicate (manifest path); 1 on the legacy path,
     # where bioreps are not a concept. Aligned to peptide_rows / t_arr order so
     # ``[fit_mask]`` selects the same points as ``t``/``fs``.
@@ -414,7 +423,7 @@ def _fit_one_concat(
     try:
         pep_mass = calculate_ion_mz(seq_with_mods)
     except (KeyError, ValueError):
-        return _null_result(concat, protein_id)
+        return _null_result(concat, protein_id, mod_sites)
 
     # Spep from coefficients — deterministic per peptide given the table.
     spep_float = spep_from_coefficients(seq, aa_coefficients)
@@ -437,11 +446,11 @@ def _fit_one_concat(
                     mods=mods,
                 )
     except (KeyError, ValueError):
-        return _null_result(concat, protein_id)
+        return _null_result(concat, protein_id, mod_sites)
 
     fit_mask = ~np.isnan(fs_arr) & valid
     if int(fit_mask.sum()) < config.depth:
-        return _null_result(concat, protein_id)
+        return _null_result(concat, protein_id, mod_sites)
 
     # Kinetic-model asymptotes: FS goes 0 → 1 (full pool turned over).
     # a_max here is the *kinetic* model's saturation level — always 1.0
@@ -462,7 +471,7 @@ def _fit_one_concat(
             maxfev=2000,
         )
     except (RuntimeError, ValueError):
-        return _null_result(concat, protein_id)
+        return _null_result(concat, protein_id, mod_sites)
     k_deg = float(popt[0])
 
     pred = np.array([
@@ -528,19 +537,20 @@ def _fit_one_concat(
         t=t_fit.tolist(),
         fs=fs_fit.tolist(),
         protein_id=protein_id,
+        mod_sites=mod_sites,
         fs_lo=fs_lo,
         fs_hi=fs_hi,
         bio_rep=[int(b) for b in bio_rep_arr[fit_mask]],
     )
 
 
-def _null_result(concat: str, protein_id: str) -> FitResult:
+def _null_result(concat: str, protein_id: str, mod_sites: str = "") -> FitResult:
     """Sentinel for peptides we couldn't fit — kept in the output for census."""
     return FitResult(
         concat=concat, k_deg=float("nan"), r_squared=float("nan"),
         sd=float("nan"), spep=float("nan"),
         ci_lo=float("nan"), ci_hi=float("nan"),
-        t=[], fs=[], protein_id=protein_id,
+        t=[], fs=[], protein_id=protein_id, mod_sites=mod_sites,
         fs_lo=[], fs_hi=[], bio_rep=[],
     )
 
@@ -572,6 +582,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
             "ci_lo": r.ci_lo,
             "ci_hi": r.ci_hi,
             "protein id": r.protein_id,
+            "mod sites": r.mod_sites,
         }
         for r in results if r is not None
     ]
@@ -580,7 +591,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
 
 #: Column order for the M5 long-format per-timepoint fraction-new table.
 _FRACTIONS_LONG_COLUMNS = [
-    "concat", "protein id", "biological_replicate", "labeling_time",
+    "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
     "fs", "fs_lower", "fs_upper",
 ]
 
@@ -618,6 +629,7 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
             rows.append({
                 "concat": r.concat,
                 "protein id": r.protein_id,
+                "mod sites": r.mod_sites,
                 "biological_replicate": int(br),
                 "labeling_time": float(ti),
                 "fs": float(fsi),

@@ -56,7 +56,7 @@ _PSM_COLUMNS = [
     "spectrum precursor m/z", "spectrum neutral mass", "peptide mass",
     "percolator score", "percolator q-value", "percolator PEP",
     "distinct matches/spectrum",
-    "sequence", "protein id", "flanking aa",
+    "sequence", "protein id", "mod sites", "flanking aa",
     "concat", "sample", "pep_id", "evidence",
 ]
 
@@ -781,6 +781,7 @@ def _psm_metadata_df(psms: Sequence[PSMRecord]) -> pd.DataFrame:
             "distinct matches/spectrum": p.distinct_matches,
             "sequence": p.sequence,
             "protein id": p.protein_id,
+            "mod sites": p.mod_sites,
             "flanking aa": p.flanking_aa,
             "concat": p.concat,
             "sample": p.sample,

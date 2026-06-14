@@ -195,6 +195,11 @@ def read_diann(
             recomputed_mz = (peptide_mass + charge * proton) / charge
             mz_ppm_diffs.append((recomputed_mz - precursor_mz) / precursor_mz * 1e6)
         rt_min = _safe_float(row.RT, 0.0)
+        # NB: ``mod_sites`` (the M7 Stage B proteoform suffix) is left empty on the
+        # DIA path — no DIA fixture carries phospho yet, so the DIA-NN
+        # ``Protein.Sites`` → site mapping is deferred (a phospho peptidoform still
+        # integrates correctly via A2; it just folds into the bare protein until
+        # then). See PROJECT_REVIEW M7 Stage B.
         records.append(
             PSMRecord(
                 scan=-1,  # DIA: no MS2 scan — resolved from RT at integrate time.

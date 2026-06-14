@@ -26,6 +26,7 @@ from riana.algorithms.mass_calc import (
 )
 from riana.io.diann import _encode_peptidoform as diann_encode
 from riana.io.mztab import _encode_peptidoform as mztab_encode
+from riana.io.mztab import _proteoform_sites
 
 
 # --- mass resolution --------------------------------------------------------
@@ -78,6 +79,21 @@ def test_mztab_encode_peptidoform(modifications, expected):
 def test_mztab_phospho_token_lands_after_the_modified_residue():
     # RVKSPEPVTSHPK, phospho at residue 4 (the S) → token immediately after it.
     assert mztab_encode("RVKSPEPVTSHPK", "4-UNIMOD:21") == "RVKS[UNIMOD:21]PEPVTSHPK"
+
+
+# --- mzTab proteoform site (Stage B) ----------------------------------------
+
+@pytest.mark.parametrize("sequence,modifications,start,expected", [
+    ("RVKSPEPVTSHPK", "4-UNIMOD:21", 34473, "pS34476"),   # TITIN S34476
+    ("IGHHSTSDDSSAYR", "5-UNIMOD:21", 330, "pS334"),
+    ("GEIEHHCSGLHR", "8-UNIMOD:21,7-UNIMOD:4", 50, "pS57"),  # CAM ignored
+    ("SPSPK", "1-UNIMOD:21,3-UNIMOD:21", 200, "pS200_pS202"),  # two sites
+    ("SAMPLERK", "0-UNIMOD:1,3-UNIMOD:4", 100, ""),       # N-term Ac + CAM → bare
+    ("PEPTIDEK", "null", 10, ""),                          # unmodified → bare
+    ("PEPTIDEK", "2-UNIMOD:21", None, ""),                 # no start → bare (no fabrication)
+])
+def test_mztab_proteoform_sites(sequence, modifications, start, expected):
+    assert _proteoform_sites(sequence, modifications, start) == expected
 
 
 # --- DIA-NN encoder ---------------------------------------------------------

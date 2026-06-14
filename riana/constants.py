@@ -117,6 +117,10 @@ STARTER_VARIABLE_UNIMODS = frozenset({1, 21})
 # Acetyl (1) is constitutive, so it folds into the bare protein despite being
 # encoded for envelope fidelity.
 BIOLOGICAL_MODS = frozenset({21})
+# Proteoform-tag prefix per biological UniMod id (Stage B). The rollup key is
+# ``accession_<prefix><residue><protein_site>`` — e.g. Phospho-S at protein
+# coordinate 34476 on A2ASS6 → ``A2ASS6_pS34476`` (multi-site joined by ``_``).
+MOD_SITE_PREFIX = {21: "p"}  # Phospho
 
 # Commerford, Carsten, and Cronkite 1983 Table 1
 # Number of labelable hydrogen atoms per amino acids

@@ -271,7 +271,7 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
 
     long = result.attrs["fractions_long"]
     assert list(long.columns) == [
-        "concat", "protein id", "biological_replicate", "labeling_time",
+        "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
         "fs", "fs_lower", "fs_upper",
     ]
     # One row per (peptide, timepoint); on clean data all 5 peptides converge
