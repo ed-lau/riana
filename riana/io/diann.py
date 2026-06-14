@@ -54,7 +54,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -91,7 +91,6 @@ def read_diann(
     path: str | os.PathLike[str],
     sample_map: Mapping[str, RunIdentity],
     *,
-    ignored_mods: Sequence[float] = (),
     drop_decoys: bool = True,
     drop_variable_mods: bool = True,
 ) -> tuple[list[PSMRecord], dict[int, str]]:
@@ -103,8 +102,6 @@ def read_diann(
             :func:`riana.io.sdrf.read_sdrf` (``SdrfTable.sample_map``). Each PSM
             is tagged with the identity of its ``Run`` (joined on the stem), and
             ``PSMRecord.sample`` is set to that run's ``source name``.
-        ignored_mods: forwarded to :func:`accmass.calculate_ion_mz` when the
-            peptide mass is recomputed.
         drop_decoys: when true (default), rows with ``Decoy == 1`` are skipped.
         drop_variable_mods: when true (default), peptidoforms carrying a
             non-fixed UniMod (e.g. Oxidation) are dropped — they would otherwise
@@ -185,7 +182,7 @@ def read_diann(
         sequence = str(row.sequence)
         charge = int(row.charge)
         peptide_mass = float(
-            accmass.calculate_ion_mz(sequence, ignored_mods=list(ignored_mods))
+            accmass.calculate_ion_mz(sequence)
         )
         precursor_mz = _safe_float(row.precursor_mz, 0.0)
         if precursor_mz > 0 and charge > 0:

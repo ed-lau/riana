@@ -421,7 +421,7 @@ class IntegrateTab(QWidget):
             return
         loop = asyncio.get_running_loop()
         self._info(f"reading PSMs from {id_path} …")
-        psms = await loop.run_in_executor(self.pool, read_psms, id_path, sample, ())
+        psms = await loop.run_in_executor(self.pool, read_psms, id_path, sample)
         indices = file_indices(psms)
         if len(mzml_files) != len(indices):
             self._fail(

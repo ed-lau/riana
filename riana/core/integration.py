@@ -25,7 +25,6 @@ bit-near-identical so each later change is its own attributable diff.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, replace
 from typing import Sequence
 
@@ -219,8 +218,7 @@ def integrate_run(
 
     Returns:
         DataFrame whose columns match the legacy ``<sample>_riana.txt``
-        schema: PSM metadata + ``iso{N}`` (or ``mod{m}_iso{N}`` for
-        forced mods ≠ 0) area columns + ``file``.
+        schema: PSM metadata + ``iso{N}`` area columns + ``file``.
     """
     # Filter by q-value, assign per-fraction pep_id 0..N-1 sorted by scan.
     if mzml.ms1_centroid is False:
@@ -303,7 +301,6 @@ def integrate_run(
             _best_q[p.concat] = p.percolator_q_value
             concat_anchor[p.concat] = p.scan
 
-    forced = tuple(config.forced_mods or (0.0,))
     isos = tuple(config.isotopomers)
 
     # Per-PSM extraction → list of per-PSM (DataFrame, mass_accuracy_dict).
@@ -312,7 +309,7 @@ def integrate_run(
     # ProcessPool lever (`integrate --workers`), see core/pipeline.
     def _do(idx: int):
         return _extract_per_psm(
-            kept[idx], concat_scans, forced, isos, config, mzml,
+            kept[idx], concat_scans, isos, config, mzml,
             anchor_scan=concat_anchor[kept[idx].concat],
         )
 
@@ -325,13 +322,13 @@ def integrate_run(
     # comes from the apex finder on the iso0 XIC (+ a co-elution check vs iso1);
     # baseline-subtraction uses baseline_method (default "none"; the narrow
     # window excludes background). Per-peptide fallback to fixed on failure.
-    iso_cols = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
+    iso_cols = [f"iso{n}" for n in isos]
     mz_cols = [f"{c}_obs_mz" for c in iso_cols]
     ppm_cols = [f"{c}_ppm_error" for c in iso_cols]
     integrated_rows: list[list] = []
     n_detected = n_fallback = 0
-    iso0_col = f"mod{_g(forced[0])}_iso0"
-    iso1_col = f"mod{_g(forced[0])}_iso1" if 1 in isos else None
+    iso0_col = "iso0"
+    iso1_col = "iso1" if 1 in isos else None
     iso0_ppm_errors: list[float] = []
     for idf, ma, psm in zip(intensity_dfs, mass_accuracies, kept):
         row: list = [idf["pep_id"].iloc[0]]
@@ -395,11 +392,6 @@ def integrate_run(
         integrated_rows,
         columns=["pep_id"] + iso_cols + mz_cols + ppm_cols,
     )
-    # Legacy strips ``mod0_`` from output column names (the default
-    # no-forced-mod case); other forced mods stay namespaced. Reproduces the
-    # ac16 baseline header exactly. The same stripping applies to the new
-    # mass-accuracy columns (``mod0_isoN_obs_mz`` -> ``isoN_obs_mz``).
-    integrated_df.columns = [re.sub(r"^mod0_", "", c) for c in integrated_df.columns]
 
     # Per-fraction drift summary — log a warning if the median ppm error
     # exceeds --ppm-alert.
@@ -436,8 +428,7 @@ class PeptideTrace:
 
     #: ``sequence_charge`` identifier of the peptide-charge.
     concat: str
-    #: iso index → the extracted-ion chromatogram for that isotopomer (the
-    #: first forced-mod cluster — ``mod0`` in the no-SILAC default).
+    #: iso index → the extracted-ion chromatogram for that isotopomer.
     chromatograms: dict[int, Chromatogram]
     #: ``(lo_rt, hi_rt)`` of the integrated window in RT minutes, or ``None``
     #: when the whole extraction was integrated (the ms2 / fixed-window path).
@@ -470,15 +461,14 @@ def extract_peptide_trace(
     Returns:
         :class:`PeptideTrace` — chromatograms keyed by iso index + the window.
     """
-    forced = tuple(config.forced_mods or (0.0,))
     isos = tuple(config.isotopomers)
     concat_scans = {psm.concat: scan_span or (psm.scan, psm.scan)}
 
-    idf, _ma = _extract_per_psm(psm, concat_scans, forced, isos, config, mzml)
+    idf, _ma = _extract_per_psm(psm, concat_scans, isos, config, mzml)
     rt_arr = idf["rt"].to_numpy(dtype=np.float64)
 
-    iso0_col = f"mod{_g(forced[0])}_iso0"
-    iso1_col = f"mod{_g(forced[0])}_iso1" if 1 in isos else None
+    iso0_col = "iso0"
+    iso1_col = "iso1" if 1 in isos else None
     boundary = _peak_boundary(idf, psm, mzml, config, rt_arr, iso0_col, iso1_col)
     window = (
         (float(rt_arr[boundary.lo]), float(rt_arr[boundary.hi]))
@@ -495,14 +485,12 @@ def extract_peptide_trace(
 
     proton = constants.PROTON_MASS
     peptide_prec = (psm.peptide_mass + psm.charge * proton) / psm.charge
-    mod0 = forced[0]
     chromatograms: dict[int, Chromatogram] = {}
     for iso in isos:
-        col = f"mod{_g(mod0)}_iso{iso}"
+        col = f"iso{iso}"
         intensity = idf[col].to_numpy(dtype=np.float64)
         target = (
             peptide_prec
-            + (mod0 / psm.charge)
             + (iso * config.mass_difference / psm.charge)
         )
         chromatograms[iso] = Chromatogram(
@@ -524,7 +512,6 @@ def extract_peptide_trace(
 def _extract_per_psm(
     psm: PSMRecord,
     concat_scans: dict[str, tuple[int, int]],
-    forced: tuple[float, ...],
     isos: tuple[int, ...],
     config: IntegrationConfig,
     mzml: IndexedMzML,
@@ -534,13 +521,13 @@ def _extract_per_psm(
     """Per-MS1-scan isotopomer intensities + mass-accuracy for one PSM.
 
     Returns ``(wide_df, mass_accuracy)`` where ``mass_accuracy`` maps each
-    ``mod{m}_iso{n}`` column to ``(obs_mz, ppm_error)``. Both are ``None``
+    ``iso{n}`` column to ``(obs_mz, ppm_error)``. Both are ``None``
     when no centroid matched in the window (an honest "not observed"
     rather than a fabricated zero — same posture
     :class:`riana.records.IsotopomerPeak` takes).
 
     Matches the legacy ``get_isotopomer_intensity`` numerics:
-    ``prec_iso_am = (peptide_mass + z*proton)/z + forced/z + iso*Δ/z``;
+    ``prec_iso_am = (peptide_mass + z*proton)/z + iso*Δ/z``;
     ``±N ppm`` half-width around it; centroids summed within window.
     """
     proton = constants.PROTON_MASS
@@ -572,7 +559,7 @@ def _extract_per_psm(
     # (mod, iso) across the integration window so the writer can emit the
     # iso{N}_obs_mz / iso{N}_ppm_error mass-accuracy columns.
     rows: list[tuple[str, float, float]] = []
-    iso_cols_local = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
+    iso_cols_local = [f"iso{n}" for n in isos]
     targets: dict[str, float] = {}
     mz_weighted: dict[str, float] = {c: 0.0 for c in iso_cols_local}
     intens_total: dict[str, float] = {c: 0.0 for c in iso_cols_local}
@@ -581,23 +568,21 @@ def _extract_per_psm(
         scan_int = int(scan)
         mz_arr, intens_arr = mzml.peaks(scan_int)
         rt = float(mzml.rt_idx[mzml.scan_idx == scan_int].item())
-        for mod in forced:
-            prec_shifted = peptide_prec + (mod / charge)
-            for iso in isos:
-                col = f"mod{_g(mod)}_iso{iso}"
-                target = prec_shifted + (iso * iso_added_mass / charge)
-                targets[col] = target
-                delta = target * ppm_tol
-                mask = np.abs(mz_arr - target) <= delta
-                if mask.any():
-                    matched_mz = mz_arr[mask]
-                    matched_i = intens_arr[mask]
-                    summed = float(matched_i.sum())
-                    mz_weighted[col] += float((matched_mz * matched_i).sum())
-                    intens_total[col] += summed
-                else:
-                    summed = 0.0
-                rows.append((col, rt, summed))
+        for iso in isos:
+            col = f"iso{iso}"
+            target = peptide_prec + (iso * iso_added_mass / charge)
+            targets[col] = target
+            delta = target * ppm_tol
+            mask = np.abs(mz_arr - target) <= delta
+            if mask.any():
+                matched_mz = mz_arr[mask]
+                matched_i = intens_arr[mask]
+                summed = float(matched_i.sum())
+                mz_weighted[col] += float((matched_mz * matched_i).sum())
+                intens_total[col] += summed
+            else:
+                summed = 0.0
+            rows.append((col, rt, summed))
 
     if not rows:
         if config.use_range:
@@ -617,7 +602,7 @@ def _extract_per_psm(
     long = pd.DataFrame(rows, columns=["mod_iso", "rt", "int"])
     long["rt"] = long["rt"].round(6)
     wide = long.pivot(index="rt", columns="mod_iso", values="int")
-    iso_cols = [f"mod{_g(m)}_iso{n}" for m in forced for n in isos]
+    iso_cols = [f"iso{n}" for n in isos]
     wide = wide[iso_cols]
 
     wide["rt"] = wide.index
@@ -716,7 +701,7 @@ def _peak_boundary(
     if config.peak_rt == "consensus":
         # Median apex over m0..m{n-1} (co-elution consensus): labelling-
         # independent and rejects a contaminated channel regardless of intensity.
-        base = iso0_col[:-1]  # "mod0_iso0" -> "mod0_iso"
+        base = iso0_col[:-1]  # "iso0" -> "iso"
         cons_cols = [f"{base}{k}" for k in range(config.apex_n_consensus)
                      if f"{base}{k}" in idf.columns]
         traces = [idf[c].to_numpy(dtype=np.float64) for c in cons_cols]
@@ -813,14 +798,3 @@ def _mzml_basename(mzml: IndexedMzML) -> str:
     if name.endswith(".mzML"):
         return name[: -len(".mzML")]
     return mzml.path.stem
-
-
-def _g(value: float) -> str:
-    """``{value:g}`` — strips trailing zeros so ``0.0`` ↔ ``0`` for column names.
-
-    Reproduces the legacy quirk that ``forced_mods=[0]`` (argparse default, an
-    int) emits ``mod0_iso0`` while a user-supplied ``-F 0`` (parsed as 0.0)
-    would have emitted ``mod0.0_iso0``. We pick the int-shaped form for both
-    because the committed v0.9.0 baselines were run with default ``-F``.
-    """
-    return f"{value:g}"

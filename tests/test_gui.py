@@ -54,7 +54,7 @@ GOLDEN = SAMPLE1 / "sample1_riana.v0_9_0.txt"
 # The 0.9.0-parity config (ms2 + whole-window), matching test_integration_port.
 _MS2_CONFIG = IntegrationConfig(
     sample="sample1", isotopomers=(0, 6), q_value=1.0,
-    extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
+    extraction_half_width=1.0, mass_tol_ppm=50,
     peak_rt="ms2", baseline_method="none",
 )
 
@@ -63,7 +63,7 @@ _MS2_CONFIG = IntegrationConfig(
 
 
 def test_read_psms_returns_records():
-    psms = read_psms(str(PSMS), "sample1", ())
+    psms = read_psms(str(PSMS), "sample1")
     assert psms, "no PSMs parsed"
     assert all(isinstance(p, PSMRecord) for p in psms)
     assert all(p.sample == "sample1" for p in psms)
@@ -75,7 +75,7 @@ def test_integrate_fraction_matches_cli_golden():
     Proves the GUI path goes through the identical numeric core, so the two
     surfaces cannot diverge.
     """
-    psms = read_psms(str(PSMS), "sample1", ())
+    psms = read_psms(str(PSMS), "sample1")
     indices = file_indices(psms)
     assert indices == [0], "sample1 should be a single fraction"
     fraction = fraction_psms(psms, 0)
@@ -104,7 +104,7 @@ def test_extract_trace_returns_chromatograms():
     from riana.core.integration import extract_peptide_trace
     from riana.io.mzml import IndexedMzML
 
-    psms = read_psms(str(PSMS), "sample1", ())
+    psms = read_psms(str(PSMS), "sample1")
     # Find a peptide that has signal using a single shared reader (cheap), so the
     # path-based worker only has to re-index the mzML once below.
     good_psm = None

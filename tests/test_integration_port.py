@@ -67,7 +67,7 @@ def legacy_sample1_output() -> pd.DataFrame:
 def test_sample1_iso0_iso6_within_rtol(legacy_sample1_output):
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
-        extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50,
         peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(
@@ -110,7 +110,7 @@ def test_ac16_time0_matches_committed_baseline():
     """The bigger real-data check: ac16 time0, 9 isotopomers including 6."""
     config = IntegrationConfig(
         sample="time0", isotopomers=(0, 1, 2, 3, 4, 5), q_value=0.01,
-        extraction_half_width=0.33, mass_tol_ppm=15, forced_mods=(0.0,),
+        extraction_half_width=0.33, mass_tol_ppm=15,
         peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(AC16_PSMS, sample="time0")
@@ -158,7 +158,7 @@ def test_sample1_detected_pipeline_runs_and_is_smaller_than_fixed():
     )
     base = dict(
         sample="sample1", isotopomers=(0, 1, 2, 3, 4, 5), q_value=1.0,
-        extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50,
     )
     fixed_cfg = IntegrationConfig(**base, peak_rt="ms2",
                                   baseline_method="none")
@@ -205,7 +205,7 @@ def test_sample1_mass_accuracy_columns_populated():
     """
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
-        extraction_half_width=1.0, mass_tol_ppm=50, forced_mods=(0.0,),
+        extraction_half_width=1.0, mass_tol_ppm=50,
         peak_rt="ms2", baseline_method="none",
     )
     psms = read_percolator(
@@ -299,7 +299,7 @@ def test_apex_search_half_width_bounds_apex_to_anchor():
 
     # Both peaks well clear of the prominence floor; the one at 3.0 is taller.
     iso0 = gauss(1.0, 100.0) + gauss(3.0, 500.0) + 1.0
-    idf = pd.DataFrame({"rt": rt, "mod0_iso0": iso0, "mod0_iso1": iso0 * 0.5})
+    idf = pd.DataFrame({"rt": rt, "iso0": iso0, "iso1": iso0 * 0.5})
     # MS1 index: scan N -> rt[N-1]; searchsorted(scan)-1 lands on rt[N-2].
     mzml = SimpleNamespace(scan_idx=np.arange(1, 102), rt_idx=rt)
     psm = SimpleNamespace(scan=1, concat="PEPTIDEK_2")
@@ -310,14 +310,14 @@ def test_apex_search_half_width_bounds_apex_to_anchor():
 
     # Anchor near the SHORTER peak at 1.0 -> apex must be ~1.0, not the taller 3.0.
     b_near = _peak_boundary(
-        idf, psm, mzml, cfg, rt, "mod0_iso0", "mod0_iso1", anchor_scan=22,
+        idf, psm, mzml, cfg, rt, "iso0", "iso1", anchor_scan=22,
     )
     assert b_near is not None
     assert abs(rt[b_near.apex_idx] - 1.0) < 0.2
 
     # Anchor near the taller peak at 3.0 -> apex follows to ~3.0.
     b_far = _peak_boundary(
-        idf, psm, mzml, cfg, rt, "mod0_iso0", "mod0_iso1", anchor_scan=62,
+        idf, psm, mzml, cfg, rt, "iso0", "iso1", anchor_scan=62,
     )
     assert b_far is not None
     assert abs(rt[b_far.apex_idx] - 3.0) < 0.2
@@ -326,7 +326,7 @@ def test_apex_search_half_width_bounds_apex_to_anchor():
     # at 3.0 even when anchored near 1.0 — the bug the 0.25 default fixes.
     cfg0 = dataclasses.replace(cfg, apex_search_half_width=0.0)
     b_roam = _peak_boundary(
-        idf, psm, mzml, cfg0, rt, "mod0_iso0", "mod0_iso1", anchor_scan=22,
+        idf, psm, mzml, cfg0, rt, "iso0", "iso1", anchor_scan=22,
     )
     assert b_roam is not None
     assert abs(rt[b_roam.apex_idx] - 3.0) < 0.2

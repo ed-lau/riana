@@ -92,11 +92,11 @@ def plan_integration(
         from riana.io.diann import read_diann
 
         all_psms, file_index_map = read_diann(
-            mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
+            mztab_path, sdrf.sample_map
         )
     else:
         all_psms, file_index_map = read_mztab(
-            mztab_path, sdrf.sample_map, ignored_mods=config.ignored_mods
+            mztab_path, sdrf.sample_map
         )
     if not all_psms:
         raise DataError(f"no PSMs parsed from {mztab_path}")

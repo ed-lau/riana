@@ -51,7 +51,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 
 from pyteomics import mztab
@@ -80,7 +80,6 @@ def read_mztab(
     sample_map: Mapping[str, RunIdentity] | None = None,
     *,
     sample: str | None = None,
-    ignored_mods: Sequence[str] = (),
     drop_decoys: bool = True,
     drop_variable_mods: bool = True,
 ) -> tuple[list[PSMRecord], dict[int, str]]:
@@ -96,8 +95,6 @@ def read_mztab(
         sample: legacy single-label fallback (no SDRF) — written into every
             record's ``sample`` field with ``identity=None``. Mutually exclusive
             with ``sample_map``.
-        ignored_mods: forwarded to :func:`accmass.calculate_ion_mz` when the
-            peptide_mass is recomputed.
         drop_decoys: when true (default), rows flagged as decoys are skipped.
         drop_variable_mods: when true (default), PSM rows carrying a non-fixed
             UniMod (Oxidation, Phospho, N-term Acetyl, …) in the ``modifications``
@@ -175,9 +172,7 @@ def read_mztab(
                 scan=scan,
                 charge=int(row["charge"]),
                 sequence=sequence,
-                peptide_mass=float(
-                    accmass.calculate_ion_mz(sequence, ignored_mods=ignored_mods)
-                ),
+                peptide_mass=float(accmass.calculate_ion_mz(sequence)),
                 sample=record_sample,
                 file_idx=file_idx,
                 file_name=file_name,

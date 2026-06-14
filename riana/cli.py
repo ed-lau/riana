@@ -155,14 +155,6 @@ def integrate(
     mass_difference: float = typer.Option(
         1.003354835, "-D", "--mass_difference",
         help="Mass difference between isotopomers [default: 1.003354835]."),
-    ignored_mods: str = typer.Option(
-        "", "-X", "--ignored_mods",
-        help="Modification mass(es) to ignore for true-peptide-mass calc, "
-        "comma/space separated, e.g. '6.02'."),
-    forced_mods: str = typer.Option(
-        "", "-F", "--forced_mods",
-        help="Modification mass(es) to always add (SILAC clusters), e.g. "
-        "'6.0201'."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
         help="Runs to integrate concurrently on the --sdrf path (one mzML in "
@@ -206,11 +198,6 @@ def integrate(
     isotopomers = _parse_number_list(iso, int, sort=True, unique=True)
     if not isotopomers:
         raise typer.BadParameter("--iso must list at least one isotopomer.")
-    ignored = _parse_number_list(ignored_mods, float, sort=False, unique=True)
-    forced = _parse_number_list(forced_mods, float, sort=True, unique=True)
-    # 0.9.0 semantic: forced_mods always carries a leading 0 (the unmodified
-    # cluster); StoreUniqueForcedMods did this in argparse.
-    forced = (0.0,) + tuple(m for m in forced if m != 0.0)
 
     ihw: float | str = ("auto" if integration_half_width == "auto"
                         else float(integration_half_width))
@@ -263,8 +250,6 @@ def integrate(
             write_intensities=bool(write_intensities),
             smoothing=smoothing,
             mass_difference=float(mass_difference),
-            ignored_mods=ignored,
-            forced_mods=forced,
             out_dir=str(out),
             check_scan_rt=not no_rt_check,
         )
@@ -297,7 +282,7 @@ def integrate(
         return
 
     # --- Percolator path (demoted single-mzML testing/legacy tier). -----------
-    all_psms = read_percolator(str(id_path), sample=sample, ignored_mods=ignored)
+    all_psms = read_percolator(str(id_path), sample=sample)
 
     # mzML directory layout: sort by name, accept .mzML / .mzML.gz (mirrors the
     # 0.9.0 fraction-index assignment when no percolator.log.txt is present).

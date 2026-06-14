@@ -279,7 +279,7 @@ def main() -> None:
     extract_cfg = IntegrationConfig(
         sample=sample, isotopomers=tuple(range(n_iso)), q_value=0.01,
         mass_tol_ppm=15, extraction_half_width=EXTRACT_HALF_WIDTH, use_range=False,
-        smoothing=None, forced_mods=(0.0,),
+        smoothing=None,
         peak_rt="ms2", integration_half_width=EXTRACT_HALF_WIDTH,
         baseline_method="none",
     )

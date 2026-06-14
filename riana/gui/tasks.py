@@ -36,7 +36,6 @@ from riana.records import PSMRecord
 def read_psms(
     id_path: str,
     sample: str,
-    ignored_mods: Sequence[float] = (),
 ) -> list[PSMRecord]:
     """Parse the Percolator id file into typed records (worker side).
 
@@ -44,7 +43,7 @@ def read_psms(
     do the (potentially slow) parse off the Qt event loop. Same call the CLI
     makes in :func:`riana.cli.integrate`.
     """
-    return read_percolator(id_path, sample=sample, ignored_mods=ignored_mods)
+    return read_percolator(id_path, sample=sample)
 
 
 def integrate_fraction(

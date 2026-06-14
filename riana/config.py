@@ -47,7 +47,7 @@ class IntegrationConfig:
     #: envelope against the IsoSpec forward model over these channels); the
     #: legacy ``(0, 6)`` m0/m6 pair is non-contiguous and is NOT fittable by the
     #: new engine (see ``core.fitting._REQUIRED_D2O_ISOTOPOMERS``). Override for
-    #: other workflows (e.g. SILAC cluster extraction via ``forced_mods``).
+    #: other workflows that need a different channel set.
     isotopomers: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
     #: -m / --mass_tol. ±ppm half-width (see class docstring). Default 10 ppm
     #: (centroid mass-accuracy / search-tolerance norm); SDRF
@@ -71,10 +71,6 @@ class IntegrationConfig:
     smoothing: int | None = None
     #: -D / --mass_difference. Mass step between isotopomers (C13 default).
     mass_difference: float = 1.003354835
-    #: -X / --ignored_mods. Modification masses excluded from the peptide mass.
-    ignored_mods: tuple[float, ...] = ()
-    #: -F / --forced_mods. Modification masses always added (e.g. SILAC).
-    forced_mods: tuple[float, ...] = (0.0,)
     #: -o / --out. Output directory.
     out_dir: str = "."
     #: No CLI flag in 0.9.0 — the pipeline hardcodes ``use_range=True`` (span the
@@ -242,8 +238,8 @@ class FitConfig:
     #: specificity comes from the per-AA ``--coefficients`` table, not the
     #: label. ``"o18"`` (¹⁸O) is recognized but its fit path is being
     #: reimplemented post-M4 (``fit_run`` raises a clear error). Amino-acid /
-    #: SILAC labeling was dropped from fitting — integrate still extracts SILAC
-    #: peaks via ``forced_mods``; do the L/(H+L) curve fit downstream.
+    #: SILAC labeling was dropped from fitting (and the SILAC dual-channel
+    #: ``-X/-F`` extraction knobs were retired in M7).
     label: str = "hw"
     #: --kp. Precursor rate constant for the two-compartment models.
     k_p: float = 0.5

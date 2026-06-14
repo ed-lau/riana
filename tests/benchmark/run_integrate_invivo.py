@@ -50,7 +50,7 @@ def main() -> None:
 
     cfg = IntegrationConfig(
         sample=args.sample, isotopomers=(0, 1, 2, 3, 4, 5), q_value=0.01,
-        mass_tol_ppm=15, forced_mods=(0.0,),
+        mass_tol_ppm=15,
         peak_rt="ms2", integration_half_width=0.15,
         extraction_half_width=0.15, baseline_method="none",
     )

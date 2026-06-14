@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
@@ -49,16 +49,12 @@ _PSMID_RE = re.compile(r"^(?P<file>.+)\.(?P<scan>\d+)\.\d+\.(?P<charge>\d+)_\d+$
 def read_percolator(
     path: str | os.PathLike[str],
     sample: str,
-    ignored_mods: Sequence[str] = (),
 ) -> list[PSMRecord]:
     """Parse a Percolator target-PSMs file into typed records.
 
     Args:
         path: ``percolator.target.psms.txt`` (Crux or standalone format).
         sample: sample label written into every emitted record.
-        ignored_mods: mods to ignore when recomputing peptide mass. Forwarded
-            to :func:`riana.accmass.calculate_ion_mz`. The recompute exists
-            because the Crux ``peptide mass`` column omits cysteine-IAA mass.
 
     Returns:
         One :class:`PSMRecord` per PSM row. ``pep_id`` is left unassigned
@@ -75,12 +71,12 @@ def read_percolator(
     is_crux = all(col in header_cols for col in _CRUX_SIGNATURE)
 
     if is_crux:
-        return _read_crux(path, sample, ignored_mods)
-    return _read_standalone(path, sample, ignored_mods)
+        return _read_crux(path, sample)
+    return _read_standalone(path, sample)
 
 
 def _read_crux(
-    path: Path, sample: str, ignored_mods: Sequence[str]
+    path: Path, sample: str
 ) -> list[PSMRecord]:
     try:
         df = pd.read_csv(path, sep="\t")
@@ -90,7 +86,7 @@ def _read_crux(
     # Recompute peptide mass so cysteine-IAA mass is always counted (Crux's
     # column omits it). Matches the 0.9.0 ReadPercolator behavior bit-for-bit.
     peptide_masses = [
-        accmass.calculate_ion_mz(seq, ignored_mods=ignored_mods)
+        accmass.calculate_ion_mz(seq)
         for seq in df["sequence"]
     ]
 
@@ -119,7 +115,7 @@ def _read_crux(
 
 
 def _read_standalone(
-    path: Path, sample: str, ignored_mods: Sequence[str]
+    path: Path, sample: str
 ) -> list[PSMRecord]:
     """Parse standalone Percolator (MSFragger) output."""
     with open(path, "r") as f:
@@ -168,7 +164,7 @@ def _read_standalone(
 
     records: list[PSMRecord] = []
     for row, prot in zip(head_df.itertuples(index=False), protein_ids):
-        peptide_mass = accmass.calculate_ion_mz(row.sequence, ignored_mods=ignored_mods)
+        peptide_mass = accmass.calculate_ion_mz(row.sequence)
         records.append(
             PSMRecord(
                 scan=int(row.scan),

@@ -35,7 +35,7 @@ BASE = dict(
     isotopomers=(0, 1, 2, 3, 4, 5),
     q_value=0.01,
     mass_tol_ppm=15,
-        forced_mods=(0.0,),
+       
     baseline_method="none",
 )
 

@@ -681,7 +681,8 @@ the argparse `main.py` and the whole legacy pipeline
 `--coefficients`** (bundled presets `commerford`/`ac16`/`ipsc`/`cm` under
 `riana/data/coefficients/`, or a path); `--label` collapsed to `{hw, o18}`
 (cell specificity is the coefficient table, not the label), amino-acid/SILAC
-fitting dropped (integrate still extracts SILAC peaks), and `o18` is recognized
+fitting dropped (the SILAC `-X/-F` extraction knobs were later retired in M7
+Stage A3), and `o18` is recognized
 but errors pending its post-M4 rewrite. The A/B-against-legacy tests were
 converted to committed-golden comparisons. See CHANGELOG `[1.0.0]` M4 Phase 1.
 
@@ -1316,7 +1317,12 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     `mod_atoms[4]`; `count_atoms(mods=…)` + `get_peptide_distribution(mods=…)`
     thread variable-mod composition; verified byte-identical on unmodified peptides
     — mass Δ 0, envelope Δ 3e-18 — and against the frozen 5-element oracle; 178
-    tests pass) → **A3** flag retirement
+    tests pass) → **A3 — DONE 2026-06-13** (retired `-X/--ignored_mods` +
+    `-F/--forced_mods` from CLI/`IntegrationConfig`; dropped the `mod{offset}`
+    channel machinery in `integration.py` — `integrate_run`/`_extract_per_psm`
+    now emit `iso{N}` directly at the PSM's own m/z; removed `ignored_mods` from
+    `calculate_ion_mz` + the mztab/diann/percolator/pipeline/gui plumbing;
+    byte-identical — the 415s ac16 baseline gate + 177 others pass)
     (independent cleanup; removes dead surface before threading) → **A2** thread
     mods IO→fit (load-bearing; needs a **peptidoform-distinct `concat`** so
     phospho ≠ the unmodified form of the same sequence; mod H stays out of
@@ -1551,8 +1557,10 @@ These apply during and after the rewrite:
 - Peak fidelity: see §2c. The calibration dataset quantified the impact;
   the M3 spike adopted an apex-centred narrow window as the default.
 - AA / SILAC fitting: dropped from `riana fit` in M4 (the buggy
-  `--label 4` `a_0` path is gone). Integrate still extracts SILAC peaks
-  (`-F/--forced_mods`); do the L/(H+L) curve fit downstream.
+  `--label 4` `a_0` path is gone). The SILAC dual-channel extraction knobs
+  (`-F/--forced_mods`, `-X/--ignored_mods`) were retired in M7 Stage A3 — mods
+  are now handled uniformly via UniMod; integrate extracts one channel per
+  peptidoform at its own m/z.
 - o18 fitting: recognized (`--label o18`) but errors pending a post-M4
   rewrite (length + selected-residue coefficients, not a per-AA dict).
   o18 *integration* is unaffected.
