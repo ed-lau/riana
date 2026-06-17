@@ -69,8 +69,9 @@ def test_parse_unimod_ids_preserves_order_and_ignores_mass_brackets():
     ("3-UNIMOD:4", "SAMPLERK"),                      # CAM only → folded, bare
     ("0-UNIMOD:1", "[UNIMOD:1]SAMPLERK"),            # N-term Acetyl
     ("0-UNIMOD:1,1-UNIMOD:4", "[UNIMOD:1]SAMPLERK"),  # Acetyl + CAM → encode Ac only
-    ("0-UNIMOD:1,1-UNIMOD:35", None),                # Ac + Ox → drop (Ox not v1)
-    ("2-UNIMOD:35", None),                           # Ox only → drop
+    ("3-UNIMOD:35", "SAM[UNIMOD:35]PLERK"),          # Met-Ox (tier 1b) → encoded
+    ("0-UNIMOD:1,3-UNIMOD:35", "[UNIMOD:1]SAM[UNIMOD:35]PLERK"),  # Ac + Ox both kept
+    ("2-UNIMOD:7", None),                            # deamidation → drop (unsupported)
 ])
 def test_mztab_encode_peptidoform(modifications, expected):
     assert mztab_encode("SAMPLERK", modifications) == expected
@@ -96,6 +97,19 @@ def test_mztab_proteoform_sites(sequence, modifications, start, expected):
     assert _proteoform_sites(sequence, modifications, start) == expected
 
 
+# --- chemical-mod fit key (tier 1b) -----------------------------------------
+
+@pytest.mark.parametrize("concat,expected", [
+    ("PEPM[UNIMOD:35]TIDEK_2", "PEPMTIDEK_2"),                  # Met-Ox stripped
+    ("PEPS[UNIMOD:21]M[UNIMOD:35]TIDEK_2", "PEPS[UNIMOD:21]MTIDEK_2"),  # phospho kept
+    ("PEPMTIDEK_2", "PEPMTIDEK_2"),                            # no chemical mod → unchanged
+    ("[UNIMOD:1]PEPM[UNIMOD:35]TIDEK_3", "[UNIMOD:1]PEPMTIDEK_3"),  # N-term Ac kept, Ox stripped
+])
+def test_fit_key_strips_only_chemical_mods(concat, expected):
+    from riana.core.fitting import _fit_key
+    assert _fit_key(concat) == expected
+
+
 # --- DIA-NN encoder ---------------------------------------------------------
 
 @pytest.mark.parametrize("modified_sequence,expected", [
@@ -104,7 +118,8 @@ def test_mztab_proteoform_sites(sequence, modifications, start, expected):
     ("(UniMod:1)AACDEFK", "[UNIMOD:1]AACDEFK"),              # N-term Acetyl
     ("AAS(UniMod:21)PEPK", "AAS[UNIMOD:21]PEPK"),            # phospho in place
     ("AAC(UniMod:4)S(UniMod:21)PEPK", "AACS[UNIMOD:21]PEPK"),  # CAM stripped, phospho kept
-    ("AAM(UniMod:35)PEPK", None),                            # Ox → drop
+    ("AAM(UniMod:35)PEPK", "AAM[UNIMOD:35]PEPK"),           # Met-Ox (tier 1b) → encoded
+    ("AAN(UniMod:7)PEPK", None),                            # deamidation → drop (unsupported)
 ])
 def test_diann_encode_peptidoform(modified_sequence, expected):
     assert diann_encode(modified_sequence) == expected

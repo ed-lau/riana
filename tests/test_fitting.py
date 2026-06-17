@@ -340,3 +340,45 @@ def test_load_aa_coefficients_reads_csv(tmp_path):
     from riana.core.fitting import load_aa_coefficients
     out = load_aa_coefficients(csv)
     assert out == {"A": 0.5, "K": 1.2}
+
+
+def test_fit_merges_met_ox_with_unoxidized_into_one_curve():
+    """M7 tier 1b: a peptide seen unoxidized at some timepoints and Met-oxidized
+    at others pools into ONE turnover curve (the chemical-mod-stripped fit key),
+    so a pair that is each too shallow alone clears the depth gate together and
+    recovers the planted k."""
+    bare, charge, spep, k = "SAMMLPEPTIDEK", 2, 12, 0.5
+    coeffs = _coefficients_for_target_spep([(bare, charge)], spep)
+    clear_envelope_cache()
+    mass_bare = calculate_ion_mz(bare)
+    mass_ox = calculate_ion_mz("SAM[UNIMOD:35]MLPEPTIDEK")
+    # 3 unoxidized timepoints + 3 oxidized = 6 pooled; each form alone is < depth 4.
+    plan = [
+        (0.5, "SAMMLPEPTIDEK_2", (), mass_bare),
+        (1.0, "SAMMLPEPTIDEK_2", (), mass_bare),
+        (1.5, "SAMMLPEPTIDEK_2", (), mass_bare),
+        (2.0, "SAM[UNIMOD:35]MLPEPTIDEK_2", (35,), mass_ox),
+        (3.0, "SAM[UNIMOD:35]MLPEPTIDEK_2", (35,), mass_ox),
+        (4.0, "SAM[UNIMOD:35]MLPEPTIDEK_2", (35,), mass_ox),
+    ]
+    dfs = []
+    for ti, concat, mods, pep_mass in plan:
+        theta = 1.0 - np.exp(-k * ti)
+        init = _get_init_env(bare, pep_mass, n=6, mods=mods)
+        final = _get_final_env(bare, pep_mass, spep, ria_max=0.06, n=6, mods=mods)
+        mix = (1 - theta) * (init / init.sum()) + theta * (final / final.sum())
+        scaled = mix * 1e6
+        dfs.append(pd.DataFrame([{
+            "file_idx": 0, "scan": 1000, "charge": charge,
+            "concat": concat, "sequence": bare, "sample": f"time{ti:.6f}",
+            "percolator q-value": 1e-4, "protein id": "sp|P1|TEST",
+            **{f"iso{n}": scaled[n] for n in range(6)},
+        }]))
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=4,
+                       ria_max=0.06)
+    out = fit_run(config, dfs, coeffs, n_boot=50, random_state=42)
+    # ONE merged result, keyed by the stripped fit key, pooling all 6 points.
+    assert list(out.index) == ["SAMMLPEPTIDEK_2"]
+    row = out.loc["SAMMLPEPTIDEK_2"]
+    assert len(row["t"]) == 6
+    assert row["k_deg"] == pytest.approx(k, abs=0.05)

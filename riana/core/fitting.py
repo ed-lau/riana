@@ -52,6 +52,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
 
+from riana import constants
 from riana.algorithms.isotope_dist import solve_fs_d2o, spep_from_coefficients
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
 from riana.config import FitConfig
@@ -84,6 +85,28 @@ def _concat_seed(base_seed: int, concat: str) -> int:
     """
     digest = hashlib.blake2b(concat.encode(), digest_size=8).digest()
     return (base_seed ^ int.from_bytes(digest, "big")) & 0xFFFFFFFFFFFFFFFF
+
+
+def _fit_key(concat: str) -> str:
+    """The chemical-mod-stripped peptidoform identity that GROUPS peptidoforms
+    into one turnover curve (M7 tier 1b).
+
+    Removes the ``[UNIMOD:N]`` tokens of purely chemical mods
+    (:data:`riana.constants.CHEMICAL_MODS` — Met-Ox) so a peptide's oxidized and
+    unoxidized forms — which share the FS-vs-time signature (oxidation is
+    post-synthesis, it does not reset the D₂O clock) — pool into a single fit.
+    They are still **integrated separately** at their own clean m/z; only the fit
+    *groups* them. Biological mods (phospho) stay in the key so they remain
+    distinct units. A peptidoform with no chemical mod returns its own ``concat``
+    unchanged → byte-identical to the pre-merge fit.
+    """
+    parts = concat.rsplit("_", 1)
+    if len(parts) != 2:
+        return concat
+    seq_with_mods, charge = parts
+    for unimod_id in constants.CHEMICAL_MODS:
+        seq_with_mods = seq_with_mods.replace(f"[UNIMOD:{unimod_id}]", "")
+    return f"{seq_with_mods}_{charge}"
 
 #: Isotopomer channels the D2O envelope solver currently needs in the integrate
 #: output. :func:`algorithms.isotope_dist.solve_fs_d2o` matches the observed
@@ -239,6 +262,13 @@ def fit_run(
         )
 
     rdf = rdf[rdf["percolator q-value"] < config.q_value].copy()
+    # M7 tier 1b: group peptidoforms by their chemical-mod-stripped key so a
+    # peptide's Met-Ox and unoxidized forms pool into one turnover curve (they are
+    # integrated separately, then merged here). For data with no chemical mod this
+    # is identity — ``fit_key == concat`` — so the fit is byte-identical. The depth
+    # gate is applied to the *merged* group, so two forms that are each too shallow
+    # alone can still qualify once pooled.
+    rdf = rdf.assign(fit_key=rdf["concat"].map(_fit_key))
     if time_column is not None:
         if time_column not in rdf.columns:
             raise ValueError(
@@ -246,15 +276,15 @@ def fit_run(
                 f"(have {list(rdf.columns)}). The pipeline must add it."
             )
         # Rows are already recombined to one point per (peptide, biorep,
-        # timepoint); depth = number of distinct points per peptide.
+        # timepoint); depth = number of distinct points per merged peptidoform.
         rdf = (
-            rdf.groupby("concat", group_keys=False)
+            rdf.groupby("fit_key", group_keys=False)
             .filter(lambda x: len(x) >= config.depth)
             .copy()
         )
     else:
         rdf = (
-            rdf.groupby(["concat", "file_idx"], group_keys=False)
+            rdf.groupby(["fit_key", "file_idx"], group_keys=False)
             .filter(lambda x: x["sample"].nunique() >= config.depth)
             .copy()
         )
@@ -264,7 +294,7 @@ def fit_run(
             "Relax thresholds or check inputs."
         )
 
-    concat_list = sorted(rdf["concat"].unique())
+    concat_list = sorted(rdf["fit_key"].unique())
     fit_partial = partial(
         _fit_one_concat,
         rdf=rdf,
@@ -356,16 +386,26 @@ def _fit_one_concat(
     boot_ci_pct: tuple[float, float],
     base_seed: int,
 ) -> FitResult | None:
-    """Per-peptide fit: Spep from coefficients → per-timepoint FS → k_deg."""
+    """Per-peptide fit: Spep from coefficients → per-timepoint FS → k_deg.
+
+    ``concat`` here is the **fit key** (:func:`_fit_key`): for ordinary peptides
+    it is the concat itself, but for a peptide seen both oxidized and unoxidized
+    it is the chemical-mod-stripped identity shared by both forms (M7 tier 1b), so
+    their per-row FS points pool into one curve. Each row still carries its own
+    ``concat`` → its own mods / precursor mass / IsoSpec envelope.
+    """
     if time_column is not None:
         # M6a manifest path: rows are already one point per (peptide, biorep,
         # timepoint); the x-axis is the numeric identity column, not the sample
         # string.
-        peptide_rows = rdf[rdf["concat"] == concat].copy()
+        peptide_rows = rdf[rdf["fit_key"] == concat].copy()
     else:
+        # Dedup includes ``concat`` so a peptide's Ox and non-Ox forms at the same
+        # sample stay as two points (they are distinct precursors); for a single
+        # peptidoform this collapses to the old (sample, file_idx) dedup.
         peptide_rows = (
-            rdf[rdf["concat"] == concat]
-            .drop_duplicates(subset=["sample", "file_idx"])
+            rdf[rdf["fit_key"] == concat]
+            .drop_duplicates(subset=["concat", "sample", "file_idx"])
             .copy()
         )
     if peptide_rows.empty:
@@ -406,44 +446,43 @@ def _fit_one_concat(
         else np.ones(len(peptide_rows), dtype=int)
     )
 
-    # Three views of the peptide identifier:
-    # - seq_with_mods: charge stripped, brackets KEPT — calculate_ion_mz
-    #   parses [UNIMOD:N] / [mass] mods to get the right peptide_mass (e.g.
-    #   phospho +80).
-    # - seq: brackets and charge stripped — fed to spep_from_coefficients and
-    #   solve_fs_d2o's residue iteration; requires pure AA letters.
-    # - mods: the UniMod ids parsed off seq_with_mods (M7). Threaded into
-    #   solve_fs_d2o so the IsoSpec forward envelope reflects the modified
-    #   peptidoform's atom composition, not just the bare backbone. Mod H is
-    #   non-labelable (the mod is not added to Spep — its D₂O enrichment is
-    #   unknown), so Spep stays a function of the bare sequence.
-    seq_with_mods = concat.rsplit("_", 1)[0]
+    # The bare backbone and Spep are shared by every form under this fit key
+    # (chemical-mod stripping leaves the same residues + the same biological
+    # mods). ``seq`` (brackets and charge stripped) feeds spep_from_coefficients
+    # and solve_fs_d2o's residue iteration; it requires pure AA letters.
     seq = strip_concat(concat)
-    mods = tuple(parse_unimod_ids(seq_with_mods))
-    try:
-        pep_mass = calculate_ion_mz(seq_with_mods)
-    except (KeyError, ValueError):
-        return _null_result(concat, protein_id, mod_sites)
-
-    # Spep from coefficients — deterministic per peptide given the table.
     spep_float = spep_from_coefficients(seq, aa_coefficients)
     spep_int = max(1, int(round(spep_float)))
 
+    # Per-ROW peptidoform identity — its mods (parsed off the row's own concat)
+    # and precursor mass, so each form's IsoSpec envelope reflects its actual
+    # atom composition (an Ox row carries the extra O and a +16 m/z). For a
+    # single-peptidoform fit this is one entry == the old single-concat path.
+    # KeyError/ValueError here = a non-canonical residue (B/X/U) absent from the
+    # production aa_atoms table → drop the peptide cleanly.
+    row_concats = peptide_rows["concat"].to_numpy()
+    try:
+        forms = {
+            c: (tuple(parse_unimod_ids(c.rsplit("_", 1)[0])),
+                calculate_ion_mz(c.rsplit("_", 1)[0]))
+            for c in set(row_concats)
+        }
+    except (KeyError, ValueError):
+        return _null_result(concat, protein_id, mod_sites)
+
     # Per-timepoint FS via solve_fs_d2o, at the experiment's precursor
-    # enrichment ``config.ria_max``. KeyError fires for peptides whose
-    # sequence carries a non-canonical residue (B/X/U/etc.) absent from
-    # the production aa_atoms table — drop those peptides cleanly rather
-    # than crashing the whole fit.
+    # enrichment ``config.ria_max``.
     sums = obs_matrix.sum(axis=1)
     valid = sums > 0
     fs_arr = np.full_like(t_arr, np.nan)
     try:
         for i in range(len(t_arr)):
             if valid[i]:
+                mods_i, pep_mass_i = forms[row_concats[i]]
                 fs_arr[i] = solve_fs_d2o(
-                    seq, pep_mass, obs_matrix[i], spep_int,
+                    seq, pep_mass_i, obs_matrix[i], spep_int,
                     ria_max=float(config.ria_max), n_iso=len(iso_cols),
-                    mods=mods,
+                    mods=mods_i,
                 )
     except (KeyError, ValueError):
         return _null_result(concat, protein_id, mod_sites)

@@ -79,23 +79,26 @@ def test_read_diann_basic(tmp_path, sample_map):
     assert multi.protein_id == "A0A0G2JDV3,Q61107,Q91Z40"
 
 
-def test_read_diann_drops_variable_mods_and_decoys(tmp_path, sample_map):
+def test_read_diann_encodes_supported_mods_drops_unsupported_and_decoys(tmp_path, sample_map):
     p = tmp_path / "report.parquet"
     _write_parquet(p, [
-        # kept: fixed Carbamidomethyl only
+        # kept bare: fixed Carbamidomethyl folded per-cysteine
         _row("843_LV", "AAADEWTTCTPPSGLQGK", "AAADEWTTC(UniMod:4)TPPSGLQGK", 2),
-        # dropped: Oxidation(M) variable mod (would target unmodified m/z)
+        # kept + encoded: Met-Ox (tier 1b) integrates separately, merges at fit
         _row("843_LV", "MLSEDQVK", "M(UniMod:35)LSEDQVK", 2),
+        # dropped: deamidation is not in the supported set
+        _row("843_LV", "NLSEDQVK", "N(UniMod:7)LSEDQVK", 2),
         # dropped: decoy
         _row("843_LV", "DECOYPEPTIDEK", "DECOYPEPTIDEK", 2, decoy=1),
     ])
     records, _ = read_diann(p, sample_map)
     seqs = {r.sequence for r in records}
-    assert seqs == {"AAADEWTTCTPPSGLQGK"}
+    assert seqs == {"AAADEWTTCTPPSGLQGK", "M[UNIMOD:35]LSEDQVK"}
 
-    # opting out keeps the oxidized form (still drops the decoy)
+    # opting out keeps the unsupported-mod form too (still drops the decoy)
     records2, _ = read_diann(p, sample_map, drop_variable_mods=False)
-    assert {r.sequence for r in records2} == {"AAADEWTTCTPPSGLQGK", "MLSEDQVK"}
+    assert {r.sequence for r in records2} == {
+        "AAADEWTTCTPPSGLQGK", "M[UNIMOD:35]LSEDQVK", "NLSEDQVK"}
 
 
 def test_read_diann_unmatched_run_errors(tmp_path, sample_map):

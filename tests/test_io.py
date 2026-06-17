@@ -165,32 +165,39 @@ _MODS_MZTAB = _MINIMAL_MZTAB + (
     "0.01\t7-UNIMOD:4\t40.0\t2\t400.0\t400.0\t"
     "ms_run[1]:controllerType=0 controllerNumber=1 scan=404\tK\tR\t1\t12\t"
     "0.01\t0.001\t0\tGEIEHHC(Carbamidomethyl)SGLHR\n"
-    # Oxidation (UNIMOD:35) is variable → dropped (would target the unmodified m/z).
-    "PSM\tVLGKPKPEEMSSK\t4\tsp|P00005|TEST5_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"
-    "0.01\t10-UNIMOD:35\t41.0\t2\t450.0\t450.0\t"
+    # Deamidation (UNIMOD:7) is not in the supported set → dropped.
+    "PSM\tVLGKPKPEENSSK\t4\tsp|P00005|TEST5_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"
+    "0.01\t10-UNIMOD:7\t41.0\t2\t450.0\t450.0\t"
     "ms_run[1]:controllerType=0 controllerNumber=1 scan=405\tK\tR\t1\t13\t"
+    "0.01\t0.001\t0\tVLGKPKPEEN(Deamidated)SSK\n"
+    # Met-Ox (UNIMOD:35) is supported (tier 1b) → kept and encoded.
+    "PSM\tVLGKPKPEEMSSK\t6\tsp|P00006|TEST6_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"
+    "0.01\t10-UNIMOD:35\t41.0\t2\t450.0\t450.0\t"
+    "ms_run[1]:controllerType=0 controllerNumber=1 scan=406\tK\tR\t1\t13\t"
     "0.01\t0.001\t0\tVLGKPKPEEM(Oxidation)SSK\n"
 )
 
 
-def test_mztab_drops_variable_mods_by_default(tmp_path):
-    """A variable-mod peptidoform (Oxidation) is dropped — it would integrate at
-    the unmodified m/z until M7 — while the fixed Carbamidomethyl is kept."""
+def test_mztab_drops_unsupported_mods_but_encodes_met_ox(tmp_path):
+    """An unsupported variable mod (Deamidation) is dropped; the fixed
+    Carbamidomethyl folds in bare; Met-Ox (tier 1b) is kept and encoded."""
     fixture = tmp_path / "mods.mzTab"
     fixture.write_text(_MODS_MZTAB)
     records, _ = iomztab.read_mztab(fixture, sample="syn")
     seqs = {r.sequence for r in records}
-    assert "GEIEHHCSGLHR" in seqs   # fixed Carbamidomethyl kept
-    assert "VLGKPKPEEMSSK" not in seqs  # variable Oxidation dropped
+    assert "GEIEHHCSGLHR" in seqs               # fixed Carbamidomethyl kept bare
+    assert "VLGKPKPEENSSK" not in seqs          # unsupported Deamidation dropped
+    assert "VLGKPKPEEM[UNIMOD:35]SSK" in seqs   # Met-Ox kept and encoded
 
 
-def test_mztab_keeps_variable_mods_when_flag_off(tmp_path):
+def test_mztab_keeps_unsupported_mods_when_flag_off(tmp_path):
     fixture = tmp_path / "mods.mzTab"
     fixture.write_text(_MODS_MZTAB)
     records, _ = iomztab.read_mztab(
         fixture, sample="syn", drop_variable_mods=False)
     seqs = {r.sequence for r in records}
-    assert {"GEIEHHCSGLHR", "VLGKPKPEEMSSK"} <= seqs
+    # flag off → the unsupported-mod peptidoform is kept bare too.
+    assert {"GEIEHHCSGLHR", "VLGKPKPEENSSK"} <= seqs
 
 
 _STARTER_MODS_MZTAB = _MINIMAL_MZTAB + (

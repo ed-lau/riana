@@ -107,16 +107,22 @@ mod_atoms = {
 # per-cysteine ``iaa`` path in ``mass_calc``), so they are NOT encoded as
 # variable ``[UNIMOD:N]`` tokens on the peptidoform.
 FIXED_UNIMODS = frozenset({4})
-# Variable mods the v1 forward model accounts for — encoded into the
-# peptidoform sequence as ``[UNIMOD:N]`` tokens (protein N-term Acetyl,
-# Phospho-S/T/Y). A peptidoform carrying any other (non-fixed) mod is dropped
-# until that mod's roadmap tier lands.
-STARTER_VARIABLE_UNIMODS = frozenset({1, 21})
+# Variable mods the forward model accounts for — encoded into the peptidoform
+# sequence as ``[UNIMOD:N]`` tokens (protein N-term Acetyl, Phospho-S/T/Y,
+# Met-Ox). A peptidoform carrying any other (non-fixed) mod is dropped until that
+# mod's roadmap tier lands.
+STARTER_VARIABLE_UNIMODS = frozenset({1, 21, 35})
 # Mods that earn their own proteoform rollup key (Stage B) instead of folding
 # into the bare protein — the regulated, site-specific-turnover mods. N-term
-# Acetyl (1) is constitutive, so it folds into the bare protein despite being
-# encoded for envelope fidelity.
+# Acetyl (1) is constitutive and Met-Ox (35) is artifactual, so both fold into
+# the bare protein despite being encoded for envelope fidelity.
 BIOLOGICAL_MODS = frozenset({21})
+# Purely chemical / artifactual mods (Met-Ox today; deamidation is deferred —
+# see [[m7_chemical_mod_fit_merge]]). They are post-synthesis, so the modified
+# and unmodified forms share the FS-vs-time signature: ``riana fit`` strips these
+# from the **fit-grouping key** so the two forms are integrated separately (each
+# at its own clean m/z + envelope) but **merged into one turnover curve**.
+CHEMICAL_MODS = frozenset({35})  # Oxidation (Met)
 # Proteoform-tag prefix per biological UniMod id (Stage B). The rollup key is
 # ``accession_<prefix><residue><protein_site>`` — e.g. Phospho-S at protein
 # coordinate 34476 on A2ASS6 → ``A2ASS6_pS34476`` (multi-site joined by ``_``).
