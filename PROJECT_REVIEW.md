@@ -791,10 +791,15 @@ it. Remaining M7 follow-ons and the next gaps, in order:
    line in the sand before more features pile on (move 1 GB+ of personal outputs
    out of `data/`, drop stray root outputs — see Cross-cutting chores). Can follow
    M7 but shouldn't slip indefinitely.
-4. **Match-between-runs re-explore for the mzTab/DDA path (mid-term).** Start with
-   the *measurement* — compare per-peptide missingness DIA vs DDA (`runs/lve_dia`
-   vs `runs/lve`) — before building anything; DIA-NN already propagates, so DDA is
-   where MBR would pay. Track A item below.
+4. **Match-between-runs (MBR) for the mzTab/DDA path — MEASURED 2026-06-17, GO for
+   DDA (mid-term build).** The "measure first" step is done: DDA curves are badly
+   gappy (8–15% complete over 12 tp; ~40–45% of donor-precursor slots are
+   MBR-recoverable holes; 70% LVE t0-anchor loss), the gap survives a 3-timepoint
+   geometry control (DIA 60% vs DDA 32–44%), and quantms RT is aligned but
+   imperfectly (run-specific 15–25 s residuals > the integration window). DIA needs
+   no MBR. No architectural block (M6b's RT-anchor path + the `evidence="mbr"` hook
+   are in place). Next = design the intake-layer MBR pass. Full record + bench
+   scripts (`bench_missingness.py`, `bench_rt_alignment.py`) in Track A below.
 5. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
    Stale post-M3; docstrings are the interim source of truth.
 
@@ -978,17 +983,44 @@ it. Remaining M7 follow-ons and the next gaps, in order:
 > anchor to reconcile against; the DIA analog (reported RT within mzML bounds +
 > run-column matches the paired mzML) is a separate, weaker check for M6b.
 
-- **Re-explore match-between-runs (MBR) for the mzTab/DDA path (spiked 2026-06-12,
-  mid-term).** DDA misses peptides stochastically across the time series, so a
-  turnover curve can lose timepoints to identification gaps rather than real
-  absence. MBR (transfer an ID/RT to runs where the peptide was observed but not
-  picked for MS2) would fill those. **First step is measurement, not code:
-  compare the per-peptide missingness of the DIA vs DDA sets** (`runs/lve_dia` vs
-  `runs/lve`/`lve_atr`) — DIA-NN already does cross-run propagation, so DIA is
-  likely complete enough to *not* need MBR; quantify the gap before building
-  anything. If warranted, scope MBR at the intake layer (it is an ID-assembly
-  concern, hence Track A) — there is a stale `data/mbr_test` fixture from the
-  pre-rewrite era to revisit. Pairs with the Track D missingness metric.
+- **Match-between-runs (MBR) for the mzTab/DDA path — MEASURED 2026-06-17, GO for
+  DDA (mid-term build).** The roadmap's "measure before building" step is done
+  (`tests/benchmark/bench_missingness.py` + `bench_rt_alignment.py`):
+  - *Missingness* (precursor = `concat` = SEQ_charge; `runs/lve_atr` vs `runs/lve_dia`).
+    DDA turnover curves are badly gappy: only **8–15%** of precursors span all 12
+    timepoints (LVE 14.7%, ATR 8.4%), the median precursor is seen in just **4–5 / 12**
+    runs, and **~50%** of all (precursor,run) slots are empty. Most of it is
+    MBR-recoverable: ~12k precursors/chamber have a donor (seen ≥2×) and **39–45%** of
+    their slots are fillable holes; only 21–26% are singletons MBR can't help. The
+    **t0 anchor** (the m0 baseline) is the sharpest pain — **70% (LVE)** / 40% (ATR) of
+    later-seen precursors lack it, driven by a shallow t0 acquisition (LVE t00 = 4,792
+    precursors vs ~7,500 mid-series). DIA is near-complete by contrast (75% full
+    curves, 5.6% recoverable gap, 10% t0 loss): DIA-NN's internal propagation already
+    does the job → **DDA is where MBR pays**.
+  - *Geometry control.* DIA has only 3 timepoints, so its 75% isn't directly comparable
+    to DDA's 12-slot 15%. Re-measured at matched geometry (3 timepoints, 1 acquisition
+    per slot): **DIA 60.3%** vs **DDA 32–44%** (mean over all non-t0 triples) — the gap
+    survives, so it is acquisition + ID-pipeline (stochastic MS2 + no PSM-level
+    propagation), not curve length.
+  - *RT alignment (the open question — does quantms align RT? the gotcha note only
+    suspected it).* **Yes, it does** — co-identified precursors sit within a typical
+    **~4–9 s** median |ΔRT| across LVE runs (≈ the note's "~0.1 min"), near-unit slope.
+    **But imperfectly** — run-specific residuals reach **15–25 s** (LVE t00/t04; ATR
+    t25), *larger* than the ±9 s narrow integration window and worst on the same shallow
+    anchor runs MBR most needs. A global linear realign barely helps (rmse_id ≈
+    rmse_fit, slope≈1) → the offset is near-constant per-run, so a **robust per-run-pair
+    offset / LOESS** (or RT-anchor + local apex re-find) is the right correction, richly
+    supported by **3,900–6,100 co-IDs per run pair**. So MBR does not build alignment
+    from scratch; it needs a light per-run RT refinement on top of quantms's frame.
+  - *No architectural block.* `records.py` already reserves `evidence="mbr"`, and M6b's
+    RT-anchored extraction (`core/integration.resolve_rt_anchored_scans`, `scan=-1`
+    sentinel) is exactly the path an MBR-transferred (no-MS2) precursor needs — the DIA
+    intake built MBR's extraction substrate. The stale `data/mbr_test` fixture (Oct-2022,
+    pre-rewrite) is not reusable as-is. **Next: design the intake-layer MBR pass** (an
+    ID-assembly concern, hence Track A) — donor selection from the manifest's
+    per-condition run group → robust per-run RT alignment on shared IDs → emit
+    `scan=-1`+RT records flagged `evidence="mbr"` → integrate via the existing RT-anchor
+    path → q/score gate + an MBR-FDR story. Pairs with the Track D missingness metric.
 
 #### Track B — integration fidelity (research cluster)
 
