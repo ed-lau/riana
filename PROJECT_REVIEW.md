@@ -1357,12 +1357,21 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     peptide-level merge, not just envelope accounting** — see the boxed design
     below; deamidation is the harder of the two (isobaric-overlap regime).
 
-  **Chemical-mod handling — integrate-separate, fit-merge (design, user 2026-06-13).**
+  **Chemical-mod handling — integrate-separate, fit-merge (Met-Ox SHIPPED
+  2026-06-17, commit `ef8e3ae`; deamidation deferred).**
   A purely chemical mod (Met-Ox, and the chemical part of deamidation) happens
   *post-synthesis*, so it does **not** reset the D₂O clock: the oxidized and
   unoxidized forms of a peptide share the *same* FS-vs-time signature. They should
   therefore fold into the same proteoform **and the same peptidoform** (one
-  turnover curve), not be fit as two separate underpowered curves.
+  turnover curve), not be fit as two separate underpowered curves. **Met-Ox is
+  implemented:** `constants.CHEMICAL_MODS={35}`; `core.fitting._fit_key` strips
+  those tokens; the fit groups by `fit_key` (depth gate on the merged group) and
+  solves FS per row with each form's own envelope. New LVE_ATR baseline at
+  **`runs/lve_atr_m7/`** (git `ef8e3ae`; integrate→fit→rollup on the mods mzTab):
+  24 runs, 20,955 converged peptidoforms (was 20,682), 1,986 proteins; `[UNIMOD:35]`
+  in all 24 integrate outputs but 0 fit-key rows (merged); phospho proteoform keys
+  `Q02566_pT2` / `Q9JJW5_pT107` landed (2 reach protein level — unenriched-depth
+  limited). See the run's `README.md` for full provenance.
   - *Mechanism:* **integrate the forms separately** (each at its own clean m/z +
     envelope — Met-Ox is +15.995, well resolved; A2 already makes each `[UNIMOD:N]`
     form a distinct `concat`), then **merge at the fit level** via a
