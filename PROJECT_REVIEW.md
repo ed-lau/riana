@@ -764,27 +764,23 @@ which emits its own SDRF (a near-identical variant, a few columns different) —
 so the identity model is shared; only the PSM/quant file format differs (mzTab
 vs DIA-NN parquet).
 
-#### Handoff — ordered priorities (next sessions, as of 2026-06-13)
+#### Handoff — ordered priorities (next sessions, as of 2026-06-17)
 
-The Track C cross-sample Δk milestone (`linear simple`) is **done**; the headline
-gap is now M7. Recommended order:
+**M7 is DONE** (v1 A1–B + Met-Ox tier 1b), shipped to `origin/m3-rewrite` as
+`5c37f43 → ef8e3ae` and validated end-to-end on the new `runs/lve_atr_m7`
+baseline. The Track C cross-sample Δk milestone (`linear simple`) was done before
+it. Remaining M7 follow-ons and the next gaps, in order:
 
-1. **M7 — PTM-aware envelope (next; the headline).** Load-bearing: variable-mod
-   peptidoforms are currently *dropped* (the `io/mztab`/`io/diann`
-   `drop_variable_mods` interim) because they would integrate at the unmodified
-   m/z. Full design + next-tier roadmap in Track C below +
-   `[[m7_ptm_envelope_design]]`; scope **locked 2026-06-13**. Stage it: (a)
-   **forward-model atom accounting** — add each parsed mod's composition to the
-   IsoSpec envelope *and* the integrate-side target m/z (two separate fixes),
-   extending the atom vector `[C,H,O,N,S]` → `[C,H,O,N,S,P]` and routing the
-   hardcoded Carbamidomethyl through a curated `UNIMOD:id → [C,H,O,N,S,P]` table;
-   **starter set = phospho-STY + protein N-term Acetyl** (the two
-   reliably-identifiable-in-*un*enriched-data mods); (b) **proteoform-aware rollup
-   keys** (`P12345_pS235` for phospho; N-term Ac / Met-Ox / deamidation / CAM fold
-   into the bare accession) — both mzTab (`start`+pos) and DIA-NN (`Protein.Sites`)
-   already carry the protein-coordinate site, **no FASTA needed**. Also **retires
-   `-X/--ignored_mods` + `-F/--forced_mods`** (SILAC-era). Build order A1 → A3 → A2
-   → B. Substrate: `data/timeseries_lve_atr` (PTM search already in hand).
+1. **M7 follow-ons (demand-driven, mostly blocked on data/decisions):**
+   - **DIA-NN phospho proteoform sites** — the `Protein.Sites` → site mapping is
+     deferred (no DIA fixture has phospho). The user is **rerunning DIA-NN with
+     variable phospho** (~this week); wire the site path when that lands. Until
+     then DIA phospho integrates correctly (A2) but folds into the bare protein.
+   - **Deamidation** — its own **side project** (the +0.984 / C13-M+1 isobaric
+     overlap needs joint envelope + deamidation-proportion modeling). Not started.
+   - **Roadmap tiers** (Track C M7 box): K-acetyl + K/R-methylation (tier 1,
+     cheap — composition only), then GG-remnant (tier 2, blocked on enriched data).
+   - Heads-up: the user will rename the run `atf6small` → `atf6_lve`.
 2. **Expose hidden integrate knobs as clearly-marked *advanced* options
    (short-term, cheap, independent).** Audit the full `IntegrationConfig` knob set
    (`--peak-rt`, `--apex-selection`, `--integration-half-width` vs
