@@ -415,6 +415,11 @@ def fit(
         "parallelism lever: dispatches over a process pool to sidestep the GIL "
         "(the per-peptide fit is GIL-bound). Results are identical regardless of N "
         "(per-peptide deterministic seed)."),
+    exclude_mbr: bool = typer.Option(
+        False, "--exclude-mbr",
+        help="Drop match-between-runs data points (evidence='mbr') before "
+        "fitting. MBR points are used by default; this is the with/without-MBR "
+        "A/B lever. The n_mbr / n_clean output columns report the split either way."),
 ) -> None:
     """Fit kinetic models to a D2O-labeling integrate time series."""
     import dataclasses
@@ -461,6 +466,7 @@ def fit(
             fs_formula=fs,
             workers=int(workers),
             out_dir=str(out),
+            exclude_mbr=bool(exclude_mbr),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

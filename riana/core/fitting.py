@@ -43,7 +43,7 @@ import importlib.resources
 import logging
 import re
 from concurrent import futures
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import Callable, Mapping
@@ -142,6 +142,17 @@ class FitResult:
     #: Per-point biological replicate, aligned 1:1 with ``t``/``fs`` — the
     #: protein rollup groups within (protein, labeling time, biological replicate).
     bio_rep: list[int]
+    #: Per-point provenance, aligned 1:1 with ``t``/``fs``: ``"q_value"`` (direct
+    #: ID) or ``"mbr"`` (transferred). Lets the rollup/GUI weight or colour points.
+    evidence: list[str] = field(default_factory=list)
+    #: Census of the **fitted** points (a curve's composition): total, the count
+    #: from MBR transfers, the count from Met-Ox peptidoforms merged at fit (M7
+    #: tier 1b), and the count that are neither ("clean"). A point that is both MBR
+    #: and Met-Ox is in n_mbr and n_metox but not n_clean.
+    n_points: int = 0
+    n_mbr: int = 0
+    n_metox: int = 0
+    n_clean: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +273,11 @@ def fit_run(
         )
 
     rdf = rdf[rdf["percolator q-value"] < config.q_value].copy()
+    # --exclude-mbr: drop match-between-runs transfers before fitting (the
+    # with/without-MBR A/B lever). MBR points are kept by default. No-op when the
+    # column is absent (Percolator / pre-MBR integrate runs).
+    if config.exclude_mbr and "evidence" in rdf.columns:
+        rdf = rdf[rdf["evidence"] != "mbr"].copy()
     # M7 tier 1b: group peptidoforms by their chemical-mod-stripped key so a
     # peptide's Met-Ox and unoxidized forms pool into one turnover curve (they are
     # integrated separately, then merged here). For data with no chemical mod this
@@ -461,6 +477,15 @@ def _fit_one_concat(
     # KeyError/ValueError here = a non-canonical residue (B/X/U) absent from the
     # production aa_atoms table → drop the peptide cleanly.
     row_concats = peptide_rows["concat"].to_numpy()
+    # Per-point provenance, aligned to peptide_rows / t_arr: MBR transfer vs direct
+    # ID, and whether the row is a Met-Ox (chemical-mod) form (its own concat
+    # differs from the stripped fit_key `concat`). Feeds the curve census below.
+    is_mbr = (
+        peptide_rows["evidence"].to_numpy() == "mbr"
+        if "evidence" in peptide_rows.columns
+        else np.zeros(len(peptide_rows), dtype=bool)
+    )
+    is_metox = row_concats != concat
     try:
         forms = {
             c: (tuple(parse_unimod_ids(c.rsplit("_", 1)[0])),
@@ -565,6 +590,9 @@ def _fit_one_concat(
         fs_lo = [float("nan")] * n_pts
         fs_hi = [float("nan")] * n_pts
 
+    # Census of the fitted points (aligned to fit_mask): MBR / Met-Ox / clean.
+    mbr_fit = is_mbr[fit_mask]
+    metox_fit = is_metox[fit_mask]
     return FitResult(
         concat=concat,
         k_deg=k_deg,
@@ -580,6 +608,11 @@ def _fit_one_concat(
         fs_lo=fs_lo,
         fs_hi=fs_hi,
         bio_rep=[int(b) for b in bio_rep_arr[fit_mask]],
+        evidence=["mbr" if m else "q_value" for m in mbr_fit],
+        n_points=int(fit_mask.sum()),
+        n_mbr=int(mbr_fit.sum()),
+        n_metox=int(metox_fit.sum()),
+        n_clean=int((~mbr_fit & ~metox_fit).sum()),
     )
 
 
@@ -622,6 +655,10 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
             "ci_hi": r.ci_hi,
             "protein id": r.protein_id,
             "mod sites": r.mod_sites,
+            "n_points": r.n_points,
+            "n_mbr": r.n_mbr,
+            "n_metox": r.n_metox,
+            "n_clean": r.n_clean,
         }
         for r in results if r is not None
     ]
@@ -631,7 +668,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
 #: Column order for the M5 long-format per-timepoint fraction-new table.
 _FRACTIONS_LONG_COLUMNS = [
     "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-    "fs", "fs_lower", "fs_upper",
+    "fs", "fs_lower", "fs_upper", "evidence",
 ]
 
 #: Per-timepoint list-cell columns on the wide per-peptide frame. They duplicate
@@ -664,7 +701,10 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
     for r in results:
         if r is None:
             continue
-        for ti, fsi, lo, hi, br in zip(r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep):
+        ev = r.evidence if len(r.evidence) == len(r.t) else ["q_value"] * len(r.t)
+        for ti, fsi, lo, hi, br, evi in zip(
+            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev
+        ):
             rows.append({
                 "concat": r.concat,
                 "protein id": r.protein_id,
@@ -674,5 +714,6 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
                 "fs": float(fsi),
                 "fs_lower": float(lo),
                 "fs_upper": float(hi),
+                "evidence": evi,
             })
     return pd.DataFrame(rows, columns=_FRACTIONS_LONG_COLUMNS)

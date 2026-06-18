@@ -272,8 +272,10 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     long = result.attrs["fractions_long"]
     assert list(long.columns) == [
         "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-        "fs", "fs_lower", "fs_upper",
+        "fs", "fs_lower", "fs_upper", "evidence",
     ]
+    # Synthetic data has no MBR -> every point is a direct ID.
+    assert (long["evidence"] == "q_value").all()
     # One row per (peptide, timepoint); on clean data all 5 peptides converge
     # over all 8 timepoints, and the long count matches the wide t list-cells.
     assert len(long) == sum(len(t) for t in result["t"])
@@ -286,6 +288,33 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     assert (long["biological_replicate"] == 1).all()
     # The wide frame also carries the PI list-cells for the GUI curve view.
     assert {"fs_lower", "fs_upper"} <= set(result.columns)
+
+
+def test_breakdown_columns_and_exclude_mbr():
+    """n_points/n_mbr/n_metox/n_clean census + the --exclude-mbr filter."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    # Mark the first two timepoints' rows as MBR transfers (the rest direct IDs).
+    for i, df in enumerate(dfs):
+        df["evidence"] = "mbr" if i < 2 else "q_value"
+
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    inc = fit_run(cfg, dfs, coeffs, n_boot=50, random_state=42)
+    # 8 timepoints, 2 marked MBR -> every peptide curve is 2 MBR + 6 clean.
+    assert (inc["n_points"] == 8).all()
+    assert (inc["n_mbr"] == 2).all()
+    assert (inc["n_metox"] == 0).all()
+    assert (inc["n_clean"] == 6).all()
+    assert inc.attrs["fractions_long"]["evidence"].eq("mbr").sum() == 2 * len(_TEST_PEPTIDES)
+
+    cfg_excl = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                         ria_max=0.06, exclude_mbr=True)
+    exc = fit_run(cfg_excl, dfs, coeffs, n_boot=50, random_state=42)
+    assert (exc["n_points"] == 6).all()
+    assert (exc["n_mbr"] == 0).all()
+    assert (exc["n_clean"] == 6).all()
+    assert exc.attrs["fractions_long"]["evidence"].eq("q_value").all()
 
 
 def test_prediction_interval_widens_with_scatter():

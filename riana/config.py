@@ -295,6 +295,12 @@ class FitConfig:
     q_value: float = 1e-2
     #: -d / --depth. Fit only peptides seen in at least this many samples.
     depth: int = 3
+    #: --exclude-mbr. Drop match-between-runs data points (``evidence == "mbr"``)
+    #: before fitting. MBR points are **used by default** (the whole point of
+    #: ``integrate --mbr``); this opt-out is the with/without-MBR A/B lever and a
+    #: cautious-user escape hatch. The per-peptide ``n_mbr`` / ``n_clean`` breakdown
+    #: columns report the composition either way.
+    exclude_mbr: bool = False
     #: -r / --ria. Precursor enrichment level (RIA max) — the asymptotic
     #: D₂O fraction in body water / culture media (e.g. 0.06 ≈ 6% v/v
     #: D₂O). Used by the IsoSpec forward model
