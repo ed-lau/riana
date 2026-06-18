@@ -70,10 +70,22 @@ Per curve group, per fraction (transfers never cross fractions):
 may have *no real peak* in the acceptor run (it was genuinely below detection, not
 just unsequenced). The transfer must then **drop the row**, never integrate
 baseline as signal. Mechanism: after the apex search for an MBR row, require a
-detected apex passing the normal prominence/SNR test within the search window; if
-none, discard the MBR row (counted + logged, not written). This keeps MBR additive
-to yield without injecting noise. (Real q-value PSMs are unaffected — they keep
-today's behaviour.)
+detected apex within the search window; if none, discard the MBR row (counted +
+logged, not written). This keeps MBR additive to yield without injecting noise.
+(Real q-value PSMs are unaffected — they keep today's behaviour.)
+
+*Open question — is the prominence gate strict enough? (spike, see below).* The
+existing apex finder (`algorithms/peaks.detect_peak`) gates on
+`prominence ≥ max(prominence_k · 1.4826·MAD, 1.0)` with `prominence_k=3.0` — a ~3σ
+floor relative to the **trace's own** MAD noise, returning `None` if nothing clears
+it. That floor is self-referential: on a near-pure-noise trace (precursor truly
+absent) MAD is small, so a modest noise bump can still clear 3×MAD and produce a
+*spurious* apex. So for MBR's absent-precursor case the prominence gate is likely a
+necessary-but-insufficient first filter. v1 implements the drop on the existing
+gate; **how often it false-fires must be measured** (spike), and an absolute
+SNR/intensity floor for MBR rows may be needed. Backstop: a noise extraction won't
+match the IsoSpec forward envelope, so the downstream R²>0.95 curation gate rejects
+it at fit time regardless.
 
 ## Config surface
 
@@ -124,6 +136,46 @@ Run each metric **with vs without** MBR (`--exclude-mbr` toggles it):
   acknowledging the intensity bias.
 - **Breakdown** by donor count and post-alignment RT residual — to locate where
   transfer degrades.
+
+## Open spikes (surfaced 2026-06-17; resolve within the relevant phase)
+
+### `--depth` semantics with MBR + chemical mods
+`depth` is the curve-qualification gate (minimum data before a peptide is fit), but
+what it *counts* is already inconsistent and gets muddier with MBR + Met-Ox:
+
+- **Today:** the manifest/SDRF path counts `len(group)` = **rows** (so biological
+  replicates *and* Met-Ox-merged peptidoforms inflate it — `fitting.py:282`), while
+  the legacy path counts `sample.nunique()` = **distinct samples** (`fitting.py:288`).
+  Two different meanings.
+- **With MBR:** MBR rows add to the count, and (in the 1-rep LVE case) add genuine new
+  timepoints. Whether they *should* count toward `depth` is governed cleanly by
+  `--exclude-mbr`: excluded → depth on clean rows; included → recovered timepoints
+  (e.g. a restored t0) count, which is the intended benefit.
+- **With Met-Ox:** the gate is on the *merged* fit_key group, so oxidized + unoxidized
+  forms already pool into depth; the `n_metox`/`n_clean` breakdown exposes how much of
+  a curve is mod- or MBR-derived.
+
+**Recommendation:** harmonize `depth` to **distinct labeling timepoints**
+(`labeling_time` nunique) on both paths — it is the kinetic-identifiability quantity
+(a curve needs enough *distinct x* to estimate k), robust to replicate / peptidoform /
+MBR multiplicity, and it fixes the rows-vs-nunique inconsistency. Keep raw point count
+visible via `n_points`. A future **min-clean-depth** gate (≥N non-MBR / non-Met-Ox
+timepoints) is the refinement if the breakdown shows curves over-reliant on transferred
+or merged points.
+
+**Why a spike, not a snap change:** flipping the manifest path from rows→timepoints is
+a behaviour change (stricter for replicate-heavy data). Quantify first — how many
+curves change qualification under rows vs distinct-timepoints, with/without MBR, on
+LVE/ATR + the DIA (3 tp × 3 rep) set — then flip the default. (Per maintainer: this is
+its own spike; Met-Ox-counting reactivity rides along.)
+
+### Apex false-peak rate on absent precursors
+See *graceful failure* above. Measure how often `detect_peak` returns a (spurious) apex
+when a precursor is genuinely absent, to decide whether the 3×MAD prominence gate needs
+an absolute SNR/intensity floor for MBR rows. Measurement: extract a set of precursors
+at runs where they are confidently absent (present in ≪ donor count, far below donor
+intensity), tabulate how many yield an apex and the prominence/intensity distribution
+vs real peaks. Backstop already exists (downstream R²>0.95 envelope gate).
 
 ## Phasing
 

@@ -332,6 +332,8 @@ def integrate_run(
     ppm_cols = [f"{c}_ppm_error" for c in iso_cols]
     integrated_rows: list[list] = []
     n_detected = n_fallback = 0
+    dropped_pep_ids: set[int] = set()
+    n_mbr_dropped = 0
     iso0_col = "iso0"
     iso1_col = "iso1" if 1 in isos else None
     iso0_ppm_errors: list[float] = []
@@ -343,6 +345,18 @@ def integrate_run(
             idf, psm, mzml, config, rt_arr, iso0_col, iso1_col,
             anchor_scan=concat_anchor[psm.concat],
         )
+        # MBR graceful failure: a transferred precursor with no detectable apex
+        # in this run was genuinely below detection, not just unsequenced —
+        # dropping it (rather than integrating the fixed window over noise) keeps
+        # MBR additive to yield without injecting baseline. Real q-value PSMs
+        # keep the fixed-window fallback (their ID is independent evidence the
+        # peptide is here). The prominence gate's sufficiency for this is a
+        # tracked spike (reports/2026-06-17_mbr_v1_design.md); the downstream
+        # R²>0.95 envelope gate is the backstop.
+        if boundary is None and psm.evidence == "mbr":
+            dropped_pep_ids.add(int(psm.pep_id))
+            n_mbr_dropped += 1
+            continue
         if boundary is not None:
             n_detected += 1
         else:
@@ -414,6 +428,14 @@ def integrate_run(
     # Build the PSM-metadata frame the legacy pipeline emits, then merge.
     psm_df = _psm_metadata_df(kept)
     out = pd.merge(psm_df, integrated_df, on="pep_id", how="left")
+    # Drop MBR transfers with no detectable apex (see the extraction loop): they
+    # carry no integrated signal, so they must not reach the output as NaN rows.
+    if dropped_pep_ids:
+        out = out[~out["pep_id"].isin(dropped_pep_ids)].reset_index(drop=True)
+        _LOGGER.info(
+            "integrate_run: dropped %d MBR transfer(s) with no detectable apex.",
+            n_mbr_dropped,
+        )
     out["file"] = file_label if file_label is not None else _mzml_basename(mzml)
     # Stash the drift summary on the DataFrame as attrs so callers/writers can
     # emit the footer without re-computing.

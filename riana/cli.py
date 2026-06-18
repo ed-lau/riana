@@ -172,6 +172,20 @@ def integrate(
         "manifest at the current settings (each run's <stem>_riana.txt is written "
         "as it finishes, so a crashed run resumes where it stopped). Assumes the "
         "same SDRF/mzTab inputs."),
+    mbr: bool = typer.Option(
+        False, "--mbr",
+        help="Match-between-runs (mzTab/DDA, --sdrf path): transfer a confidently "
+        "identified precursor into the runs of its (experiment, condition) curve "
+        "that missed it, recovering points lost to stochastic MS2 sampling. "
+        "Transferred rows are flagged evidence='mbr'; one with no detectable apex "
+        "is dropped. No-op on DIA (DIA-NN already propagates)."),
+    mbr_min_donor_runs: int = typer.Option(
+        2, "--mbr-min-donor-runs", metavar="N",
+        help="MBR donor gate: transfer a precursor only if it is confidently "
+        "identified in at least N runs of the curve group [default: 2]."),
+    mbr_donor_q: float = typer.Option(
+        1e-2, "--mbr-donor-q", metavar="Q",
+        help="MBR donor-confidence q-value threshold [default: 0.01]."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -252,6 +266,9 @@ def integrate(
             mass_difference=float(mass_difference),
             out_dir=str(out),
             check_scan_rt=not no_rt_check,
+            mbr=bool(mbr),
+            mbr_min_donor_runs=int(mbr_min_donor_runs),
+            mbr_donor_q=float(mbr_donor_q),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

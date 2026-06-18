@@ -101,6 +101,22 @@ def plan_integration(
     if not all_psms:
         raise DataError(f"no PSMs parsed from {mztab_path}")
 
+    # Match-between-runs (mzTab/DDA only): fill curve holes by transferring
+    # confident precursors into runs that missed them. The mzTab is whole-
+    # experiment, so the cross-run donor assembly is free here; transferred rows
+    # (scan=-1, evidence="mbr") then flow through the same RT-anchored extraction
+    # DIA uses. DIA-NN already propagates across runs, so MBR no-ops there.
+    if config.mbr:
+        if sdrf.acquisition == "DIA":
+            _LOGGER.info(
+                "MBR requested but acquisition is DIA (DIA-NN already "
+                "propagates across runs) — skipping MBR."
+            )
+        else:
+            from riana.core.mbr import augment_with_mbr
+
+            all_psms = augment_with_mbr(all_psms, config)
+
     mzml_index = _index_mzml_dir(mzml_dir)
     by_file_idx = _group_by_file_idx(all_psms)
 

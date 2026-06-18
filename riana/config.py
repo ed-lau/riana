@@ -170,6 +170,24 @@ class IntegrationConfig:
     #: offset (≤~0.9 min measured on real output) with margin, while a
     #: scan-scrambled run sits tens of minutes off (~25× the threshold).
     scan_rt_tol_min: float = 2.0
+    #: --mbr. Enable match-between-runs (mzTab/DDA path): transfer a confidently
+    #: identified precursor's identity + retention time into the runs of its
+    #: ``(experiment, condition)`` turnover curve that missed it, so curve points
+    #: lost to stochastic MS2 sampling are recovered. Off by default; no-op on the
+    #: DIA path (DIA-NN already propagates). See :mod:`riana.core.mbr` and
+    #: ``reports/2026-06-17_mbr_v1_design.md``. Transferred rows carry
+    #: ``evidence="mbr"`` and ``scan=-1`` (RT-anchored like DIA); one with no
+    #: detectable apex is dropped, never integrated as baseline.
+    mbr: bool = False
+    #: --mbr-min-donor-runs. A precursor is an MBR donor only if confidently
+    #: identified (q ≤ :attr:`mbr_donor_q`) in at least this many runs of the
+    #: curve group. ``2`` = require corroboration by a second run.
+    mbr_min_donor_runs: int = 2
+    #: --mbr-donor-q. Donor-confidence q-value threshold for MBR (defaults to
+    #: :attr:`q_value`). A precursor located at ``q ≤ q_value`` in a run is never
+    #: re-transferred there (no double-counting); this stricter-or-equal gate only
+    #: governs which precursors are *eligible* to donate.
+    mbr_donor_q: float = 1e-2
 
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
@@ -217,6 +235,12 @@ class IntegrationConfig:
         if self.scan_rt_tol_min <= 0:
             raise ValueError(
                 f"scan_rt_tol_min must be > 0, got {self.scan_rt_tol_min}")
+        if self.mbr_min_donor_runs < 2:
+            raise ValueError(
+                f"mbr_min_donor_runs must be >= 2 (need a corroborating run), "
+                f"got {self.mbr_min_donor_runs}")
+        if not 0.0 <= self.mbr_donor_q <= 1.0:
+            raise ValueError(f"mbr_donor_q must be in [0, 1], got {self.mbr_donor_q}")
 
 
 @dataclass(frozen=True, slots=True)
