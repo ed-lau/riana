@@ -1,7 +1,7 @@
 # MBR v1 — design (mzTab/DDA path)
 
 - **Date:** 2026-06-17
-- **Status:** design agreed, implementing
+- **Status:** v1 integrate-core built; first real-data validation done (2026-06-18) → an MBR SNR/intensity floor is needed before fit (see [§ v1 validation](#v1-validation--first-real-data-run-2026-06-18))
 - **Precursor:** [missingness + RT-alignment measurement](2026-06-17_mbr_dda_feasibility.md) (GO for DDA)
 - **Roadmap:** `PROJECT_REVIEW.md` → Track A
 
@@ -190,3 +190,62 @@ vs real peaks. Backstop already exists (downstream R²>0.95 envelope gate).
 4. **GUI** — MBR point coloring + evidence on row select.
 5. **Validation** — calibration ground-truth bench (primary) + the Track D /
    completeness / k_deg readouts; A/B report.
+
+## v1 validation — first real-data run (2026-06-18)
+
+Auditable record of the first `integrate --mbr` on real data.
+
+- **Run:** `riana integrate data/timeseries_lve_atr/mzml <mztab> --sdrf <…> --mbr -W 10 -o runs/lve_atr_mbr` — LVE+ATR, 24 runs, ±10 ppm (from SDRF), the apex defaults.
+- **Analysis:** `python tests/benchmark/bench_mbr_quality.py --run runs/lve_atr_mbr`.
+- **Metric note.** `m0 = iso0 / Σ(iso0..iso5)` is the **monoisotopic fraction**, the
+  integrate-stage observable (θ is a fit-stage quantity). In D₂O labeling m0
+  **declines** monotonically with labeling time (inverse of θ, which rises), so a
+  *good* transferred point sits on its precursor's m0 decline. The "monotone
+  corridor" flags points outside their `[next, prev]` real-neighbour bracket (±0.05);
+  the "interp |Δm0|" is the residual from a linear interp of the bracketing real
+  points. Both are **benchmarked against held-out real points** (drop a real point,
+  predict from its real neighbours) so the bar is "as good as a real point," not
+  "perfect" (real points themselves are ~94% in-corridor, |Δm0|~0.013, due to noise).
+
+**Survival (graceful no-apex drop).** 73,337 / ~131,023 planned transfers survived
+(**56%**); **44% dropped** for no detectable apex. (Drops = planned − surviving: the
+per-run drop log is emitted in worker processes so it does not reach the main
+logfile — to be surfaced via the result object.)
+
+**MS1 signal (surviving MBR vs directly-identified rows).**
+
+| evidence | n | iso0 p10/50/90 | frac iso0≤0 | m0 median |
+|----------|---|----------------|------------|-----------|
+| q_value | 247,723 | 87,245 / 710,014 / 12,639,672 | 0.4% | 0.317 |
+| mbr | 73,337 | 1,297 / 42,722 / 420,978 | **0.0%** | 0.336 |
+
+Survivors carry real intensity (≈17× lower median than real — expected, they were
+missed for being scarce) and none are empty (0.0% iso0≤0) — the drop removed the
+truly-absent traces.
+
+**Trajectory sense (m0 decline vs held-out real).**
+
+| chamber | interp \|Δm0\| MBR (med/p90) | interp \|Δm0\| real | corridor MBR | corridor real |
+|---------|------------------------------|---------------------|--------------|---------------|
+| LVE | 0.055 / 0.345 | 0.013 / 0.064 | 63.5% | 94.0% |
+| ATR | 0.095 / 0.498 | 0.013 / 0.063 | 50.0% | 94.6% |
+
+**Quality scales steeply with intensity** (MBR points with bracketing real
+neighbours, n=28,681, by iso0 quintile):
+
+| iso0 quintile | iso0 median | corridor | interp \|Δm0\| median |
+|---------------|-------------|----------|----------------------|
+| Q1 (low) | 2,041 | 22.8% | 0.228 |
+| Q2 | 20,347 | 45.7% | 0.112 |
+| Q3 | 62,581 | 60.7% | 0.067 |
+| Q4 | 156,587 | 72.1% | 0.046 |
+| Q5 (high) | 590,009 | 82.7% | 0.025 |
+| *real (held-out)* | *710,014* | *~94%* | *0.013* |
+
+**Verdict.** The no-apex drop is necessary but **insufficient**: ~40% of survivors
+are off-trajectory (corridor 50–64% vs 94% real, |Δm0| ~7× worse), and quality
+climbs monotonically with intensity (Q1 23% → Q5 83% ≈ real). The relative 3×MAD
+prominence gate passes too many wrong-peak (co-eluting / noise) picks. **v1 needs an
+MBR SNR/intensity floor** (the apex-spike's answer — yes), a tunable yield-vs-quality
+dial, with the downstream envelope-fit R²>0.95 gate as the backstop. **Do not fit
+floor-less MBR.** Next: add the floor, re-run, and re-measure corridor% toward real.
