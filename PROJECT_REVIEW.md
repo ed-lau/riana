@@ -214,8 +214,13 @@ full-mixing confirm):
   background by *exclusion* rather than subtraction.
 - **Apex-centring (`peak_rt="apex"`) is a real but second-order win** — it
   only matters once the window is narrow (a tight window must sit on the apex
-  or it clips); at the wide width it's a wash. The apex finder uses a
-  prominence gate + nearest-to-MS2-RT selection (not "tallest").
+  or it clips); at the wide width it's a wash. The apex finder uses a prominence
+  gate within a search window around the MS2 RT (`apex_search_half_width`), then
+  picks the **tallest** in-window candidate (`apex_selection="tallest"`). The
+  cross-proportion mixing A/B chose `tallest` over `nearest` (a mild surprise — at
+  high D₂O iso0 is often *not* the tallest channel, so a nearest-by-RT pick can
+  latch onto a noise bump; tallest-in-window is more robust). `consensus` (median
+  apex over m0..m3) is the close high-D₂O alternative.
 - **FWHM (`width_rel_height=0.5`) beats 5%** for detected boundaries, but a
   well-chosen fixed narrow width beats FWHM-auto (which over-clips long
   peptides). The optimum is mildly line-dependent (0.1–0.2) → length-adaptive

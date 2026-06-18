@@ -170,7 +170,7 @@ def _window(rt_arr, traces, psm_rt, s: Setting):
                          prominence_k=s.prominence_k,
                          apex_search_half_width=s.apex_search_half_width,
                          selection=s.selection)
-        centre = rt_arr[a] if a is not None else psm_rt
+        centre = rt_arr[a[0]] if a is not None else psm_rt
         half = float(s.ihw)
     elif s.center == "consensus":
         res = pk.consensus_apex(rt_arr, traces[:s.n_consensus], scan_prior_rt=psm_rt,

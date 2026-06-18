@@ -44,6 +44,11 @@ class PeakBoundary:
     apex_intensity: float
     #: Prominence of the apex (above the local baseline at its base).
     prominence: float
+    #: Apex signal-to-noise = prominence / (1.4826·MAD of the trace) — the units
+    #: of the admission gate (a peak passes when ``snr >= prominence_k``). NaN when
+    #: not computed (the consensus apex / fixed-window fallback paths). Emitted as
+    #: the ``apex_snr`` output column and used by the MBR SNR floor.
+    snr: float = float("nan")
 
 
 def detect_peak(
@@ -81,7 +86,8 @@ def detect_peak(
     # of the median absolute deviation, less brittle than std().
     med = float(np.median(intensity))
     mad = float(np.median(np.abs(intensity - med)))
-    prominence_floor = max(prominence_k * 1.4826 * mad, 1.0)
+    noise = 1.4826 * mad
+    prominence_floor = max(prominence_k * noise, 1.0)
 
     apex_idxs, props = scipy.signal.find_peaks(
         intensity, prominence=prominence_floor
@@ -101,12 +107,14 @@ def detect_peak(
     if lo > hi:
         lo, hi = hi, lo
 
+    prom = float(props["prominences"][best_local])
     return PeakBoundary(
         apex_idx=best,
         lo=lo,
         hi=hi,
         apex_intensity=float(intensity[best]),
-        prominence=float(props["prominences"][best_local]),
+        prominence=prom,
+        snr=(prom / noise) if noise > 0 else float("inf"),
     )
 
 
@@ -118,8 +126,8 @@ def find_apex(
     prominence_k: float = 3.0,
     apex_search_half_width: float = 0.0,
     selection: str = "nearest",
-) -> int | None:
-    """Index of a prominent peak apex on one channel's XIC.
+) -> "tuple[int, float] | None":
+    """Apex index **and SNR** of a prominent peak on one channel's XIC.
 
     Gate candidate maxima by a local-MAD prominence floor, restrict them to a
     search window around the PSM-scan RT prior, then choose one:
@@ -127,13 +135,18 @@ def find_apex(
     - ``selection="nearest"`` — the candidate closest to the MS2 RT prior (DDA
       fired the scan on *this* precursor, so proximity disambiguates a
       co-eluting neighbour).
-    - ``selection="tallest"`` — the most intense candidate.
+    - ``selection="tallest"`` — the most intense candidate (the shipped default;
+      iso0 is often suppressed at high D₂O, so nearest-by-RT can latch onto a
+      noise bump — the cross-proportion A/B preferred tallest).
 
     ``apex_search_half_width`` bounds how far the apex may sit from the PSM RT
-    (``<= 0`` ⇒ whole trace, the wide default). A tight bound keeps the apex
-    near the labelling-independent PSM RT, which matters for cross-proportion
-    stability. Returns ``None`` when no candidate clears the prominence floor
-    inside the window.
+    (``<= 0`` ⇒ whole trace, the wide default). A tight bound keeps the apex near
+    the labelling-independent PSM RT, which matters for cross-proportion
+    stability (and for MBR, where the transferred RT is a trustworthy anchor).
+
+    Returns ``(apex_idx, snr)`` where ``snr = prominence / (1.4826·MAD)`` — the
+    admission-gate units (a candidate clears the gate at ``snr >= prominence_k``)
+    — or ``None`` when nothing clears the floor inside the window.
     """
     intensity = np.asarray(intensity, dtype=np.float64)
     rt = np.asarray(rt, dtype=np.float64)
@@ -141,19 +154,23 @@ def find_apex(
         return None
     med = float(np.median(intensity))
     mad = float(np.median(np.abs(intensity - med)))
-    prominence_floor = max(prominence_k * 1.4826 * mad, 1.0)
-    apex_idxs, _ = scipy.signal.find_peaks(intensity, prominence=prominence_floor)
+    noise = 1.4826 * mad
+    prominence_floor = max(prominence_k * noise, 1.0)
+    apex_idxs, props = scipy.signal.find_peaks(intensity, prominence=prominence_floor)
     if apex_idxs.size == 0:
         return None
+    proms = props["prominences"]
     if apex_search_half_width > 0:
-        apex_idxs = apex_idxs[
-            np.abs(rt[apex_idxs] - scan_prior_rt) <= apex_search_half_width
-        ]
+        keep = np.abs(rt[apex_idxs] - scan_prior_rt) <= apex_search_half_width
+        apex_idxs, proms = apex_idxs[keep], proms[keep]
         if apex_idxs.size == 0:
             return None
     if selection == "tallest":
-        return int(apex_idxs[np.argmax(intensity[apex_idxs])])
-    return int(apex_idxs[np.argmin(np.abs(rt[apex_idxs] - scan_prior_rt))])
+        sel = int(np.argmax(intensity[apex_idxs]))
+    else:
+        sel = int(np.argmin(np.abs(rt[apex_idxs] - scan_prior_rt)))
+    snr = float(proms[sel] / noise) if noise > 0 else float("inf")
+    return int(apex_idxs[sel]), snr
 
 
 def consensus_apex(
@@ -193,7 +210,7 @@ def consensus_apex(
             apex_search_half_width=apex_search_half_width, selection=selection,
         )
         if a is not None:
-            apex_rts.append(rt[a])
+            apex_rts.append(rt[a[0]])
     if not apex_rts:
         return None
     arr = np.asarray(apex_rts, dtype=np.float64)

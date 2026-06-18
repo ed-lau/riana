@@ -188,6 +188,14 @@ class IntegrationConfig:
     #: re-transferred there (no double-counting); this stricter-or-equal gate only
     #: governs which precursors are *eligible* to donate.
     mbr_donor_q: float = 1e-2
+    #: --mbr-min-snr. Absolute apex-SNR floor for MBR transfers: an MBR row whose
+    #: apex ``snr = prominence / local-noise`` is below this is dropped (the
+    #: relative prominence gate alone passes too many wrong-peak picks — the
+    #: real-data quality run). SNR is run-normalized (relative to each trace's own
+    #: noise), so an absolute floor is run-independent where an intensity floor is
+    #: not. ``0`` disables it (only the no-apex drop applies); the value is set
+    #: from the ``apex_snr`` stratification. See ``reports/2026-06-17_mbr_v1_design.md``.
+    mbr_min_snr: float = 0.0
 
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
@@ -241,6 +249,8 @@ class IntegrationConfig:
                 f"got {self.mbr_min_donor_runs}")
         if not 0.0 <= self.mbr_donor_q <= 1.0:
             raise ValueError(f"mbr_donor_q must be in [0, 1], got {self.mbr_donor_q}")
+        if self.mbr_min_snr < 0:
+            raise ValueError(f"mbr_min_snr must be >= 0, got {self.mbr_min_snr}")
 
 
 @dataclass(frozen=True, slots=True)

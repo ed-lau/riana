@@ -148,6 +148,40 @@ def test_detect_peak_returns_none_on_flat_or_zero():
     assert pk.detect_peak(rt, noise, scan_prior_rt=0.5) is None
 
 
+def test_find_apex_returns_index_and_snr():
+    rt = np.linspace(0, 1, 201)
+    rng = np.random.default_rng(1)
+    sig = _gaussian(rt, 0.5, 0.02, 1000.0) + rng.uniform(1.0, 10.0, 201)
+    res = pk.find_apex(rt, sig, scan_prior_rt=0.5)
+    assert res is not None
+    idx, snr = res
+    assert abs(rt[idx] - 0.5) < 0.02        # apex near the true centre
+    assert np.isfinite(snr) and snr > 10    # clean peak clears the gate comfortably
+
+
+def test_find_apex_none_on_flat():
+    rt = np.linspace(0, 1, 50)
+    assert pk.find_apex(rt, np.zeros(50), scan_prior_rt=0.5) is None
+
+
+def test_find_apex_tallest_vs_nearest():
+    rt = np.linspace(0, 1, 201)
+    # a tall peak at 0.7 and a small peak at 0.45; the PSM prior is at 0.5.
+    sig = _gaussian(rt, 0.7, 0.02, 1000.0) + _gaussian(rt, 0.45, 0.02, 100.0)
+    nearest = pk.find_apex(rt, sig, scan_prior_rt=0.5, selection="nearest")
+    tallest = pk.find_apex(rt, sig, scan_prior_rt=0.5, selection="tallest")
+    assert abs(rt[nearest[0]] - 0.45) < 0.03  # nearest → the close small peak
+    assert abs(rt[tallest[0]] - 0.70) < 0.03  # tallest → the far big peak
+
+
+def test_detect_peak_snr_populated():
+    rt = np.linspace(0, 1, 201)
+    rng = np.random.default_rng(1)
+    sig = _gaussian(rt, 0.5, 0.02, 1000.0) + rng.uniform(1.0, 10.0, 201)
+    b = pk.detect_peak(rt, sig, scan_prior_rt=0.5)
+    assert b is not None and np.isfinite(b.snr) and b.snr > 10
+
+
 def test_coelution_ok_passes_aligned_apices():
     rt = np.linspace(0, 1, 201)
     iso0 = pk.detect_peak(rt, _gaussian(rt, 0.5, 0.02, 1000.0), scan_prior_rt=0.5)

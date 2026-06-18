@@ -345,15 +345,20 @@ def integrate_run(
             idf, psm, mzml, config, rt_arr, iso0_col, iso1_col,
             anchor_scan=concat_anchor[psm.concat],
         )
-        # MBR graceful failure: a transferred precursor with no detectable apex
-        # in this run was genuinely below detection, not just unsequenced —
-        # dropping it (rather than integrating the fixed window over noise) keeps
-        # MBR additive to yield without injecting baseline. Real q-value PSMs
-        # keep the fixed-window fallback (their ID is independent evidence the
-        # peptide is here). The prominence gate's sufficiency for this is a
-        # tracked spike (reports/2026-06-17_mbr_v1_design.md); the downstream
-        # R²>0.95 envelope gate is the backstop.
-        if boundary is None and psm.evidence == "mbr":
+        # MBR graceful failure: drop a transferred precursor that has no
+        # detectable apex (genuinely below detection, not just unsequenced) OR
+        # whose apex is too low-SNR (--mbr-min-snr) — both would inject
+        # baseline/noise into the curve rather than recover signal. The real-data
+        # apex_snr stratification sets the floor (reports/2026-06-17_mbr_v1_design.md);
+        # the relative prominence gate alone passes too many wrong-peak picks.
+        # Real q-value PSMs keep the fixed-window fallback (their ID is
+        # independent evidence the peptide is here). R²>0.95 is the backstop.
+        if psm.evidence == "mbr" and (
+            boundary is None
+            or (config.mbr_min_snr > 0
+                and np.isfinite(boundary.snr)
+                and boundary.snr < config.mbr_min_snr)
+        ):
             dropped_pep_ids.add(int(psm.pep_id))
             n_mbr_dropped += 1
             continue
@@ -398,6 +403,10 @@ def integrate_run(
         iso0_ppm = ma.get(iso0_col, (None, None))[1]
         if iso0_ppm is not None and not np.isnan(iso0_ppm):
             iso0_ppm_errors.append(float(iso0_ppm))
+        # Apex SNR (prominence / local-noise) — the admission-gate units; NaN on
+        # the fixed-window fallback / consensus path. Diagnostic (also informs the
+        # baseline/noise-floor question on the calibration benches) + the MBR floor.
+        row.append(boundary.snr if boundary is not None else float("nan"))
         integrated_rows.append(row)
 
     if config.peak_rt in ("apex", "consensus") or config.integration_half_width == "auto":
@@ -409,7 +418,7 @@ def integrate_run(
 
     integrated_df = pd.DataFrame(
         integrated_rows,
-        columns=["pep_id"] + iso_cols + mz_cols + ppm_cols,
+        columns=["pep_id"] + iso_cols + mz_cols + ppm_cols + ["apex_snr"],
     )
 
     # Per-fraction drift summary — log a warning if the median ppm error
@@ -725,6 +734,7 @@ def _peak_boundary(
                 return None
         return iso0_b
     # peak_rt in {"apex","consensus"}: fixed-width window around a detected apex.
+    apex_snr = float("nan")  # set by the "apex" path; nan for consensus
     if config.peak_rt == "consensus":
         # Median apex over m0..m{n-1} (co-elution consensus): labelling-
         # independent and rejects a contaminated channel regardless of intensity.
@@ -740,12 +750,14 @@ def _peak_boundary(
         )
         apex = res[0] if res is not None else None
     else:  # "apex"
-        apex = pk.find_apex(
+        res = pk.find_apex(
             rt_arr, iso0_trace, scan_prior_rt=psm_rt,
             prominence_k=config.prominence_k,
             apex_search_half_width=config.apex_search_half_width,
             selection=config.apex_selection,
         )
+        apex = res[0] if res is not None else None
+        apex_snr = res[1] if res is not None else float("nan")
     if apex is None:
         return None
     half = float(config.integration_half_width)
@@ -754,6 +766,7 @@ def _peak_boundary(
     return pk.PeakBoundary(
         apex_idx=apex, lo=int(win[0]), hi=int(win[-1]),
         apex_intensity=float(iso0_trace[apex]), prominence=float("nan"),
+        snr=apex_snr,
     )
 
 

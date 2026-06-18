@@ -186,6 +186,11 @@ def integrate(
     mbr_donor_q: float = typer.Option(
         1e-2, "--mbr-donor-q", metavar="Q",
         help="MBR donor-confidence q-value threshold [default: 0.01]."),
+    mbr_min_snr: float = typer.Option(
+        0.0, "--mbr-min-snr", metavar="SNR",
+        help="Drop MBR transfers whose apex SNR (prominence/local-noise) is below "
+        "this. SNR is run-normalized, so an absolute floor is run-independent. "
+        "0 = off (no-apex drop only); set from the apex_snr stratification."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -269,6 +274,7 @@ def integrate(
             mbr=bool(mbr),
             mbr_min_donor_runs=int(mbr_min_donor_runs),
             mbr_donor_q=float(mbr_donor_q),
+            mbr_min_snr=float(mbr_min_snr),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
