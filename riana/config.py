@@ -193,9 +193,17 @@ class IntegrationConfig:
     #: relative prominence gate alone passes too many wrong-peak picks — the
     #: real-data quality run). SNR is run-normalized (relative to each trace's own
     #: noise), so an absolute floor is run-independent where an intensity floor is
-    #: not. ``0`` disables it (only the no-apex drop applies); the value is set
-    #: from the ``apex_snr`` stratification. See ``reports/2026-06-17_mbr_v1_design.md``.
+    #: not. ``0`` disables it. An **inf** apex_snr (a sparse XIC with MAD=0 → no
+    #: noise floor) **fails** this gate when on — inf is not a defined SNR. The
+    #: value is set from the ``apex_snr`` stratification.
+    #: See ``reports/2026-06-17_mbr_v1_design.md``.
     mbr_min_snr: float = 0.0
+    #: --mbr-min-scans. Minimum number of nonzero scans in an MBR transfer's
+    #: integration window. A sparse XIC (a 1–2-scan spike) can't define a reliable
+    #: peak — this is the interpretable/tunable form of "inf apex_snr = fail" (inf
+    #: ⇔ MAD=0 ⇔ too few nonzero points). ``0`` disables it. Pairs with
+    #: :attr:`mbr_min_snr` as the two-part MBR quality gate.
+    mbr_min_scans: int = 0
 
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
@@ -251,6 +259,8 @@ class IntegrationConfig:
             raise ValueError(f"mbr_donor_q must be in [0, 1], got {self.mbr_donor_q}")
         if self.mbr_min_snr < 0:
             raise ValueError(f"mbr_min_snr must be >= 0, got {self.mbr_min_snr}")
+        if self.mbr_min_scans < 0:
+            raise ValueError(f"mbr_min_scans must be >= 0, got {self.mbr_min_scans}")
 
 
 @dataclass(frozen=True, slots=True)

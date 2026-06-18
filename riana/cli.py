@@ -189,8 +189,14 @@ def integrate(
     mbr_min_snr: float = typer.Option(
         0.0, "--mbr-min-snr", metavar="SNR",
         help="Drop MBR transfers whose apex SNR (prominence/local-noise) is below "
-        "this. SNR is run-normalized, so an absolute floor is run-independent. "
-        "0 = off (no-apex drop only); set from the apex_snr stratification."),
+        "this (inf SNR — a sparse MAD=0 trace — also fails). SNR is run-normalized, "
+        "so an absolute floor is run-independent. 0 = off; set from the apex_snr "
+        "stratification."),
+    mbr_min_scans: int = typer.Option(
+        0, "--mbr-min-scans", metavar="N",
+        help="Drop MBR transfers with fewer than N nonzero scans in the "
+        "integration window (a sparse XIC can't define a reliable peak). The "
+        "interpretable half of the two-part MBR quality gate. 0 = off."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -275,6 +281,7 @@ def integrate(
             mbr_min_donor_runs=int(mbr_min_donor_runs),
             mbr_donor_q=float(mbr_donor_q),
             mbr_min_snr=float(mbr_min_snr),
+            mbr_min_scans=int(mbr_min_scans),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

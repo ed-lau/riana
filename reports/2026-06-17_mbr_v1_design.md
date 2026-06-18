@@ -249,3 +249,26 @@ prominence gate passes too many wrong-peak (co-eluting / noise) picks. **v1 need
 MBR SNR/intensity floor** (the apex-spike's answer — yes), a tunable yield-vs-quality
 dial, with the downstream envelope-fit R²>0.95 gate as the backstop. **Do not fit
 floor-less MBR.** Next: add the floor, re-run, and re-measure corridor% toward real.
+
+### Update 2026-06-18 — the apex-SNR floor as defined does NOT work (degenerate on sparse traces)
+
+Emitted `apex_snr = prominence / (1.4826·MAD)` (commit `da94b81`) and re-ran
+(`runs/lve_atr_mbr`). Result: **81% of surviving MBR rows (59,334 / 73,337) have
+`apex_snr = inf`**, because their XIC is sparse (a mostly-zero centroid trace →
+MAD = 0 → zero noise → inf SNR). Those inf-SNR rows are the **low-intensity** ones
+(iso0 median **26k** vs **310k** for the finite-SNR rows) — i.e. exactly the
+bad-corridor points. So an absolute `--mbr-min-snr` floor **inverts**: `inf` clears
+any finite threshold, so it would keep the sparse junk and only gate the 19%
+already-decent dense points. (29% of *real* rows hit inf too — a general
+centroid-XIC sparsity effect, not MBR-specific.) The finite-SNR subset's quintiles
+are compressed (corridor 67→83%) and its per-run spread is **not** tighter than
+iso0's, so SNR is not the cleaner run-independent metric here.
+
+**The iso0 intensity stratification (23%→83% corridor) is still the better
+discriminator.** Decision before a usable floor: (a) give the noise estimate a
+floor so MAD=0 can't → inf (e.g. `noise = max(1.4826·MAD, k·apex)`), and/or (b) add
+a **minimum nonzero-scan count** in the window (a sparse trace can't define a
+reliable peak regardless — likely the root cause), and/or (c) gate on a
+**run-normalized** intensity (raw iso0 swings ~5× per run). The `apex_snr` column +
+`--mbr-min-snr` knob stay (the diagnostic is genuinely useful, incl. for the
+calibration noise-floor question), but the gate metric needs this rework first.

@@ -345,19 +345,30 @@ def integrate_run(
             idf, psm, mzml, config, rt_arr, iso0_col, iso1_col,
             anchor_scan=concat_anchor[psm.concat],
         )
-        # MBR graceful failure: drop a transferred precursor that has no
-        # detectable apex (genuinely below detection, not just unsequenced) OR
-        # whose apex is too low-SNR (--mbr-min-snr) — both would inject
-        # baseline/noise into the curve rather than recover signal. The real-data
-        # apex_snr stratification sets the floor (reports/2026-06-17_mbr_v1_design.md);
-        # the relative prominence gate alone passes too many wrong-peak picks.
-        # Real q-value PSMs keep the fixed-window fallback (their ID is
-        # independent evidence the peptide is here). R²>0.95 is the backstop.
+        apex_snr = boundary.snr if boundary is not None else float("nan")
+        # Nonzero scans in the integrated window — how many real MS1 points back
+        # the peak. A sparse XIC (1–2 nonzero scans) can't define a reliable peak;
+        # it is also why apex_snr goes inf (MAD=0). Emitted as a diagnostic + the
+        # interpretable half of the MBR quality gate.
+        iso0_window = (
+            idf[iso0_col].to_numpy(dtype=np.float64)[boundary.lo : boundary.hi + 1]
+            if boundary is not None
+            else idf[iso0_col].to_numpy(dtype=np.float64)
+        )
+        n_scans = int(np.count_nonzero(iso0_window))
+        # MBR two-part graceful failure: drop a transferred precursor with no
+        # detectable apex, too few nonzero scans (--mbr-min-scans — sparse, can't
+        # trust the peak), or an apex that fails the SNR floor (--mbr-min-snr; an
+        # inf SNR = MAD=0 = no noise floor also FAILS — it is not a defined SNR).
+        # The real-data apex_snr/n_scans stratification sets both
+        # (reports/2026-06-17_mbr_v1_design.md). Real q-value PSMs keep the
+        # fixed-window fallback (their ID is independent evidence the peptide is
+        # here); R²>0.95 is the downstream backstop.
         if psm.evidence == "mbr" and (
             boundary is None
+            or (config.mbr_min_scans > 0 and n_scans < config.mbr_min_scans)
             or (config.mbr_min_snr > 0
-                and np.isfinite(boundary.snr)
-                and boundary.snr < config.mbr_min_snr)
+                and not (np.isfinite(apex_snr) and apex_snr >= config.mbr_min_snr))
         ):
             dropped_pep_ids.add(int(psm.pep_id))
             n_mbr_dropped += 1
@@ -403,10 +414,12 @@ def integrate_run(
         iso0_ppm = ma.get(iso0_col, (None, None))[1]
         if iso0_ppm is not None and not np.isnan(iso0_ppm):
             iso0_ppm_errors.append(float(iso0_ppm))
-        # Apex SNR (prominence / local-noise) — the admission-gate units; NaN on
-        # the fixed-window fallback / consensus path. Diagnostic (also informs the
-        # baseline/noise-floor question on the calibration benches) + the MBR floor.
-        row.append(boundary.snr if boundary is not None else float("nan"))
+        # apex_snr (prominence / local-noise; NaN on the fixed-window / consensus
+        # path, inf on a MAD=0 sparse trace) + n_scans (nonzero scans in the
+        # window): diagnostics (apex_snr also informs the calibration noise-floor
+        # question) and the two-part MBR quality gate.
+        row.append(apex_snr)
+        row.append(n_scans)
         integrated_rows.append(row)
 
     if config.peak_rt in ("apex", "consensus") or config.integration_half_width == "auto":
@@ -418,7 +431,7 @@ def integrate_run(
 
     integrated_df = pd.DataFrame(
         integrated_rows,
-        columns=["pep_id"] + iso_cols + mz_cols + ppm_cols + ["apex_snr"],
+        columns=["pep_id"] + iso_cols + mz_cols + ppm_cols + ["apex_snr", "n_scans"],
     )
 
     # Per-fraction drift summary — log a warning if the median ppm error
