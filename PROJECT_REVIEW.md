@@ -1016,11 +1016,23 @@ it. Remaining M7 follow-ons and the next gaps, in order:
     RT-anchored extraction (`core/integration.resolve_rt_anchored_scans`, `scan=-1`
     sentinel) is exactly the path an MBR-transferred (no-MS2) precursor needs — the DIA
     intake built MBR's extraction substrate. The stale `data/mbr_test` fixture (Oct-2022,
-    pre-rewrite) is not reusable as-is. **Next: design the intake-layer MBR pass** (an
-    ID-assembly concern, hence Track A) — donor selection from the manifest's
-    per-condition run group → robust per-run RT alignment on shared IDs → emit
-    `scan=-1`+RT records flagged `evidence="mbr"` → integrate via the existing RT-anchor
-    path → q/score gate + an MBR-FDR story. Pairs with the Track D missingness metric.
+    pre-rewrite) is not reusable as-is.
+  - *Design agreed 2026-06-17 → building v1* (`reports/2026-06-17_mbr_v1_design.md`).
+    **v1 = pure RT-transfer:** donor = q≤0.01 in ≥2 runs of the `(experiment,
+    condition)` curve group → robust per-run RT offset (median/Theil-Sen on shared
+    IDs) → synthetic `scan=-1`+RT `PSMRecord`s flagged `evidence="mbr"` → the existing
+    `resolve_rt_anchored_scans` + apex re-detect, with a **graceful no-apex drop** (an
+    MBR row with no detectable peak is discarded, never integrated as baseline). Hooked
+    in `plan_integration` (mzTab is whole-experiment, so cross-run donor assembly is
+    free); one surgical `integration.py` change (scan↔RT guard runs on the
+    directly-scanned subset so MBR rows don't disable it for real PSMs). `fit`/`rollup`
+    gain `--exclude-mbr`; outputs gain `n_mbr`/`n_metox`/`n_clean` data-point breakdown;
+    GUI marks MBR points by color. **Validated against calibration ground-truth θ**
+    (`data/calibration_{ac16,cm,ipsc}` — held-out is intensity-biased) + Track D
+    within-protein-θ. **Parked:** the sub-threshold *rescue* tier (mzTab is 1%-FDR
+    pre-filtered — 179 PSMs in (0.01,0.02], 0 above — so nothing to promote without a
+    looser-FDR quantms re-export); **MBR-FDR is its own future study/report.** Pairs
+    with the Track D missingness metric.
 
 #### Track B — integration fidelity (research cluster)
 

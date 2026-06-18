@@ -230,42 +230,47 @@ def integrate_run(
             file_label or _mzml_basename(mzml), config.mass_tol_ppm,
         )
 
-    # DIA (RT-anchored) intake: io.diann emits scan=-1 because DIA has no MS2
-    # scan, carrying DIA-NN's apex in retention_time. Resolve each to the
-    # nearest MS1 scan in THIS mzML (+ an RT-in-bounds check) so the scan-based
-    # extraction below runs unchanged; the apex finder then re-centres on the
-    # true MS1 apex. No-op on the DDA path (every PSM already has a real scan).
-    rt_anchored = any(p.scan < 0 for p in psms)
-    if rt_anchored:
+    # RT-anchored intake (DIA, and MBR transfers): io.diann and the MBR pass emit
+    # scan=-1 because there is no MS2 scan to anchor on, carrying the apex in
+    # retention_time. Resolve each to the nearest MS1 scan in THIS mzML (+ an
+    # RT-in-bounds check) so the scan-based extraction below runs unchanged; the
+    # apex finder then re-centres on the true MS1 apex. `directly_scanned` is
+    # captured BEFORE resolution (order-preserving) so the guard below can tell
+    # real MS2 IDs from RT-anchored rows; no-op when every PSM has a real scan.
+    directly_scanned = [p.scan >= 0 for p in psms]
+    if not all(directly_scanned):
         psms = resolve_rt_anchored_scans(psms, mzml, file_label=file_label)
 
-    # Intake scan↔RT guard (Track A): before integrating, verify the mzTab
-    # spectra_ref scans actually index THIS mzML. Runs on the full PSM set
-    # (best statistics) and no-ops on the Percolator path (no retention_time).
-    # Skipped for DIA: the scan was just *derived* from the RT, so the check is
-    # circular (resolve_rt_anchored_scans does the RT-in-bounds check instead).
-    if config.check_scan_rt and not rt_anchored:
-        label = file_label or _mzml_basename(mzml)
-        check = check_scan_rt_consistency(psms, mzml, config.scan_rt_tol_min)
-        if check.n_checked > 0 and not check.ok:
-            raise DataError(
-                f"{label}: scan↔RT reconciliation FAILED — median offset "
-                f"{check.median_offset_min:.2f} min over {check.n_checked} PSMs "
-                f"exceeds tol {check.tol_min:.1f} min "
-                f"({check.frac_within_tol:.0%} within tol). The mzTab spectra_ref "
-                "scans do not line up with this mzML's retention times: most "
-                "likely the quantms filename-prefix scan-scramble (zero-pad / "
-                "de-prefix the mzML basenames before the quantms run) or a wrong "
-                "mzML↔mzTab pairing. Override with --no-rt-check only if this run "
-                "is knowingly correct."
-            )
-        if check.n_checked > 0:
-            _LOGGER.info(
-                "%s: scan↔RT reconciled — median %.2f min, %.0f%% within "
-                "%.1f min (n=%d).",
-                label, check.median_offset_min, 100 * check.frac_within_tol,
-                check.tol_min, check.n_checked,
-            )
+    # Intake scan↔RT guard (Track A): verify the mzTab spectra_ref scans actually
+    # index THIS mzML. Runs ONLY on the originally directly-scanned PSMs (real MS2
+    # IDs); RT-anchored rows (DIA, MBR) are excluded — their scan was *derived*
+    # from the RT, so the check is circular (resolve_rt_anchored_scans does the
+    # RT-in-bounds check for them instead). Pure-DIA → empty subset → natural
+    # no-op; also no-ops on the Percolator path (no retention_time).
+    if config.check_scan_rt:
+        direct_psms = [p for p, d in zip(psms, directly_scanned) if d]
+        if direct_psms:
+            label = file_label or _mzml_basename(mzml)
+            check = check_scan_rt_consistency(direct_psms, mzml, config.scan_rt_tol_min)
+            if check.n_checked > 0 and not check.ok:
+                raise DataError(
+                    f"{label}: scan↔RT reconciliation FAILED — median offset "
+                    f"{check.median_offset_min:.2f} min over {check.n_checked} PSMs "
+                    f"exceeds tol {check.tol_min:.1f} min "
+                    f"({check.frac_within_tol:.0%} within tol). The mzTab spectra_ref "
+                    "scans do not line up with this mzML's retention times: most "
+                    "likely the quantms filename-prefix scan-scramble (zero-pad / "
+                    "de-prefix the mzML basenames before the quantms run) or a wrong "
+                    "mzML↔mzTab pairing. Override with --no-rt-check only if this run "
+                    "is knowingly correct."
+                )
+            if check.n_checked > 0:
+                _LOGGER.info(
+                    "%s: scan↔RT reconciled — median %.2f min, %.0f%% within "
+                    "%.1f min (n=%d).",
+                    label, check.median_offset_min, 100 * check.frac_within_tol,
+                    check.tol_min, check.n_checked,
+                )
 
     # Integrate ALL peptides, shared included — protein attribution (unique /
     # isoform parsimony) is a summarize-time decision in `riana rollup`, not an

@@ -11,3 +11,4 @@ Convention: `YYYY-MM-DD_short_topic.md`. Inputs often live under the gitignored
 | date | report | outcome |
 |------|--------|---------|
 | 2026-06-17 | [MBR DDA feasibility](2026-06-17_mbr_dda_feasibility.md) | DDA curves badly gappy (8–15% complete, 40–45% recoverable, 70% LVE t0-anchor loss); DIA needs none; quantms RT aligned-but-imperfect (15–25 s run residuals) → **GO** for mzTab/DDA MBR with a light per-run RT refinement. |
+| 2026-06-17 | [MBR v1 design](2026-06-17_mbr_v1_design.md) | Agreed v1 = pure RT-transfer (donor q≤0.01 in ≥2 runs → robust per-run offset → `evidence="mbr"` rows via the existing RT-anchor path, graceful no-apex drop). Rescue tier parked (mzTab is 1%-FDR pre-filtered); MBR-FDR is its own study. Validate vs calibration ground-truth θ. |
