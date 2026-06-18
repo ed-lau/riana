@@ -272,3 +272,42 @@ reliable peak regardless — likely the root cause), and/or (c) gate on a
 **run-normalized** intensity (raw iso0 swings ~5× per run). The `apex_snr` column +
 `--mbr-min-snr` knob stay (the diagnostic is genuinely useful, incl. for the
 calibration noise-floor question), but the gate metric needs this rework first.
+
+### Update 2026-06-18b — two-part gate sweep + the abundance-filter caveat
+
+Re-ran with `n_scans` + `apex_snr` (inf=fail) emitted (commit `83c0204`) and swept
+`--mbr-min-scans` (N) × `--mbr-min-snr` (T) on the 28,681 MBR points with bracketing
+real neighbours (cell = keep% / corridor%; real held-out baseline ~94%):
+
+| N＼T | T≥0 | T≥4 | T≥6 | T≥8 |
+|------|-----|-----|-----|-----|
+| N≥0 | 100%/57% | 16%/79% | 8%/82% | 5%/83% |
+| N≥3 | 82%/62% | 16%/79% | 8%/82% | 5%/83% |
+| N≥7 | 58%/66% | 15%/80% | 8%/83% | 5%/85% |
+
+**The SNR gate with inf=fail is the dominant lever; `n_scans` is largely redundant**
+(inf ⟺ sparse). `--mbr-min-snr 4` → 16% keep, 79% corridor (the conservative target);
+`--mbr-min-scans` adds ~1pt.
+
+**Gate vs real points (calibration — does it discard genuine IDs too?).**
+
+| pop | inf-SNR | scans<3 | scans<7 | combined fail (N≥3,T≥4) |
+|-----|---------|---------|---------|--------------------------|
+| real | 29% | 2% | 10% | 67% |
+| MBR | 81% | 20% | 45% | 87% |
+
+**The gate is mostly an abundance/sparsity filter** — it fails 67–83% of *real*
+confident IDs too; MBR/real fail ratio only **1.2–1.3×**. It does not surgically
+detect transfer errors; it removes sparse low-abundance peaks. That is **appropriate
+for MBR** (a sparse transfer has no corroborating ID, unlike a sparse *real* point),
+but it means: (a) MBR keeps only ~16–20% of transfers, the high-abundance ones;
+(b) gated survivors (79%) still lag real (94%) — residual = high-SNR co-eluting picks
+(the `apex_search_half_width` lever); (c) a value tension — confidently-recoverable
+transfers are high-abundance (often barely missed), while high-value low-abundance
+recoveries are the untrustworthy sparse ones.
+
+**Decision:** recommended conservative gate `--mbr-min-snr 4` (inf=fail) +
+`--mbr-min-scans 3` (defensive); **default stays 0 pending the fit A/B** (envelope-R²
+/ within-protein-θ / k_deg, with vs without MBR via `--exclude-mbr`) — the real
+arbiter of whether the kept transfers help. Bench: `tests/benchmark/bench_mbr_quality.py`
+§5 (sweep) + §6 (gate-vs-real).

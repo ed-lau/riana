@@ -47,7 +47,14 @@ def _load(run_dir: str) -> pd.DataFrame:
             continue
         chamber, t = m.group(1), int(m.group(2))
         df = pd.read_csv(path, sep="\t", comment="#")
-        df = df[["concat", "evidence", *_ISO]].copy()
+        cols = ["concat", "evidence", *_ISO]
+        for c in ("apex_snr", "n_scans"):
+            if c in df.columns:
+                cols.append(c)
+        df = df[cols].copy()
+        for c in ("apex_snr", "n_scans"):
+            if c not in df.columns:
+                df[c] = np.nan  # pre-gate run
         df["chamber"] = chamber
         df["time"] = t
         rows.append(df)
@@ -181,6 +188,112 @@ def trajectory_sense(df: pd.DataFrame) -> None:
           "points are as trustworthy as real ones. MBR ≫ REAL ⇒ noise/mis-transfer.")
 
 
+def _mbr_points_with_neighbours(df: pd.DataFrame) -> pd.DataFrame:
+    """Per surviving MBR point bracketed by real neighbours: run, snr, iso0,
+    monotone-corridor membership, interp residual."""
+    recs = []
+    for (ch, concat), g in df.groupby(["chamber", "concat"]):
+        g = g.sort_values("time")
+        real = g[g["evidence"] == "q_value"]
+        if len(real) < 3:
+            continue
+        rt = real["time"].to_numpy(float)
+        rm = real["m0"].to_numpy(float)
+        for r in g[g["evidence"] == "mbr"].itertuples():
+            lo, hi = rt < r.time, rt > r.time
+            if not lo.any() or not hi.any() or not np.isfinite(r.m0):
+                continue
+            tp, mp = rt[lo][-1], rm[lo][-1]
+            tn, mn = rt[hi][0], rm[hi][0]
+            pred = mp + (mn - mp) * (r.time - tp) / (tn - tp)
+            cor = (min(mp, mn) - 0.05) <= r.m0 <= (max(mp, mn) + 0.05)
+            ns = int(r.n_scans) if np.isfinite(r.n_scans) else 0
+            recs.append((f"{ch}_t{int(r.time):02d}", float(r.apex_snr),
+                         float(r.iso0), ns, bool(cor), abs(float(r.m0) - pred)))
+    return pd.DataFrame(recs, columns=["run", "snr", "iso0", "n_scans", "cor", "resid"])
+
+
+_SCAN_GRID = (0, 3, 5, 7)
+_SNR_GRID = (0, 4, 6, 8)
+
+
+def gate_sweep(df: pd.DataFrame) -> None:
+    """Two-part MBR gate sweep: min nonzero scans (N) × min apex-SNR (T).
+
+    An **inf** apex_snr (sparse MAD=0 trace, no noise floor) is treated as FAIL —
+    it is not a defined SNR. Each cell is keep% / corridor% on MBR points with
+    bracketing real neighbours (corridor = θ-recovery proxy; real held-out
+    baseline ~94%). N>=0, T=0 is the no-gate baseline.
+    """
+    print("\n" + "=" * 70)
+    print("5. TWO-PART GATE SWEEP — min nonzero scans (N) × min apex-SNR (T)")
+    print("   inf-SNR (sparse, no noise floor) = FAIL; cell = keep% / corridor%")
+    print("=" * 70)
+    R = _mbr_points_with_neighbours(df)
+    if R["snr"].isna().all() or R["n_scans"].fillna(0).eq(0).all():
+        print("  no apex_snr / n_scans columns — re-run integrate so the gate "
+              "diagnostics are written.")
+        return
+    R["eff_snr"] = np.where(np.isfinite(R["snr"]), R["snr"], 0.0)  # inf -> fail
+    n_tot = len(R)
+    print(f"  {n_tot:,} MBR points w/ neighbours | inf-SNR "
+          f"{np.isinf(R['snr']).mean():.0%} | baseline corridor {R['cor'].mean():.0%}")
+    print("  " + "N\\T".rjust(6) + "".join(("T>=" + str(t)).rjust(13) for t in _SNR_GRID))
+    cand = []
+    for n in _SCAN_GRID:
+        cells = []
+        for t in _SNR_GRID:
+            k = R[(R["n_scans"] >= n) & (R["eff_snr"] >= t)]
+            cells.append(f"{len(k) / n_tot:3.0%}/{k['cor'].mean():3.0%}"
+                         if len(k) else "-/-")
+            if len(k):
+                cand.append((len(k) / n_tot, float(k["cor"].mean()), n, t,
+                             float(k["resid"].median())))
+        print("  " + ("N>=" + str(n)).rjust(6) + "".join(c.rjust(13) for c in cells))
+
+    # conservative pick: closest to ~20% keep, then best corridor
+    near = [c for c in cand if 0.12 <= c[0] <= 0.28]
+    if near:
+        best = max(near, key=lambda c: c[1])
+        print(f"\n  conservative pick (~20% keep): --mbr-min-scans {best[2]} "
+              f"--mbr-min-snr {best[3]} → keep {best[0]:.0%}, corridor {best[1]:.0%}, "
+              f"|Δm0|med {best[4]:.3f}  (real ~94% / 0.013)")
+
+
+def real_vs_mbr_gate(df: pd.DataFrame) -> None:
+    """Calibration: would the gate discard genuine (q-value) IDs too? A gate that
+    fails many *real* points is an abundance filter, not an MBR-junk filter; the
+    gap (MBR fail% ≫ real fail%) is the discrimination. Applied over ALL rows (no
+    neighbour requirement) — real rows are never gated in production, this is the
+    hypothetical comparison."""
+    print("\n" + "=" * 70)
+    print("6. GATE vs REAL POINTS — does the gate also discard confident IDs?")
+    print("=" * 70)
+    if df["apex_snr"].isna().all() or df["n_scans"].fillna(0).eq(0).all():
+        print("  no apex_snr / n_scans — re-run integrate so the columns exist.")
+        return
+    print(f"  {'pop':<6}{'n':>10}{'inf-SNR':>10}"
+          + "".join(f"{f'scans<{n}':>11}" for n in _SCAN_GRID[1:]))
+    for ev, label in (("q_value", "real"), ("mbr", "MBR")):
+        g = df[df["evidence"] == ev]
+        inf = float(np.isinf(g["apex_snr"]).mean())
+        cells = "".join(f"{np.mean(g['n_scans'] < n):>11.0%}" for n in _SCAN_GRID[1:])
+        print(f"  {label:<6}{len(g):>10,}{_pct(inf):>10}{cells}")
+    print("\n  combined-gate fail% (drop if n_scans<N OR inf-SNR OR apex_snr<T):")
+    print(f"  {'cut':<16}{'real fail':>12}{'MBR fail':>12}{'ratio':>9}")
+    for n, t in ((3, 4), (5, 6), (7, 8)):
+        fr = {}
+        for ev in ("q_value", "mbr"):
+            g = df[df["evidence"] == ev]
+            eff = np.where(np.isfinite(g["apex_snr"]), g["apex_snr"], 0.0)
+            fr[ev] = float(((g["n_scans"] < n) | (eff < t)).mean())
+        ratio = fr["mbr"] / fr["q_value"] if fr["q_value"] else float("inf")
+        print(f"  N>={n},T>={t:<10}{_pct(fr['q_value']):>12}{_pct(fr['mbr']):>12}"
+              f"{ratio:>8.1f}x")
+    print("  (MBR fail% ≫ real fail% ⇒ the gate separates transfers from genuine "
+          "signal; if close, it is mostly an abundance filter.)")
+
+
 def examples(df: pd.DataFrame, n: int = 5) -> None:
     print("\n" + "=" * 70)
     print(f"4. EXAMPLE TRAJECTORIES (m0 by time; * = MBR)")
@@ -210,6 +323,8 @@ def main() -> None:
     survival(df, args.run, args.planned)
     ms1_signal(df)
     trajectory_sense(df)
+    gate_sweep(df)
+    real_vs_mbr_gate(df)
     examples(df)
 
 
