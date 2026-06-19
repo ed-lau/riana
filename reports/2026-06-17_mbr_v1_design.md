@@ -1,7 +1,7 @@
 # MBR v1 — design (mzTab/DDA path)
 
 - **Date:** 2026-06-17
-- **Status:** v1 integrate-core built; first real-data validation done (2026-06-18) → an MBR SNR/intensity floor is needed before fit (see [§ v1 validation](#v1-validation--first-real-data-run-2026-06-18))
+- **Status:** SHIPPED — gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3` default, uncapped). Fit A/B: ungated MBR is harmful, but gated MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates (+180 at R²>0.8) with no clean-curve pollution (see § Update 2026-06-18c). `--exclude-mbr` opts out.
 - **Precursor:** [missingness + RT-alignment measurement](2026-06-17_mbr_dda_feasibility.md) (GO for DDA)
 - **Roadmap:** `PROJECT_REVIEW.md` → Track A
 
@@ -311,3 +311,34 @@ recoveries are the untrustworthy sparse ones.
 / within-protein-θ / k_deg, with vs without MBR via `--exclude-mbr`) — the real
 arbiter of whether the kept transfers help. Bench: `tests/benchmark/bench_mbr_quality.py`
 §5 (sweep) + §6 (gate-vs-real).
+
+### Update 2026-06-18c — fit A/B: gated MBR ships (uncapped, gate-on by default)
+
+The `--exclude-mbr` toggle + `n_mbr`/`n_clean` breakdown (commit `47bb806`) enabled
+the with/without-MBR fit A/B (`tests/benchmark/bench_mbr_ab.py`, on `runs/lve_atr_mbr`,
+commerford coefficients) — the real arbiter, not corridor.
+
+**Ungated MBR (all 73k transfers) — clearly harmful.** converged 21,103→24,978
+(+3,875) but **R²>0.95 5,312→3,726 (−1,586, −30%)**. R²-cutoff net (incl−excl):
+`>0.95 −1,586 · >0.9 −2,506 · >0.8 −2,939` — net-negative at *every* quality gate.
+MBR-enabled curves: 1% pass R²>0.95 (median 0.17, junk). Shared curves that gained
+MBR: ΔR² median **−0.077** (pollution). Dose by MBR-fraction: `<10% −0.009 · 25–50%
+−0.132 · >50% −0.174` — degradation scales with how much MBR *dominates* the curve.
+
+**Gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3`; 9,347 pts, 4%) — net-positive.**
+converged 21,103→22,367 (+1,264); **R²>0.95 5,312→5,282 (−30, noise)**; R²-cutoff net:
+`>0.95 −30 · >0.9 −6 · `**`>0.8 +180 · >0.7 +317`**. MBR-enabled curves now **11% pass
+R²>0.95 (median 0.52, real)**; shared ΔR² median **−0.003** (pollution gone).
+
+**Cap-fraction guards would HURT** (post-hoc sim; over-cap curves revert to real-only):
+R²>0.8 net at cap `≤10% −31 · ≤25% −132` (below baseline!) `· ≤50% +80 · no-cap +180`.
+MBR's value is in the *high*-fraction curves — the 1,259 MBR-enabled point-starved
+rescues live in the 25–50% / >50% bins; capping drops exactly those. So fill-gaps-only
+is the wrong move — keep gated MBR **uncapped**.
+
+**Decision (shipped):** gated MBR is neutral at strict R²>0.95 and **net-positive at
+the in-vivo gates (0.7–0.8) with no clean-curve pollution**. Gate **defaults set to
+`--mbr-min-snr 4` + `--mbr-min-scans 3`** (so `--mbr` is beneficial out of the box;
+`0` = the ungated footgun), **uncapped**; `--exclude-mbr` + the `n_mbr`/`n_clean`
+breakdown let users audit/compare. Stronger within-protein-θ (Track D) check pending
+as evaluation. Benches: `bench_mbr_ab.py` (A/B) + `bench_mbr_quality.py` (corridor/SNR).

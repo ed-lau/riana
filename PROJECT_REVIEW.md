@@ -796,15 +796,15 @@ it. Remaining M7 follow-ons and the next gaps, in order:
    line in the sand before more features pile on (move 1 GB+ of personal outputs
    out of `data/`, drop stray root outputs — see Cross-cutting chores). Can follow
    M7 but shouldn't slip indefinitely.
-4. **Match-between-runs (MBR) for the mzTab/DDA path — MEASURED 2026-06-17, GO for
-   DDA (mid-term build).** The "measure first" step is done: DDA curves are badly
-   gappy (8–15% complete over 12 tp; ~40–45% of donor-precursor slots are
-   MBR-recoverable holes; 70% LVE t0-anchor loss), the gap survives a 3-timepoint
-   geometry control (DIA 60% vs DDA 32–44%), and quantms RT is aligned but
-   imperfectly (run-specific 15–25 s residuals > the integration window). DIA needs
-   no MBR. No architectural block (M6b's RT-anchor path + the `evidence="mbr"` hook
-   are in place). Next = design the intake-layer MBR pass. Full record + bench
-   scripts (`bench_missingness.py`, `bench_rt_alignment.py`) in Track A below.
+4. **Match-between-runs (MBR) for the mzTab/DDA path — SHIPPED 2026-06-18.** Gated
+   pure RT-transfer (`integrate --mbr`; two-part quality gate `--mbr-min-snr 4` +
+   `--mbr-min-scans 3` default, uncapped; `fit --exclude-mbr` opts out). The fit A/B
+   decided it: *ungated* MBR is harmful (R²>0.95 −30%, pollutes clean curves), but
+   *gated* MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates
+   (+180 at R²>0.8) with no pollution; cap-fraction guards would hurt. Full record +
+   benches (`bench_missingness`, `bench_rt_alignment`, `bench_mbr_quality`,
+   `bench_mbr_ab`) in Track A below. **Remaining (eval/polish):** within-protein-θ
+   (Track D) as evaluation, GUI MBR-point colouring, rollup `--exclude-mbr`.
 5. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
    Stale post-M3; docstrings are the interim source of truth.
 
@@ -1022,22 +1022,26 @@ it. Remaining M7 follow-ons and the next gaps, in order:
     sentinel) is exactly the path an MBR-transferred (no-MS2) precursor needs — the DIA
     intake built MBR's extraction substrate. The stale `data/mbr_test` fixture (Oct-2022,
     pre-rewrite) is not reusable as-is.
-  - *Design agreed 2026-06-17 → building v1* (`reports/2026-06-17_mbr_v1_design.md`).
-    **v1 = pure RT-transfer:** donor = q≤0.01 in ≥2 runs of the `(experiment,
-    condition)` curve group → robust per-run RT offset (median/Theil-Sen on shared
+  - *SHIPPED 2026-06-18* (`reports/2026-06-17_mbr_v1_design.md`; commits
+    `6b68991`→`47bb806`). **Gated pure RT-transfer:** donor = q≤0.01 in ≥2 runs of the
+    `(experiment, condition)` curve group → robust per-run RT offset (median on shared
     IDs) → synthetic `scan=-1`+RT `PSMRecord`s flagged `evidence="mbr"` → the existing
-    `resolve_rt_anchored_scans` + apex re-detect, with a **graceful no-apex drop** (an
-    MBR row with no detectable peak is discarded, never integrated as baseline). Hooked
-    in `plan_integration` (mzTab is whole-experiment, so cross-run donor assembly is
-    free); one surgical `integration.py` change (scan↔RT guard runs on the
-    directly-scanned subset so MBR rows don't disable it for real PSMs). `fit`/`rollup`
-    gain `--exclude-mbr`; outputs gain `n_mbr`/`n_metox`/`n_clean` data-point breakdown;
-    GUI marks MBR points by color. **Validated against calibration ground-truth θ**
-    (`data/calibration_{ac16,cm,ipsc}` — held-out is intensity-biased) + Track D
-    within-protein-θ. **Parked:** the sub-threshold *rescue* tier (mzTab is 1%-FDR
-    pre-filtered — 179 PSMs in (0.01,0.02], 0 above — so nothing to promote without a
-    looser-FDR quantms re-export); **MBR-FDR is its own future study/report.** Pairs
-    with the Track D missingness metric.
+    `resolve_rt_anchored_scans` + apex re-detect → a **two-part quality gate**:
+    `--mbr-min-snr` (apex prominence/local-noise, **inf=fail** — inf is a sparse MAD=0
+    trace) + `--mbr-min-scans` (nonzero scans in the integration window), both MBR-only,
+    **defaults 4 / 3**. Hooked in `plan_integration` (mzTab is whole-experiment, so
+    cross-run donor assembly is free); the scan↔RT guard runs on the directly-scanned
+    subset so MBR rows don't disable it. `fit --exclude-mbr` opts out; outputs gain
+    `apex_snr`/`n_scans` (integrate) + `n_points`/`n_mbr`/`n_metox`/`n_clean` (fit) +
+    per-point `evidence` (fractions). **Fit A/B verdict** (`bench_mbr_ab.py`): *ungated*
+    MBR is harmful (R²>0.95 −30%, pollutes clean curves), but *gated* MBR is neutral at
+    strict R²>0.95 and **net-positive at the in-vivo gates (+180 at R²>0.8) with no
+    pollution**; cap-fraction guards would hurt (value is in the high-fraction
+    point-starved rescues) → ship **uncapped**. **Pending:** within-protein-θ (Track D)
+    as evaluation; GUI MBR-point colouring; rollup `--exclude-mbr`. **Parked:** the
+    sub-threshold *rescue* tier (mzTab is 1%-FDR pre-filtered — 179 PSMs in (0.01,0.02],
+    0 above); **MBR-FDR is its own future study/report.** Pairs with the Track D
+    missingness metric.
 
 #### Track B — integration fidelity (research cluster)
 

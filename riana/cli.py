@@ -187,16 +187,16 @@ def integrate(
         1e-2, "--mbr-donor-q", metavar="Q",
         help="MBR donor-confidence q-value threshold [default: 0.01]."),
     mbr_min_snr: float = typer.Option(
-        0.0, "--mbr-min-snr", metavar="SNR",
+        4.0, "--mbr-min-snr", metavar="SNR",
         help="Drop MBR transfers whose apex SNR (prominence/local-noise) is below "
-        "this (inf SNR — a sparse MAD=0 trace — also fails). SNR is run-normalized, "
-        "so an absolute floor is run-independent. 0 = off; set from the apex_snr "
-        "stratification."),
+        "this (inf SNR — a sparse MAD=0 trace — also fails). Default 4 (0 = ungated): "
+        "the fit A/B showed ungated MBR is harmful but SNR≥4 makes it net-positive "
+        "at in-vivo R² gates with no clean-curve pollution."),
     mbr_min_scans: int = typer.Option(
-        0, "--mbr-min-scans", metavar="N",
-        help="Drop MBR transfers with fewer than N nonzero scans in the "
-        "integration window (a sparse XIC can't define a reliable peak). The "
-        "interpretable half of the two-part MBR quality gate. 0 = off."),
+        3, "--mbr-min-scans", metavar="N",
+        help="Drop MBR transfers with fewer than N nonzero scans in the integration "
+        "window (a sparse XIC can't define a reliable peak). Default 3 (0 = off); "
+        "keeps ~98%% of real-quality peaks. The companion to --mbr-min-snr."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses

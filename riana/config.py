@@ -193,17 +193,19 @@ class IntegrationConfig:
     #: relative prominence gate alone passes too many wrong-peak picks — the
     #: real-data quality run). SNR is run-normalized (relative to each trace's own
     #: noise), so an absolute floor is run-independent where an intensity floor is
-    #: not. ``0`` disables it. An **inf** apex_snr (a sparse XIC with MAD=0 → no
-    #: noise floor) **fails** this gate when on — inf is not a defined SNR. The
-    #: value is set from the ``apex_snr`` stratification.
+    #: not. An **inf** apex_snr (a sparse XIC with MAD=0 → no noise floor) **fails**
+    #: this gate — inf is not a defined SNR. **Default 4** (``0`` = ungated): the
+    #: fit A/B validated it — ungated MBR is harmful (R²>0.95 −30%, pollutes clean
+    #: curves), but at SNR≥4 MBR is neutral at strict R² and net-positive at the
+    #: in-vivo gates (+180 at R²>0.8) with no pollution.
     #: See ``reports/2026-06-17_mbr_v1_design.md``.
-    mbr_min_snr: float = 0.0
+    mbr_min_snr: float = 4.0
     #: --mbr-min-scans. Minimum number of nonzero scans in an MBR transfer's
     #: integration window. A sparse XIC (a 1–2-scan spike) can't define a reliable
-    #: peak — this is the interpretable/tunable form of "inf apex_snr = fail" (inf
-    #: ⇔ MAD=0 ⇔ too few nonzero points). ``0`` disables it. Pairs with
-    #: :attr:`mbr_min_snr` as the two-part MBR quality gate.
-    mbr_min_scans: int = 0
+    #: peak — the interpretable/tunable companion to the SNR floor (different window:
+    #: SNR is the ±extraction trace, this is the ±integration window). **Default 3**
+    #: (``0`` = off) keeps ~98% of real-quality peaks (real ``n_scans`` p10 ≈ 7).
+    mbr_min_scans: int = 3
 
     def __post_init__(self) -> None:
         if not 1 <= self.mass_tol_ppm <= 500:
