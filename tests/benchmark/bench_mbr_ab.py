@@ -38,6 +38,45 @@ def _iqr(s: pd.Series) -> float:
     return float(s.quantile(0.75) - s.quantile(0.25))
 
 
+def _protein_metrics(ci: pd.DataFrame, ce: pd.DataFrame, min_pep: int = 3) -> None:
+    """Protein-level yield (distinct accessions at R² cutoffs) + within-protein
+    k_deg consistency: MAD(k)/median(k) per (protein, condition) with ≥min_pep
+    converged peptides, then the median over proteins (a robust CV; ~20–25% is
+    typical for D₂O turnover, lower is better). ci/ce are reset-index frames."""
+    print("\n  Protein-level yield (distinct accessions at R² cutoff):")
+    for c in (0.95, 0.9, 0.8):
+        pe = int(ce.loc[ce["R_squared"] > c, "protein id"].nunique())
+        pi = int(ci.loc[ci["R_squared"] > c, "protein id"].nunique())
+        print(f"    R²>{c}: exclude {pe:,}  include {pi:,}  ({pi - pe:+,})")
+
+    def kcv(d: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        """Per (protein, condition) with ≥min_pep peptides: (linear robust CV
+        MAD/median, geometric robust CV 1.4826·MAD(ln k))."""
+        lin, geo = [], []
+        for _, k in (d.dropna(subset=["k_deg"])
+                     .groupby(["protein id", "condition"])["k_deg"]):
+            kk = k[k > 0].to_numpy()
+            if len(kk) < min_pep:
+                continue
+            med = float(np.median(kk))
+            if med > 0:
+                lin.append(float(np.median(np.abs(kk - med)) / med))
+            lk = np.log(kk)
+            geo.append(1.4826 * float(np.median(np.abs(lk - np.median(lk)))))
+        return np.array(lin), np.array(geo)
+
+    ce_lin, ce_geo = kcv(ce)
+    ci_lin, ci_geo = kcv(ci)
+    print(f"  Within-protein k_deg spread (≥{min_pep} peptides/protein, median over "
+          f"proteins; lower=tighter):")
+    print(f"    geometric robust CV [1.4826·MAD(ln k), scale-free / cross-dataset]: "
+          f"exclude {np.median(ce_geo):.1%}  include {np.median(ci_geo):.1%}  "
+          f"({(np.median(ci_geo) - np.median(ce_geo)) * 100:+.1f} pp, n={len(ci_geo):,})")
+    print(f"    linear MAD/median (robust CV):                                       "
+          f"exclude {np.median(ce_lin):.1%}  include {np.median(ci_lin):.1%}  "
+          f"({(np.median(ci_lin) - np.median(ce_lin)) * 100:+.1f} pp)")
+
+
 def ab(include_path: str, exclude_path: str) -> None:
     ci = _converged(include_path)   # real + MBR
     ce = _converged(exclude_path)   # real only
@@ -101,6 +140,8 @@ def ab(include_path: str, exclude_path: str) -> None:
         cells = [f"{b}: {g.dR2.median():+.3f}(n={len(g):,})"
                  for b, g in dose.groupby("fb", observed=True)]
         print("    ΔR² by MBR-fraction of curve: " + "  ".join(cells))
+
+    _protein_metrics(ci.reset_index(), ce.reset_index())
 
     # Verdict weighs the real harm (pollution of clean curves) and the realistic
     # in-vivo gate (R²>0.8); a noise-level change at the strict 0.95 gate is not a

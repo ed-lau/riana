@@ -169,6 +169,7 @@ def score_method(
     config: FitConfig,
     coeffs: dict[str, float],
     ria_default: float,
+    exclude_mbr: bool = False,
 ) -> pd.DataFrame:
     """Manifest → per-(condition, protein, stratum, sequence, timepoint) θ table.
 
@@ -185,6 +186,11 @@ def score_method(
         ria_default,
     )
     curves = recombine_for_fit(rows)
+    if exclude_mbr:
+        curves = {
+            k: (f[f["evidence"] != "mbr"] if "evidence" in f.columns else f)
+            for k, f in curves.items()
+        }
 
     parts = []
     for (_experiment, condition), frame in curves.items():
@@ -313,6 +319,7 @@ def compare_methods(
     coeffs: dict[str, float],
     ria_default: float,
     min_pep: int,
+    exclude_mbr: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
     """Score each named method's manifest on the frozen set; tabulate by method.
 
@@ -325,7 +332,8 @@ def compare_methods(
     for name, manifest in methods.items():
         t0 = time.time()
         print(f"[score] method {name!r} <- {manifest}", flush=True)
-        seq_cell = score_method(manifest, frozen_pep, config, coeffs, ria_default)
+        seq_cell = score_method(manifest, frozen_pep, config, coeffs, ria_default,
+                                exclude_mbr=exclude_mbr)
         summaries[name] = summarize(seq_cell, min_pep)
         all_cell = cell_spreads(seq_cell, min_pep)
         all_cell.insert(0, "method", name)
@@ -372,6 +380,11 @@ def main() -> None:
         "[default: 3].",
     )
     parser.add_argument(
+        "--exclude-mbr", action="store_true",
+        help="Drop evidence='mbr' integrate rows before scoring (the MBR A/B: "
+        "run once with and once without on the same --mbr manifest).",
+    )
+    parser.add_argument(
         "--min-peptides", type=int, default=3,
         help="Min distinct peptides for a (protein, timepoint) cell to score "
         "[default: 3].",
@@ -398,7 +411,8 @@ def main() -> None:
         f"{len(frozen_pep)} peptides; coefficients={args.coefficients}"
     )
     cells, summaries = compare_methods(
-        methods, frozen_pep, config, coeffs, args.ria, args.min_peptides
+        methods, frozen_pep, config, coeffs, args.ria, args.min_peptides,
+        exclude_mbr=args.exclude_mbr,
     )
 
     cells_path = args.output_dir / "within_protein_theta_cells.csv"

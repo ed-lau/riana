@@ -342,3 +342,33 @@ the in-vivo gates (0.7–0.8) with no clean-curve pollution**. Gate **defaults s
 `0` = the ungated footgun), **uncapped**; `--exclude-mbr` + the `n_mbr`/`n_clean`
 breakdown let users audit/compare. Stronger within-protein-θ (Track D) check pending
 as evaluation. Benches: `bench_mbr_ab.py` (A/B) + `bench_mbr_quality.py` (corridor/SNR).
+
+### Update 2026-06-19 — evals: yield-for-consistency tradeoff; calibration route
+
+Gated MBR (`runs/lve_atr_mbr_gated`) vs real-only, evaluation only:
+
+- **Protein-level yield** (`bench_mbr_ab.py`): proteins at R²>0.8 **1,606 → 1,643
+  (+37)**, R²>0.9 +8, R²>0.95 −5 (noise). Mirrors the peptide yield.
+- **Within-protein θ spread** (Track D, `bench_within_protein_theta --exclude-mbr`):
+  +470 (protein,timepoint) cells / +5 proteins, but the robust-SD θ (1.4826·MAD,
+  median over cells) **widens 0.1007 → 0.1042 (+3.5%)**.
+- **Within-protein k_deg spread** (`bench_mbr_ab.py`; ≥3 peptides/protein, median
+  over proteins): the recommended cross-dataset metric is the **geometric robust CV
+  `1.4826·MAD(ln k)`** (scale-free, log-normal-appropriate) — **44.9% → 48.5%
+  (+3.5 pp)**; linear MAD/median 28.8% → 31.6% (+2.8 pp).
+
+So all three consistency metrics agree: gated MBR **adds yield/coverage (+37 proteins
+at R²>0.8) at a small within-protein scatter cost** (θ +3.5%, k-CV +3.5 pp) — a
+yield-for-consistency tradeoff, which is why it ships **as an option** (gate-on,
+`--exclude-mbr` reverts). The calibration ground-truth |θ−f| is the accuracy
+tiebreaker (`bench_mbr_calibration.py`).
+
+**Calibration mzTab route works (with one caveat).** The D₂O mixing-series mzTabs
+(`data/calibration_{ac16,ipsc,cm}`) + SDRFs (with `characteristics[mixing
+proportion]`) drive `integrate --mbr` end-to-end (resolution handles `.mzML.gz` ↔
+`.raw` stem; `experiment_type=calibration` dispatches). Caveat: quantms searched the
+`.raw` (its built-in conversion), so the mzTab `retention_time` is OpenMS-aligned and
+the calibration's alignment offset (**2.16 min** median vs LVE's ≤0.9) trips the
+scan↔RT guard — **not a scramble** (those are ~25×). Use `--no-rt-check` (the
+extraction keys on the scan, not the reported RT; verify via mass accuracy). The
+guard's 2.0-min default may warrant a small bump for multi-day acquisition.
