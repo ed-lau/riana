@@ -1045,8 +1045,10 @@ it. Remaining M7 follow-ons and the next gaps, in order:
     high label** (|θ−f| 3× worse, biased toward θ≈0; even clean 8/9+1 fills are 38%
     in-corridor) — a high-label stress regime, so MBR is a **low-RIA-turnover coverage
     tool, not for high-label experiments**; the apex-on-suppressed-iso0 co-eluter is the
-    cause (deferred fix: tight `apex_search_half_width` for MBR). **Remaining:** rollup
-    `--exclude-mbr`; GUI MBR-point colouring; surface the gate-drop count. **Parked:** the
+    cause (deferred fix: tight `apex_search_half_width` for MBR). **v1 feature-complete
+    2026-06-20** (integrate→fit→rollup→GUI): rollup `--exclude-mbr` + `n_mbr/n_metox/
+    n_clean` census, GUI orange-triangle MBR points + table census, per-run gate-drop
+    count in the log. **Parked:** the
     sub-threshold *rescue* tier (mzTab is 1%-FDR pre-filtered — 179 PSMs in (0.01,0.02],
     0 above); **MBR-FDR is its own future study/report.** Pairs with the Track D
     missingness metric.

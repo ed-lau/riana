@@ -1,7 +1,7 @@
 # MBR v1 — design (mzTab/DDA path)
 
 - **Date:** 2026-06-17
-- **Status:** SHIPPED — gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3` default, uncapped). Fit A/B: ungated MBR is harmful, but gated MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates (+180 at R²>0.8) with no clean-curve pollution (see § Update 2026-06-18c). `--exclude-mbr` opts out.
+- **Status:** SHIPPED — **v1 feature-complete 2026-06-20** across integrate → fit → rollup → GUI. Gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3` default, uncapped); `--exclude-mbr` opts out at fit and rollup; MBR points marked in the GUI; `n_mbr/n_metox/n_clean` census + per-run drop count surfaced. Fit A/B: ungated MBR is harmful, but gated MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates (+180 at R²>0.8) with no clean-curve pollution (§ Update 2026-06-18c). **Accuracy caveat:** transferred quant is fine at low RIA (turnover) but mis-quantifies at high label (calibration |θ−f| 3× worse, § Update 2026-06-19) — opt-in coverage tool, not for high-label experiments.
 - **Precursor:** [missingness + RT-alignment measurement](2026-06-17_mbr_dda_feasibility.md) (GO for DDA)
 - **Roadmap:** `PROJECT_REVIEW.md` → Track A
 
@@ -395,3 +395,35 @@ on turnover data — **with a documented caveat that it is unsuitable for high-l
 experiments**. **Deferred fix** (tight `apex_search_half_width` for MBR rows, forcing the
 apex onto the trustworthy aligned anchor instead of the tallest in-window peak) is the
 likely remedy — parked for a later improvement round.
+
+### Update 2026-06-20 — v1 implementation complete (rollup + GUI + drop-count)
+
+The last implementation pieces from § "Output, marking, and data-point accounting"
+landed, so MBR v1 is feature-complete end-to-end:
+
+- **rollup** (`6a93f7a`): `riana rollup --exclude-mbr` drops `evidence='mbr'`
+  fraction points before the protein refit, and the protein output carries the
+  `n_mbr` / `n_metox` / `n_clean` census (both the kinetic and `linear simple`
+  schemas). The census is **raw** (peptide × biorep × timepoint) point counts, so it
+  is *not* on the same scale as the collapsed `n_points` — it answers "how many of
+  this protein's measurements are clean" (documented in `PROTEIN_COLUMNS`). To carry
+  the Met-Ox flag past the fit, a per-point `metox` column was threaded onto
+  `riana_fit_fractions.txt` alongside `evidence`. *Note:* the planned separate
+  `n_both` column was dropped — a both-MBR-and-Met-Ox point simply counts in `n_mbr`
+  **and** `n_metox` (and not in `n_clean`), which is unambiguous without a fourth
+  column. Validated on `runs/lve_atr_mbr_gated`: 2,128 proteins, `n_mbr` 7,987
+  (1,692 proteins MBR-touched), `n_metox` 0 (non-mods mzTab).
+- **GUI marking** (`19e4957`): the Model-tab curve draws MBR-transferred points as
+  **orange triangles** (legend `MBR (N)`) against the blue circles of direct IDs
+  (`evidence` carried as an in-memory list-cell on the fit frame); the per-peptide
+  `n_points/n_mbr/n_metox/n_clean` census shows in the result table. Protein-tab
+  points are collapsed across peptides (mixed evidence), so they are left unmarked.
+- **Gate-drop count** (`19e4957`): integrate stashes `n_mbr_dropped` on the result
+  `.attrs` (it survives the worker→main pickle, where the per-run worker log does
+  not); the main `finalize_run` loop now logs `wrote <run>  (N MBR kept, M
+  gated/no-apex)` per run when `--mbr` is on.
+
+What remains is **not** v1 scope — it is the deferred-improvement backlog: the
+high-label `apex_search_half_width` fix (above), the `scan↔RT` guard default bump for
+multi-day acquisition (calibration tripped at 2.16 min), the `--depth`-semantics
+spike, the sub-threshold rescue tier, and an MBR-FDR study.
