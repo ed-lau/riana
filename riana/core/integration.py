@@ -258,11 +258,14 @@ def integrate_run(
                     f"{check.median_offset_min:.2f} min over {check.n_checked} PSMs "
                     f"exceeds tol {check.tol_min:.1f} min "
                     f"({check.frac_within_tol:.0%} within tol). The mzTab spectra_ref "
-                    "scans do not line up with this mzML's retention times: most "
-                    "likely the quantms filename-prefix scan-scramble (zero-pad / "
-                    "de-prefix the mzML basenames before the quantms run) or a wrong "
-                    "mzML↔mzTab pairing. Override with --no-rt-check only if this run "
-                    "is knowingly correct."
+                    "scans do not line up with this mzML's retention times. Usually an "
+                    "underlying file mismatch — likely causes: (1) the search/quant ran "
+                    "on different source files than these mzML (e.g. the .raw with its "
+                    "own OpenMS-aligned RT vs the local .mzML) — for real runs, search "
+                    "the same mzML you integrate; (2) the quantms filename-prefix "
+                    "scan-scramble (zero-pad / de-prefix the mzML basenames before the "
+                    "quantms run); (3) a wrong mzML↔mzTab pairing. Override with "
+                    "--no-rt-check only if this run is knowingly correct."
                 )
             if check.n_checked > 0:
                 _LOGGER.info(

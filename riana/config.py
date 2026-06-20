@@ -166,10 +166,13 @@ class IntegrationConfig:
     #: only for a run you know is correctly paired.
     check_scan_rt: bool = True
     #: Median scan↔RT offset (RT minutes) above which :attr:`check_scan_rt`
-    #: errors. **Default 2.0** — clears the run-dependent ProteomicsLFQ alignment
-    #: offset (≤~0.9 min measured on real output) with margin, while a
-    #: scan-scrambled run sits tens of minutes off (~25× the threshold).
-    scan_rt_tol_min: float = 2.0
+    #: errors. **Default 3.0** — clears the run-dependent ProteomicsLFQ alignment
+    #: offset (≤~0.9 min measured on real output) and the larger residuals seen on
+    #: multi-day / cross-source acquisitions (calibration tripped at 2.16) with
+    #: margin, while a scan-scrambled run sits tens of minutes off (~10× the
+    #: threshold). Above ~3 the guard stops distinguishing a real misalignment
+    #: from a scramble, so it is the practical ceiling.
+    scan_rt_tol_min: float = 3.0
     #: --mbr. Enable match-between-runs (mzTab/DDA path): transfer a confidently
     #: identified precursor's identity + retention time into the runs of its
     #: ``(experiment, condition)`` turnover curve that missed it, so curve points
