@@ -61,22 +61,42 @@ class CurveView(QWidget):
         kinetic_kwargs: dict,
         ci_lo: float | None = None,
         ci_hi: float | None = None,
+        evidence: list[str] | None = None,
     ) -> None:
         """Scatter the (t, fs) data and overlay the fitted model curve.
 
         When ``ci_lo`` / ``ci_hi`` (the k_deg CI) are given, a shaded ribbon
         between the model curves at those k bounds shows the fit uncertainty.
+        When ``evidence`` (per-point ``q_value`` | ``mbr``, aligned to ``t``) is
+        given, match-between-runs points are drawn as orange triangles so the
+        transferred quant is visually distinct from the direct IDs.
         """
         self.plot.clear()
         if not t:
             self.show_placeholder(f"{concat}: no fitted data points.")
             return
 
-        # Observed fraction-new points.
-        self.plot.plot(
-            list(t), list(fs), pen=None,
-            symbol="o", symbolSize=8, symbolBrush="#1f77b4", name="observed",
-        )
+        # Observed fraction-new points — direct IDs (blue ○) vs MBR transfers
+        # (orange △), so the user can see which points were matched between runs.
+        ev = list(evidence) if evidence is not None and len(evidence) == len(t) else None
+        if ev is not None and any(e == "mbr" for e in ev):
+            direct = [(ti, fi) for ti, fi, e in zip(t, fs, ev) if e != "mbr"]
+            mbr = [(ti, fi) for ti, fi, e in zip(t, fs, ev) if e == "mbr"]
+            if direct:
+                self.plot.plot(
+                    [p[0] for p in direct], [p[1] for p in direct], pen=None,
+                    symbol="o", symbolSize=8, symbolBrush="#1f77b4", name="observed",
+                )
+            self.plot.plot(
+                [p[0] for p in mbr], [p[1] for p in mbr], pen=None,
+                symbol="t", symbolSize=10, symbolBrush="#ff7f0e",
+                symbolPen="#ff7f0e", name=f"MBR ({len(mbr)})",
+            )
+        else:
+            self.plot.plot(
+                list(t), list(fs), pen=None,
+                symbol="o", symbolSize=8, symbolBrush="#1f77b4", name="observed",
+            )
 
         # Fitted model curve on a dense grid, when k_deg converged.
         if k_deg is not None and math.isfinite(k_deg):

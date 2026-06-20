@@ -219,7 +219,11 @@ def integrate_project(
         row = finalize_run(config, task, df, out_dir, mztab_path)
         append_manifest(manifest_path, [row])
         new_rows[task.file_idx] = row
-        log.info("wrote %s", row.output_path)
+        n_mbr = int((df["evidence"] == "mbr").sum()) if "evidence" in df.columns else 0
+        dropped = int(df.attrs.get("n_mbr_dropped", 0))
+        suffix = (f"  ({n_mbr:,} MBR kept, {dropped:,} gated/no-apex)"
+                  if config.mbr and (n_mbr or dropped) else "")
+        log.info("wrote %s%s", row.output_path, suffix)
 
     by_idx = {**kept, **new_rows}
     return [by_idx[t.file_idx] for t in tasks if t.file_idx in by_idx]

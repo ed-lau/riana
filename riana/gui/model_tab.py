@@ -58,9 +58,10 @@ from riana.io.writers import (
 )
 
 # Result columns to show in the table (the per-peptide ``t`` / ``fs`` lists are
-# kept off-screen and used only for the curve plot).
+# kept off-screen and used only for the curve plot). The n_mbr / n_metox / n_clean
+# point census surfaces the MBR / Met-Ox composition alongside the kinetics.
 _DISPLAY_COLS = ["concat", "k_deg", "R_squared", "sd", "ci_lo", "ci_hi",
-                 "spep", "protein id"]
+                 "spep", "n_points", "n_mbr", "n_metox", "n_clean", "protein id"]
 
 
 class ModelTab(QWidget):
@@ -456,11 +457,13 @@ class ModelTab(QWidget):
             row = row.iloc[0]
         cfg = self._last_config
         kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
+        ev = row.get("evidence")
         self.curve.plot_fit(
             str(concat), list(row["t"]), list(row["fs"]),
             float(row["k_deg"]), cfg.model, kinetic,
             ci_lo=_safe_float(row.get("ci_lo")),
             ci_hi=_safe_float(row.get("ci_hi")),
+            evidence=list(ev) if ev is not None else None,
         )
 
     # --- small helpers ------------------------------------------------------ #

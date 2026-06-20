@@ -462,6 +462,10 @@ def integrate_run(
     # Stash the drift summary on the DataFrame as attrs so callers/writers can
     # emit the footer without re-computing.
     out.attrs["drift_summary"] = drift
+    # MBR gate drops happen here (in a worker on the --workers path), so the per-run
+    # INFO log never reaches the main logfile; stash the count for the main process
+    # (finalize_run) to surface.
+    out.attrs["n_mbr_dropped"] = n_mbr_dropped
     return out
 
 
