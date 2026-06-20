@@ -25,6 +25,7 @@ import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -169,6 +170,14 @@ class ModelTab(QWidget):
         self.qvalue_spin.setValue(0.01)
         form.addRow("Max q-value", self.qvalue_spin)
 
+        self.exclude_mbr_check = QCheckBox("Exclude match-between-runs points")
+        self.exclude_mbr_check.setChecked(False)
+        self.exclude_mbr_check.setToolTip(
+            "Drop MBR-transferred points (evidence='mbr') before fitting. MBR "
+            "points are used by default; tick to fit only directly-identified "
+            "points — the with/without-MBR A/B.")
+        form.addRow("MBR", self.exclude_mbr_check)
+
         self.kp_spin = self._rate_spin(0.5)
         form.addRow("k_p (guan/forn.)", self.kp_spin)
         self.kr_spin = self._rate_spin(0.05)
@@ -300,6 +309,7 @@ class ModelTab(QWidget):
             depth=int(self.depth_spin.value()),
             ria_max=float(self.ria_spin.value()),
             workers=int(self.workers_spin.value()),
+            exclude_mbr=self.exclude_mbr_check.isChecked(),
             out_dir=self.out_edit.text().strip() or ".",
         )
 
