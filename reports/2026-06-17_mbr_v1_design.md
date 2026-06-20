@@ -372,3 +372,26 @@ the calibration's alignment offset (**2.16 min** median vs LVE's ≤0.9) trips t
 scan↔RT guard — **not a scramble** (those are ~25×). Use `--no-rt-check` (the
 extraction keys on the scan, not the reported RT; verify via mass accuracy). The
 guard's 2.0-min default may warrant a small bump for multi-day acquisition.
+
+**Calibration θ-recovery (ac16; ground truth θ = mixing proportion f).**
+`bench_mbr_calibration.py` on `runs/cal_ac16_mbr` (mass accuracy **1.36 ppm** median →
+the local `.mzML.gz` scans truly correspond, so `--no-rt-check` was correct). Result:
+**MBR mis-quantifies θ** — overall |θ−f| **0.350 (mbr) vs 0.119 (real)**, ~3× worse,
+with a strong **bias toward θ≈0** that grows with f (at f=0.875 the MBR bias is −0.98 →
+θ≈0, an *unlabelled* envelope at an 87.5%-labelled proportion). The targeted clean case
+is no better: for peptides with **8/9 proportions directly quantified + 1 MBR fill**,
+the MBR point is in-corridor only **38%** (vs **86%** for held-out real points in
+9/9-complete peptides), |θ−f| 0.33 (n=34; ac16 is shallow). So the error is the
+**extraction at high label** — MBR's apex re-detect on a *suppressed* iso0 latches onto
+a co-eluting unlabelled species — **not** the MBR fraction; capping won't fix it.
+
+**Scope + verdict.** The calibration is a high-label **stress test** (fully-labelled
+RIA 6% mixed with unlabelled → iso0 deeply suppressed), the worst case for apex-on-iso0.
+**LVE turnover (RIA ~4.6%) keeps iso0 dominant**, which is why its evals were mild
+(+3.5% scatter, +37 proteins at R²>0.8). So MBR's transferred *quant* is fine for
+**low-RIA turnover** but **degrades with labelling level** (biased low). Ship gated MBR
+as the **opt-in coverage tool** it is — a small yield gain for a small consistency cost
+on turnover data — **with a documented caveat that it is unsuitable for high-label
+experiments**. **Deferred fix** (tight `apex_search_half_width` for MBR rows, forcing the
+apex onto the trustworthy aligned anchor instead of the tallest in-window peak) is the
+likely remedy — parked for a later improvement round.

@@ -1037,8 +1037,16 @@ it. Remaining M7 follow-ons and the next gaps, in order:
     MBR is harmful (R²>0.95 −30%, pollutes clean curves), but *gated* MBR is neutral at
     strict R²>0.95 and **net-positive at the in-vivo gates (+180 at R²>0.8) with no
     pollution**; cap-fraction guards would hurt (value is in the high-fraction
-    point-starved rescues) → ship **uncapped**. **Pending:** within-protein-θ (Track D)
-    as evaluation; GUI MBR-point colouring; rollup `--exclude-mbr`. **Parked:** the
+    point-starved rescues) → ship **uncapped**. **Evals done** (2026-06-19,
+    evaluation-only): within-protein-θ (Track D) + protein yield + within-protein
+    k_deg geometric CV all show a *yield-for-consistency tradeoff* (+37 proteins at
+    R²>0.8 for ~+3.5% within-protein scatter — reasonable); but the **calibration
+    ground-truth |θ−f|** (ac16 mzTab via `--no-rt-check`) shows MBR **mis-quantifies at
+    high label** (|θ−f| 3× worse, biased toward θ≈0; even clean 8/9+1 fills are 38%
+    in-corridor) — a high-label stress regime, so MBR is a **low-RIA-turnover coverage
+    tool, not for high-label experiments**; the apex-on-suppressed-iso0 co-eluter is the
+    cause (deferred fix: tight `apex_search_half_width` for MBR). **Remaining:** rollup
+    `--exclude-mbr`; GUI MBR-point colouring; surface the gate-drop count. **Parked:** the
     sub-threshold *rescue* tier (mzTab is 1%-FDR pre-filtered — 179 PSMs in (0.01,0.02],
     0 above); **MBR-FDR is its own future study/report.** Pairs with the Track D
     missingness metric.
