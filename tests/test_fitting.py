@@ -202,6 +202,31 @@ def test_fit_run_filters_by_depth():
         fit_run(config, short_dfs, coeffs, n_boot=10)
 
 
+def test_depth_counts_distinct_timepoints_not_psm_rows():
+    """Modern path: depth is distinct labeling timepoints, not raw PSM rows.
+
+    A peptidoform with >= depth rows but < depth distinct timepoints (repeated in
+    2D-LC fractions / technical replicates at one timepoint) must be filtered —
+    counting rows would admit a curve a one-exponent fit can't identify.
+    """
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
+    for ti, df in zip(_TIMES, dfs):
+        df["labeling_time"] = float(ti)
+        df["biological_replicate"] = 1
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+
+    # 3 PSM rows but only 2 distinct timepoints (t0 repeated) -> filtered out.
+    repeated = [dfs[0], dfs[1], dfs[0].copy()]
+    with pytest.raises(ValueError, match="No peptides survive"):
+        fit_run(cfg, repeated, coeffs, n_boot=10, time_column="labeling_time")
+
+    # 3 distinct timepoints -> qualifies.
+    out = fit_run(cfg, dfs[:3], coeffs, n_boot=10, time_column="labeling_time")
+    assert len(out) == 1
+
+
 def test_fit_run_rejects_unknown_model():
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)

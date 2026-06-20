@@ -295,7 +295,12 @@ class FitConfig:
     r_p: float = 10.0
     #: -q / --q_value. Fit only data points with q-value below this.
     q_value: float = 1e-2
-    #: -d / --depth. Fit only peptides seen in at least this many samples.
+    #: -d / --depth. Fit only peptidoforms observed at >= this many **distinct
+    #: labeling timepoints** within an (experiment, condition) — the kinetic-
+    #: identifiability quantity (a one-exponent curve needs that many distinct x).
+    #: Robust to PSM / technical-replicate / 2D-LC-fraction / peptidoform / MBR
+    #: multiplicity at a single timepoint (those are one kinetic point, not many);
+    #: the raw point count stays visible via ``n_points``.
     depth: int = 3
     #: --exclude-mbr. Drop match-between-runs data points (``evidence == "mbr"``)
     #: before fitting. MBR points are **used by default** (the whole point of

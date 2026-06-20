@@ -169,6 +169,25 @@ curves change qualification under rows vs distinct-timepoints, with/without MBR,
 LVE/ATR + the DIA (3 tp × 3 rep) set — then flip the default. (Per maintainer: this is
 its own spike; Met-Ox-counting reactivity rides along.)
 
+**Resolved 2026-06-20.** `tests/benchmark/bench_depth_semantics.py` on LVE/ATR (24 runs,
+2 conditions, replicating the real fit assembly): the modern gate counted **raw PSM
+rows** (median 5/curve, p90 16, max 431) with no recombine before it, while distinct
+labeling timepoints is median 5. Flipping to **distinct-timepoint** counting at the
+default depth=3 changes only **131 / 22,765 curves (0.6%)** — exactly the
+kinetically-unidentifiable ones (≥3 rows but <3 distinct x). Shipped the harmonization
+(`fitting.py` modern path → `x[time].nunique() >= depth`; the legacy path was already
+`sample.nunique`); `n_points` keeps the raw count. *With* MBR fewer curves flip (131 vs
+159 clean) — MBR restores real timepoints, the intended benefit. Confirmed by the
+maintainer: **(peptidoform, condition, distinct timepoint)** is the right depth key.
+
+**Follow-up (separate, tracked).** The gate now correctly ignores multi-file
+multiplicity at one timepoint, but the **fit still treats those rows as independent
+(t, θ) points** (pseudo-replication). LVE/ATR has 1 file per (condition, timepoint), but
+**published 2D-LC / technical-replicate data has many** — there the per-fraction signal
+should be *summed/merged* per (peptidoform, condition, timepoint) before computing θ, not
+weighted as independent draws. Needs a fractionated test file + a collapse policy — its
+own fitting-science item (Track C), noted in memory.
+
 ### Apex false-peak rate on absent precursors
 See *graceful failure* above. Measure how often `detect_peak` returns a (spurious) apex
 when a precursor is genuinely absent, to decide whether the 3×MAD prominence gate needs

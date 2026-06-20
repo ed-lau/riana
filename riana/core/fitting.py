@@ -294,11 +294,16 @@ def fit_run(
                 f"time_column {time_column!r} not in the integrate frames "
                 f"(have {list(rdf.columns)}). The pipeline must add it."
             )
-        # Rows are already recombined to one point per (peptide, biorep,
-        # timepoint); depth = number of distinct points per merged peptidoform.
+        # depth = distinct labeling timepoints per merged peptidoform — the
+        # kinetic-identifiability quantity (a one-exponent curve needs >= depth
+        # distinct x to constrain k). NOT raw PSM rows: a peptidoform seen many
+        # times at one timepoint is a single kinetic point, and counting rows
+        # would admit curves a fit can't identify. Robust to PSM / replicate /
+        # peptidoform / MBR multiplicity; the raw count stays visible via
+        # n_points. (Harmonizes with the legacy path's sample.nunique below.)
         rdf = (
             rdf.groupby("fit_key", group_keys=False)
-            .filter(lambda x: len(x) >= config.depth)
+            .filter(lambda x: x[time_column].nunique() >= config.depth)
             .copy()
         )
     else:

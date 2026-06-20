@@ -397,7 +397,9 @@ def fit(
         help="Fit only data points with q-value below this [default: 1e-2]."),
     depth: int = typer.Option(
         3, "-d", "--depth",
-        help="Fit only peptides seen in at least this many samples [default: 3]."),
+        help="Fit only peptidoforms seen at this many distinct labeling "
+        "timepoints (per condition) [default: 3]. Counts distinct timepoints, "
+        "not raw PSM rows — repeats at one timepoint don't count toward depth."),
     ria: float = typer.Option(
         0.06, "-r", "--ria",
         help="Precursor enrichment level (asymptotic D2O fraction, e.g. 0.06 "
