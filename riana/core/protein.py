@@ -110,9 +110,15 @@ _GROUP_KEYS = list(PROTEIN_KEY_COLUMNS)
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
 #: the selected ``method``; ``peptide_median_k`` is the near-free median of the
 #: peptides' fitted k, carried for comparison regardless of method.
+#: ``n_mbr`` / ``n_metox`` / ``n_clean`` are the **raw** (peptide × biorep ×
+#: timepoint) fraction-point composition — how many measurements came from MBR
+#: transfers / Met-Ox-merged forms / neither — so they are *not* on the same scale
+#: as ``n_points`` (the collapsed per-timepoint refit points); they answer "how
+#: many of this protein's data points are clean".
 PROTEIN_COLUMNS = [
     *PROTEIN_KEY_COLUMNS, "method",
     "n_peptides", "n_replicates", "n_timepoints", "n_points",
+    "n_mbr", "n_metox", "n_clean",
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
 ]
 
@@ -122,6 +128,7 @@ PROTEIN_COLUMNS = [
 #: contrast p, and the Benjamini-Hochberg p across proteins).
 PROTEIN_LINEAR_COLUMNS = [
     *PROTEIN_KEY_COLUMNS, "method", "n_peptides", "n_points",
+    "n_mbr", "n_metox", "n_clean",
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
     "delta_k", "delta_k_se", "delta_k_p", "delta_k_p_adj",
 ]
@@ -150,6 +157,7 @@ def rollup_proteins(
     random_state: int = 1337,
     phi_limit: float = -4.0,
     reference_condition: str | None = None,
+    exclude_mbr: bool = False,
 ) -> pd.DataFrame:
     """Roll per-peptide fits up to one ``k_deg`` per ``(experiment, condition,
     protein)`` via the median and the biorep-aware weighted refit.
@@ -223,6 +231,11 @@ def rollup_proteins(
     peptides = _apply_parsimony(peptides, mapping)
     fractions = _apply_parsimony(fractions, mapping)
 
+    # --exclude-mbr: drop match-between-runs data points before the rollup refit
+    # (MBR points are used by default). No-op when the column is absent.
+    if exclude_mbr and "evidence" in fractions.columns:
+        fractions = fractions[fractions["evidence"] != "mbr"].copy()
+
     # Optional peptide R² admission gate (off by default).
     if min_r2 is not None:
         admitted = _r2_admitted(peptides, min_r2, alt_k, alt_se, alt_r2)
@@ -230,6 +243,13 @@ def rollup_proteins(
         fractions = fractions[fractions["concat"].isin(admitted)].copy()
 
     stats = _peptide_stats(peptides, min_peptides=min_peptides)
+    # Per-protein data-point census from the (filtered) fraction points: how many
+    # are MBR transfers / Met-Ox-merged / clean — so the protein k carries the same
+    # composition columns as the per-peptide fit output. Merged into stats so both
+    # the kinetic and linear paths emit them.
+    stats = stats.merge(_breakdown_stats(fractions), on=_GROUP_KEYS, how="left")
+    for col in ("n_mbr", "n_metox", "n_clean"):
+        stats[col] = stats[col].fillna(0).astype(int)
 
     if model == LINEAR_MODEL:
         return _rollup_linear(
@@ -508,6 +528,32 @@ def _peptide_stats(peptides: pd.DataFrame, *, min_peptides: int) -> pd.DataFrame
         })
     return pd.DataFrame(
         rows, columns=_GROUP_KEYS + ["n_peptides", "peptide_median_k"])
+
+
+def _breakdown_stats(fractions: pd.DataFrame) -> pd.DataFrame:
+    """Per-protein fraction-point census: n_mbr / n_metox / n_clean.
+
+    Counts the raw ``(concat, biorep, timepoint)`` points by their per-point
+    ``evidence`` (``q_value`` | ``mbr``) and ``metox`` flag (both on
+    ``riana_fit_fractions.txt``). A point that is both MBR and Met-Ox lands in
+    n_mbr and n_metox but not n_clean (matching the per-peptide fit breakdown).
+    Absent columns (pre-MBR / pre-M7 runs) default to clean.
+    """
+    f = fractions
+    is_mbr = (f["evidence"].astype(str) == "mbr"
+              if "evidence" in f.columns else pd.Series(False, index=f.index))
+    if "metox" in f.columns and f["metox"].dtype == bool:
+        is_metox = f["metox"]
+    elif "metox" in f.columns:
+        is_metox = f["metox"].astype(str).str.strip().str.lower().isin(("true", "1"))
+    else:
+        is_metox = pd.Series(False, index=f.index)
+    g = f.assign(
+        n_mbr=is_mbr.astype(int),
+        n_metox=is_metox.astype(int),
+        n_clean=(~is_mbr & ~is_metox).astype(int),
+    ).groupby(_GROUP_KEYS, sort=False)[["n_mbr", "n_metox", "n_clean"]].sum()
+    return g.reset_index()
 
 
 # --------------------------------------------------------------------------- #

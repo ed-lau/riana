@@ -145,6 +145,9 @@ class FitResult:
     #: Per-point provenance, aligned 1:1 with ``t``/``fs``: ``"q_value"`` (direct
     #: ID) or ``"mbr"`` (transferred). Lets the rollup/GUI weight or colour points.
     evidence: list[str] = field(default_factory=list)
+    #: Per-point Met-Ox flag, aligned 1:1 with ``t``/``fs`` (the point came from a
+    #: chemical-mod peptidoform merged at fit). Carries the breakdown to the rollup.
+    metox: list[bool] = field(default_factory=list)
     #: Census of the **fitted** points (a curve's composition): total, the count
     #: from MBR transfers, the count from Met-Ox peptidoforms merged at fit (M7
     #: tier 1b), and the count that are neither ("clean"). A point that is both MBR
@@ -609,6 +612,7 @@ def _fit_one_concat(
         fs_hi=fs_hi,
         bio_rep=[int(b) for b in bio_rep_arr[fit_mask]],
         evidence=["mbr" if m else "q_value" for m in mbr_fit],
+        metox=[bool(m) for m in metox_fit],
         n_points=int(fit_mask.sum()),
         n_mbr=int(mbr_fit.sum()),
         n_metox=int(metox_fit.sum()),
@@ -668,7 +672,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
 #: Column order for the M5 long-format per-timepoint fraction-new table.
 _FRACTIONS_LONG_COLUMNS = [
     "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-    "fs", "fs_lower", "fs_upper", "evidence",
+    "fs", "fs_lower", "fs_upper", "evidence", "metox",
 ]
 
 #: Per-timepoint list-cell columns on the wide per-peptide frame. They duplicate
@@ -702,8 +706,9 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
         if r is None:
             continue
         ev = r.evidence if len(r.evidence) == len(r.t) else ["q_value"] * len(r.t)
-        for ti, fsi, lo, hi, br, evi in zip(
-            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev
+        mx = r.metox if len(r.metox) == len(r.t) else [False] * len(r.t)
+        for ti, fsi, lo, hi, br, evi, mxi in zip(
+            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev, mx
         ):
             rows.append({
                 "concat": r.concat,
@@ -715,5 +720,6 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
                 "fs_lower": float(lo),
                 "fs_upper": float(hi),
                 "evidence": evi,
+                "metox": bool(mxi),
             })
     return pd.DataFrame(rows, columns=_FRACTIONS_LONG_COLUMNS)

@@ -623,6 +623,11 @@ def rollup(
         "parallelism lever for the GIL-bound rollup: dispatches proteins over a "
         "process pool. Results are identical regardless of N (per-protein "
         "deterministic seed)."),
+    exclude_mbr: bool = typer.Option(
+        False, "--exclude-mbr",
+        help="Drop match-between-runs fraction points (evidence='mbr') before the "
+        "protein refit. MBR points are used by default; the n_mbr / n_clean output "
+        "columns report the composition either way."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -694,6 +699,7 @@ def rollup(
             min_points=int(min_points), min_r2=min_r2,
             alt_k=float(alt_k), alt_se=float(alt_se), workers=int(workers),
             phi_limit=float(phi_limit), reference_condition=reference_condition,
+            exclude_mbr=bool(exclude_mbr),
         )
     except (DataError, NotImplementedError) as exc:
         raise typer.BadParameter(str(exc)) from exc

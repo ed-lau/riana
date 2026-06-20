@@ -217,6 +217,23 @@ def test_pooled_method_uses_all_points():
     assert out.loc["P0", "n_points"] == 15        # all peptide×timepoint points
 
 
+def test_rollup_breakdown_and_exclude_mbr():
+    """n_mbr/n_metox/n_clean census + the --exclude-mbr filter at the rollup."""
+    pep, frac = _make_frames({"sp|P1|X": 0.5}, n_pep=3)  # 3 pep × 5 tp = 15 points
+    frac["evidence"] = "q_value"
+    frac["metox"] = False
+    frac.loc[frac["labeling_time"] == 0.5, "evidence"] = "mbr"   # 3 MBR points
+    frac.loc[frac["labeling_time"] == 1.0, "metox"] = True       # 3 Met-Ox points
+
+    inc = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
+    assert inc.loc["P1", ["n_mbr", "n_metox", "n_clean"]].tolist() == [3, 3, 9]
+
+    exc = rollup_proteins(pep, frac, n_boot=20, exclude_mbr=True).set_index("protein")
+    # the 3 MBR points (t=0.5) are dropped; the 3 Met-Ox (t=1.0) remain.
+    assert exc.loc["P1", "n_mbr"] == 0
+    assert exc.loc["P1", ["n_metox", "n_clean"]].tolist() == [3, 9]
+
+
 def test_bioreps_are_independent_refit_points():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2))
     out = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
