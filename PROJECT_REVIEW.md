@@ -1113,6 +1113,19 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   it through `fit_run` → `fit_project` (tagged with experiment/condition) → CLI;
   the wide `riana_fit_peptides.txt` also gains `fs_lower`/`fs_upper` list-cells
   for the GUI curve view. **This is the substrate the protein rollup consumes.**
+- **2D-LC / technical-replicate fraction collapse (NEW 2026-06-20, surfaced in the
+  `--depth` spike).** The depth gate now counts **distinct labeling timepoints**, so
+  multi-file multiplicity at one timepoint no longer inflates qualification. But the
+  **fit still treats every PSM row at the same (peptidoform, condition, timepoint) as
+  an independent (t, θ) point** (`_fit_one_concat` / `build_fractions_long`) —
+  pseudo-replication. LVE/ATR has 1 file per (condition, timepoint), but the mzTab/SDRF
+  design explicitly allows **multiple files per condition**: technical replicates and
+  **2D-LC chromatographic fractions** (standard in published deep-proteome D₂O data, run
+  to get greater depth). There a peptide's signal is *split across fractions* and should
+  be **summed/merged per (peptidoform, condition, timepoint, charge) before computing
+  θ**, not weighted as independent draws (which both fakes precision and biases θ when a
+  fraction sees only part of the envelope). **Needs** a fractionated D₂O test dataset (we
+  have none yet) + a collapse policy; memory `track_c_fraction_collapse_gap`.
 - **Fit-model set + the calibration model.** The kinetic models `{simple, guan,
   fornasiero}` are *all wired end-to-end* already (models math lifted unchanged;
   `_MODELS` dispatch → `curve_fit`; CLI `--model`; `FitConfig.model` validation;
