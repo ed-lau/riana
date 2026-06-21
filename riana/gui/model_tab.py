@@ -61,7 +61,12 @@ from riana.io.writers import (
 # Result columns to show in the table (the per-peptide ``t`` / ``fs`` lists are
 # kept off-screen and used only for the curve plot). The n_mbr / n_metox / n_clean
 # point census surfaces the MBR / Met-Ox composition alongside the kinetics.
-_DISPLAY_COLS = ["concat", "k_deg", "R_squared", "sd", "ci_lo", "ci_hi",
+# ``experiment``/``condition`` are present only on the manifest (multi-group) path
+# — a peptide then has one result row per group, so they must be shown for the
+# rows to be distinguishable (and for the curve to plot the selected group, not
+# just the first). They are dropped silently on the single-file path.
+_DISPLAY_COLS = ["concat", "experiment", "condition",
+                 "k_deg", "R_squared", "sd", "ci_lo", "ci_hi",
                  "spep", "n_points", "n_mbr", "n_metox", "n_clean", "protein id"]
 
 
@@ -250,6 +255,7 @@ class ModelTab(QWidget):
         self.model = DataFrameTableModel()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.table.setSortingEnabled(True)
         self.table.selectionModel().currentRowChanged.connect(self._on_row_changed)
         results_split.addWidget(self.table)
 
@@ -459,12 +465,16 @@ class ModelTab(QWidget):
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if not current.isValid() or self._running or self._result_df is None:
             return
-        concat = self.model.dataframe.iloc[current.row()]["concat"]
+        sel = self.model.dataframe.iloc[current.row()]
+        concat = sel["concat"]
         if concat not in self._result_df.index:
             return
         row = self._result_df.loc[concat]
         if isinstance(row, pd.DataFrame):  # manifest path: same peptide, >1 group
-            row = row.iloc[0]
+            # One result row per (experiment, condition); plot the group the
+            # selected table row belongs to, not just the first — else the curve
+            # silently shows a different condition than the row's n_* counts.
+            row = _match_group(row, sel)
         cfg = self._last_config
         kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
         ev = row.get("evidence")
@@ -476,6 +486,8 @@ class ModelTab(QWidget):
             ci_hi=_safe_float(row.get("ci_hi")),
             evidence=list(ev) if ev is not None else None,
             metox=list(mx) if mx is not None else None,
+            protein=row.get("protein id"),
+            condition=row.get("condition"),
         )
 
     # --- small helpers ------------------------------------------------------ #
@@ -491,6 +503,22 @@ class ModelTab(QWidget):
     def _fail(self, message: str) -> None:
         self.error_label.setText(message)
         self._info(f"error: {message}")
+
+
+def _match_group(rows: pd.DataFrame, sel: pd.Series) -> pd.Series:
+    """Pick the result row whose group matches the selected table row.
+
+    On the manifest path a peptide has one result row per ``(experiment,
+    condition)`` group; the curve must plot the group the user selected. Match on
+    whichever group keys both frames carry; fall back to the first row if the
+    selection is ambiguous (e.g. group columns absent), preserving prior behaviour.
+    """
+    mask = pd.Series(True, index=rows.index)
+    for key in ("experiment", "condition"):
+        if key in rows.columns and key in sel.index:
+            mask &= rows[key] == sel[key]
+    matched = rows[mask]
+    return matched.iloc[0] if len(matched) else rows.iloc[0]
 
 
 def _row(layout) -> QWidget:

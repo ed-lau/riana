@@ -742,11 +742,15 @@ site updated to 1.0.0). The next gaps, in order:
    unlocks the orthogonal mass-defect θ estimator and subsumes TMT's precursor-mass
    path. Full design + the H4′ normalize-before-truncate constraint in **Track B**;
    memory `m8_adaptive_niso_robust_envelope`.
-2. **GUI/UX responsiveness — sortable tables + large-table performance (Track E,
-   easy wins).** `QSortFilterProxyModel` over `DataFrameTableModel` for sortable
-   result tables, and make the table views responsive on large result sets
-   (virtualized/lazy rendering, avoid full-frame rebuilds on update). Independent of
-   the engine work; good interleave with #1. See Track E.
+2. **GUI/UX easy wins (Track E) — sortable tables + graph export DONE 2026-06-21.**
+   All three tabs now sort on header click via a pandas-backed
+   `DataFrameTableModel.sort()` (model-internal, *not* a proxy — keeps numeric
+   order numeric and the `iloc[row]` selection mapping intact; the vectorised sort
+   is also the large-table-responsiveness win), and the chromatogram + curve views
+   got a PNG "Save graph…" button (`riana/gui/export.py`) replacing `--plotcurves`.
+   Remaining Track E items deferred to future sessions: faithful-to-smoothing
+   chromatogram trace, Δmass-over-time QC (couple it to #1), matplotlib static/SVG
+   export, fit progress + real parallelism, modernize look. See Track E.
 3. **Cut the `v1.0.0` git tag + Zenodo DOI (release action — maintainer).** The
    code is already `1.0.0` and the repo audited clean (2026-06-21; see Cross-cutting
    chores) — what's left is the release decision: merge `m3-rewrite` → `master`,
@@ -1318,10 +1322,23 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
 
 #### Track E — GUI/UX & responsiveness (surfaces the engines above)
 
-- **Sortable tables** (`QSortFilterProxyModel` over `DataFrameTableModel`) — an
-  easy win.
-- **Save/export graphs** — replaces the removed `--plotcurves`; pyqtgraph export
-  for interactive views, matplotlib for static; all tabs.
+- **Sortable tables — DONE 2026-06-21.** All three tabs (Integrate/Model/Protein)
+  set `setSortingEnabled(True)`; sorting is implemented as `DataFrameTableModel.sort()`
+  reordering the backing frame in **pandas** (not a `QSortFilterProxyModel`). Two
+  reasons the model-internal sort beat the proxy here: numeric columns sort by
+  value, not by the `:.4g` display string (lexicographic `"100" < "9"`), and the
+  row-click handlers keep using `dataframe.iloc[row]` directly with no
+  `mapToSource` translation — the proxy would have silently mis-mapped every
+  selection. The vectorised pandas sort is also the **large-table responsiveness**
+  win: a proxy comparing cells in Python doesn't scale to large result frames.
+- **Save/export graphs — DONE 2026-06-21 (PNG).** A "Save graph…" button under the
+  chromatogram + fitted-curve views exports the live `PlotItem` via pyqtgraph's
+  `ImageExporter` (`riana/gui/export.py`); replaces the removed `--plotcurves`.
+  Disabled in the placeholder state. **Raster only:** pyqtgraph's `SVGExporter`
+  throws on plots with scatter symbols (the observed-point / fold series these
+  views always draw), so SVG was dropped rather than ship a button that crashes on
+  the common case. A faithful **matplotlib static** export remains a future option
+  if a vector figure is needed.
 - **Δmass-over-time QC display** — the near-term half of dual-mode FS: surface
   the per-isotopomer accurate-mass shift over the init envelope across the time
   series, a high-level QC for advanced users.

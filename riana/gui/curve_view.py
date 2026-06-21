@@ -15,9 +15,11 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
 from riana.core import models
+from riana.gui.export import save_plot
+from riana.gui.plotting import plot_with_external_legend
 
 # Kinetic-model name → function (same mapping fit_run uses).
 _MODEL_FNS = {
@@ -38,18 +40,32 @@ class CurveView(QWidget):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.plot = pg.PlotWidget()
-        self.plot.setBackground("w")
-        self.plot.addLegend()
+        # Legend in its own column (outside the data area) so its MBR/fold sample
+        # glyphs can't be mistaken for plotted points. ``_legend_vb`` must be
+        # retained or the anchored legend loses its host.
+        self._plot_widget, self.plot, self._legend_vb = plot_with_external_legend()
         self.plot.setLabel("bottom", "Time")
         self.plot.setLabel("left", "Fraction new")
         self.plot.showGrid(x=True, y=True, alpha=0.2)
-        layout.addWidget(self.plot)
+        layout.addWidget(self._plot_widget)
+
+        controls = QHBoxLayout()
+        controls.addStretch(1)
+        self.save_button = QPushButton("Save graph…")
+        self.save_button.clicked.connect(self._on_save)
+        controls.addWidget(self.save_button)
+        layout.addLayout(controls)
+
+        self._title = "fit"
         self.show_placeholder("Run a fit, then select a peptide.")
 
     def show_placeholder(self, message: str) -> None:
         self.plot.clear()
         self.plot.setTitle(message)
+        self.save_button.setEnabled(False)
+
+    def _on_save(self) -> None:
+        save_plot(self.plot, self, default_name=self._title)
 
     def plot_fit(
         self,
@@ -63,8 +79,14 @@ class CurveView(QWidget):
         ci_hi: float | None = None,
         evidence: list[str] | None = None,
         metox: list[bool] | None = None,
+        protein: str | None = None,
+        condition: str | None = None,
     ) -> None:
         """Scatter the (t, fs) data and overlay the fitted model curve.
+
+        ``protein`` and ``condition`` (when given) join ``concat`` in the plot
+        title so an exported figure identifies which protein and — for a
+        multi-condition manifest fit — which condition group it shows.
 
         When ``ci_lo`` / ``ci_hi`` (the k_deg CI) are given, a shaded ribbon
         between the model curves at those k bounds shows the fit uncertainty.
@@ -87,6 +109,10 @@ class CurveView(QWidget):
         if not t:
             self.show_placeholder(f"{concat}: no fitted data points.")
             return
+        self._title = "_".join(
+            str(p) for p in (concat, condition) if p
+        ).replace("|", "_").replace("/", "_")  # export filename
+        self.save_button.setEnabled(True)
 
         ev = list(evidence) if evidence is not None and len(evidence) == len(t) else None
         mx = list(metox) if metox is not None and len(metox) == len(t) else None
@@ -138,7 +164,8 @@ class CurveView(QWidget):
             )
         self.plot.setYRange(0.0, 1.0)
         self.plot.setLabel("left", "Fraction new")
-        self.plot.setTitle(concat)
+        header = "  •  ".join(str(p) for p in (concat, protein, condition) if p)
+        self.plot.setTitle(header)
 
     def _ci_band(self, x, lower, upper, rgb: tuple) -> None:
         """Shade a confidence ribbon between *lower* and *upper* over *x*.
@@ -179,6 +206,8 @@ class CurveView(QWidget):
         if not per_condition:
             self.show_placeholder(f"{protein}: no points to show.")
             return
+        self._title = protein
+        self.save_button.setEnabled(True)
 
         t_max = 1.0
         for i, cond in enumerate(sorted(per_condition)):

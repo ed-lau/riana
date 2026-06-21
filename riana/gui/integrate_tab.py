@@ -397,6 +397,7 @@ class IntegrateTab(QWidget):
         self.model = DataFrameTableModel()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.table.setSortingEnabled(True)
         self.table.selectionModel().currentRowChanged.connect(self._on_row_changed)
         results_split.addWidget(self.table)
 

@@ -18,6 +18,7 @@ import qasync
 from PySide6.QtWidgets import QApplication
 
 from riana.gui.main_window import MainWindow
+from riana.gui.resources import app_icon
 
 
 def run_gui() -> int:
@@ -27,6 +28,10 @@ def run_gui() -> int:
     each tab's ``-W`` workers); there is no thread knob.
     """
     app = QApplication.instance() or QApplication(sys.argv)
+    # Application-level icon (Dock / taskbar). On macOS the Dock icon of an
+    # unbundled `python` process is owned by the launcher, so this mainly drives
+    # the window icon; a true Dock icon needs an .app bundle.
+    app.setWindowIcon(app_icon())
 
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)

@@ -301,10 +301,10 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
 
     tab.table.setCurrentIndex(tab.model.index(0, 0))
 
-    curves = [it for it in tab.curve.plot.getPlotItem().items
+    curves = [it for it in tab.curve.plot.items
               if isinstance(it, PlotDataItem)]
     assert len(curves) == 2  # collapsed points scatter + fitted refit line
-    assert tab.curve.plot.getPlotItem().titleLabel.text == "P1"
+    assert tab.curve.plot.titleLabel.text == "P1"
 
 
 def test_protein_tab_linear_model_toggles_and_params(main_window):
@@ -348,11 +348,11 @@ def test_protein_tab_linear_plots_phi_space(main_window):
 
     tab.table.setCurrentIndex(tab.model.index(0, 0))
 
-    curves = [it for it in tab.curve.plot.getPlotItem().items
+    curves = [it for it in tab.curve.plot.items
               if isinstance(it, PlotDataItem)]
     # Two conditions × (points scatter + k line) = 4 data items.
     assert len(curves) >= 4
-    assert "Δk" in tab.curve.plot.getPlotItem().titleLabel.text
+    assert "Δk" in tab.curve.plot.titleLabel.text
 
 
 def test_curve_view_draws_ci_ribbon(main_window):
@@ -363,7 +363,7 @@ def test_curve_view_draws_ci_ribbon(main_window):
     cv = main_window.protein_tab.curve
     cv.plot_fit("PEP", [0, 1, 2, 4, 8], [0, 0.3, 0.5, 0.7, 0.85], 0.2,
                 "simple", {}, ci_lo=0.15, ci_hi=0.25)
-    items = cv.plot.getPlotItem().items
+    items = cv.plot.items
     assert sum(isinstance(i, FillBetweenItem) for i in items) == 1
     assert sum(isinstance(i, PlotDataItem) for i in items) == 2  # points + fit line
 
@@ -371,7 +371,7 @@ def test_curve_view_draws_ci_ribbon(main_window):
         "control": ([0, 1, 2, 4, 8], [0, .05, .1, .18, .3], 0.05, 0.04, 0.06),
         "atrium": ([0, 1, 2, 4, 8], [0, .1, .19, .33, .55], 0.10, 0.09, 0.11),
     }, phi_limit=-4.0, delta_k=0.05)
-    items = cv.plot.getPlotItem().items
+    items = cv.plot.items
     assert sum(isinstance(i, FillBetweenItem) for i in items) == 2  # one per condition
 
 
@@ -386,7 +386,7 @@ def test_curve_view_splits_mbr_and_folded_points(main_window):
     cv.plot_fit("PEP", t, fs, 0.2, "simple", {},
                 evidence=["q_value", "mbr", "q_value", "q_value"],
                 metox=[False, False, True, False])
-    series = [i for i in cv.plot.getPlotItem().items if isinstance(i, PlotDataItem)]
+    series = [i for i in cv.plot.items if isinstance(i, PlotDataItem)]
     # direct (2 pts) + MBR (1) + folded (1) + fitted line = 4 PlotDataItems.
     assert len(series) == 4
     names = {i.name() for i in series}
@@ -525,7 +525,164 @@ def test_model_tab_plots_fitted_curve_on_row_selection(main_window):
     # Selecting row 0 fires currentRowChanged → the curve handler.
     tab.table.setCurrentIndex(tab.model.index(0, 0))
 
-    curves = [it for it in tab.curve.plot.getPlotItem().items
+    curves = [it for it in tab.curve.plot.items
               if isinstance(it, PlotDataItem)]
     assert len(curves) == 2  # observed scatter + fitted line
-    assert tab.curve.plot.getPlotItem().titleLabel.text == "PEPTIDEK_2"
+    # header now carries the protein id alongside the peptide concat (for export).
+    title = tab.curve.plot.titleLabel.text
+    assert title.startswith("PEPTIDEK_2") and "sp|X|T" in title
+
+
+# --- Track E: sortable tables + graph export --------------------------------- #
+
+
+def test_dataframe_model_sorts_numeric_by_value():
+    """``sort`` orders by the raw numeric column, not the ``:.4g`` display text.
+
+    9 / 10 / 100 sort lexicographically as "10" < "100" < "9"; numerically they
+    must come back 9 < 10 < 100. This is why the sort lives in the model over the
+    raw frame rather than a proxy comparing display strings.
+    """
+    from riana.gui.models import DataFrameTableModel
+    from PySide6.QtCore import Qt
+
+    model = DataFrameTableModel()
+    model.set_dataframe(pd.DataFrame({"k": [10.0, 100.0, 9.0], "tag": ["b", "c", "a"]}))
+
+    model.sort(0, Qt.SortOrder.AscendingOrder)
+    assert list(model.dataframe["k"]) == [9.0, 10.0, 100.0]
+
+    model.sort(0, Qt.SortOrder.DescendingOrder)
+    assert list(model.dataframe["k"]) == [100.0, 10.0, 9.0]
+
+
+def test_all_result_tables_have_sorting_enabled(main_window):
+    for tab in (main_window.integrate_tab, main_window.model_tab,
+                main_window.protein_tab):
+        assert tab.table.isSortingEnabled()
+
+
+def test_protein_row_selection_maps_through_sorted_order(main_window):
+    """After a header sort, view row 0 plots the row now on top — no proxy drift.
+
+    The row handlers index ``dataframe.iloc[row]`` directly, so sorting the
+    model's own frame is what keeps the selection→curve mapping correct.
+    """
+    from PySide6.QtCore import Qt
+
+    tab = main_window.protein_tab
+    result = pd.DataFrame({
+        "experiment": ["", ""], "condition": ["", ""], "protein": ["P1", "P2"],
+        "method": ["weighted", "weighted"], "n_peptides": [3, 3],
+        "n_points": [4, 4], "k_deg": [0.2, 0.8], "ci_lo": [0.1, 0.7],
+        "ci_hi": [0.3, 0.9], "R_squared": [0.98, 0.97],
+        "peptide_median_k": [0.2, 0.8],
+    })
+    tab._result_df = result
+    tab._points = {("", "", "P1"): ([0.0, 1.0], [0.0, 0.2]),
+                   ("", "", "P2"): ([0.0, 1.0], [0.0, 0.6])}
+    tab._last_params = tab.build_params()
+    tab.model.set_dataframe(result)
+
+    k_col = list(result.columns).index("k_deg")
+    tab.model.sort(k_col, Qt.SortOrder.DescendingOrder)  # P2 (0.8) to the top
+    assert tab.model.dataframe.iloc[0]["protein"] == "P2"
+
+    tab.table.setCurrentIndex(tab.model.index(0, 0))
+    assert tab.curve.plot.titleLabel.text == "P2"
+
+
+def test_curve_view_export_writes_png(main_window, tmp_path):
+    from riana.gui.export import export_plot
+
+    tab = main_window.model_tab
+    assert not tab.curve.save_button.isEnabled()  # placeholder state
+    tab.curve.plot_fit("PEP_2", [0.0, 1.0, 2.0], [0.0, 0.3, 0.5], 0.4,
+                       "simple", dict(k_p=0.5, k_r=0.05, r_p=10.0))
+    assert tab.curve.save_button.isEnabled()
+
+    png = export_plot(tab.curve.plot, str(tmp_path / "fit.png"))
+    assert Path(png).stat().st_size > 0
+
+
+def test_chromatogram_view_export_writes_png(main_window, tmp_path):
+    from riana.gui.export import export_plot
+
+    trace = PeptideTrace(
+        concat="PEPTIDEK_2",
+        chromatograms={0: Chromatogram(
+            isotopomer=0, target_mz=500.0, mass_tol_ppm=10.0,
+            scans=(1, 2, 3), rt=(10.0, 10.1, 10.2), intensity=(5.0, 9.0, 4.0))},
+        window=(10.0, 10.2),
+    )
+    view = main_window.integrate_tab.chromatogram
+    assert not view.save_button.isEnabled()  # placeholder state
+    view.plot_trace(trace)
+    assert view.save_button.isEnabled()
+
+    out = export_plot(view.plot, str(tmp_path / "chrom.png"))
+    assert Path(out).stat().st_size > 0
+
+
+def test_model_tab_manifest_plots_selected_condition_group(main_window):
+    """A manifest fit has one result row per (experiment, condition) per peptide.
+
+    Selecting a row must plot *that* group, not always the first — the bug where
+    the curve showed a different condition than the row's n_mbr/n_metox counts.
+    """
+    from pyqtgraph import PlotDataItem
+
+    tab = main_window.model_tab
+    rdf = pd.DataFrame(
+        {
+            "experiment": ["e", "e"], "condition": ["atrium", "control"],
+            "k_deg": [0.3, 0.4], "R_squared": [0.97, 0.98],
+            "sd": [0.01, 0.01], "spep": [8.0, 8.0],
+            "ci_lo": [0.25, 0.35], "ci_hi": [0.35, 0.45], "protein id": ["P", "P"],
+            "n_points": [3, 4], "n_mbr": [0, 1], "n_metox": [0, 0], "n_clean": [3, 3],
+            "t": [[0.0, 1.0, 2.0], [0.0, 1.0, 2.0, 4.0]],
+            "fs": [[0.0, 0.2, 0.4], [0.0, 0.25, 0.45, 0.6]],
+            "evidence": [["q_value"] * 3,
+                         ["q_value", "mbr", "q_value", "q_value"]],
+            "metox": [[False] * 3, [False] * 4],
+        },
+        index=pd.Index(["PEP_2", "PEP_2"], name="concat"),
+    )
+    tab._result_df = rdf
+    tab._last_config = tab.build_config()
+    tab._populate_results(rdf)
+
+    # Both groups are visible and distinguishable by the condition column.
+    assert list(tab.model.dataframe["condition"]) == ["atrium", "control"]
+
+    def _series_names():
+        return {i.name() for i in tab.curve.plot.items
+                if isinstance(i, PlotDataItem)}
+
+    # control (row 1) carries the MBR point …
+    tab.table.setCurrentIndex(tab.model.index(1, 0))
+    assert any(n and n.startswith("MBR") for n in _series_names())
+
+    # … atrium (row 0) is all-direct — no MBR series (the iloc[0] bug would have
+    # shown atrium for both).
+    tab.table.setCurrentIndex(tab.model.index(0, 0))
+    assert not any(n and n.startswith("MBR") for n in _series_names())
+
+    # The header carries protein + condition so an exported figure self-identifies.
+    title = tab.curve.plot.titleLabel.text
+    assert title.startswith("PEP_2") and "atrium" in title
+
+
+def test_curve_view_legend_is_outside_the_plot_viewbox(main_window):
+    """The legend lives in its own column, not anchored inside the data ViewBox —
+    so its MBR/fold sample glyphs can't be mistaken for plotted points."""
+    cv = main_window.model_tab.curve
+    cv.plot_fit("PEP", [0, 1, 2], [0.0, 0.3, 0.5], 0.2, "simple", {},
+                evidence=["q_value", "mbr", "q_value"])
+    # legend's parent is the dedicated legend ViewBox, not the plot's own ViewBox.
+    assert cv.plot.legend.parentItem() is cv._legend_vb
+    assert cv.plot.legend.parentItem() is not cv.plot.getViewBox()
+
+
+def test_main_window_sets_app_icon(main_window):
+    assert not main_window.windowIcon().isNull()

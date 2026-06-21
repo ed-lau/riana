@@ -20,6 +20,7 @@ from riana import __version__
 from riana.gui.integrate_tab import IntegrateTab
 from riana.gui.model_tab import ModelTab
 from riana.gui.protein_tab import ProteinTab
+from riana.gui.resources import app_icon
 
 
 class MainWindow(QMainWindow):
@@ -36,6 +37,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.pool = pool
         self.setWindowTitle(f"Riana {__version__}")
+        self.setWindowIcon(app_icon())
         self.resize(1100, 720)
 
         tabs = QTabWidget()

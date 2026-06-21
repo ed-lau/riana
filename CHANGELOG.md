@@ -12,6 +12,61 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Sortable result tables + graph export (Track E easy wins) — 2026-06-21
+
+#### Added
+
+- **Sortable result tables on all three GUI tabs** (Integrate / Model / Protein).
+  `DataFrameTableModel.sort()` reorders the backing frame in pandas (vectorised,
+  C-level) on a header click, and the tables set `setSortingEnabled(True)`. The
+  sort is done in the model over the *raw* column, not via a
+  `QSortFilterProxyModel` over the formatted cells, for two reasons: numeric
+  columns sort numerically (a proxy would compare the `:.4g` display strings
+  lexicographically — `"100" < "9"`), and the row-click handlers keep mapping a
+  view row straight through `dataframe.iloc[row]` with no `mapToSource`
+  translation. The pandas sort also scales to large result frames where a proxy
+  doing per-cell Python comparisons would not — the "large-table responsiveness"
+  half of the easy-win pair.
+- **Save graph… (PNG) on the chromatogram and fitted-curve views.** A button under
+  each embedded plot exports the live `PlotItem` via pyqtgraph's `ImageExporter`
+  (`riana/gui/export.py`), replacing the removed `--plotcurves`. The button is
+  disabled in the placeholder state and enabled once a peptide/protein is plotted.
+  Raster only: pyqtgraph's `SVGExporter` throws on plots carrying scatter symbols
+  (the observed-point / fold series these views always draw), so an SVG option
+  would crash on the common case.
+- **Protein + condition in the Model-tab curve header.** `CurveView.plot_fit` now
+  takes optional `protein`/`condition` and joins them with the peptide `concat` in
+  the plot title (`LSLIIR_2 • sp|… • control`), so an exported figure self-identifies
+  which protein and — for a multi-condition manifest fit — which condition group it
+  shows. The export filename picks up the condition too.
+- **Legend moved outside the data area.** The embedded curve + chromatogram views
+  now host the pyqtgraph legend in its own right-hand column
+  (`riana/gui/plotting.plot_with_external_legend`) instead of anchored inside the
+  ViewBox, where its MBR ▲ / fold ◇ sample glyphs were easily mistaken for plotted
+  data points. The PlotItem's own legend is reparented, so `plot(name=…)` still
+  auto-populates it; graph export now writes the whole **scene** so the external
+  legend is still captured.
+- **Application icon.** `riana gui` now sets a window/app icon from a packaged
+  512 px PNG (`riana/gui/resources/riana.png`, loaded via `importlib.resources`).
+  On macOS the Dock icon of an unbundled `python` process is owned by the launcher,
+  so this drives the window icon; a true Dock icon still needs an `.app` bundle.
+
+#### Fixed
+
+- **Model tab plotted the wrong condition group for multi-condition (manifest)
+  fits.** Pre-rollup, a manifest fit produces one result row per `(experiment,
+  condition)` for each peptide; the Model-tab table showed them all but
+  `_on_row_changed` looked the row back up by `concat` and took `.iloc[0]` — always
+  the first (alphabetically-first) group — so the fitted-curve view, its point
+  census (observed / MBR / folded), and the `k_deg`/CI could describe a *different*
+  condition than the `n_points`/`n_mbr`/`n_metox`/`n_clean` shown on the selected
+  row. The selection now matches on the row's `(experiment, condition)` keys
+  (`_match_group`), and the `experiment`/`condition` columns were added to the
+  Model-tab table so the per-condition rows are no longer indistinguishable. The
+  text outputs (`riana_fit_peptides.txt`, `riana_fit_fractions.txt`) were always
+  correct — both carry the right per-condition counts; this was a display-only
+  mismapping in the GUI.
+
 ### M7 Tier-1 — K-acetyl proteoform key + GUI fold-point display (Track C/E) — 2026-06-21
 
 #### Added

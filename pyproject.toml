@@ -75,6 +75,7 @@ include = ["riana*"]
 
 [tool.setuptools.package-data]
 "riana.data.coefficients" = ["*.csv"]
+"riana.gui.resources" = ["*.png"]
 
 [tool.setuptools.dynamic]
 version = { attr = "riana.__version__" }
