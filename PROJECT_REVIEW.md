@@ -742,10 +742,11 @@ site updated to 1.0.0). The next gaps, in order:
    unlocks the orthogonal mass-defect θ estimator and subsumes TMT's precursor-mass
    path. Full design + the H4′ normalize-before-truncate constraint in **Track B**;
    memory `m8_adaptive_niso_robust_envelope`.
-2. **Tier-1 K/R-methylation (cheap, composition only).** `UNIMOD:34/36/37`,
-   biological keys (`meK###`/`me2R###`); composition already in `mod_atoms`, no
-   atom-vector work. (K-acetyl already shipped.) See the Track C M7 "which mods come
-   next" box.
+2. **GUI/UX responsiveness — sortable tables + large-table performance (Track E,
+   easy wins).** `QSortFilterProxyModel` over `DataFrameTableModel` for sortable
+   result tables, and make the table views responsive on large result sets
+   (virtualized/lazy rendering, avoid full-frame rebuilds on update). Independent of
+   the engine work; good interleave with #1. See Track E.
 3. **Cut the `v1.0.0` git tag + Zenodo DOI (release action — maintainer).** The
    code is already `1.0.0` and the repo audited clean (2026-06-21; see Cross-cutting
    chores) — what's left is the release decision: merge `m3-rewrite` → `master`,
@@ -753,6 +754,10 @@ site updated to 1.0.0). The next gaps, in order:
    external service), not a code task.
 
 **Demand-driven / blocked on data or a decision (do when unblocked):**
+- **K/R-methylation — relegated to Tier 2 (2026-06-21).** `UNIMOD:34/36/37`,
+  biological keys (`meK###`/`me2R###`); composition is already in `mod_atoms` so it
+  stays cheap, but demand is low and it is no longer a near-term priority. (K-acetyl
+  already shipped.)
 - **DIA-NN phospho proteoform sites** — the `Protein.Sites` → site mapping is
   deferred (no DIA fixture has phospho). The user is **rerunning DIA-NN with
   variable phospho**; wire the site path when that lands. Until then DIA phospho
@@ -1175,11 +1180,11 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     found unenriched (N-term Ac is near-universal/high-stoichiometry; abundant
     phosphosites do show up without enrichment, just fewer).
   - *Tier 1 — biological, own key, acceptable unenriched yield:* **Lysine acetylation
-    (K-ac, `UNIMOD:1` — same `[2,2,1,0,0,0]` composition as N-term Ac, side-chain
-    site)**; low stoichiometry unenriched, but abundant metabolic enzymes / histones
-    give real sites → gets its own `_acKxxx` key. **K/R methylation** (mono/di/tri,
-    `UNIMOD:34/36/37` = `[1,2,0,0,0,0]` / `[2,4,…]` / `[3,6,…]`). Cheap once the
-    machinery exists — composition only, no new atom-vector work.
+    (K-ac, `UNIMOD:1`) — SHIPPED 2026-06-21** (own `_acK###` key; N-term Ac folds via
+    the `pos<1` guard). **K/R methylation** (mono/di/tri, `UNIMOD:34/36/37` =
+    `[1,2,0,0,0,0]` / `[2,4,…]` / `[3,6,…]`) is **relegated to Tier 2** (2026-06-21,
+    low demand) — still cheap (composition already in `mod_atoms`, no atom-vector
+    work) but no longer near-term.
   - *Tier 1b — artifactual / chemical, fold-into-bare, envelope fidelity:* **Met-Ox
     (`UNIMOD:35` = `[0,0,1,0,0,0]`)** and **deamidation N/Q (`UNIMOD:7` =
     `[0,-1,1,-1,0,0]`)** — ubiquitous, trivially identified, not turnover units, but
