@@ -1,83 +1,37 @@
 # Riana — Project Review & Roadmap
 
-> Status: M4 Phase 2 done (1.0.0.dev1 — PySide6 GUI: `riana gui` Integrate +
-> Model tabs run end-to-end via qasync + a ProcessPoolExecutor; Integrate has an
-> inline drift summary and a pyqtgraph chromatogram, Model has fitted-curve
-> plots; deps ship as a `[gui]` extra). M4 Phase 1 done before it (Typer CLI
-> replaces argparse; the typed pipeline is the only engine, `--engine legacy`
-> removed; legacy modules + Tk GUI deleted; `riana fit` requires
-> `--coefficients`, with bundled presets). M3 done before that (restructure,
-> streaming I/O, dual ID intake, apex-default peak integration, IsoSpec
-> forward-model FS). The post-M4 planning round is **done** (2026-06-07): the
-> record-only M5–M8 numbering is retired and reorganized into five tracks (A
-> I/O & run-identity model, B integration fidelity, C fitting science, D
-> validation infra, E GUI/UX) — see §3 "Post-M4 roadmap". **Pre-1.0.0 chores +
-> M6a (the run-identity model) are now done on branch `m3-rewrite`** (version →
-> 1.0.0, Snakefile retired, CI Quarto docs deploy, `RunIdentity` + `io/sdrf.py` +
-> `io/manifest.py` + `core/pipeline.py`, `integrate --sdrf` / `fit --manifest`).
-> Track D shipped (within-protein-θ benchmark + frozen LVE bench set), which
-> surfaced + fixed two integration bugs: the quantms **filename-prefix**
-> scan-scramble (de-prefix mzML names) and **mass_tol 50→10 ppm** (now read from
-> the SDRF; centroid search-tolerance, not a profile-width window). Engine also
-> gained a best-q apex anchor, `apex_search_half_width=0.25`, bounded file-
-> parallelism (`--workers`), and a profile-mzML intake warning. The **intake
-> scan↔RT guard is shipped** (2026-06-10): per run, `integrate_run` errors if the
-> median |spectra_ref-scan→mzML-RT − mzTab-RT| exceeds 2 min (the prefix-scramble
-> signature; ≤~0.9 min on clean ProteomicsLFQ output), with `--no-rt-check` to
-> override. **M5 (per-timepoint fraction-new) is shipped** (2026-06-10): `riana
-> fit` now also writes `riana_fit_fractions.txt` — long-format `(concat, protein,
-> biorep, t, fs, fs_lower, fs_upper)` with prediction-interval bounds from a
-> unified residual bootstrap; this is the substrate the protein rollup
-> inverse-variance-weights. **Track C protein rollup — `unique` first cut shipped**
-> (2026-06-10): `riana rollup` writes `riana_rollup_proteins.txt` (median-of-peptide-k +
-> the biorep-aware per-timepoint weighted refit), parsimony is now a
-> summarize-time decision (`integrate --unique` removed so integrate extracts all
-> peptides). **`--parsimony isoform` + the GUI Protein tab are shipped too**
-> (2026-06-10): `isoform` folds isoform-only-shared peptides into the canonical
-> entry unless an isoform carries its own unique peptide (a dataset-wide pass,
-> adapted from `02_R_parsimony_reference.Rmd` with Riana-`,` / NA-fallback / `-N`+`-J`-suffix
-> fixes + an optional `--min-r2` gate); the GUI grew a 3rd **Protein** tab over
-> the same `rollup_proteins` core, with a per-protein refit curve on row select.
-> **M6b (DIA-NN parquet intake) is SHIPPED** (2026-06-11): `io/diann.py` reads the
-> DIA-NN `report.parquet` (validated on 2.5.0), `plan_integration` dispatches the
-> reader on `SdrfTable.acquisition`, and DIA's apex RT is resolved to the nearest
-> MS1 scan (`resolve_rt_anchored_scans`) so the scan-based extraction runs
-> unchanged. Validated end-to-end on a cardiac in-vivo DIA set (98.5% m0
-> coverage, ~1–2 ppm mass accuracy; fit R²med ~0.42 — lower than DDA's ~0.87, as
-> expected for MS1-on-DIA, but k_deg median 0.08/day is biologically sound).
-> Also shipped alongside: **`riana fit -W/--workers`** (process-pool fit — the
-> GIL-bound IsoSpec/bootstrap fit went ~1.25→~7.8 effective cores; deterministic
-> per-concat seed).
-> **Track E GUI rewiring shipped** (2026-06-10): `integrate_project` split into
-> plan/dispatch/finalize so the GUI Integrate tab drives the same per-run unit
-> over its own pool (Workers spinbox, no nested pools) + an SDRF path; GUI Model
-> gained a manifest path (`fit_project`) — integrate/fit now go through
-> `core/pipeline` on both surfaces. **Also shipped (2026-06-11):** the **manifest
-> project chain** (`fit`/`rollup --manifest` root at the manifest dir + write
-> `stage="fit"`/`"rollup"` rows, each with a `created_at`); rollup **`--method
-> {weighted, pooled}`** (point estimators dropped; the median stays as a
-> `peptide_median_k` column; `n_replicates`/`n_timepoints` added); the GUI **SDRF
-> mass-tolerance reflect**; **output hygiene** (slim `riana_fit_peptides.txt`,
-> ~6-sig-fig estimate outputs, `riana_protein.txt`→`riana_rollup_proteins.txt` + a
-> tidy `riana_rollup_fractions.txt`); and **crash-resilient integrate** (per-run
-> incremental writes + `integrate --resume`). **Shipped 2026-06-12/13 (this
-> session):** the **`io/mztab` variable-mod drop** (mirrors `io/diann`, so the
-> PTM-search `timeseries_lve_atr` set integrates its unmodified peptidoforms
-> cleanly); **rollup `-W/--workers`** (process pool, ~7.2× cores, byte-identical);
-> the **`linear simple` rollup model** — the cross-sample Δk milestone: φ=log(1−θ)
-> through-origin OLS fit jointly across a protein's conditions → per-condition k +
-> a **Δk test** (statsmodels, analytic CIs) + Benjamini-Hochberg, with linear-only
-> plateau truncation (`--phi-limit`); validated on `data/timeseries_lve_atr`
-> (atrium vs ventricle: 780 proteins both chambers, atrium 1.24× faster, 410
-> significant at BH p_adj<0.05); the **GUI φ-space plot + CI ribbons** (and `-W` in
-> the fit/rollup tabs); and the **removal of `-t/--thread`** everywhere (GIL-bound,
-> no speedup — `-W` is the sole parallelism lever). **Next:** **M7 PTM-aware
-> envelope** (now the headline gap — thread parsed mod masses through the IsoSpec
-> envelope so modified peptidoforms integrate at the *correct* m/z, plus
-> proteoform-aware rollup keys; design in §3 Track C + `m7_ptm_envelope_design`),
-> then the parked/short-term items (see §3 "Handoff — ordered priorities"). Track
-> B fidelity gateable by Track D.
-> Maintainer: Edward Lau. Last reviewed: 2026-06-13.
+> **Status (1.0.0.dev1, branch `m3-rewrite`).** The M1–M4 rewrite is complete
+> (typed pipeline, streaming I/O, dual ID intake, apex-default peak integration,
+> IsoSpec forward-model FS, Typer CLI, PySide6 GUI). The post-M4 planning round
+> (2026-06-07) retired the record-only M5–M8 numbering into **five tracks** (A
+> I/O & run-identity, B integration fidelity, C fitting science, D validation
+> infra, E GUI/UX) — see §3.
+>
+> **Shipped since (full detail in `CHANGELOG.md` `[1.0.0]`; one-liners here):**
+> - **Track A** — M6a run-identity model (`RunIdentity` + `io/sdrf.py` +
+>   `io/manifest.py` + `core/pipeline.py`; `integrate --sdrf` / `fit --manifest`);
+>   M6b DIA-NN parquet intake; intake scan↔RT guard; manifest project chain
+>   (`integrate → fit → rollup`); **MBR for the mzTab/DDA path** (gated RT-transfer,
+>   2026-06-18, feature-complete 06-20).
+> - **Track C** — M5 per-timepoint fraction-new (`riana_fit_fractions.txt` with
+>   bootstrap PIs); protein rollup (`riana rollup`, `--parsimony {unique,isoform}`,
+>   `--method {weighted,pooled}`); **`linear simple` cross-sample Δk model** (φ-space
+>   OLS + Δk test + BH); **M7 PTM-aware envelope** (atom-vector `+P`, mods threaded
+>   IO→fit, proteoform rollup keys, Met-Ox fit-merge).
+> - **Track D** — within-protein-θ benchmark + frozen LVE bench set (surfaced +
+>   fixed the quantms filename-prefix scan-scramble and the mass_tol 50→10 ppm
+>   centroid-window fix).
+> - **Track E** — GUI rewired onto `core/pipeline`; Protein tab + φ-space plots;
+>   `-W/--workers` everywhere (`-t/--thread` removed — GIL-bound, no speedup).
+>
+> **Next (unblocked):** expose hidden integrate knobs as marked *advanced* options;
+> Tier-1 PTM mods (K-acetyl, K/R-methylation — cheap, machinery exists); cut a real
+> `1.0.0` tag + repo hygiene; user-facing docs refresh. **Blocked/demand-driven:**
+> DIA-NN phospho sites (user's variable-phospho rerun), >2-condition Δk (needs ≥3
+> conditions), Track B fidelity (gateable by Track D), o18 (needs NB90b table),
+> deamidation (side project). See §3 "Handoff — ordered priorities".
+>
+> Maintainer: Edward Lau. Last reviewed: 2026-06-20.
 
 This document consolidates and supersedes the prior `documentation/` folder
 (`PROJECT_EVALUATION.md`, `ROADMAP.md`, `MASS_ACCURACY_SPECIFICATION.md`). The
@@ -769,44 +723,44 @@ which emits its own SDRF (a near-identical variant, a few columns different) —
 so the identity model is shared; only the PSM/quant file format differs (mzTab
 vs DIA-NN parquet).
 
-#### Handoff — ordered priorities (next sessions, as of 2026-06-17)
+#### Handoff — ordered priorities (next sessions, as of 2026-06-20)
 
-**M7 is DONE** (v1 A1–B + Met-Ox tier 1b), shipped to `origin/m3-rewrite` as
-`5c37f43 → ef8e3ae` and validated end-to-end on the new `runs/lve_atr_m7`
-baseline. The Track C cross-sample Δk milestone (`linear simple`) was done before
-it. Remaining M7 follow-ons and the next gaps, in order:
+**Recently shipped** (now in CHANGELOG; cleared from this list): **M7** v1 (A1–B +
+Met-Ox tier 1b, `5c37f43 → ef8e3ae`, `runs/lve_atr_m7` baseline), the **`linear
+simple`** cross-sample Δk milestone, **MBR** for the mzTab/DDA path (gated
+RT-transfer, feature-complete 2026-06-20 incl. rollup `--exclude-mbr` + GUI
+MBR-point colouring; the high-label calibration concern was retracted as an RT-axis
+artifact), and the **advanced-knob exposure** (every `IntegrationConfig` dial now
+reachable on both CLI — "Advanced integration" + "MBR" `--help` panels — and GUI —
+a collapsed "Advanced…" group incl. the MBR sub-group + smoothing; closed the
+`ppm_alert` CLI/GUI asymmetry, also satisfies the Track E smoothing-in-GUI item).
+The next unblocked gaps, in order:
 
-1. **M7 follow-ons (demand-driven, mostly blocked on data/decisions):**
-   - **DIA-NN phospho proteoform sites** — the `Protein.Sites` → site mapping is
-     deferred (no DIA fixture has phospho). The user is **rerunning DIA-NN with
-     variable phospho** (~this week); wire the site path when that lands. Until
-     then DIA phospho integrates correctly (A2) but folds into the bare protein.
-   - **Deamidation** — its own **side project** (the +0.984 / C13-M+1 isobaric
-     overlap needs joint envelope + deamidation-proportion modeling). Not started.
-   - **Roadmap tiers** (Track C M7 box): K-acetyl + K/R-methylation (tier 1,
-     cheap — composition only), then GG-remnant (tier 2, blocked on enriched data).
-   - Heads-up: the user will rename the run `atf6small` → `atf6_lve`.
-2. **Expose hidden integrate knobs as clearly-marked *advanced* options
-   (short-term, cheap, independent).** Audit the full `IntegrationConfig` knob set
-   (`--peak-rt`, `--apex-selection`, `--integration-half-width` vs
-   `--extraction-half-width`, `--baseline`, `--smoothing`, …); surface them in CLI
-   help + a collapsible "Advanced" group in the GUI forms (pairs with the
-   smoothing-in-GUI Track E item). Good warm-up; improves the fidelity work.
-3. **Cut a real `1.0.0` tag + repo hygiene (deliberate hygiene chunk).** A clean
+1. **Tier-1 PTM mods — K-acetyl + K/R-methylation (cheap, composition only).** The
+   M7 machinery exists (atom vector, `mod_atoms` table, fit-merge / proteoform
+   keys); these add `UNIMOD:1` (K-ac, own `_acKxxx` key) and `UNIMOD:34/36/37`
+   (methylation) — no new atom-vector work. Acceptable unenriched yield. See the
+   Track C M7 "which mods come next" box.
+2. **Cut a real `1.0.0` tag + repo hygiene (deliberate hygiene chunk).** A clean
    line in the sand before more features pile on (move 1 GB+ of personal outputs
-   out of `data/`, drop stray root outputs — see Cross-cutting chores). Can follow
-   M7 but shouldn't slip indefinitely.
-4. **Match-between-runs (MBR) for the mzTab/DDA path — SHIPPED 2026-06-18.** Gated
-   pure RT-transfer (`integrate --mbr`; two-part quality gate `--mbr-min-snr 4` +
-   `--mbr-min-scans 3` default, uncapped; `fit --exclude-mbr` opts out). The fit A/B
-   decided it: *ungated* MBR is harmful (R²>0.95 −30%, pollutes clean curves), but
-   *gated* MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates
-   (+180 at R²>0.8) with no pollution; cap-fraction guards would hurt. Full record +
-   benches (`bench_missingness`, `bench_rt_alignment`, `bench_mbr_quality`,
-   `bench_mbr_ab`) in Track A below. **Remaining (eval/polish):** within-protein-θ
-   (Track D) as evaluation, GUI MBR-point colouring, rollup `--exclude-mbr`.
-5. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
+   out of `data/`, drop stray root outputs — see Cross-cutting chores). Shouldn't
+   slip indefinitely.
+3. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
    Stale post-M3; docstrings are the interim source of truth.
+
+**Demand-driven / blocked on data or a decision (do when unblocked):**
+- **DIA-NN phospho proteoform sites** — the `Protein.Sites` → site mapping is
+  deferred (no DIA fixture has phospho). The user is **rerunning DIA-NN with
+  variable phospho**; wire the site path when that lands. Until then DIA phospho
+  integrates correctly but folds into the bare protein.
+- **Deamidation** — its own **side project** (the +0.984 / C13-M+1 isobaric overlap
+  needs joint envelope + deamidation-proportion modeling). Not started.
+- **MBR re-search (maintainer)** — re-search quantms on the exact `.mzML`, then
+  re-run the calibration sweep without `--no-rt-check` to close the retracted
+  high-label result.
+- **GG-remnant (tier 2 PTM)** — most turnover-relevant, but blocked on anti-K-ε-GG
+  enriched D₂O data (none exists).
+- **Heads-up:** the user will rename the run `atf6small` → `atf6_lve`.
 
 **Parked / blocked (do when unblocked, not ahead of the above):**
 - **>2-condition pairwise Δk contrasts** — `fit_linear_deltak` handles exactly two
@@ -988,73 +942,29 @@ it. Remaining M7 follow-ons and the next gaps, in order:
 > anchor to reconcile against; the DIA analog (reported RT within mzML bounds +
 > run-column matches the paired mzML) is a separate, weaker check for M6b.
 
-- **Match-between-runs (MBR) for the mzTab/DDA path — MEASURED 2026-06-17, GO for
-  DDA (mid-term build).** The roadmap's "measure before building" step is done
-  (`tests/benchmark/bench_missingness.py` + `bench_rt_alignment.py`):
-  - *Missingness* (precursor = `concat` = SEQ_charge; `runs/lve_atr` vs `runs/lve_dia`).
-    DDA turnover curves are badly gappy: only **8–15%** of precursors span all 12
-    timepoints (LVE 14.7%, ATR 8.4%), the median precursor is seen in just **4–5 / 12**
-    runs, and **~50%** of all (precursor,run) slots are empty. Most of it is
-    MBR-recoverable: ~12k precursors/chamber have a donor (seen ≥2×) and **39–45%** of
-    their slots are fillable holes; only 21–26% are singletons MBR can't help. The
-    **t0 anchor** (the m0 baseline) is the sharpest pain — **70% (LVE)** / 40% (ATR) of
-    later-seen precursors lack it, driven by a shallow t0 acquisition (LVE t00 = 4,792
-    precursors vs ~7,500 mid-series). DIA is near-complete by contrast (75% full
-    curves, 5.6% recoverable gap, 10% t0 loss): DIA-NN's internal propagation already
-    does the job → **DDA is where MBR pays**.
-  - *Geometry control.* DIA has only 3 timepoints, so its 75% isn't directly comparable
-    to DDA's 12-slot 15%. Re-measured at matched geometry (3 timepoints, 1 acquisition
-    per slot): **DIA 60.3%** vs **DDA 32–44%** (mean over all non-t0 triples) — the gap
-    survives, so it is acquisition + ID-pipeline (stochastic MS2 + no PSM-level
-    propagation), not curve length.
-  - *RT alignment (the open question — does quantms align RT? the gotcha note only
-    suspected it).* **Yes, it does** — co-identified precursors sit within a typical
-    **~4–9 s** median |ΔRT| across LVE runs (≈ the note's "~0.1 min"), near-unit slope.
-    **But imperfectly** — run-specific residuals reach **15–25 s** (LVE t00/t04; ATR
-    t25), *larger* than the ±9 s narrow integration window and worst on the same shallow
-    anchor runs MBR most needs. A global linear realign barely helps (rmse_id ≈
-    rmse_fit, slope≈1) → the offset is near-constant per-run, so a **robust per-run-pair
-    offset / LOESS** (or RT-anchor + local apex re-find) is the right correction, richly
-    supported by **3,900–6,100 co-IDs per run pair**. So MBR does not build alignment
-    from scratch; it needs a light per-run RT refinement on top of quantms's frame.
-  - *No architectural block.* `records.py` already reserves `evidence="mbr"`, and M6b's
-    RT-anchored extraction (`core/integration.resolve_rt_anchored_scans`, `scan=-1`
-    sentinel) is exactly the path an MBR-transferred (no-MS2) precursor needs — the DIA
-    intake built MBR's extraction substrate. The stale `data/mbr_test` fixture (Oct-2022,
-    pre-rewrite) is not reusable as-is.
-  - *SHIPPED 2026-06-18* (`reports/2026-06-17_mbr_v1_design.md`; commits
-    `6b68991`→`47bb806`). **Gated pure RT-transfer:** donor = q≤0.01 in ≥2 runs of the
-    `(experiment, condition)` curve group → robust per-run RT offset (median on shared
-    IDs) → synthetic `scan=-1`+RT `PSMRecord`s flagged `evidence="mbr"` → the existing
-    `resolve_rt_anchored_scans` + apex re-detect → a **two-part quality gate**:
-    `--mbr-min-snr` (apex prominence/local-noise, **inf=fail** — inf is a sparse MAD=0
-    trace) + `--mbr-min-scans` (nonzero scans in the integration window), both MBR-only,
-    **defaults 4 / 3**. Hooked in `plan_integration` (mzTab is whole-experiment, so
-    cross-run donor assembly is free); the scan↔RT guard runs on the directly-scanned
-    subset so MBR rows don't disable it. `fit --exclude-mbr` opts out; outputs gain
-    `apex_snr`/`n_scans` (integrate) + `n_points`/`n_mbr`/`n_metox`/`n_clean` (fit) +
-    per-point `evidence` (fractions). **Fit A/B verdict** (`bench_mbr_ab.py`): *ungated*
-    MBR is harmful (R²>0.95 −30%, pollutes clean curves), but *gated* MBR is neutral at
-    strict R²>0.95 and **net-positive at the in-vivo gates (+180 at R²>0.8) with no
-    pollution**; cap-fraction guards would hurt (value is in the high-fraction
-    point-starved rescues) → ship **uncapped**. **Evals done** (2026-06-19,
-    evaluation-only): within-protein-θ (Track D) + protein yield + within-protein
-    k_deg geometric CV all show a *yield-for-consistency tradeoff* (+37 proteins at
-    R²>0.8 for ~+3.5% within-protein scatter — reasonable). The earlier **calibration
-    ground-truth |θ−f|** result (ac16 mzTab via `--no-rt-check`, "MBR mis-quantifies at
-    high label") is **RETRACTED 2026-06-20b — root-caused as an mzTab↔mzML RT-axis
-    mismatch, NOT a labeling effect** (design doc § Update 2026-06-20b): the calibration
-    mzTab is `.raw`-searched (RT axis 2–4 min off the local `.mzML`, the scan↔RT guard's
-    own number) and `--no-rt-check` bypassed the guard, so MBR's RT-anchored transfers
-    landed off-peak; direct (scan-based) was immune. **TBD (maintainer):** re-search
-    quantms on the exact `.mzML`, then re-run the sweep without `--no-rt-check`. **v1
-    feature-complete
-    2026-06-20** (integrate→fit→rollup→GUI): rollup `--exclude-mbr` + `n_mbr/n_metox/
-    n_clean` census, GUI orange-triangle MBR points + table census, per-run gate-drop
-    count in the log. **Parked:** the
-    sub-threshold *rescue* tier (mzTab is 1%-FDR pre-filtered — 179 PSMs in (0.01,0.02],
-    0 above); **MBR-FDR is its own future study/report.** Pairs with the Track D
-    missingness metric.
+- **Match-between-runs (MBR) for the mzTab/DDA path — SHIPPED 2026-06-18,
+  feature-complete 2026-06-20.** Full record in CHANGELOG `[1.0.0]` + the design
+  report `reports/2026-06-17_mbr_v1_design.md` (commits `6b68991`→`47bb806`);
+  benches `bench_missingness` / `bench_rt_alignment` / `bench_mbr_quality` /
+  `bench_mbr_ab`. The load-bearing findings worth keeping in the roadmap:
+  - **DDA is where MBR pays, not DIA.** DDA turnover curves are badly gappy (only
+    8–15% of precursors span all 12 timepoints, ~50% of slots empty, t0 the sharpest
+    loss at 70% LVE); DIA-NN's internal propagation already fills DIA. The gap
+    survives a matched-geometry control (DIA 60% vs DDA 32–44% at 3 timepoints), so
+    it is acquisition + ID-pipeline, not curve length.
+  - **quantms aligns RT but imperfectly** — co-IDs sit within ~4–9 s median |ΔRT|
+    but run-specific residuals reach 15–25 s (> the ±9 s window), near-constant
+    per-run → the shipped fix is a robust per-run-pair RT offset (not a global
+    realign), on top of M6b's `resolve_rt_anchored_scans` substrate.
+  - **Verdict:** gated MBR is neutral at strict R²>0.95 and net-positive at the
+    in-vivo gates (+180 at R²>0.8) with no pollution → shipped uncapped. Eval-only
+    yield-for-consistency tradeoff is reasonable (+37 proteins at R²>0.8 for ~+3.5%
+    within-protein scatter).
+  - **Open:** the high-label calibration concern was **retracted** as an
+    mzTab↔mzML RT-axis artifact (`.raw`-searched mzTab + `--no-rt-check` bypass) —
+    maintainer TODO is to re-search on the exact `.mzML` and re-run without
+    `--no-rt-check`. **Parked:** sub-threshold *rescue* tier / MBR-FDR is its own
+    future study (mzTab is 1%-FDR pre-filtered: 179 PSMs in (0.01,0.02], 0 above).
 
 #### Track B — integration fidelity (research cluster)
 
@@ -1102,20 +1012,14 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
 
 #### Track C — fitting / modeling science
 
-- **M5 — persist per-timepoint fraction-new (SHIPPED 2026-06-10).** `riana fit`
-  writes `riana_fit_fractions.txt` — long-format one row per `(concat,
-  biological_replicate, labeling_time)` with `fs` and prediction-interval bounds
-  `fs_lower` / `fs_upper`. The CIs come from a **unified residual bootstrap**
-  (fixed t-design, resample residuals, refit) that now feeds *both* the `k_deg`
-  CI and the per-timepoint band: `fs_lower`/`fs_upper` are a **prediction
-  interval** — `model(t_i; k*) + resampled-residual` — so they reflect each
-  peptide's measurement scatter (the quantity the protein rollup inverse-variance
-  weights), not just curve uncertainty. On noise-free data the band collapses to
-  ~0; on a sparse 3-5 point curve the fixed design is more robust than the old
-  pairs bootstrap. `build_fractions_long` + `out.attrs["fractions_long"]` carry
-  it through `fit_run` → `fit_project` (tagged with experiment/condition) → CLI;
-  the wide `riana_fit_peptides.txt` also gains `fs_lower`/`fs_upper` list-cells
-  for the GUI curve view. **This is the substrate the protein rollup consumes.**
+- **M5 — persist per-timepoint fraction-new (SHIPPED 2026-06-10; CHANGELOG).**
+  `riana fit` writes `riana_fit_fractions.txt` (long-format `(concat,
+  biological_replicate, labeling_time)` + `fs` and prediction-interval bounds
+  `fs_lower`/`fs_upper`). Load-bearing design: the bounds are a **prediction
+  interval** from a unified residual bootstrap (`model(t_i; k*) + resampled
+  residual`), so they capture each peptide's measurement scatter — the quantity
+  the protein rollup inverse-variance-weights. **This is the substrate the rollup
+  consumes.**
 - **2D-LC / technical-replicate fraction collapse (NEW 2026-06-20, surfaced in the
   `--depth` spike).** The depth gate now counts **distinct labeling timepoints**, so
   multi-file multiplicity at one timepoint no longer inflates qualification. But the
@@ -1147,137 +1051,44 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   decide whether the precursor parameters (k_p / k_r / r_p) are *fitted* or
   *supplied* — both are fixed today, so meaningful two-compartment use needs real
   precursor priors. Unlikely near-term.
-- **Protein rollup** (new milestone). **Shipped 2026-06-10** — `riana rollup`
-  (`core/protein.py`) writes `riana_rollup_proteins.txt` + `riana_rollup_fractions.txt`
-  (a `method` tag + one `k_deg` /
-  CI / R², the structure counts `n_peptides` / `n_replicates` / `n_timepoints` /
-  `n_points`, and a comparison `peptide_median_k`), grouped by `(experiment,
-  condition, protein)`; `--parsimony {unique, isoform}`;
-  an optional peptide R² admission gate (`--min-r2`, off by default, with a JCI
-  slow-turnover admit); threaded refit (`--thread`); and a **GUI Protein tab**
-  (`gui/protein_tab.py` + `tasks.run_rollup`) with a per-protein refit **curve**.
-  **`--method` (decided 2026-06-10, after evaluating the menu below):**
-  `weighted` (default, the biorep-aware inverse-variance per-timepoint collapse)
-  or `pooled` (all peptide×timepoint points, pseudoreplication-naive, for
-  comparison). The **point estimators were dropped as methods** — median/harmonic
-  over peptide k are a trivial `groupby` the user does on the peptide file (and
-  harmonic is outlier-sensitive on the low-k tail); the median is still carried
-  as a `peptide_median_k` column. **Next milestone:** the **linearized
-  `log(1−θ) = −kt` fit + cross-sample Δk test** — *not* weaker (strong basis;
-  estimates marginal means + a two-group Δk in one linear model), it's the
-  genuinely new statistical capability. (Manifest stage-row wiring is now done —
-  see the manifest project chain above.) The menu that was evaluated:
+- **Protein rollup (SHIPPED 2026-06-10; CHANGELOG).** `riana rollup`
+  (`core/protein.py`) writes `riana_rollup_proteins.txt` + `_fractions.txt`
+  grouped by `(experiment, condition, protein)`, with `--parsimony
+  {unique,isoform}`, `--method {weighted,pooled}`, an optional `--min-r2` gate,
+  `-W` refit, and a GUI Protein tab with a per-protein refit curve. Load-bearing
+  locked decisions (the design rationale that survives the shipping):
   - **Parsimony is a summarize-time decision, not integrate-time** (locked
-    2026-06-10). A shared peptide's envelope blends both proteins' turnover, so
-    its isotope signature can't be attributed — the rollup is unique-by-default.
-    `integrate --unique` is therefore **removed**: integrate extracts *all*
-    peptides (shared included — still valid per-peptide measurements), and
-    `riana rollup --parsimony {unique, isoform}` (default `unique`) does the
-    attribution. **`unique`** (shipped): drop any peptide whose `protein id` is
-    multi-accession; attribute the rest to the bare UniProt accession.
-    **`isoform`** (shipped 2026-06-10; adapted from `02_R_parsimony_reference.Rmd`
-    by Juber/Lau): like MSFragger gene/protein parsimony but with a specific
-    isoform rule — if the protein group spans **multiple genes**, reject
-    (cross-gene turnover is unattributable); if it is **multiple UniProt entries
-    of one protein (isoforms)**, then for the isoform set this peptide maps to,
-    ask whether **any** of those isoforms has its own *unique* peptide (mappable
-    to it alone): **no** → assign this shared-among-isoforms peptide to the
-    **canonical** entry; **yes** → exclude it. Rationale: physically-present
-    isoforms (evidenced by isoform-unique peptides) make the shared signal
-    genuinely ambiguous, while isoforms that don't actually exist / are
-    low-abundance (no unique evidence) shouldn't decimate "unique" peptide counts
-    just because an isoform-bearing database makes most peptides nominally shared
-    — assumes most isoforms are low-abundance or absent. It is a **dataset-wide
-    pass** over the peptide↔protein map (`_resolve_parsimony`), built once from
-    the peptide table and applied to both the peptide and fraction frames.
-    **Deviations from the R reference** (scrutinized, not copied): Riana joins
-    accessions with `,` not `;`; an all-isoform group with no canonical present
-    falls back to the shared **base** accession (the R left `collapsed_uniprot`
-    NA); the isoform suffix is UniProt `-N` *and* JCAST `-J1`/`-J2` (`-J?\d+`,
-    requiring digits so a bare trailing `-` is not a suffix); and the θ collapse
-    weights by the **M5 inverse variance**, not the R's `log2(Int)`. An optional
-    `--min-r2` peptide gate (off by default, with the R's JCI slow-turnover
-    admit) is available as a complementary A/B to the inverse-variance weighting.
-  - **Point estimators over fitted peptide k:** median (robust default);
-    harmonic mean (rate-correct — mean of half-lives ↔ harmonic mean of k — but
-    outlier-sensitive on the low-k tail).
-  - **Protein-level refit:** pool the qualifying peptides' `(t, θ)` and fit one
-    k. Two flavours — all peptide points (pseudoreplication risk: peptides are
-    not independent replicates) vs. the **per-timepoint weighted-average
-    collapse** (the pseudoreplication-safe default; open sub-decision = weight by
-    inverse variance from the peptide CI vs. by intensity). **Biorep-aware:** the
-    collapse is *within* `(protein, labeling time, biological replicate)` — only
-    peptides of the same protein in the *same animal* are pseudoreplicates;
-    *different* `characteristics[biological replicate]` are genuine replicates and
-    stay as independent points, giving the refit honest degrees of freedom.
-  - **`linear simple` — a new rollup model (SHIPPED 2026-06-12).** A *model choice*
-    alongside `simple`/`guan`/`fornasiero` and **mutually exclusive with them by
-    nature**: those are nonlinear ODE fits via scipy `curve_fit`; `linear simple`
-    is OLS in φ-space. **Implemented:** `core/linear_model.py` (`fit_linear_deltak`
-    + `to_phi` / `truncate_plateau`) driven from `core/protein._rollup_linear`
-    (reuses the weighted/pooled collapse via the extracted `_collapse_group` /
-    `_collapse_long`); CLI `--model "linear simple"` + `--phi-limit` (default −4) +
-    `--reference-condition`; output schema `PROTEIN_LINEAR_COLUMNS` (per-condition
-    k + `delta_k`/`delta_k_se`/`delta_k_p`/`delta_k_p_adj`). **CI provenance:**
-    analytic (statsmodels `conf_int` / `t_test` on the OLS coefficient
-    covariance), **not** the residual bootstrap the nonlinear models use — the
-    linearized model has a closed-form covariance, so `n_boot`/`random_state` are
-    ignored on this path. **Validated on
-    `runs/lve_atr`:** 780 proteins in both chambers, atrium 1.24× faster, 71%
-    faster in atrium, **410 significant at BH p_adj<0.05** (347 of them
-    atrium-faster) — consistent with the descriptive paired Δk. Tests:
-    `tests/test_linear_model.py` (6) + `test_rollup_linear_simple_delta_k`.
-    **GUI φ-space plotting — DONE 2026-06-13:** "linear simple" is selectable in
-    the Protein tab Model combo (φ-limit + reference-condition knobs shown only for
-    it); selecting a protein row overlays both conditions in φ-space via
-    `CurveView.plot_linear` (clearance points with truncated points hollow, the
-    through-origin k line per condition, the φ-limit threshold line, and the
-    Δk + p_adj in the title). **Parked — >2-condition pairwise contrasts:** the Δk
-    needs exactly two qualifying conditions today; the >2-condition pairwise/Tukey
-    case is deferred until there is a good ≥3-condition test dataset (user,
-    2026-06-13). `fit_linear_deltak` already emits per-condition k for any N and
-    leaves `delta_k`/p NaN when ≠2, so the path is forward-compatible. The design
-    below records the rationale.
-    - *Transform.* φ = `log(1 − θ)`; clamp θ to ~[0.01, 0.99] and drop non-finite
-      (the R reference does this). φ = 0 at t = 0, so the line is **through the
-      origin**.
-    - *Model.* Per protein, the no-intercept interaction OLS
-      `φ ~ 0 + day + day:condition` (R: `lm(protein_clearance ~ 0 + day + day:treatment)`):
-      the per-condition slope is `−k`, and the `day:condition` term is the **Δslope
-      = −Δk**. Two conditions → marginal-mean k per condition (with CI) + a pairwise
-      Δk contrast p-value, then **Benjamini-Hochberg** across all proteins, filter
-      `p_adj < 0.05`. Reference (do **not** follow — study-specific compartment /
-      strain / JCAST aspects no longer apply): `data/notebook/03_R_linearmodel_reference.Rmd`.
-    - *⚠️ Plateau truncation (required, the key deviation from the R reference;
-      user 2026-06-12).* Once φ saturates (θ near its measurement ceiling, φ ≈ −4),
-      later timepoints are noise around the floor, not slope — including them
-      **breaks linearity and drags the through-origin slope flat**. So per curve,
-      **truncate at/after the first timepoint that reaches saturation**. **Knobs
-      (user wants these exposed):** a configurable **φ limit** (the truncation
-      threshold) — `−3…−4` is sensible (≈ θ 0.95–0.99; beyond that is measurement
-      noise) — plus the θ clamp. The nonlinear models **need** the plateau (their
-      asymptote parameter fits it), so truncation is **linear-only**. This is
-      **inseparable from `linear simple`**; build them together, not as a
-      follow-on.
-    - *EMMEANS — use statsmodels (user decision 2026-06-12).* numpy/scipy have
-      **no** emmeans/emtrends/marginal-means machinery (scipy.stats stops at
-      `linregress` / `ttest` / `f_oneway`). Although this simple fixed-effects
-      design *could* be hand-rolled (β=`lstsq`, cov=`σ²(XᵀX)⁻¹`, contrast
-      `cᵀβ ± t·√(cᵀ cov c)`, BH ~5 lines), the user prefers **adding statsmodels
-      as a dependency** and building on it (`OLS.t_test`/`f_test` for the contrasts
-      + `stats.multitest.multipletests` for BH): we will want it later anyway (the
-      R notes defer mixed / `limma`-style models — "limma later"), and a
-      well-established package is easier to maintain than bespoke contrast math.
-      → add `statsmodels` to deps when `linear simple` lands.
-    - *Why linear is not weaker* (user, prior): strong mathematical basis; it
-      estimates marginal-mean k **and** a two-group Δk in one model — the genuinely
-      new statistical capability. Guan/Fornasiero add a precursor-rise term and are
-      not linearizable, so their cross-sample equivalent needs nonlinear
-      mixed-effects (deferred).
-  Reads both the fit and integrate outputs via the stage-aware manifest; groups
-  samples by `factor value[...]` (condition/group) and supports opening multiple
-  groups side-by-side for visual comparison — the substrate for the deferred
-  cross-group stats.
+    2026-06-10). A shared peptide's envelope blends both proteins' turnover and
+    can't be attributed, so `integrate --unique` was **removed** — integrate
+    extracts all peptides, `rollup --parsimony` attributes. `unique` drops
+    multi-accession peptides; `isoform` (from `02_R_parsimony_reference.Rmd`)
+    folds isoform-shared peptides onto the canonical entry unless an isoform
+    carries its own unique peptide, rejecting cross-gene groups. A dataset-wide
+    `_resolve_parsimony` pass; θ collapse weights by the **M5 inverse variance**.
+  - **Biorep-aware collapse** (the `weighted` default): the per-timepoint
+    weighted-average is *within* `(protein, labeling time, biological replicate)`
+    — peptides of the same protein in the *same animal* are pseudoreplicates,
+    different `characteristics[biological replicate]` are genuine replicate points
+    → honest degrees of freedom. `pooled` is the pseudoreplication-naive
+    comparator; point estimators were dropped (carried as a `peptide_median_k`
+    column instead).
+- **`linear simple` cross-sample Δk model (SHIPPED 2026-06-12; CHANGELOG).** A
+  φ-space OLS model choice (mutually exclusive with the nonlinear ODE models):
+  φ = `log(1−θ)` through-origin OLS `φ ~ 0 + day + day:condition` (statsmodels) →
+  per-condition k (= −slope) + a pairwise **Δk** test + Benjamini-Hochberg; CIs
+  are **analytic**, not bootstrap. Validated on `runs/lve_atr` (780 proteins, 410
+  sig at BH p_adj<0.05) + GUI φ-space plotting. Two decisions that still bind:
+  - **⚠️ Plateau truncation is required and linear-only** (`--phi-limit`, default
+    −4 ≈ θ 0.98). Once φ saturates, later timepoints are floor-noise that drag the
+    through-origin slope flat; the nonlinear models instead *need* the plateau
+    (their asymptote fits it). Inseparable from `linear simple`.
+  - **statsmodels is a dependency** (chosen over hand-rolled contrasts — wanted
+    anyway for the deferred mixed/`limma`-style models). Reference notebook
+    `data/notebook/03_R_linearmodel_reference.Rmd` (study-specific aspects do
+    **not** carry over).
+  - **Parked — >2-condition pairwise contrasts:** Δk needs exactly two qualifying
+    conditions; `fit_linear_deltak` already emits per-condition k for any N and
+    leaves Δk NaN when ≠2 (forward-compatible). Blocked on a ≥3-condition dataset.
 - **o18 rewrite.** Same SSE-vs-IsoSpec → fit machinery as D₂O, but FS is
   computed with o18 isotope mass/proportion **and a different Spep model**: the
   labelling sites are only the oxygen-bearing residues, so the coefficient
@@ -1287,128 +1098,25 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   `data/notebook/90b_O18_LearnAALabelingSites_IsoSpec_AC16.ipynb` (the analog of
   87a for D₂O). Until then `riana fit --label o18` errors; o18 *integration* is
   unaffected.
-- **M7 — PTM-aware envelope** (demand-driven). Thread the parsed bracketed mod
-  masses through `get_peptide_distribution` / `solve_fs_d2o` so the IsoSpec
-  envelope shape is correct for modified peptides (today the FS solve uses the
-  unmodified-backbone envelope; the per-cell-line coefficient tables are fit on
-  the backbone and don't change). `_fit_one_concat` already separates
-  `seq_with_mods` from `seq`; M7 threads the mods alongside instead of dropping
-  them. Prioritize only for PTM-focused datasets (e.g. labelled
-  phosphoproteomics). Three concrete pieces (user context, 2026-06-11):
-  1. **Atom accounting in the forward model.** A mod's extra atoms must be added
-     to the IsoSpec `formula` *even though the mod is not D₂O-labeled* (we don't
-     know its enrichment, and the forward model mixes initial + fully-labeled
-     envelopes — the extra C/H/O/N/S still shape the envelope and shift the
-     channel masses). The envelope formula comes from `count_atoms` →
-     `IsoParamsFromDict({"C":…,"H":…,…})` in `algorithms/isotope_dist.py`; M7 adds
-     each parsed mod's composition there. **Starter set (locked 2026-06-13):
-     phospho (S/T/Y, `UNIMOD:21` = `[0,1,3,0,0,1]`) + protein N-term Acetyl
-     (`UNIMOD:1` = `[2,2,1,0,0,0]`)** — trimmed to the two highest-value,
-     reliably-identifiable mods (the next tier + its binding constraint are in the
-     roadmap below). **Composition source = a small curated `mod_atoms` table**
-     keyed by UNIMOD id (`{id: [C,H,O,N,S,P]}`), **not** the UniMod XML ontology
-     (too heavy for ~5 entries); today `constants.mod_atoms` holds only `IAA`
-     (which becomes `UNIMOD:4`).
-  2. **Generalize Carbamidomethyl(C) to a normal UniMod.** Today it is special-
-     cased: `count_atoms(iaa=True)` adds `mod_atoms['IAA']=[2,3,1,1,0]` per
-     cysteine, so C is effectively `[5,8,2,2,1]` (actual C `[3,5,1,1,1]` + IAA) in
-     the forward model. M7 should route CAM through the same per-mod composition
-     machinery as any other UniMod (`UNIMOD:4`) rather than the hardcoded `iaa`
-     flag — one code path for all fixed/variable mods.
-  3. **Proteoform-aware rollup.** A phosphopeptide must **not** collapse into its
-     unmodified protein (that hides the PTM's effect on turnover). At rollup,
-     count the PTM-site residues and append them to the accession as a distinct
-     proteoform key, e.g. `P12345_pS235`, so each modified form rolls up as its
-     own unit. User has R scripts to reference for the site-naming convention.
-     This extends `core/protein.py` parsimony, which today keys on bare
-     accession.
-
-  Non-obvious structural implications (noticed while grounding in the code,
-  2026-06-11):
-  - **Two separate fixes, don't conflate.** (a) *Integrate-side target m/z* —
-    today `mass_calc.calculate_ion_mz` recomputes from the **bare** sequence, so a
-    modified PSM is extracted at the unmodified m/z (the reason we currently
-    *drop* it). M7 must add the mod mass to the extraction target. (b) *Fit-side
-    envelope shape* — the mod atoms must enter the IsoSpec `formula`. The drop
-    sidesteps both; M7 needs both.
-  - **Phosphorus is not in the `[C,H,O,N,S]` atom vector.** `count_atoms` returns
-    5 elements and `constants.iso_abundances` is 5-long; phospho (HPO₃) adds a
-    **P** (and 3 O, 1 H). P is monoisotopic so it does not broaden the envelope,
-    but supporting it means extending the atom vector + abundance list, not just
-    the mod table. The 3 O *do* affect envelope shape.
-  - **Mod hydrogens default to non-labelable.** The forward solver subtracts
-    `num_labeling_sites` (from `label_deuterium_de`/`label_oxygens`) from H before
-    handing to IsoSpec. Conservative default: mod-contributed atoms are static
-    (not added to the labelable count) since the mod's D₂O enrichment is unknown
-    — matches the user's "account for the atoms even if not necessarily enriched."
-  - **Site localization gates the proteoform key — and both primary formats give
-    the protein-coordinate site directly (no FASTA needed).** Checked 2026-06-11:
-    - *mzTab* carries `start`/`end` (the peptide's protein-coordinate start) plus
-      the peptide-relative mod position in the `modifications` column
-      (`pos-UNIMOD:id`, 1-based, 0 = N-term), so the protein site =
-      `start + pos − 1` (e.g. MYL4 `start=93` + Ox at pos 10 → M102; TITIN
-      `start=34473` + Phospho at pos 4 → S34476). Shared peptides carry a
-      comma-separated `start` per accession.
-    - *DIA-NN parquet* carries `Protein.Sites` **pre-formatted** as `[acc:res+pos]`
-      (e.g. `[Q9Z1P6:M87]`, multi-site `[P55264:C139,C142]`) plus
-      `PTM.Site.Confidence` (1.0 = confident) and `Site.Occupancy.Probabilities`.
-      It also lists CAM cysteine sites, so the proteoform-key builder must filter
-      to the variable mods of interest.
-    - *Percolator* (demoted/testing tier) has no protein-coordinate site — **drop
-      PTM support there** (user decision 2026-06-11) rather than require a FASTA.
-    Only confidently-localized sites become distinct `_pS###` keys; decide a
-    bucket/drop policy for ambiguous ones (gate on DIA-NN `PTM.Site.Confidence`).
-
-  **Locked planning decisions (2026-06-13):**
-  - **Phospho is in v1** → extend the atom vector `[C,H,O,N,S]` → `[C,H,O,N,S,P]`
-    across `count_atoms` / `_calc_atom_mass` / `constants` (`aa_atoms`,
-    `iso_abundances`, the mass vector) / the IsoSpec `IsoParamsFromDict` formula.
-    P is monoisotopic (no envelope broadening) but phospho's 3 O *do* shape it.
-  - **Curated UNIMOD-id-keyed `mod_atoms` table** (not the UniMod ontology); CAM
-    routed as `UNIMOD:4`, retiring the `iaa` special-case flag → one code path for
-    fixed and variable mods. Unmodified-peptide masses/envelopes must stay
-    byte-identical; the frozen M2 oracle (`_helpers/forward_model.py`) stays
-    5-element as the independence check and is **not** touched — instead assert
-    production still matches it on unmodified peptides.
-  - **Proteoform rollup = "differential-turnover vs constitutive/artifactual"
-    split** (the bio-vs-artifactual decision, refined). Mods with regulated,
-    site-specific turnover — **phospho** now, K-acetyl / GG later — get distinct
-    `_pS###` proteoform keys. Constitutive or artifactual mods — **protein N-term
-    Acetyl** (co-translational, ~constitutive per N-terminus), **Met-Ox**,
-    **deamidation**, **CAM** — **fold into the bare accession** (same turnover
-    unit), but still get atom accounting so their peptidoforms integrate at the
-    right m/z + envelope instead of being dropped. So N-term Ac is in v1 for
-    *envelope fidelity / peptide retention*, phospho for *proteoform turnover*.
-    A `BIOLOGICAL_MODS` (gets-its-own-key) set in `constants` drives the split.
-  - **Retire BOTH `-X/--ignored_mods` and `-F/--forced_mods`** — SILAC-era
-    dual-channel machinery (SILAC fitting already removed in M4). Drop the CLI
-    options (`cli.py`), the `IntegrationConfig` fields (`config.py`), and the
-    `mod{offset}` channel machinery in `integration.py` (hardcode the single
-    `mod0` path — the current default), plus the `ignored_mods` plumbing through
-    `io/mztab`, `io/diann`, `io/percolator`. Percolator keeps working for
-    unmodified peptides only (no protein-coordinate site → no PTM support there).
-  - **Build order:** **A1 — DONE 2026-06-13** (atom-vector `[C,H,O,N,S]` →
-    `[C,H,O,N,S,P]`; `mod_atoms` now a curated UNIMOD-id table; CAM via
-    `mod_atoms[4]`; `count_atoms(mods=…)` + `get_peptide_distribution(mods=…)`
-    thread variable-mod composition; verified byte-identical on unmodified peptides
-    — mass Δ 0, envelope Δ 3e-18 — and against the frozen 5-element oracle; 178
-    tests pass) → **A3 — DONE 2026-06-13** (retired `-X/--ignored_mods` +
-    `-F/--forced_mods` from CLI/`IntegrationConfig`; dropped the `mod{offset}`
-    channel machinery in `integration.py` — `integrate_run`/`_extract_per_psm`
-    now emit `iso{N}` directly at the PSM's own m/z; removed `ignored_mods` from
-    `calculate_ion_mz` + the mztab/diann/percolator/pipeline/gui plumbing;
-    byte-identical — the 415s ac16 baseline gate + 177 others pass)
-    (independent cleanup; removes dead surface before threading) → **A2** thread
-    mods IO→fit (load-bearing; needs a **peptidoform-distinct `concat`** so
-    phospho ≠ the unmodified form of the same sequence; mod H stays out of
-    `num_labeling_sites`) → **B — DONE 2026-06-13** (proteoform rollup keys:
-    `PSMRecord.mod_sites` = biological-mod site in protein coords — `pS34476` from
-    mzTab `start`+`pos`, BIOLOGICAL_MODS={21} only — threaded IO→integrate(`mod
-    sites` col)→fit→`riana.core.protein._resolve_parsimony`, which appends it so a
-    phosphopeptidoform rolls up as `A2ASS6_pS34476`; N-term Ac / unmodified → bare
-    accession; two peptides covering one site share the key. DIA-NN deferred
-    (no phospho fixture yet). Validated on `data/timeseries_lve_atr` — 259 phospho
-    PSMs keyed; full suite + ac16 byte gate pass).
+- **M7 — PTM-aware envelope. v1 SHIPPED 2026-06-13 → 2026-06-17 (CHANGELOG).**
+  Atom-vector `[C,H,O,N,S]` → `[C,H,O,N,S,P]`; a curated UNIMOD-id-keyed
+  `mod_atoms` table (CAM as `UNIMOD:4`, retiring the `iaa` flag); variable mods
+  threaded IO→integrate→fit (each `[UNIMOD:N]` form a distinct `concat` at its own
+  m/z + envelope); proteoform rollup keys (`A2ASS6_pS34476`) driven by a
+  `BIOLOGICAL_MODS={21}` (phospho gets its own key; N-term Ac / CAM / Met-Ox fold
+  into the bare accession); `-X/-F` retired. Baseline `runs/lve_atr_m7/`. Two
+  design notes that still bind the follow-on work:
+  - **Two separate fixes, both required:** the integrate-side extraction target
+    m/z *and* the fit-side IsoSpec `formula` must both carry the mod atoms (the
+    pre-M7 drop sidestepped both). Mod hydrogens stay out of `num_labeling_sites`
+    (mod D₂O enrichment unknown). The frozen 5-element M2 oracle is **not** touched
+    — production asserts byte-identity against it on unmodified peptides.
+  - **Site localization → proteoform key, no FASTA needed.** *mzTab* gives
+    `start`/`end` + peptide-relative `pos-UNIMOD:id` → protein site `start+pos−1`
+    (DONE). *DIA-NN parquet* gives `Protein.Sites` pre-formatted `[acc:res+pos]` +
+    `PTM.Site.Confidence` (the **deferred** DIA phospho path — gate the key on
+    confidence, filter to variable mods of interest). *Percolator* has no
+    protein-coordinate site → no PTM support there.
 
   **Roadmap — which mods come next, and the binding constraint.** The hard gate is
   **identifiability in a search over *un*enriched data**: no PTM-enrichment
@@ -1433,34 +1141,19 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     below; deamidation is the harder of the two (isobaric-overlap regime).
 
   **Chemical-mod handling — integrate-separate, fit-merge (Met-Ox SHIPPED
-  2026-06-17, commit `ef8e3ae`; deamidation deferred).**
-  A purely chemical mod (Met-Ox, and the chemical part of deamidation) happens
-  *post-synthesis*, so it does **not** reset the D₂O clock: the oxidized and
-  unoxidized forms of a peptide share the *same* FS-vs-time signature. They should
-  therefore fold into the same proteoform **and the same peptidoform** (one
-  turnover curve), not be fit as two separate underpowered curves. **Met-Ox is
-  implemented:** `constants.CHEMICAL_MODS={35}`; `core.fitting._fit_key` strips
-  those tokens; the fit groups by `fit_key` (depth gate on the merged group) and
-  solves FS per row with each form's own envelope. New LVE_ATR baseline at
-  **`runs/lve_atr_m7/`** (git `ef8e3ae`; integrate→fit→rollup on the mods mzTab):
-  24 runs, 20,955 converged peptidoforms (was 20,682), 1,986 proteins; `[UNIMOD:35]`
-  in all 24 integrate outputs but 0 fit-key rows (merged); phospho proteoform keys
-  `Q02566_pT2` / `Q9JJW5_pT107` landed (2 reach protein level — unenriched-depth
-  limited). See the run's `README.md` for full provenance.
-  - *Mechanism:* **integrate the forms separately** (each at its own clean m/z +
-    envelope — Met-Ox is +15.995, well resolved; A2 already makes each `[UNIMOD:N]`
-    form a distinct `concat`), then **merge at the fit level** via a
-    *chemical-mod-stripped fit key*: strip chemical mods (Ox) from the grouping key
-    so their per-timepoint FS points land on one curve; keep biological mods
-    (phospho) distinct. Solves the use_range/ms2 "which m/z to integrate?" problem
-    (you never integrate a blended m/z). The fit key is the layer *between* the
-    integrate `concat` and the Stage-B protein/proteoform key.
-  - *Empirical motivation (LVE_ATR PTM search, depth≥4):* of 545 Met peptidoforms
-    seen oxidized, **451** appear as *both* Ox and non-Ox (same cond/charge) — i.e.
-    currently double-fit as two curves; merging gives **4** genuine depth-rescues
-    (neither form alone ≥4) and **51** power-gains (already fittable, +points). The
-    raw "fittable-series count" *drops* under merging (deduplication), so it is the
-    wrong metric — the gain is consolidation/power, not count.
+  2026-06-17, CHANGELOG; deamidation deferred).** The pattern future chemical mods
+  follow: a purely chemical mod happens *post-synthesis*, so it does **not** reset
+  the D₂O clock — the oxidized and unoxidized forms share the same FS-vs-time
+  signature and must fold onto **one** curve, not two underpowered ones. Mechanism:
+  **integrate the forms separately** (each at its own clean m/z — A2 already makes
+  each `[UNIMOD:N]` a distinct `concat`), then **merge at the fit level** via a
+  chemical-mod-stripped `_fit_key` (`CHEMICAL_MODS={35}`) that keeps biological
+  mods distinct. The fit key is the layer *between* the integrate `concat` and the
+  Stage-B proteoform key — and it sidesteps the "which m/z to integrate?" problem
+  (never integrate a blended m/z). LVE_ATR motivation: of 545 oxidized Met
+  peptidoforms, 451 also appear non-Ox → previously double-fit; merging gives the
+  consolidation/power win (raw "fittable-series count" *drops* under dedup, so it
+  is the wrong metric).
   - *Deamidation is the hard case — conditionally tractable, mass-gated.* +0.98401 Da
     (N→D / Q→E) sits only **0.0193 Da below the C13 M+1** (`1.00335`), i.e. a
     separation of **≈ 19340 / M_neutral ppm** (~19 ppm at 1000 Da → ~6 ppm at
@@ -1530,14 +1223,14 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
 - **Δmass-over-time QC display** — the near-term half of dual-mode FS: surface
   the per-isotopomer accurate-mass shift over the init envelope across the time
   series, a high-level QC for advanced users.
-- **Surface smoothing in the GUI + make the displayed trace faithful.** The CLI
-  `-S/--smoothing` (Savitzky–Golay, `polyorder=2`) is missing from the Integrate
-  form, so GUI runs can't enable it. Worse, the chromatogram re-extracts the
+- **Make the displayed chromatogram trace faithful to smoothing.** *(The form
+  control half is DONE 2026-06-20 — smoothing window + poly-order are in the
+  Integrate tab's Advanced group.)* What remains: the chromatogram re-extracts the
   *raw* XIC from the mzML at row-click, so the plotted trace does not reflect the
-  S-G smoothing integration actually applied. Fix both: add the form control, and
-  either re-apply the run's `IntegrationConfig.smoothing` at click or — better —
-  read the persisted smoothed trace from the `--save-traces` sidecar (which also
-  removes the ~10 s re-read).
+  S-G smoothing integration actually applied. Fix by either re-applying the run's
+  `IntegrationConfig.smoothing` at click or — better — reading the persisted
+  smoothed trace from the `--save-traces` sidecar (which also removes the ~10 s
+  re-read).
 - **Fit progress + real parallelism** (engine is Track C / `core/pipeline.py`,
   surfaced here). Today the GUI submits one opaque `run_fit` to a single worker
   with an indeterminate "busy" bar, and the inner peptide parallelism is a
@@ -1560,13 +1253,17 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   main process). Per-peptide/-protein deterministic seeds keep the result
   worker-count-independent.
 - **Expose the hidden integrate knobs in CLI + GUI as clearly-marked *advanced*
-  options (spiked 2026-06-12, short-term).** Several `IntegrationConfig` knobs the
-  CLI already takes (`--peak-rt`, `--apex-selection`, `--integration-half-width`
-  vs `--extraction-half-width`, `--baseline`, `--smoothing`, `--mass-difference`)
-  are power-user dials that are easy to mis-set; the GUI exposes only a subset.
-  Audit the full knob set, surface them all (CLI help + a collapsible "Advanced"
-  group in the GUI forms), and **label them advanced** so the default path stays
-  simple. Pairs with the smoothing-in-GUI item above.
+  options — DONE 2026-06-20 (CHANGELOG).** Every `IntegrationConfig` dial is now
+  reachable on both surfaces: 6 were frozen at default with no flag/widget
+  anywhere (`prominence_k`, `width_rel_height`, `apex_n_consensus`,
+  `scan_rt_tol_min`, `smoothing_polyorder`, plus the GUI-only `ppm_alert` → added
+  `--ppm-alert`). CLI groups them in "Advanced integration" + "Match-between-runs
+  (MBR)" `--help` panels; the GUI grew a collapsed "Advanced…" group (the form is
+  now scrollable) with the full dial set + a checkable MBR sub-group, and
+  `build_config()` passes every field. The smoothing-in-GUI item above is
+  subsumed (smoothing window + poly-order are in the Advanced group); the
+  *faithful-displayed-trace* half (re-apply S-G at row-click / read a
+  `--save-traces` sidecar) is still open.
 - **GUI-framework feasibility report — is Qt a ceiling? (spiked 2026-06-12,
   long-term.)** If pyqtgraph/Qt limits graphing or interactivity as the protein /
   Δk / φ-space views grow, write a feasibility note comparing alternatives

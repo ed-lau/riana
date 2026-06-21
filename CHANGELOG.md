@@ -12,6 +12,102 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### Advanced integration knobs surfaced on both CLI and GUI (Track E) — 2026-06-20
+
+#### Added
+
+- **All `IntegrationConfig` tuning dials are now reachable on both surfaces** — six
+  were frozen at their dataclass default with no flag/widget anywhere, and several
+  more existed on only one surface. New CLI options (in a `rich_help_panel`
+  **"Advanced integration"** group): `--ppm-alert` (previously GUI-only),
+  `--prominence-k`, `--width-rel-height`, `--apex-n-consensus`, `--scan-rt-tol`,
+  `--smoothing-polyorder`. The five MBR options moved into a **"Match-between-runs
+  (MBR)"** help panel.
+- **GUI: a collapsed "Advanced…" group** on the Integrate tab (the form is now in a
+  `QScrollArea`) carrying every previously CLI-only knob — smoothing window +
+  poly-order, mass difference, apex-search ½-width, prominence-k, width-rel-height,
+  apex-N-consensus, an optional extraction-½-width override, write-intensities, the
+  scan↔RT guard toggle + tolerance — plus a checkable **MBR** sub-group (the 5 MBR
+  knobs). `build_config()` now passes the full field set, so the GUI can build any
+  config the CLI can (the no-drift contract). Baseline / apex-selection / drift-alert
+  moved from the everyday form into Advanced to match the CLI's panel split.
+- Tests `test_build_config_advanced_widgets_flow_through` +
+  extended `test_build_config_defaults_round_trip` (GUI ↔ config parity).
+
+### Match-between-runs (MBR) for the mzTab/DDA path (Track A) — 2026-06-18, feature-complete 2026-06-20
+
+#### Added
+
+- **`integrate --mbr` — gated pure RT-transfer MBR for DDA.** Donor = a precursor
+  identified at q≤0.01 in ≥2 runs of its `(experiment, condition)` curve group; a
+  robust per-run RT offset (median over shared IDs) places a synthetic
+  `scan=-1`+RT `PSMRecord` flagged `evidence="mbr"`, which flows through the
+  existing M6b `resolve_rt_anchored_scans` + apex re-detect. A **two-part
+  MBR-only quality gate** admits the transfer: `--mbr-min-snr` (apex
+  prominence/local-noise; `inf`=fail, a sparse MAD=0 trace) and `--mbr-min-scans`
+  (nonzero scans in the window), defaults **4 / 3**, uncapped. Assembled in
+  `plan_integration` (mzTab is whole-experiment, so cross-run donor assembly is
+  free); the scan↔RT guard runs only on the directly-scanned subset.
+- **`fit --exclude-mbr` / `rollup --exclude-mbr`** opt-outs. New output columns:
+  `apex_snr` / `n_scans` (integrate); `n_points` / `n_mbr` / `n_metox` / `n_clean`
+  (fit, rollup) + per-point `evidence` (fractions). GUI: orange-triangle MBR points
+  + table census + per-run gate-drop count in the log.
+- **Benches:** `bench_missingness.py`, `bench_rt_alignment.py`,
+  `bench_mbr_quality.py`, `bench_mbr_ab.py`; design `reports/2026-06-17_mbr_v1_design.md`.
+
+#### Validation
+
+- **Fit A/B verdict:** *ungated* MBR is harmful (R²>0.95 −30%, pollutes clean
+  curves); *gated* MBR is neutral at strict R²>0.95 and **net-positive at the
+  in-vivo gates (+180 at R²>0.8) with no pollution** → shipped uncapped. Eval-only
+  within-protein-θ / yield / k_deg-CV show a reasonable yield-for-consistency
+  tradeoff (+37 proteins at R²>0.8 for ~+3.5% scatter).
+- **RETRACTED 2026-06-20** the earlier calibration "MBR mis-quantifies at high
+  label" result — root-caused as an mzTab↔mzML RT-axis mismatch (the calibration
+  mzTab is `.raw`-searched, RT axis 2–4 min off the local `.mzML`, and
+  `--no-rt-check` bypassed the guard). Not a labeling effect. Maintainer TODO:
+  re-search quantms on the exact `.mzML`, re-run the sweep without `--no-rt-check`.
+
+### M7 — PTM-aware envelope (Track C) — 2026-06-13 → 2026-06-17
+
+#### Added
+
+- **Atom-vector extension `[C,H,O,N,S]` → `[C,H,O,N,S,P]`** across `count_atoms` /
+  `_calc_atom_mass` / `constants` (`aa_atoms`, `iso_abundances`, mass vector) and
+  the IsoSpec `IsoParamsFromDict` formula, so phospho's P (monoisotopic) + its
+  3 O shape the envelope. Verified byte-identical on unmodified peptides (mass Δ 0,
+  envelope Δ 3e-18) and against the frozen 5-element M2 oracle.
+- **Variable mods threaded IO→integrate→fit.** Parsed bracketed UniMod masses now
+  enter the IsoSpec `formula` via a curated UNIMOD-id-keyed `mod_atoms` table
+  (`{id: [C,H,O,N,S,P]}`), and modified peptidoforms integrate at their **own**
+  m/z + envelope instead of being dropped. Each `[UNIMOD:N]` form is a distinct
+  `concat`; mod hydrogens stay out of `num_labeling_sites` (mod enrichment unknown).
+- **Proteoform-aware rollup keys.** `PSMRecord.mod_sites` carries the biological-mod
+  site in protein coordinates (`pS34476` from mzTab `start`+`pos`); a
+  `BIOLOGICAL_MODS={21}` (phospho) set drives a split where regulated mods get a
+  distinct key (`A2ASS6_pS34476`) and constitutive/chemical mods (N-term Ac,
+  Met-Ox, CAM) fold into the bare accession.
+- **Chemical-mod integrate-separate / fit-merge (Met-Ox).** `CHEMICAL_MODS={35}`;
+  `core.fitting._fit_key` strips chemical-mod tokens so the oxidized and unoxidized
+  forms of a peptide land on one turnover curve (they share the same D₂O clock),
+  with per-row FS on each form's own envelope.
+
+#### Removed
+
+- **Retired `-X/--ignored_mods` and `-F/--forced_mods`** (SILAC-era dual-channel
+  machinery) from CLI, `IntegrationConfig`, and the `mod{offset}` channel path in
+  `integration.py` — `integrate_run` now emits `iso{N}` directly at the PSM's own
+  m/z. Removed the `ignored_mods` plumbing through `io/mztab`, `io/diann`,
+  `io/percolator`, `pipeline`, `gui`. The `iaa` special-case for Carbamidomethyl
+  is gone — CAM routes through `mod_atoms[4]` (`UNIMOD:4`) like any other mod.
+
+#### Validation
+
+- New baseline `runs/lve_atr_m7/` (git `ef8e3ae`): 24 runs, 20,955 converged
+  peptidoforms, 1,986 proteins; `[UNIMOD:35]` in all 24 integrate outputs but 0
+  fit-key rows (merged); phospho proteoform keys (`Q02566_pT2`, `Q9JJW5_pT107`)
+  landed. 178-test suite + the 415s ac16 byte-identical gate pass.
+
 ### Parallelism — `-W/--workers` everywhere; `-t/--thread` removed
 
 #### Removed
