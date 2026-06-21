@@ -3,7 +3,7 @@ title: "RIANA - Relative Isotope Abundance Analyzer"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
 abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
 author: "Edward Lau"
 date: "`r Sys.Date()`"
 image-caption: "RIANA logo"
@@ -23,12 +23,14 @@ image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 RIANA (**R**elative **I**sotope **A**bundance A**na**lyzer) is a software to automate the analysis of mass spectrometry-
 based protein turnover measurement experiments.
 
-RIANA is written to be flexible to accommodate different protein stable isotope labels, including heavy water (D~2~O) and
-SILAC (e.g., ^13^C~6~-lysine or other amino acids) experiments.
+RIANA quantifies protein turnover from metabolic **heavy water (D~2~O)** labeling experiments. The MS1 isotopomer
+integration is label-agnostic, while kinetic fitting is currently D~2~O-only (^18^O support is in progress; the earlier
+amino-acid / SILAC fitting path was retired in 1.0.0).
 
-RIANA supports a Snakemake pipeline that uses other existing tools in the community, requiring only mass spectrometry
-data files (.mzML) as input to perform database search, post-processing, peak integration, and output of best-fit
-kinetic rate constants.
+RIANA is orchestration-agnostic: peptide identification is owned upstream by established tools (**quantms** for DDA,
+**DIA-NN** for DIA), and RIANA is a linear `integrate → fit → rollup` pipeline — MS1 peak integration, per-peptidoform
+kinetic fitting, and protein-level roll-up with optional cross-condition turnover (Δk) testing. Both a command-line
+interface and a desktop GUI (`riana gui`) are provided.
 
 ![Workflow](images/workflow.png)
 
@@ -38,26 +40,16 @@ kinetic rate constants.
 ::: {.column-margin}
 **Latest Updates**
 
-v.0.8.3
+v1.0.0
 --
-* Minor bug fixes
+* Major rewrite: typed streaming pipeline, apex-window peak detection, IsoSpec forward-model fractional synthesis.
+* New `riana rollup` for protein-level turnover + a cross-condition Δk test (`--model "linear simple"`).
+* SDRF + manifest project workflow; quantms mzTab (DDA) and DIA-NN parquet (DIA) intake; gated match-between-runs (`--mbr`).
+* New PySide6 desktop GUI: `riana gui`.
 
-
-v.0.8.1
+v0.9.0
 --
-* Minor bug fixes
-
-v.0.8.0
---
-* Added support for automatic isotopomer selection. To use this feature, run `riana/riana.py` with `--fs Auto`.
-* Added experimental support for in vitro heavy water labeling. To use this feature, run `riana/riana.py` with `--label hw_cell`.
-
-
-v.0.7.2
---
-* Included additional Snakemake options in the config files
-* The argument for isotope now takes in multiple numerical values separated by space e.g., 2 4 6 8
-
+* Stabilization release; mass-tolerance now means ±N ppm.
 
 > See [Change Log](change.qmd) for details.
 
