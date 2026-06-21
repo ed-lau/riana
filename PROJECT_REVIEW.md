@@ -1118,6 +1118,20 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     confidence, filter to variable mods of interest). *Percolator* has no
     protein-coordinate site → no PTM support there.
 
+  **Far-future — per-experiment chemical-vs-biological mod tagging.** Today the
+  chemical/biological/encode policy is *global* id-sets in `constants`
+  (`BIOLOGICAL_MODS`, `CHEMICAL_MODS`, …). Two cases break that: (a) the **same
+  UniMod is chemical in one experiment, biological in another** — dimethyl
+  (`UNIMOD:36`) is a chemical duplex label (Sadygov/Deberneh) but biological for
+  histone methylation; (b) the **same UniMod means different things by site** —
+  Acetyl (`UNIMOD:1`) is constitutive at the protein N-terminus but regulated K-ac
+  on a side chain (handled today only by the crude pos≥1 site guard). The real fix
+  is an **experiment-scoped policy**: read the modified-residue type from the SDRF
+  UniMod and/or a CLI/GUI tag declaring, per run, which UniMod is chemical vs
+  biological (vs a separate channel). Deferred — YAGNI until a user needs the
+  conflicting interpretation; recorded so the global-set design isn't mistaken for
+  the final word.
+
   **Roadmap — which mods come next, and the binding constraint.** The hard gate is
   **identifiability in a search over *un*enriched data**: no PTM-enrichment
   D₂O-labeling dataset exists yet, so we can only measure turnover of PTM forms
@@ -1188,7 +1202,48 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     enrichment). Worth naming now precisely because the science case is strongest:
     the moment an enriched D₂O-diGly dataset appears, GG jumps the queue.
 
-#### Track D — validation infrastructure (unblocked by M6a)
+- **TMT — chemical isobaric label as a fit-merge mod (NEAR-TERM, designed
+  2026-06-21; not built). Memory `track_c_tmt_chemical_mod`.** Support **TMT10plex
+  (`UNIMOD:737`, identical chemistry to TMT6plex)** and **TMTpro 16/18-plex
+  (`UNIMOD:2016`)** as **chemical fit-merge** mods (the Met-Ox bucket): searched
+  *variable* to catch incomplete labeling, a peptide shows up as 1-tag vs 2-tag
+  peptidoforms (different MS1 masses, integrated separately), and since TMT is
+  post-harvest it shares one D₂O curve → strip in `_fit_key` (add to
+  `CHEMICAL_MODS`). NOT a biological key; NOT a separate channel (dimethyl/SILAC are
+  the separate-sample TODO below).
+  - **⚠️ The trap — TMT carries fixed heavy isotopes.** TMT6plex is
+    `C8 ¹³C4 H20 N1 ¹⁵N1 O2` (Δ 229.1629), TMTpro `C8 ¹³C7 H25 N1 ¹⁵N2 O3` (Δ
+    304.2071), so the light-composition mass ≠ the true mass. "Total atoms in
+    `mod_atoms`" gives a ~5 / ~9 Da-light precursor (extraction misses the peak);
+    "light atoms + a separate mass override" is **also broken** — the FS solver
+    matches **by channel index** (so a global m/z offset is harmless), *but*
+    `get_envelope` bins the IsoSpec distribution at `round(pep_mass) ± 0.5`, so a
+    light distribution sitting ~5 Da below the correct `pep_mass` anchor falls
+    outside every bin → empty envelope → NaN on every TMT peptide.
+  - **The correct fix — pinned single-isotope pseudo-elements.**
+    `get_peptide_distribution` already appends a pseudo-element for deuterium the
+    same way; append the fixed heavies as `count, masses=[¹³C/¹⁵N], probs=[1.0]`. A
+    100%-abundance isotope adds **mass but zero broadening** — physically exact.
+    Data model: `mod_atoms[id]` = light broadening atoms; new `mod_fixed_isotopes`
+    table; `unimod_mass(id) = _calc_atom_mass(mod_atoms[id]) + Σ count·heavy_mass`
+    (one source of truth). **Verified 2026-06-21:** production
+    `fitting._fit_one_concat` takes `pep_mass` from `calculate_ion_mz → unimod_mass`
+    — the *same* table the envelope uses — so mass + envelope stay in lockstep once
+    both account for the pinned heavies. ~25 lines (`get_peptide_distribution`,
+    `unimod_mass`, `constants`) + tests; frozen M2 oracle stays 5-element/light
+    (assert unmodified byte-identity). **GUI fold-points are pre-wired for `tmt`**
+    (built 2026-06-21), so the merged points colour the moment this lands.
+- **Dimethyl duplex & SILAC — "multiplex/channel labels, fit separately" (TODO).**
+  *Distinct from the fit-merge bucket above* (user correction 2026-06-21): a chemical
+  duplex/multiplex label (reductive **dimethylation** — Sadygov/Deberneh; **SILAC**)
+  marks a *different sample/channel*, so its light/heavy forms must be fit as
+  **separate curves**, not merged. That makes the mod a **sample/condition axis**
+  (conceptually an SDRF channel dimension) — a bigger architectural feature than the
+  `_fit_key` merge, hence deferred. SILAC is biological (metabolic); dimethyl is
+  chemical-but-still-separate. Note the per-experiment ambiguity (dimethyl `UNIMOD:36`
+  is *chemical* in a duplex labeling study but *biological* for histone methylation)
+  — resolved by the far-future per-experiment chemical-vs-biological UniMod tagging
+  (Track C M7 box).
 
 - **Animal within-protein-θ benchmark — BUILT (2026-06-10).** The 4th dataset
   (`data/timeseries_lve`, mouse in-vivo D₂O, mzTab + SDRF) has no fractional-pool
