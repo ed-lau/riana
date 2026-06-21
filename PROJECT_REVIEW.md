@@ -724,31 +724,33 @@ which emits its own SDRF (a near-identical variant, a few columns different) —
 so the identity model is shared; only the PSM/quant file format differs (mzTab
 vs DIA-NN parquet).
 
-#### Handoff — ordered priorities (next sessions, as of 2026-06-20)
+#### Handoff — ordered priorities (next sessions, as of 2026-06-21)
 
 **Recently shipped** (now in CHANGELOG; cleared from this list): **M7** v1 (A1–B +
-Met-Ox tier 1b, `5c37f43 → ef8e3ae`, `runs/lve_atr_m7` baseline), the **`linear
-simple`** cross-sample Δk milestone, **MBR** for the mzTab/DDA path (gated
-RT-transfer, feature-complete 2026-06-20 incl. rollup `--exclude-mbr` + GUI
-MBR-point colouring; the high-label calibration concern was retracted as an RT-axis
-artifact), and the **advanced-knob exposure** (every `IntegrationConfig` dial now
-reachable on both CLI — "Advanced integration" + "MBR" `--help` panels — and GUI —
-a collapsed "Advanced…" group incl. the MBR sub-group + smoothing; closed the
-`ppm_alert` CLI/GUI asymmetry, also satisfies the Track E smoothing-in-GUI item).
-The next unblocked gaps, in order:
+Met-Ox tier 1b) + **K-acetyl** proteoform key + **GUI chemical-fold point display**
+(pre-wired for TMT), the **`linear simple`** cross-sample Δk milestone, **MBR** for
+the mzTab/DDA path (gated RT-transfer, feature-complete 2026-06-20), the
+**advanced-knob exposure** (every `IntegrationConfig` dial reachable on both CLI +
+GUI; closed the `ppm_alert` asymmetry), and the **docs refresh** (README + Quarto
+site updated to 1.0.0). The next gaps, in order:
 
-1. **Tier-1 PTM mods — K-acetyl + K/R-methylation (cheap, composition only).** The
-   M7 machinery exists (atom vector, `mod_atoms` table, fit-merge / proteoform
-   keys); these add `UNIMOD:1` (K-ac, own `_acKxxx` key) and `UNIMOD:34/36/37`
-   (methylation) — no new atom-vector work. Acceptable unenriched yield. See the
-   Track C M7 "which mods come next" box.
-2. **Cut the `v1.0.0` git tag + Zenodo DOI (release action — maintainer).** The
+1. **Adaptive N_ISO via IsoSpec-at-integrate — the next major integration-fidelity
+   item (prioritized 2026-06-21, AHEAD of TMT/SILAC/dimethyl).** Run the forward
+   model at integrate (today fit-only), set per-peptide N_ISO from the init+final
+   envelope union, adopt the averaged-isotopolog accurate mass (with `iso0` as the
+   precursor m0), and choose limited isotopomers at *fit* (e.g. iso0+iso1 SSE). Also
+   unlocks the orthogonal mass-defect θ estimator and subsumes TMT's precursor-mass
+   path. Full design + the H4′ normalize-before-truncate constraint in **Track B**;
+   memory `m8_adaptive_niso_robust_envelope`.
+2. **Tier-1 K/R-methylation (cheap, composition only).** `UNIMOD:34/36/37`,
+   biological keys (`meK###`/`me2R###`); composition already in `mod_atoms`, no
+   atom-vector work. (K-acetyl already shipped.) See the Track C M7 "which mods come
+   next" box.
+3. **Cut the `v1.0.0` git tag + Zenodo DOI (release action — maintainer).** The
    code is already `1.0.0` and the repo audited clean (2026-06-21; see Cross-cutting
    chores) — what's left is the release decision: merge `m3-rewrite` → `master`,
    `git tag v1.0.0`, push, mint the DOI. A maintainer call (branch/timing + an
    external service), not a code task.
-3. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
-   Stale post-M3; docstrings are the interim source of truth.
 
 **Demand-driven / blocked on data or a decision (do when unblocked):**
 - **DIA-NN phospho proteoform sites** — the `Protein.Sites` → site mapping is
@@ -978,11 +980,47 @@ N_ISO all interact:
   from the M3 spike: tight `apex_search_half_width` (~0.15) and/or
   `consensus_apex` for boundaries stable across labelling proportions (the
   boundary-stability finding).
-- **Adaptive N_ISO + robust matcher.** Set the per-peptide channel count from
-  the IsoSpec plateau envelope instead of a fixed integer, paired with a
-  contaminant-robust observed-vs-IsoSpec matcher (Huber / soft-trim /
-  per-channel-SNR weighting) so the extra channels don't import co-eluting
-  isobars. The open research question is that matcher.
+- **Adaptive N_ISO via IsoSpec-at-integrate — the NEXT integration-fidelity item
+  (prioritized 2026-06-21, ahead of TMT/SILAC/dimethyl).** Today the forward model
+  runs **only at fit**; `integrate` extracts a *fixed* `--iso` channel set at
+  analytic m/z (`calculate_ion_mz`: residue+mod masses, `base + iso·mass_diff/z`).
+  **Promote the envelope to integrate time:** per peptidoform run the IsoSpec
+  **init (0%)** and **final (RIA%)** envelopes and set **N_ISO per peptide** from
+  the union of significant channels — a short peptide gets m0–m3, a long/
+  heavily-labeled one m0–m8 — instead of the one-size `--iso 0…5/6`. Three things
+  fall out:
+  1. **`iso0` IS the precursor m0 mass.** One computation, inherently consistent
+     with the envelope, so the separate mod-mass path collapses into it. TMT /
+     heavy-dimethyl then need **no** analytic `unimod_mass + pinned-isotope` mass
+     extension — the pinned-isotope *envelope* support (`mod_atoms` light +
+     `mod_fixed_isotopes`, appended in `get_peptide_distribution`) is still the
+     shared prerequisite, but the **mass comes from iso0**. (This RESOLVES the TMT
+     A/B in favour of B — do this first, get the mass for free; see the TMT box in
+     Track C.)
+  2. **Adopt the averaged-isotopolog per-isotopomer accurate mass** as the
+     extraction target (the `use_nominal_masses=True` weighted-average mass per
+     nominal bin), replacing today's `base + iso·1.00335` spacing. **Accepted
+     behavior change** (user 2026-06-21): it is *more* accurate — the true centroid
+     of each isotopomer cluster, accounting for mixed C/H/N/O/S/²H contributions —
+     and is distinct from the MS literature's "nominal mass" (averaged *across*
+     isotopomers).
+  3. **Orthogonal mass-defect θ** (subsumes the old "dual-mode FS" item). Because
+     the ²H−¹H mass defect differs from ¹³C−¹²C, as the profile mixes with more D
+     each isotopomer's **accurate mass shifts measurably from its θ=0 position**.
+     That shift is an FS estimator *orthogonal* to the abundance-ratio one — solve
+     θ both ways and cross-validate; for low-abundance peptides mass accuracy can
+     beat spectral accuracy. Integrate already emits `iso{N}_obs_mz` /
+     `iso{N}_ppm_error`, so the substrate exists (the near-term QC half is the
+     Track E Δmass-over-time display).
+  - **Choose limited isotopomers at FIT, not integrate** (subsumes the reserved
+    `--fs` channel-subset SSE). Integrate **wide** (adaptive N_ISO captures the
+    full envelope) and let `fit` solve θ over a **chosen subset** (e.g. iso0+iso1
+    only) to dodge co-eluting contaminants in the high channels. Wide capture,
+    narrow scoring — you cannot subset at fit what you did not integrate.
+  - **Robust observed-vs-IsoSpec matcher** (the open research question): more
+    channels means more contamination risk, so pair adaptive N_ISO with a
+    contaminant-robust matcher (Huber / soft-trim / per-channel-SNR weighting) so
+    the extra channels don't import co-eluting isobars.
   - **⚠️ HARD CONSTRAINT — normalize the FULL IsoSpec envelope BEFORE truncating
     to N_ISO** (the "H4′" finding, verified 2026-06-08). `solve_fs_d2o` today
     normalizes init/final *separately over the truncated channels* then mixes:
@@ -998,16 +1036,10 @@ N_ISO all interact:
     this item** (mix full-envelope *abundances*, THEN truncate + normalize), not
     after. The same trap kills a naive iso0/iso1-ratio interpolation — you must
     mix the abundances, then take the ratio.
-- **`--fs` channel-subset SSE.** Wire the reserved flag: solve FS over a chosen
-  isotopomer subset to dodge contaminated channels. (Subject to the same
-  full-envelope-normalization constraint above.)
-- **Dual-mode FS (abundance + mass-defect shift).** D₂O labelling shifts the
-  intensity-weighted accurate mass of each isotopomer (the 2H−1H mass defect
-  differs from 13C−12C), so the per-channel mass shift over the init (natural)
-  envelope is an *orthogonal* FS estimator. Let the model solve FS both ways and
-  combine/cross-validate; for low-abundance peptides mass accuracy can beat
-  spectral accuracy, so this is a robustness win that pairs with the adaptive
-  N_ISO matcher. (The near-term QC half of this idea is in Track E.)
+  - **Cost note:** integrate gains per-peptidoform IsoSpec (today fit-only), but it
+    is cached by `(sequence, mods)` and the distinct-peptidoform count ≪ PSM count,
+    so it is bounded and parallel-safe under `-W`. The `use_nominal_masses` envelope
+    cache (`algorithms.isotope_dist`) already exists.
 
 Gated by both the mixing-series benchmarks and the new animal benchmark
 (Track D).
@@ -1205,7 +1237,8 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     the moment an enriched D₂O-diGly dataset appears, GG jumps the queue.
 
 - **TMT — chemical isobaric label as a fit-merge mod (NEAR-TERM, designed
-  2026-06-21; not built). Memory `track_c_tmt_chemical_mod`.** Support **TMT10plex
+  2026-06-21; not built; SEQUENCED AFTER adaptive N_ISO — see Track B). Memory
+  `track_c_tmt_chemical_mod`.** Support **TMT10plex
   (`UNIMOD:737`, identical chemistry to TMT6plex)** and **TMTpro 16/18-plex
   (`UNIMOD:2016`)** as **chemical fit-merge** mods (the Met-Ox bucket): searched
   *variable* to catch incomplete labeling, a peptide shows up as 1-tag vs 2-tag
@@ -1227,14 +1260,21 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
     same way; append the fixed heavies as `count, masses=[¹³C/¹⁵N], probs=[1.0]`. A
     100%-abundance isotope adds **mass but zero broadening** — physically exact.
     Data model: `mod_atoms[id]` = light broadening atoms; new `mod_fixed_isotopes`
-    table; `unimod_mass(id) = _calc_atom_mass(mod_atoms[id]) + Σ count·heavy_mass`
-    (one source of truth). **Verified 2026-06-21:** production
-    `fitting._fit_one_concat` takes `pep_mass` from `calculate_ion_mz → unimod_mass`
-    — the *same* table the envelope uses — so mass + envelope stay in lockstep once
-    both account for the pinned heavies. ~25 lines (`get_peptide_distribution`,
-    `unimod_mass`, `constants`) + tests; frozen M2 oracle stays 5-element/light
-    (assert unmodified byte-identity). **GUI fold-points are pre-wired for `tmt`**
-    (built 2026-06-21), so the merged points colour the moment this lands.
+    table. This **pinned-isotope envelope support is the shared prerequisite** and
+    is needed regardless.
+  - **Precursor mass — resolved 2026-06-21: comes from `iso0`, not a separate mass
+    path.** With **adaptive N_ISO sequenced first** (Track B — IsoSpec runs at
+    integrate), the envelope's `iso0` *is* the precursor m0, so TMT needs **no**
+    analytic `unimod_mass + pinned` extension at all — the bridge (Option A) is
+    dropped. (The A/B was: A = ship TMT now with the analytic mass; B = do
+    IsoSpec-at-integrate first and ride `iso0`. **B chosen** because adaptive N_ISO
+    + fit-time isotopomer subsetting is higher-value than TMT — user 2026-06-21.)
+    Until adaptive N_ISO lands, TMT is simply not built. ~tests + the `constants`
+    tables (`mod_atoms` light entries + `mod_fixed_isotopes` + add 737/2016 to
+    `STARTER_VARIABLE_UNIMODS` ∪ `CHEMICAL_MODS`); frozen M2 oracle stays
+    5-element/light (assert unmodified byte-identity). **GUI fold-points are
+    pre-wired for `tmt`** (built 2026-06-21), so the merged points colour the moment
+    this lands.
 - **Dimethyl duplex & SILAC — "multiplex/channel labels, fit separately" (TODO).**
   *Distinct from the fit-merge bucket above* (user correction 2026-06-21): a chemical
   duplex/multiplex label (reductive **dimethylation** — Sadygov/Deberneh; **SILAC**)
