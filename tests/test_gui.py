@@ -382,6 +382,56 @@ def test_build_config_defaults_round_trip(main_window):
     assert cfg.isotopomers == (0, 1, 2, 3, 4, 5)
     # apex default: ehw = integration_half_width (0.15) + 0.33 apex offset.
     assert cfg.extraction_half_width == pytest.approx(0.48)
+    # The Advanced group is collapsed by default and every dial sits at its
+    # IntegrationConfig default — the GUI builds the *same* config the CLI does.
+    default = IntegrationConfig()
+    for field in ("prominence_k", "width_rel_height", "apex_n_consensus",
+                  "smoothing", "smoothing_polyorder", "mass_difference",
+                  "ppm_alert", "apex_search_half_width", "write_intensities",
+                  "check_scan_rt", "scan_rt_tol_min", "mbr",
+                  "mbr_min_donor_runs", "mbr_donor_q", "mbr_min_snr",
+                  "mbr_min_scans"):
+        assert getattr(cfg, field) == getattr(default, field), field
+
+
+def test_build_config_advanced_widgets_flow_through(main_window):
+    """Every Advanced dial reaches the frozen config — the no-drift contract for
+    the knobs that used to be CLI-only or hidden entirely."""
+    tab = main_window.integrate_tab
+    tab.peak_rt_combo.setCurrentText("consensus")
+    tab.prominence_spin.setValue(5.0)
+    tab.width_rel_spin.setValue(0.5)
+    tab.apex_n_spin.setValue(3)
+    tab.apex_search_spin.setValue(0.4)
+    tab.smoothing_combo.setCurrentText("7")
+    tab.smoothing_poly_spin.setValue(3)
+    tab.mass_diff_spin.setValue(1.5)
+    tab.ppm_alert_spin.setValue(12.0)
+    tab.write_intensities_check.setChecked(True)
+    tab.rt_check.setChecked(False)            # guard off
+    tab.scan_rt_tol_spin.setValue(1.5)
+    tab.ext_override_check.setChecked(True)
+    tab.ext_spin.setValue(0.9)
+    tab.mbr_box.setChecked(True)
+    tab.mbr_donor_runs_spin.setValue(3)
+    tab.mbr_donor_q_spin.setValue(0.005)
+    tab.mbr_snr_spin.setValue(6.0)
+    tab.mbr_scans_spin.setValue(5)
+
+    cfg = tab.build_config()
+    assert cfg.prominence_k == 5.0
+    assert cfg.width_rel_height == 0.5
+    assert cfg.apex_n_consensus == 3
+    assert cfg.apex_search_half_width == 0.4
+    assert cfg.smoothing == 7 and cfg.smoothing_polyorder == 3
+    assert cfg.mass_difference == 1.5
+    assert cfg.ppm_alert == 12.0
+    assert cfg.write_intensities is True
+    assert cfg.check_scan_rt is False and cfg.scan_rt_tol_min == 1.5
+    assert cfg.extraction_half_width == 0.9   # explicit override wins over derive
+    assert cfg.mbr is True
+    assert cfg.mbr_min_donor_runs == 3 and cfg.mbr_donor_q == 0.005
+    assert cfg.mbr_min_snr == 6.0 and cfg.mbr_min_scans == 5
 
 
 def test_integrate_tab_has_sdrf_and_workers(main_window):

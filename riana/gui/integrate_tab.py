@@ -33,6 +33,7 @@ from typing import Callable
 import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -44,6 +45,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QTableView,
@@ -163,20 +165,6 @@ class IntegrateTab(QWidget):
         self.ihw_edit.setPlaceholderText("RT min, or 'auto'")
         form.addRow("Integration ½-width", self.ihw_edit)
 
-        self.baseline_combo = QComboBox()
-        self.baseline_combo.addItems(["none", "noise_floor", "snip", "asls"])
-        form.addRow("Baseline", self.baseline_combo)
-
-        self.apex_combo = QComboBox()
-        self.apex_combo.addItems(["tallest", "nearest"])
-        form.addRow("Apex selection", self.apex_combo)
-
-        self.ppm_alert_spin = QDoubleSpinBox()
-        self.ppm_alert_spin.setRange(0.1, 1000.0)
-        self.ppm_alert_spin.setValue(20.0)
-        self.ppm_alert_spin.setSuffix(" ppm")
-        form.addRow("Drift alert", self.ppm_alert_spin)
-
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
         self.workers_spin.setValue(1)
@@ -187,6 +175,11 @@ class IntegrateTab(QWidget):
 
         self.out_edit = QLineEdit(".")
         form.addRow("Output dir", self._path_row(self.out_edit, self._pick_out))
+
+        # The power-user tuning dials — collapsed by default so the everyday
+        # form stays simple; mirrors the CLI's "Advanced integration" + "MBR"
+        # rich-help panels (all build the same frozen IntegrationConfig).
+        form.addRow(self._build_advanced())
 
         buttons = QHBoxLayout()
         self.run_button = QPushButton("Run")
@@ -203,6 +196,181 @@ class IntegrateTab(QWidget):
         self.error_label.setWordWrap(True)
         form.addRow(self.error_label)
 
+        # The form can get tall once Advanced is expanded — keep it scrollable
+        # so Run/Cancel never fall off the bottom of a short window.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(box)
+        return scroll
+
+    def _build_advanced(self) -> QWidget:
+        """The collapsible *Advanced* group: every remaining ``IntegrationConfig``
+        knob (the tuning dials + the MBR sub-group), so the GUI can build the
+        full config the CLI can — no surface drift. Checkable + collapsed by
+        default; toggling shows/hides the inner widgets."""
+        box = QGroupBox("Advanced…")
+        box.setCheckable(True)
+        box.setChecked(False)
+        outer = QVBoxLayout(box)
+
+        inner = QWidget()
+        box.toggled.connect(inner.setVisible)
+        inner.setVisible(False)
+        outer.addWidget(inner)
+        form = QFormLayout(inner)
+
+        # --- peak / baseline dials (moved out of the everyday form) ----------
+        self.baseline_combo = QComboBox()
+        self.baseline_combo.addItems(["none", "noise_floor", "snip", "asls"])
+        form.addRow("Baseline", self.baseline_combo)
+
+        self.apex_combo = QComboBox()
+        self.apex_combo.addItems(["tallest", "nearest"])
+        self.apex_combo.setToolTip("Apex pick rule for peak-rt apex/consensus.")
+        form.addRow("Apex selection", self.apex_combo)
+
+        self.apex_search_spin = QDoubleSpinBox()
+        self.apex_search_spin.setRange(0.0, 10.0)
+        self.apex_search_spin.setDecimals(2)
+        self.apex_search_spin.setSingleStep(0.05)
+        self.apex_search_spin.setValue(0.25)
+        self.apex_search_spin.setSuffix(" min")
+        self.apex_search_spin.setToolTip(
+            "Half-width bounding the apex search around the PSM/MBR RT prior "
+            "(0 = whole extraction).")
+        form.addRow("Apex search ½-width", self.apex_search_spin)
+
+        self.prominence_spin = QDoubleSpinBox()
+        self.prominence_spin.setRange(0.1, 100.0)
+        self.prominence_spin.setDecimals(2)
+        self.prominence_spin.setSingleStep(0.5)
+        self.prominence_spin.setValue(3.0)
+        self.prominence_spin.setToolTip(
+            "Apex-finder strictness — clear K·1.4826·MAD(trace); higher = stricter.")
+        form.addRow("Prominence k", self.prominence_spin)
+
+        self.width_rel_spin = QDoubleSpinBox()
+        self.width_rel_spin.setRange(0.01, 0.99)
+        self.width_rel_spin.setDecimals(2)
+        self.width_rel_spin.setSingleStep(0.05)
+        self.width_rel_spin.setValue(0.05)
+        self.width_rel_spin.setToolTip(
+            "Apex-height fraction for boundary detection — only used with "
+            "Integration ½-width = auto (0.05 = 5% of apex, 0.5 = FWHM).")
+        form.addRow("Width rel-height", self.width_rel_spin)
+
+        self.apex_n_spin = QSpinBox()
+        self.apex_n_spin.setRange(1, 10)
+        self.apex_n_spin.setValue(4)
+        self.apex_n_spin.setToolTip(
+            "Channels (m0..m{N-1}) the consensus apex pools over — only used "
+            "with Window anchor = consensus.")
+        form.addRow("Apex N (consensus)", self.apex_n_spin)
+
+        # --- extraction / smoothing / mass ----------------------------------
+        ext_row = QWidget()
+        ext_layout = QHBoxLayout(ext_row)
+        ext_layout.setContentsMargins(0, 0, 0, 0)
+        self.ext_override_check = QCheckBox("override")
+        self.ext_spin = QDoubleSpinBox()
+        self.ext_spin.setRange(0.01, 20.0)
+        self.ext_spin.setDecimals(2)
+        self.ext_spin.setSingleStep(0.05)
+        self.ext_spin.setValue(0.5)
+        self.ext_spin.setSuffix(" min")
+        self.ext_spin.setEnabled(False)
+        self.ext_override_check.toggled.connect(self.ext_spin.setEnabled)
+        self.ext_override_check.setToolTip(
+            "Extraction half-width: how much XIC to pull. Off = derived from "
+            "Integration ½-width / Window anchor (the default).")
+        ext_layout.addWidget(self.ext_override_check)
+        ext_layout.addWidget(self.ext_spin)
+        form.addRow("Extraction ½-width", ext_row)
+
+        self.smoothing_combo = QComboBox()
+        self.smoothing_combo.addItems(["off", "3", "5", "7", "9", "11"])
+        self.smoothing_combo.setToolTip("Savitzky-Golay window (odd ≥ 3); off disables.")
+        form.addRow("Smoothing window", self.smoothing_combo)
+
+        self.smoothing_poly_spin = QSpinBox()
+        self.smoothing_poly_spin.setRange(2, 5)
+        self.smoothing_poly_spin.setValue(2)
+        self.smoothing_poly_spin.setToolTip("SG polynomial order; only used when smoothing is on.")
+        form.addRow("Smoothing poly-order", self.smoothing_poly_spin)
+
+        self.mass_diff_spin = QDoubleSpinBox()
+        self.mass_diff_spin.setRange(0.1, 10.0)
+        self.mass_diff_spin.setDecimals(9)
+        self.mass_diff_spin.setSingleStep(0.001)
+        self.mass_diff_spin.setValue(1.003354835)
+        self.mass_diff_spin.setToolTip("Mass step between isotopomers (C13 default).")
+        form.addRow("Mass difference", self.mass_diff_spin)
+
+        self.ppm_alert_spin = QDoubleSpinBox()
+        self.ppm_alert_spin.setRange(0.1, 1000.0)
+        self.ppm_alert_spin.setValue(20.0)
+        self.ppm_alert_spin.setSuffix(" ppm")
+        self.ppm_alert_spin.setToolTip("Warn when a fraction's median ppm error exceeds this.")
+        form.addRow("Drift alert", self.ppm_alert_spin)
+
+        self.write_intensities_check = QCheckBox("write pre-integration trace")
+        form.addRow("Intensities", self.write_intensities_check)
+
+        # --- intake scan↔RT guard -------------------------------------------
+        self.rt_check = QCheckBox("enabled")
+        self.rt_check.setChecked(True)
+        self.rt_check.setToolTip(
+            "Per-run check that mzTab spectra_ref scans reconcile with this "
+            "mzML's RTs (catches the quantms filename-prefix scramble). "
+            "Uncheck only for a run you know is correctly paired.")
+        form.addRow("Scan↔RT guard", self.rt_check)
+
+        self.scan_rt_tol_spin = QDoubleSpinBox()
+        self.scan_rt_tol_spin.setRange(0.1, 60.0)
+        self.scan_rt_tol_spin.setDecimals(2)
+        self.scan_rt_tol_spin.setSingleStep(0.5)
+        self.scan_rt_tol_spin.setValue(3.0)
+        self.scan_rt_tol_spin.setSuffix(" min")
+        self.rt_check.toggled.connect(self.scan_rt_tol_spin.setEnabled)
+        form.addRow("Scan↔RT tolerance", self.scan_rt_tol_spin)
+
+        # --- MBR sub-group (the checkable box state IS the mbr flag) ----------
+        self.mbr_box = QGroupBox("Match-between-runs (MBR)")
+        self.mbr_box.setCheckable(True)
+        self.mbr_box.setChecked(False)
+        self.mbr_box.setToolTip(
+            "Transfer a confidently-identified precursor into runs of its "
+            "(experiment, condition) curve that missed it. SDRF/mzTab DDA path "
+            "only; no-op on DIA.")
+        mbr_form = QFormLayout(self.mbr_box)
+
+        self.mbr_donor_runs_spin = QSpinBox()
+        self.mbr_donor_runs_spin.setRange(2, 100)
+        self.mbr_donor_runs_spin.setValue(2)
+        mbr_form.addRow("Min donor runs", self.mbr_donor_runs_spin)
+
+        self.mbr_donor_q_spin = QDoubleSpinBox()
+        self.mbr_donor_q_spin.setRange(0.0, 1.0)
+        self.mbr_donor_q_spin.setDecimals(4)
+        self.mbr_donor_q_spin.setSingleStep(0.001)
+        self.mbr_donor_q_spin.setValue(0.01)
+        mbr_form.addRow("Donor q-value", self.mbr_donor_q_spin)
+
+        self.mbr_snr_spin = QDoubleSpinBox()
+        self.mbr_snr_spin.setRange(0.0, 1000.0)
+        self.mbr_snr_spin.setDecimals(1)
+        self.mbr_snr_spin.setSingleStep(1.0)
+        self.mbr_snr_spin.setValue(4.0)
+        self.mbr_snr_spin.setToolTip("Apex-SNR floor for transfers (0 = ungated).")
+        mbr_form.addRow("Min apex SNR", self.mbr_snr_spin)
+
+        self.mbr_scans_spin = QSpinBox()
+        self.mbr_scans_spin.setRange(0, 1000)
+        self.mbr_scans_spin.setValue(3)
+        self.mbr_scans_spin.setToolTip("Min nonzero scans in the integration window (0 = off).")
+        mbr_form.addRow("Min scans", self.mbr_scans_spin)
+
+        form.addRow(self.mbr_box)
         return box
 
     def _build_results(self) -> QWidget:
@@ -302,13 +470,19 @@ class IntegrateTab(QWidget):
         ihw_text = self.ihw_edit.text().strip()
         ihw: float | str = "auto" if ihw_text == "auto" else float(ihw_text)
         peak_rt = self.peak_rt_combo.currentText()
-        # Derive the extraction half-width exactly as riana.cli.integrate does:
-        # ms2 integrates the whole extraction (= ihw); apex/consensus and 'auto'
-        # need room for the apex offset (+0.33).
-        if peak_rt == "ms2" and ihw != "auto":
+        # Extraction half-width: an explicit Advanced override, else derived
+        # exactly as riana.cli.integrate does — ms2 integrates the whole
+        # extraction (= ihw); apex/consensus and 'auto' need room for the apex
+        # offset (+0.33).
+        if self.ext_override_check.isChecked():
+            ehw = float(self.ext_spin.value())
+        elif peak_rt == "ms2" and ihw != "auto":
             ehw = float(ihw)
         else:
             ehw = (0.33 if ihw == "auto" else float(ihw)) + 0.33
+
+        smoothing_text = self.smoothing_combo.currentText()
+        smoothing = None if smoothing_text == "off" else int(smoothing_text)
 
         return IntegrationConfig(
             sample=self.sample_edit.text().strip(),
@@ -319,8 +493,23 @@ class IntegrateTab(QWidget):
             integration_half_width=ihw,
             baseline_method=self.baseline_combo.currentText(),
             apex_selection=self.apex_combo.currentText(),
+            apex_search_half_width=float(self.apex_search_spin.value()),
+            apex_n_consensus=int(self.apex_n_spin.value()),
+            prominence_k=float(self.prominence_spin.value()),
+            width_rel_height=float(self.width_rel_spin.value()),
             q_value=float(self.qvalue_spin.value()),
+            write_intensities=bool(self.write_intensities_check.isChecked()),
+            smoothing=smoothing,
+            smoothing_polyorder=int(self.smoothing_poly_spin.value()),
+            mass_difference=float(self.mass_diff_spin.value()),
             ppm_alert=float(self.ppm_alert_spin.value()),
+            check_scan_rt=bool(self.rt_check.isChecked()),
+            scan_rt_tol_min=float(self.scan_rt_tol_spin.value()),
+            mbr=bool(self.mbr_box.isChecked()),
+            mbr_min_donor_runs=int(self.mbr_donor_runs_spin.value()),
+            mbr_donor_q=float(self.mbr_donor_q_spin.value()),
+            mbr_min_snr=float(self.mbr_snr_spin.value()),
+            mbr_min_scans=int(self.mbr_scans_spin.value()),
             out_dir=self.out_edit.text().strip() or ".",
         )
 

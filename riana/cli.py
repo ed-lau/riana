@@ -37,6 +37,12 @@ app = typer.Typer(
     "protein-turnover kinetics. https://github.com/ed-lau/riana",
 )
 
+# Rich-help panels that segregate the power-user dials from the everyday options
+# in ``riana integrate --help`` (the GUI mirrors this with a collapsed "Advanced"
+# group). The everyday flags stay in Typer's default "Options" panel.
+_ADV = "Advanced integration (tuning dials)"
+_MBR = "Match-between-runs (MBR)"
+
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -117,7 +123,7 @@ def integrate(
         1e-2, "-q", "--q_value", metavar="FDR",
         help="Integrate only PSMs with q-value below this [default: 1e-2]."),
     extraction_half_width: Optional[float] = typer.Option(
-        None, "-r", "--extraction_half_width", "--r_time",
+        None, "-r", "--extraction_half_width", "--r_time", rich_help_panel=_ADV,
         help="Extraction half-width (RT min, both directions): how much XIC to "
         "pull around the PSM. If omitted, derived from --integration-half-width "
         "/ --peak-rt. (alias: --r_time)",
@@ -133,22 +139,22 @@ def integrate(
         "chromatographic peak width), or 'auto' to detect boundaries.",
     ),
     baseline_method: str = typer.Option(
-        "none", "--baseline",
+        "none", "--baseline", rich_help_panel=_ADV,
         help="In-window baseline subtraction: none (default), noise_floor, "
         "snip, asls.",
     ),
     apex_selection: str = typer.Option(
-        "tallest", "--apex-selection",
+        "tallest", "--apex-selection", rich_help_panel=_ADV,
         help="Apex pick rule for apex/consensus: tallest (default) or nearest.",
     ),
     apex_search_half_width: float = typer.Option(
-        0.25, "--apex-search-half-width", metavar="MIN",
+        0.25, "--apex-search-half-width", metavar="MIN", rich_help_panel=_ADV,
         help="Half-width (RT min) bounding the apex search around the PSM/MBR RT "
         "prior (default 0.25; 0 = whole extraction). Tighter keeps the apex on the "
         "confident RT anchor — relevant for cross-proportion / MBR stability.",
     ),
     write_intensities: bool = typer.Option(
-        False, "-w", "--write_intensities",
+        False, "-w", "--write_intensities", rich_help_panel=_ADV,
         help="Also write the pre-integration intensity trace."),
     mass_tol: Optional[int] = typer.Option(
         None, "-m", "--mass_tol", metavar="PPM",
@@ -156,22 +162,48 @@ def integrate(
         "the SDRF comment[precursor mass tolerance], else the 10 ppm default. "
         "Given here, overrides the SDRF."),
     smoothing: Optional[int] = typer.Option(
-        None, "-S", "--smoothing",
+        None, "-S", "--smoothing", rich_help_panel=_ADV,
         help="Savitzky-Golay smoothing window (odd int ≥ 3)."),
+    smoothing_polyorder: int = typer.Option(
+        2, "--smoothing-polyorder", metavar="ORDER", rich_help_panel=_ADV,
+        help="Savitzky-Golay polynomial order; only used with --smoothing "
+        "[default: 2]."),
     mass_difference: float = typer.Option(
-        1.003354835, "-D", "--mass_difference",
+        1.003354835, "-D", "--mass_difference", rich_help_panel=_ADV,
         help="Mass difference between isotopomers [default: 1.003354835]."),
+    ppm_alert: float = typer.Option(
+        20.0, "--ppm-alert", metavar="PPM", rich_help_panel=_ADV,
+        help="Per-fraction drift-alert threshold: warn when the median ppm error "
+        "exceeds this [default: 20]."),
+    prominence_k: float = typer.Option(
+        3.0, "--prominence-k", metavar="K", rich_help_panel=_ADV,
+        help="Apex-finder strictness — a candidate apex must clear "
+        "K·1.4826·MAD(trace); higher is stricter. Used by --peak-rt apex/consensus "
+        "and --integration-half-width auto [default: 3.0]."),
+    width_rel_height: float = typer.Option(
+        0.05, "--width-rel-height", metavar="FRAC", rich_help_panel=_ADV,
+        help="Apex-height fraction at which --integration-half-width auto measures "
+        "the peak width: 0.05 = 5% of apex (Skyline-classic), 0.5 = FWHM (more "
+        "stable). Only used with --integration-half-width auto [default: 0.05]."),
+    apex_n_consensus: int = typer.Option(
+        4, "--apex-n-consensus", metavar="N", rich_help_panel=_ADV,
+        help="Leading isotopomer channels (m0..m{N-1}) the consensus apex pools "
+        "over. Only used with --peak-rt consensus [default: 4]."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
         help="Runs to integrate concurrently on the --sdrf path (one mzML in "
         "memory per worker; 2-4 suits a many-timepoint time series) [default: "
         "1]. The parallelism lever — per-run extraction is GIL-bound serial."),
     no_rt_check: bool = typer.Option(
-        False, "--no-rt-check",
+        False, "--no-rt-check", rich_help_panel=_ADV,
         help="Disable the intake scan↔RT guard — the per-run check that the "
         "mzTab spectra_ref scans reconcile with this mzML's retention times "
         "(catches the quantms filename-prefix scan-scramble / wrong mzML↔mzTab "
         "pairing). Only disable for a run you know is correctly paired."),
+    scan_rt_tol: float = typer.Option(
+        3.0, "--scan-rt-tol", metavar="MIN", rich_help_panel=_ADV,
+        help="Median scan↔RT offset (RT min) above which the intake guard errors "
+        "[default: 3.0]. Ignored with --no-rt-check."),
     resume: bool = typer.Option(
         False, "--resume",
         help="On the --sdrf path, skip runs already integrated in the output's "
@@ -179,30 +211,30 @@ def integrate(
         "as it finishes, so a crashed run resumes where it stopped). Assumes the "
         "same SDRF/mzTab inputs."),
     mbr: bool = typer.Option(
-        False, "--mbr",
+        False, "--mbr", rich_help_panel=_MBR,
         help="Match-between-runs (mzTab/DDA, --sdrf path): transfer a confidently "
         "identified precursor into the runs of its (experiment, condition) curve "
         "that missed it, recovering points lost to stochastic MS2 sampling. "
         "Transferred rows are flagged evidence='mbr'; one with no detectable apex "
         "is dropped. No-op on DIA (DIA-NN already propagates)."),
     mbr_min_donor_runs: int = typer.Option(
-        2, "--mbr-min-donor-runs", metavar="N",
+        2, "--mbr-min-donor-runs", metavar="N", rich_help_panel=_MBR,
         help="MBR donor gate: transfer a precursor only if it is confidently "
         "identified in at least N runs of the curve group [default: 2]."),
     mbr_donor_q: float = typer.Option(
-        1e-2, "--mbr-donor-q", metavar="Q",
+        1e-2, "--mbr-donor-q", metavar="Q", rich_help_panel=_MBR,
         help="MBR donor-confidence q-value threshold [default: 0.01]."),
     mbr_min_snr: float = typer.Option(
-        4.0, "--mbr-min-snr", metavar="SNR",
+        4.0, "--mbr-min-snr", metavar="SNR", rich_help_panel=_MBR,
         help="Drop MBR transfers whose apex SNR (prominence/local-noise) is below "
         "this (inf SNR — a sparse MAD=0 trace — also fails). Default 4 (0 = ungated): "
         "the fit A/B showed ungated MBR is harmful but SNR≥4 makes it net-positive "
         "at in-vivo R² gates with no clean-curve pollution."),
     mbr_min_scans: int = typer.Option(
-        3, "--mbr-min-scans", metavar="N",
+        3, "--mbr-min-scans", metavar="N", rich_help_panel=_MBR,
         help="Drop MBR transfers with fewer than N nonzero scans in the integration "
         "window (a sparse XIC can't define a reliable peak). Default 3 (0 = off); "
-        "keeps ~98%% of real-quality peaks. The companion to --mbr-min-snr."),
+        "keeps ~98% of real-quality peaks. The companion to --mbr-min-snr."),
 ) -> None:
     """Integrate isotopomer abundance over retention time."""
     import dataclasses
@@ -278,12 +310,18 @@ def integrate(
             baseline_method=baseline_method,
             apex_selection=apex_selection,
             apex_search_half_width=float(apex_search_half_width),
+            apex_n_consensus=int(apex_n_consensus),
+            prominence_k=float(prominence_k),
+            width_rel_height=float(width_rel_height),
             q_value=float(q_value),
             write_intensities=bool(write_intensities),
             smoothing=smoothing,
+            smoothing_polyorder=int(smoothing_polyorder),
             mass_difference=float(mass_difference),
+            ppm_alert=float(ppm_alert),
             out_dir=str(out),
             check_scan_rt=not no_rt_check,
+            scan_rt_tol_min=float(scan_rt_tol),
             mbr=bool(mbr),
             mbr_min_donor_runs=int(mbr_min_donor_runs),
             mbr_donor_q=float(mbr_donor_q),
