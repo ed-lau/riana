@@ -1,6 +1,7 @@
 # Riana — Project Review & Roadmap
 
-> **Status (1.0.0.dev1, branch `m3-rewrite`).** The M1–M4 rewrite is complete
+> **Status (version `1.0.0` in code; `v1.0.0` git tag + Zenodo DOI still pending —
+> a release action; branch `m3-rewrite`).** The M1–M4 rewrite is complete
 > (typed pipeline, streaming I/O, dual ID intake, apex-default peak integration,
 > IsoSpec forward-model FS, Typer CLI, PySide6 GUI). The post-M4 planning round
 > (2026-06-07) retired the record-only M5–M8 numbering into **five tracks** (A
@@ -39,7 +40,7 @@ old contents are folded in below where still load-bearing; the rest is cut.
 
 ## 1. Project status
 
-> **Update (2026-06, 1.0.0.dev1):** the three-step plan below is complete
+> **Update (2026-06, version `1.0.0`):** the three-step plan below is complete
 > through M4 — 0.9.0 stabilization, the calibration dataset, and the 1.0.0
 > rewrite (typed pipeline, streaming I/O, peak detection, mzTab intake, and a
 > PySide6 GUI) have all shipped. The narrative below is the original pre-rewrite
@@ -741,10 +742,11 @@ The next unblocked gaps, in order:
    keys); these add `UNIMOD:1` (K-ac, own `_acKxxx` key) and `UNIMOD:34/36/37`
    (methylation) — no new atom-vector work. Acceptable unenriched yield. See the
    Track C M7 "which mods come next" box.
-2. **Cut a real `1.0.0` tag + repo hygiene (deliberate hygiene chunk).** A clean
-   line in the sand before more features pile on (move 1 GB+ of personal outputs
-   out of `data/`, drop stray root outputs — see Cross-cutting chores). Shouldn't
-   slip indefinitely.
+2. **Cut the `v1.0.0` git tag + Zenodo DOI (release action — maintainer).** The
+   code is already `1.0.0` and the repo audited clean (2026-06-21; see Cross-cutting
+   chores) — what's left is the release decision: merge `m3-rewrite` → `master`,
+   `git tag v1.0.0`, push, mint the DOI. A maintainer call (branch/timing + an
+   external service), not a code task.
 3. **User-facing docs refresh (large; deliberate, not a feature side-effect).**
    Stale post-M3; docstrings are the interim source of truth.
 
@@ -1351,11 +1353,19 @@ not the raw XIC, so the two are decoupled.
 
 #### Cross-cutting / pre-1.0.0 chores
 
-- **Cut a real `1.0.0`** (currently `1.0.0.dev1`, last tag `v0.9.0`) + a Zenodo
-  *code* DOI. M1–M4 is a complete rewrite and deserves the tag.
-- **Repo hygiene** (also §4.5): remove the stray root outputs
-  (`riana_fit_peptides.txt` etc.), `riana_website/` (mode 0700), the committed
-  `docs/` Quarto HTML, and move 1 GB+ of personal outputs out of `data/`.
+- **Cut a real `1.0.0` tag + Zenodo *code* DOI (RELEASE ACTION — pending).**
+  `riana/__init__.py` is **already `1.0.0`** (the version bump is done; this header
+  prose elsewhere still says `1.0.0.dev1` — stale). Last tag is `v0.9.0`. What
+  remains is the **release decision**: whether to merge `m3-rewrite` → `master`
+  first, then `git tag v1.0.0` + push + mint the Zenodo code DOI. Left to the
+  maintainer (branch/timing + an external service).
+- **Repo hygiene — largely already clean (audited 2026-06-21).** `data/` is
+  **fully gitignored** (27 GB local-only — a personal-disk concern, not a git one);
+  there are **no stray *tracked* root outputs**; `docs/` has **no committed Quarto
+  HTML**; `riana_website/` is legitimate Quarto **source** at normal `0755` perms
+  (the old "mode 0700" note is stale — keep it). Only gitignored junk remains
+  locally (`.DS_Store`, `.coverage`, `logfile.log`). No action needed beyond the
+  optional local `data/` disk cleanup, which is the maintainer's.
 - **User-facing docs refresh — post-M3, still stale (large TODO).** The narrative
   docs were not redone after the M3/M4 rewrite, so they lag the current CLI/GUI,
   the SDRF/manifest model, the rollup, and now `linear simple`. Until that
@@ -1422,11 +1432,12 @@ These apply during and after the rewrite:
    protein` chain glued by the manifest; ship the three CLI subcommands
    (optionally a thin `riana run` wrapper) and stay orchestration-agnostic. See
    §3 "Post-M4 roadmap" → cross-cutting chores.
-5. **Repo hygiene.** Move 1+ GB of personal experiment outputs out of
-   `data/` (Zenodo for the M2 dataset bits; gitignore the rest). Remove
-   `riana_website/` (mode 0700 directory; either commit cleanly or
-   delete). Move `docs/` (generated Quarto HTML) to a `gh-pages` branch
-   or rebuild via CI rather than committing to `master`.
+5. **Repo hygiene — audited clean 2026-06-21 (was largely already done).**
+   `data/` is fully gitignored (27 GB local-only — a personal-disk cleanup, the
+   maintainer's, not a git concern); no stray *tracked* root outputs; `docs/` has
+   no committed Quarto HTML; `riana_website/` is legitimate Quarto **source** at
+   normal `0755` perms (keep it — the "mode 0700" note was stale). Only gitignored
+   junk remains locally (`.DS_Store`, `.coverage`, `logfile.log`).
 
 ## 5. What this plan deliberately does not include
 
