@@ -1,7 +1,7 @@
 # MBR v1 — design (mzTab/DDA path)
 
 - **Date:** 2026-06-17
-- **Status:** SHIPPED — **v1 feature-complete 2026-06-20** across integrate → fit → rollup → GUI. Gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3` default, uncapped); `--exclude-mbr` opts out at fit and rollup; MBR points marked in the GUI; `n_mbr/n_metox/n_clean` census + per-run drop count surfaced. Fit A/B: ungated MBR is harmful, but gated MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates (+180 at R²>0.8) with no clean-curve pollution (§ Update 2026-06-18c). **Accuracy caveat:** transferred quant is fine at low RIA (turnover) but mis-quantifies at high label (calibration |θ−f| 3× worse, § Update 2026-06-19) — opt-in coverage tool, not for high-label experiments.
+- **Status:** SHIPPED — **v1 feature-complete 2026-06-20** across integrate → fit → rollup → GUI. Gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3` default, uncapped); `--exclude-mbr` opts out at fit and rollup; MBR points marked in the GUI; `n_mbr/n_metox/n_clean` census + per-run drop count surfaced. Fit A/B: ungated MBR is harmful, but gated MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates (+180 at R²>0.8) with no clean-curve pollution (§ Update 2026-06-18c). **Accuracy caveat (revised § Update 2026-06-20b):** validated on **Track D real turnover** (MBR points in-corridor, +37 proteins, +3.5% scatter). The earlier "mis-quantifies at high label" calibration result (§ Update 2026-06-19) is now **root-caused as an mzTab↔mzML RT-axis mismatch artifact, NOT a labeling effect** — the calibration mzTab was searched on `.raw` and run with `--no-rt-check`, so MBR's RT-anchored transfers landed 2–4 min off. **Retraction pending a same-mzML re-search** (TBD).
 - **Precursor:** [missingness + RT-alignment measurement](2026-06-17_mbr_dda_feasibility.md) (GO for DDA)
 - **Roadmap:** `PROJECT_REVIEW.md` → Track A
 
@@ -446,3 +446,47 @@ What remains is **not** v1 scope — it is the deferred-improvement backlog: the
 high-label `apex_search_half_width` fix (above), the `scan↔RT` guard default bump for
 multi-day acquisition (calibration tripped at 2.16 min), the `--depth`-semantics
 spike, the sub-threshold rescue tier, and an MBR-FDR study.
+
+### Update 2026-06-20b — calibration "mis-quantification" ROOT-CAUSED: RT-axis mismatch, not high label (§ Update 2026-06-19 RETRACTED pending re-search)
+
+The apex-knob sweep (`bench_mbr_apex_knobs.py`, ac16 coeffs) was built to test whether a
+suppressed-iso0 apex mis-pick caused the calibration |θ−f| (§ Update 2026-06-19).
+**It does not** — and the sweep, plus a code read, identified the real cause:
+
+- **The result is mechanism-blind to the apex knobs.** MBR θ ≈ 0 for *every* proportion
+  (per-f |θ−f| climbs 0.10 → 0.975 as f → 0.875; bias −0.225), and `apex_selection`
+  nearest = tallest (0.349 vs 0.350). If the apex were mis-picking, the pick rule would
+  matter. It doesn't — the apex is searching **at the wrong RT entirely**.
+- **The maintainer's objection was correct:** a D₂O *mixing* sample has **one co-eluting
+  envelope** per peptide (labelled + unlabelled molecules of the *same* peptide elute
+  together; the mix only re-weights isotopomers). There is no separate unlabelled peak to
+  "grab," so "tallest grabs the unlabelled co-eluter" was wrong.
+- **Root cause — RT-axis mismatch.** Direct extraction is **scan-based**
+  (`spectra_ref` → mzML scan, native axis) → immune (calibration direct |θ−f| 0.119 is
+  fine). **MBR is RT-based**: the transfer RT is built from the mzTab `retention_time`
+  ([io/mztab.py], [core/mbr.py]) and resolved to "the nearest MS1 scan in *this* mzML"
+  ([core/integration.py] `resolve_rt_anchored_scans`). The calibration mzTab was searched
+  on the **`.raw`** (OpenMS-aligned RT axis), so it is offset from the local `.mzML` by
+  **2.16–3.92 min** (exactly what the scan↔RT guard measured) — and we ran integrate with
+  **`--no-rt-check`** to bypass that guard. MBR's `consensus + run_offset` reconstructs the
+  mzTab-axis RT, which resolves to an mzML scan `axis_offset` minutes off the true peak →
+  the 0.15-min window never overlaps the peptide → garbage θ. **Track D MBR is fine
+  because its mzTab was searched on the same mzML (axis_offset ≈ 0).** The deuterium RT
+  shift (~seconds) is a red herring next to the multi-minute axis offset.
+
+**Consequences / TBD:**
+1. **§ Update 2026-06-19 is retracted** as a labeling-level claim. The calibration is the
+   wrong dataset to judge MBR accuracy *while its mzTab is `.raw`-searched*. **TBD
+   (maintainer):** re-run quantms on the **exact `.mzML`**, then integrate `--mbr`
+   *without* `--no-rt-check` and re-run `bench_mbr_apex_knobs.py` / `bench_mbr_calibration.py`
+   — MBR θ should track f. Until then the only trustworthy MBR accuracy evidence is Track D.
+2. **`consensus` + MBR is gate-incompatible (TBD code):** `consensus_apex` returns a
+   *spread*, not an SNR, so `apex_snr` is NaN and the MBR SNR gate drops **every**
+   consensus row (n_mbr = 0 in the sweep). Make `consensus_apex` emit a consensus SNR
+   (e.g. min/median per-channel SNR) so `peak_rt="consensus"` can be used with `--mbr`.
+3. **Safety gap (recommended):** MBR structurally depends on the RT axis the scan↔RT guard
+   validates, yet nothing stops `--mbr` + `--no-rt-check` (or MBR on a large measured
+   offset) — that combination produced this. Add a refuse/warn when both are set.
+4. No integration **defaults were changed** — the sweep justified none (it was confounded).
+   The shipped MBR (Track-D-validated) stands. `--apex-search-half-width` was added as a
+   CLI flag (it was config-only) and is genuinely useful regardless.

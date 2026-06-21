@@ -1040,12 +1040,15 @@ it. Remaining M7 follow-ons and the next gaps, in order:
     point-starved rescues) → ship **uncapped**. **Evals done** (2026-06-19,
     evaluation-only): within-protein-θ (Track D) + protein yield + within-protein
     k_deg geometric CV all show a *yield-for-consistency tradeoff* (+37 proteins at
-    R²>0.8 for ~+3.5% within-protein scatter — reasonable); but the **calibration
-    ground-truth |θ−f|** (ac16 mzTab via `--no-rt-check`) shows MBR **mis-quantifies at
-    high label** (|θ−f| 3× worse, biased toward θ≈0; even clean 8/9+1 fills are 38%
-    in-corridor) — a high-label stress regime, so MBR is a **low-RIA-turnover coverage
-    tool, not for high-label experiments**; the apex-on-suppressed-iso0 co-eluter is the
-    cause (deferred fix: tight `apex_search_half_width` for MBR). **v1 feature-complete
+    R²>0.8 for ~+3.5% within-protein scatter — reasonable). The earlier **calibration
+    ground-truth |θ−f|** result (ac16 mzTab via `--no-rt-check`, "MBR mis-quantifies at
+    high label") is **RETRACTED 2026-06-20b — root-caused as an mzTab↔mzML RT-axis
+    mismatch, NOT a labeling effect** (design doc § Update 2026-06-20b): the calibration
+    mzTab is `.raw`-searched (RT axis 2–4 min off the local `.mzML`, the scan↔RT guard's
+    own number) and `--no-rt-check` bypassed the guard, so MBR's RT-anchored transfers
+    landed off-peak; direct (scan-based) was immune. **TBD (maintainer):** re-search
+    quantms on the exact `.mzML`, then re-run the sweep without `--no-rt-check`. **v1
+    feature-complete
     2026-06-20** (integrate→fit→rollup→GUI): rollup `--exclude-mbr` + `n_mbr/n_metox/
     n_clean` census, GUI orange-triangle MBR points + table census, per-run gate-drop
     count in the log. **Parked:** the

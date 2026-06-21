@@ -141,6 +141,12 @@ def integrate(
         "tallest", "--apex-selection",
         help="Apex pick rule for apex/consensus: tallest (default) or nearest.",
     ),
+    apex_search_half_width: float = typer.Option(
+        0.25, "--apex-search-half-width", metavar="MIN",
+        help="Half-width (RT min) bounding the apex search around the PSM/MBR RT "
+        "prior (default 0.25; 0 = whole extraction). Tighter keeps the apex on the "
+        "confident RT anchor — relevant for cross-proportion / MBR stability.",
+    ),
     write_intensities: bool = typer.Option(
         False, "-w", "--write_intensities",
         help="Also write the pre-integration intensity trace."),
@@ -271,6 +277,7 @@ def integrate(
             integration_half_width=ihw,
             baseline_method=baseline_method,
             apex_selection=apex_selection,
+            apex_search_half_width=float(apex_search_half_width),
             q_value=float(q_value),
             write_intensities=bool(write_intensities),
             smoothing=smoothing,
