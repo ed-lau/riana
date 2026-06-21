@@ -375,6 +375,25 @@ def test_curve_view_draws_ci_ribbon(main_window):
     assert sum(isinstance(i, FillBetweenItem) for i in items) == 2  # one per condition
 
 
+def test_curve_view_splits_mbr_and_folded_points(main_window):
+    """plot_fit draws direct / MBR / chemical-fold (Met-Ox, future TMT) points as
+    separate series so each provenance is visually distinct."""
+    from pyqtgraph import PlotDataItem
+
+    cv = main_window.protein_tab.curve
+    t = [0, 1, 2, 4]
+    fs = [0.0, 0.3, 0.5, 0.7]
+    cv.plot_fit("PEP", t, fs, 0.2, "simple", {},
+                evidence=["q_value", "mbr", "q_value", "q_value"],
+                metox=[False, False, True, False])
+    series = [i for i in cv.plot.getPlotItem().items if isinstance(i, PlotDataItem)]
+    # direct (2 pts) + MBR (1) + folded (1) + fitted line = 4 PlotDataItems.
+    assert len(series) == 4
+    names = {i.name() for i in series}
+    assert any(n and n.startswith("MBR") for n in names)
+    assert any(n and n.startswith("folded") for n in names)
+
+
 def test_build_config_defaults_round_trip(main_window):
     cfg = main_window.integrate_tab.build_config()
     assert isinstance(cfg, IntegrationConfig)

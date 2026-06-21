@@ -468,12 +468,14 @@ class ModelTab(QWidget):
         cfg = self._last_config
         kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
         ev = row.get("evidence")
+        mx = row.get("metox")
         self.curve.plot_fit(
             str(concat), list(row["t"]), list(row["fs"]),
             float(row["k_deg"]), cfg.model, kinetic,
             ci_lo=_safe_float(row.get("ci_lo")),
             ci_hi=_safe_float(row.get("ci_hi")),
             evidence=list(ev) if ev is not None else None,
+            metox=list(mx) if mx is not None else None,
         )
 
     # --- small helpers ------------------------------------------------------ #

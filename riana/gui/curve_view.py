@@ -62,40 +62,60 @@ class CurveView(QWidget):
         ci_lo: float | None = None,
         ci_hi: float | None = None,
         evidence: list[str] | None = None,
+        metox: list[bool] | None = None,
     ) -> None:
         """Scatter the (t, fs) data and overlay the fitted model curve.
 
         When ``ci_lo`` / ``ci_hi`` (the k_deg CI) are given, a shaded ribbon
         between the model curves at those k bounds shows the fit uncertainty.
-        When ``evidence`` (per-point ``q_value`` | ``mbr``, aligned to ``t``) is
-        given, match-between-runs points are drawn as orange triangles so the
-        transferred quant is visually distinct from the direct IDs.
+
+        Observed points are split by provenance so the user can see how the curve
+        was assembled, each as its own series (aligned to ``t``):
+
+        * **direct ID** — blue ○ (the default).
+        * **MBR transfer** (``evidence[i] == "mbr"``) — orange △, the transferred
+          quant distinct from direct IDs.
+        * **chemical-mod fold** (``metox[i]``) — purple ◇, a point consolidated
+          into this curve by ``core.fitting._fit_key`` (Met-Ox today; **TMT** once
+          it joins ``constants.CHEMICAL_MODS`` — the flag is generic over chemical
+          mods, so TMT folds light up here with no further GUI change).
+
+        MBR keeps priority for the symbol (its established orange △); among the
+        direct IDs a chemical-fold point takes the purple ◇.
         """
         self.plot.clear()
         if not t:
             self.show_placeholder(f"{concat}: no fitted data points.")
             return
 
-        # Observed fraction-new points — direct IDs (blue ○) vs MBR transfers
-        # (orange △), so the user can see which points were matched between runs.
         ev = list(evidence) if evidence is not None and len(evidence) == len(t) else None
-        if ev is not None and any(e == "mbr" for e in ev):
-            direct = [(ti, fi) for ti, fi, e in zip(t, fs, ev) if e != "mbr"]
-            mbr = [(ti, fi) for ti, fi, e in zip(t, fs, ev) if e == "mbr"]
-            if direct:
-                self.plot.plot(
-                    [p[0] for p in direct], [p[1] for p in direct], pen=None,
-                    symbol="o", symbolSize=8, symbolBrush="#1f77b4", name="observed",
-                )
+        mx = list(metox) if metox is not None and len(metox) == len(t) else None
+
+        def _point_class(i: int) -> str:
+            if ev is not None and ev[i] == "mbr":
+                return "mbr"
+            if mx is not None and mx[i]:
+                return "folded"
+            return "direct"
+
+        # (symbol, size, colour, legend label); folded covers Met-Ox + future TMT.
+        styles = {
+            "direct": ("o", 8, "#1f77b4", "observed"),
+            "mbr": ("t", 10, "#ff7f0e", "MBR"),
+            "folded": ("d", 10, "#9467bd", "folded (Met-Ox/TMT)"),
+        }
+        groups: dict[str, list[tuple[float, float]]] = {k: [] for k in styles}
+        for i, (ti, fi) in enumerate(zip(t, fs)):
+            groups[_point_class(i)].append((ti, fi))
+        for cls, pts in groups.items():
+            if not pts:
+                continue
+            symbol, size, colour, label = styles[cls]
+            name = label if cls == "direct" else f"{label} ({len(pts)})"
             self.plot.plot(
-                [p[0] for p in mbr], [p[1] for p in mbr], pen=None,
-                symbol="t", symbolSize=10, symbolBrush="#ff7f0e",
-                symbolPen="#ff7f0e", name=f"MBR ({len(mbr)})",
-            )
-        else:
-            self.plot.plot(
-                list(t), list(fs), pen=None,
-                symbol="o", symbolSize=8, symbolBrush="#1f77b4", name="observed",
+                [p[0] for p in pts], [p[1] for p in pts], pen=None,
+                symbol=symbol, symbolSize=size, symbolBrush=colour,
+                symbolPen=colour, name=name,
             )
 
         # Fitted model curve on a dense grid, when k_deg converged.

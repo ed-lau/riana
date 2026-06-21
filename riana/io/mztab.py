@@ -300,14 +300,18 @@ def _proteoform_sites(sequence: str, modifications: object, start: object) -> st
 
     Stage B: e.g. ``pS34476`` (or ``pS34476_pT34480`` for two sites), empty when
     the peptidoform carries no biological mod (``constants.BIOLOGICAL_MODS`` —
-    phospho today). Site = ``start + pos − 1`` (mzTab ``start`` is the peptide's
-    1-based protein-coordinate start; ``pos`` is the 1-based residue from the
-    ``modifications`` cell), residue = ``sequence[pos−1]``. Only the *fixed*
-    Carbamidomethyl, N-term Acetyl, etc. are excluded — they fold into the bare
-    protein. Shared peptides carry a comma-joined ``start`` per accession; the
-    first is used (the unique-parsimony default drops shared peptides anyway).
-    Returns ``""`` when ``start`` is missing/unparseable so the peptidoform
-    cleanly folds into the bare protein rather than fabricating a site.
+    phospho + side-chain acetyl). Site = ``start + pos − 1`` (mzTab ``start`` is
+    the peptide's 1-based protein-coordinate start; ``pos`` is the 1-based residue
+    from the ``modifications`` cell), residue = ``sequence[pos−1]``; prefix from
+    ``constants.MOD_SITE_PREFIX`` (``p`` phospho, ``ac`` acetyl). The ``pos < 1``
+    skip is load-bearing for **Acetyl**: a **protein N-terminal** acetyl is mzTab
+    ``pos 0`` → skipped → folds into the bare protein (it is constitutive), while
+    an internal **K-acetyl** (``pos ≥ 1``) keys as ``_acK###``. Fixed
+    Carbamidomethyl never reaches here (it is not in ``BIOLOGICAL_MODS``). Shared
+    peptides carry a comma-joined ``start`` per accession; the first is used (the
+    unique-parsimony default drops shared peptides anyway). Returns ``""`` when
+    ``start`` is missing/unparseable so the peptidoform cleanly folds into the
+    bare protein rather than fabricating a site.
     """
     if modifications is None:
         return ""

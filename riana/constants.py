@@ -113,10 +113,16 @@ FIXED_UNIMODS = frozenset({4})
 # mod's roadmap tier lands.
 STARTER_VARIABLE_UNIMODS = frozenset({1, 21, 35})
 # Mods that earn their own proteoform rollup key (Stage B) instead of folding
-# into the bare protein — the regulated, site-specific-turnover mods. N-term
-# Acetyl (1) is constitutive and Met-Ox (35) is artifactual, so both fold into
-# the bare protein despite being encoded for envelope fidelity.
-BIOLOGICAL_MODS = frozenset({21})
+# into the bare protein — the regulated, site-specific-turnover mods. Phospho
+# (21) and side-chain **Acetyl (1, e.g. K-ac)** qualify. Acetyl is special: the
+# *same* UNIMOD:1 is constitutive co-translational **protein N-term** acetylation
+# (which should fold into the bare protein) vs regulated **K-acetyl** on a side
+# chain (its own key). That split is handled by site position, not this set —
+# ``io.mztab._proteoform_sites`` skips the N-terminal occurrence (mzTab pos 0),
+# so N-term Ac folds while internal K-ac (pos≥1) keys as ``_acK###``. (The fuller
+# per-experiment chemical-vs-biological policy is the far-future roadmap item.)
+# Met-Ox (35) is artifactual → folds (it is in CHEMICAL_MODS, never keyed here).
+BIOLOGICAL_MODS = frozenset({21, 1})
 # Purely chemical / artifactual mods (Met-Ox today; deamidation is deferred —
 # see [[m7_chemical_mod_fit_merge]]). They are post-synthesis, so the modified
 # and unmodified forms share the FS-vs-time signature: ``riana fit`` strips these
@@ -126,7 +132,7 @@ CHEMICAL_MODS = frozenset({35})  # Oxidation (Met)
 # Proteoform-tag prefix per biological UniMod id (Stage B). The rollup key is
 # ``accession_<prefix><residue><protein_site>`` — e.g. Phospho-S at protein
 # coordinate 34476 on A2ASS6 → ``A2ASS6_pS34476`` (multi-site joined by ``_``).
-MOD_SITE_PREFIX = {21: "p"}  # Phospho
+MOD_SITE_PREFIX = {21: "p", 1: "ac"}  # Phospho, (K-)Acetyl
 
 # Commerford, Carsten, and Cronkite 1983 Table 1
 # Number of labelable hydrogen atoms per amino acids

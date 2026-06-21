@@ -12,6 +12,26 @@ subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
 
+### M7 Tier-1 — K-acetyl proteoform key + GUI fold-point display (Track C/E) — 2026-06-21
+
+#### Added
+
+- **Lysine acetylation as a biological proteoform key.** `UNIMOD:1` joins
+  `BIOLOGICAL_MODS` with prefix `ac`, so an internal **K-acetyl** peptidoform rolls
+  up as its own unit (`P12345_acK106`). **Protein N-terminal** acetyl — the *same*
+  `UNIMOD:1` — still folds into the bare protein: `io.mztab._proteoform_sites`
+  skips the mzTab `pos 0` (N-terminal) occurrence, so only the side-chain (`pos≥1`)
+  acetyl keys. The fuller per-experiment chemical-vs-biological mod policy is a
+  recorded far-future item.
+- **GUI fold-point display.** The Model-tab fitted-curve view (`CurveView.plot_fit`)
+  now draws **chemical-mod-folded** points (consolidated into the curve by
+  `core.fitting._fit_key`) as a distinct purple ◇ series, alongside the existing
+  MBR orange △ and direct-ID blue ○. The per-point `metox` flag is generic over
+  `CHEMICAL_MODS`, so it covers Met-Ox today and **TMT** the moment it lands — no
+  further GUI change. `fitting._build_output_df` now carries the per-point `metox`
+  list on the wide frame (dropped from the slim `riana_fit_peptides.txt`, kept
+  in-memory for the curve).
+
 ### Advanced integration knobs surfaced on both CLI and GUI (Track E) — 2026-06-20
 
 #### Added

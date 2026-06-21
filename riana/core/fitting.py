@@ -657,6 +657,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
             "fs_lower": r.fs_lo,
             "fs_upper": r.fs_hi,
             "evidence": r.evidence,
+            "metox": r.metox,
             "k_deg": r.k_deg,
             "R_squared": r.r_squared,
             "sd": r.sd,
@@ -685,7 +686,7 @@ _FRACTIONS_LONG_COLUMNS = [
 #: the tidy ``riana_fit_fractions.txt`` (and lose its biorep labels), so they are
 #: dropped when *writing* ``riana_fit_peptides.txt`` but kept in-memory (the GUI
 #: curve reads ``t``/``fs``/``evidence`` from the result frame, not the file).
-_PER_TIMEPOINT_COLS = ("t", "fs", "fs_lower", "fs_upper", "evidence")
+_PER_TIMEPOINT_COLS = ("t", "fs", "fs_lower", "fs_upper", "evidence", "metox")
 
 
 def peptide_summary(result_df: pd.DataFrame) -> pd.DataFrame:

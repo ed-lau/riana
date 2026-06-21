@@ -89,7 +89,10 @@ def test_mztab_phospho_token_lands_after_the_modified_residue():
     ("IGHHSTSDDSSAYR", "5-UNIMOD:21", 330, "pS334"),
     ("GEIEHHCSGLHR", "8-UNIMOD:21,7-UNIMOD:4", 50, "pS57"),  # CAM ignored
     ("SPSPK", "1-UNIMOD:21,3-UNIMOD:21", 200, "pS200_pS202"),  # two sites
-    ("SAMPLERK", "0-UNIMOD:1,3-UNIMOD:4", 100, ""),       # N-term Ac + CAM → bare
+    ("SAMPLERK", "0-UNIMOD:1,3-UNIMOD:4", 100, ""),       # N-term Ac + CAM → bare (pos 0 skipped)
+    ("SAMPLEKR", "7-UNIMOD:1", 100, "acK106"),            # internal K-ac → own key
+    ("SAMPLEKR", "0-UNIMOD:1,7-UNIMOD:1", 100, "acK106"), # N-term Ac folds, K-ac keys
+    ("SAMSLEKR", "4-UNIMOD:21,7-UNIMOD:1", 100, "pS103_acK106"),  # phospho + K-ac
     ("PEPTIDEK", "null", 10, ""),                          # unmodified → bare
     ("PEPTIDEK", "2-UNIMOD:21", None, ""),                 # no start → bare (no fabrication)
 ])
