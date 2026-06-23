@@ -315,6 +315,73 @@ def test_envelope_cache_idempotent_under_clear():
     np.testing.assert_allclose(env3, env1)
 
 
+# --- Adaptive N_ISO (Track B) ------------------------------------------------
+
+
+def test_adaptive_channel_masses_iso0_is_precursor_m0():
+    """iso0's channel mass IS the precursor m0 (the averaged-isotopolog m0 of the
+    init envelope equals the peptide neutral monoisotopic mass)."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    masses = iso.adaptive_channel_masses(_TEST_SEQ, pep_mass, ria_max=0.06)
+    assert len(masses) >= 2  # always at least m0 + a labelled channel
+    assert abs(masses[0] - pep_mass) < 1e-6
+
+
+def test_adaptive_channel_masses_widen_with_length_and_label():
+    """A longer / more-labelled peptide keeps more channels than a short one."""
+    iso.clear_envelope_cache()
+    short = "SAMPLEK"
+    long = "VLLLLDEPTNHLDIDAVHWLENLLAR"
+    n_short = len(iso.adaptive_channel_masses(short, _peptide_mass(short), ria_max=0.06))
+    n_long = len(iso.adaptive_channel_masses(long, _peptide_mass(long), ria_max=0.06))
+    assert n_long > n_short
+
+
+def test_adaptive_channel_masses_rejects_unaccounted_mod():
+    """A pep_mass that disagrees with the sequence+mods atoms (e.g. a legacy
+    [mass] bracket not in the parsed mods) must raise, so the caller falls back
+    to the fixed channel set instead of a collapsed/garbage envelope."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    with pytest.raises(ValueError):
+        # +16 Da (an unaccounted oxidation) shifts the anchor off the envelope.
+        iso.adaptive_channel_masses(_TEST_SEQ, pep_mass + 15.9949, ria_max=0.06)
+
+
+def test_adaptive_channel_masses_cached():
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    a = iso.adaptive_channel_masses(_TEST_SEQ, pep_mass, ria_max=0.06)
+    b = iso.adaptive_channel_masses(_TEST_SEQ, pep_mass, ria_max=0.06)
+    assert a is b  # same cache key → identical object
+    iso.clear_envelope_cache()
+    c = iso.adaptive_channel_masses(_TEST_SEQ, pep_mass, ria_max=0.06)
+    assert c is not a  # fresh object after clear
+    assert len(c) == len(a)
+    np.testing.assert_allclose(c, a)  # same content (IsoSpec is ~1-ULP nondet)
+
+
+def test_solve_fs_d2o_ragged_padding_matches_fixed_width():
+    """The ragged-aware solver: a NaN-padded (adaptive) observed envelope trims
+    to its real leading channels and recovers the SAME fs as the equivalent
+    fixed-width call — the fixed path stays byte-identical (no NaN ⇒ no trim)."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    spep = 8
+    init = iso._get_init_env(_TEST_SEQ, pep_mass, n=6)
+    final = iso._get_final_env(_TEST_SEQ, pep_mass, spep, ria_max=0.046, n=6)
+    init_n, final_n = init / init.sum(), final / final.sum()
+    for fs_true in (0.0, 0.3, 0.7):
+        obs = (1 - fs_true) * init_n + fs_true * final_n
+        fs_fixed = iso.solve_fs_d2o(_TEST_SEQ, pep_mass, obs, spep, ria_max=0.046, n_iso=6)
+        obs_padded = np.concatenate([obs, [np.nan, np.nan, np.nan]])
+        fs_ragged = iso.solve_fs_d2o(
+            _TEST_SEQ, pep_mass, obs_padded, spep, ria_max=0.046, n_iso=9)
+        assert abs(fs_fixed - fs_ragged) < 1e-9
+        assert abs(fs_ragged - fs_true) < 1e-3
+
+
 def test_peptide_spep_loss_minimized_at_true_spep():
     """Synthetic: build observed envelopes from a known Spep, then verify
     the SSE loss has its minimum near the true Spep."""

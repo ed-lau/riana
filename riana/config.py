@@ -70,7 +70,43 @@ class IntegrationConfig:
     #: -S / --smoothing. Savitzky-Golay window size; None disables smoothing.
     smoothing: int | None = None
     #: -D / --mass_difference. Mass step between isotopomers (C13 default).
+    #: Used only on the **fixed** (non-adaptive) extraction path; adaptive mode
+    #: takes per-channel masses from the IsoSpec envelope instead (see below).
     mass_difference: float = 1.003354835
+
+    # --- Adaptive N_ISO (Track B). When ``adaptive_iso`` is True the integrator
+    # runs the IsoSpec forward model per peptidoform at integrate time and picks
+    # the isotopomer channel SET per peptide from the envelope, instead of the
+    # fixed ``isotopomers`` tuple. The output is padded to the run-wide max width
+    # (short peptides carry NaN in the channels they don't populate). Off by
+    # default — the fixed path stays byte-identical to the 0.9.0 / M2 oracle.
+
+    #: ``--iso auto``. Derive each peptidoform's isotopomer channel set from the
+    #: union of its **init (0%)** and **final (RIA%)** IsoSpec envelopes rather
+    #: than the fixed :attr:`isotopomers` tuple (Track B "adaptive N_ISO"). The
+    #: extraction target m/z per channel becomes the averaged-isotopolog accurate
+    #: mass (init/final midpoint — minimax-robust to the ²H mass-defect drift that
+    #: moves a labelled high isotopomer up to ~10 ppm), not ``m0 + iso·Δ/z``.
+    adaptive_iso: bool = False
+    #: Relative-abundance floor for the adaptive channel set: a peptidoform keeps
+    #: channels 0..N where N is the highest isotopomer whose abundance clears this
+    #: fraction in *either* the init or final envelope. 0.01 = 1% (the spike
+    #: default). Not an open-ended tail. Only used when :attr:`adaptive_iso`.
+    iso_abundance_floor: float = 0.01
+    #: Hard upper bound on the adaptive channel index (safety cap on the padded
+    #: output width). Realistic peptides land at 4-8 under the 1% floor; this only
+    #: bounds a pathological long/heavily-labelled outlier. Only used when
+    #: :attr:`adaptive_iso`.
+    iso_max: int = 15
+
+    #: Precursor enrichment (RIA max) — the asymptotic D₂O fraction in body
+    #: water / culture media (e.g. 0.06 ≈ 6% v/v). Shapes the **final** envelope
+    #: in adaptive mode (:attr:`adaptive_iso`). On the SDRF path it is read from
+    #: ``characteristics[precursor enrichment]`` (experiment-level); ``--ria``
+    #: overrides; this default is the last-resort fallback. Mirrors
+    #: :attr:`FitConfig.ria_max` (the fit consumes the same quantity downstream).
+    ria_max: float = 0.06
+
     #: -o / --out. Output directory.
     out_dir: str = "."
     #: No CLI flag in 0.9.0 — the pipeline hardcodes ``use_range=True`` (span the
@@ -215,6 +251,13 @@ class IntegrationConfig:
             raise ValueError(f"mass_tol_ppm must be in [1, 500], got {self.mass_tol_ppm}")
         if not 0.0 <= self.q_value <= 1.0:
             raise ValueError(f"q_value must be in [0, 1], got {self.q_value}")
+        if not 0.0 < self.ria_max <= 1.0:
+            raise ValueError(f"ria_max must be in (0, 1], got {self.ria_max}")
+        if not 0.0 < self.iso_abundance_floor < 1.0:
+            raise ValueError(
+                f"iso_abundance_floor must be in (0, 1), got {self.iso_abundance_floor}")
+        if self.iso_max < 1:
+            raise ValueError(f"iso_max must be >= 1, got {self.iso_max}")
         if self.smoothing is not None and (self.smoothing < 3 or self.smoothing % 2 == 0):
             raise ValueError(f"smoothing must be an odd integer >= 3, got {self.smoothing}")
         if self.peak_rt not in ("ms2", "apex", "consensus"):

@@ -309,16 +309,31 @@ def integrate_run(
             _best_q[p.concat] = p.percolator_q_value
             concat_anchor[p.concat] = p.scan
 
-    isos = tuple(config.isotopomers)
+    # Isotopomer channel set. Fixed path: the shared ``config.isotopomers`` tuple.
+    # Adaptive path (``--iso auto``): each peptidoform's channels come from its
+    # IsoSpec init∪final envelope (``_adaptive_concat_channels``, cached per
+    # concat). The run's output columns span the widest peptide (run-max); short
+    # peptides extract only their own channels and are NaN-padded in the row loop.
+    if config.adaptive_iso:
+        concat_channels = _adaptive_concat_channels(kept, config)
+        run_max = max((len(v) for v in concat_channels.values()), default=1)
+        isos = tuple(range(run_max))
+    else:
+        concat_channels = None
+        isos = tuple(config.isotopomers)
 
     # Per-PSM extraction → list of per-PSM (DataFrame, mass_accuracy_dict).
     # Serial: the hot path (pyteomics mzML parse + IsoSpec) is GIL-bound, so
     # threading it gave no speedup (in fact slower); cross-run parallelism is the
     # ProcessPool lever (`integrate --workers`), see core/pipeline.
     def _do(idx: int):
+        psm = kept[idx]
+        cm = concat_channels[psm.concat] if concat_channels is not None else None
+        psm_isos = tuple(range(len(cm))) if cm is not None else isos
         return _extract_per_psm(
-            kept[idx], concat_scans, isos, config, mzml,
-            anchor_scan=concat_anchor[kept[idx].concat],
+            psm, concat_scans, psm_isos, config, mzml,
+            anchor_scan=concat_anchor[psm.concat],
+            channel_masses=cm,
         )
 
     extract_results = [_do(i) for i in range(len(kept))]
@@ -382,6 +397,14 @@ def integrate_run(
             n_fallback += 1
 
         for col in iso_cols:
+            # Adaptive N_ISO: ``iso_cols`` spans the run-wide max, but a short
+            # peptidoform only extracted its own (narrower) channel set — its
+            # higher channels are absent from ``idf``. NaN-pad them: an honest
+            # "not a channel for this peptide" (the solver trims trailing NaN),
+            # distinct from an integrated 0.0 ("looked, found nothing").
+            if col not in idf.columns:
+                row.append(np.nan)
+                continue
             trace = idf[col].to_numpy(dtype=np.float64)
             if boundary is not None:
                 lo, hi = boundary.lo, boundary.hi
@@ -565,6 +588,47 @@ def extract_peptide_trace(
 # --- internals ---------------------------------------------------------------
 
 
+def _adaptive_concat_channels(
+    psms: Sequence[PSMRecord], config: IntegrationConfig,
+) -> dict[str, tuple[float, ...]]:
+    """Per-concat adaptive isotopomer channel masses for ``--iso auto``.
+
+    One IsoSpec init+final envelope per *distinct* peptidoform (memoized in
+    :mod:`riana.algorithms.isotope_dist`), so the cost is bounded by the
+    peptidoform count, not the PSM count. Returns ``{concat: (neutral channel
+    masses)}`` with iso0 == the precursor m0.
+
+    Derives ``(bare_seq, mods, pep_mass)`` exactly as the fit path does
+    (:mod:`riana.core.fitting`) — bracket-stripped sequence + parsed ``[UNIMOD:N]``
+    ids + the record's recomputed ``peptide_mass`` — so the integrate envelope and
+    the fit envelope are built from the same atoms. A peptidoform whose envelope
+    can't be built (non-canonical residue B/X/U) falls back to a fixed m0..m5
+    analytic set so it still integrates.
+    """
+    from riana.algorithms import isotope_dist as idist
+    from riana.algorithms.mass_calc import parse_unimod_ids
+    from riana.utils import strip_concat
+
+    out: dict[str, tuple[float, ...]] = {}
+    for p in psms:
+        if p.concat in out:
+            continue
+        try:
+            bare = strip_concat(p.sequence)
+            mods = tuple(parse_unimod_ids(p.sequence))
+            out[p.concat] = idist.adaptive_channel_masses(
+                bare, p.peptide_mass,
+                ria_max=config.ria_max, mods=mods,
+                abundance_floor=config.iso_abundance_floor,
+                iso_max=config.iso_max,
+            )
+        except (KeyError, ValueError):
+            md = config.mass_difference
+            out[p.concat] = tuple(p.peptide_mass + i * md for i in range(6))
+    return out
+
+
+
 def _extract_per_psm(
     psm: PSMRecord,
     concat_scans: dict[str, tuple[int, int]],
@@ -573,6 +637,7 @@ def _extract_per_psm(
     mzml: IndexedMzML,
     *,
     anchor_scan: int | None = None,
+    channel_masses: tuple[float, ...] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, tuple[float | None, float | None]]]:
     """Per-MS1-scan isotopomer intensities + mass-accuracy for one PSM.
 
@@ -616,6 +681,18 @@ def _extract_per_psm(
     # iso{N}_obs_mz / iso{N}_ppm_error mass-accuracy columns.
     rows: list[tuple[str, float, float]] = []
     iso_cols_local = [f"iso{n}" for n in isos]
+    # Per-isotopomer extraction target m/z, computed once. Fixed path: analytic
+    # ``m0 + iso·Δ/z``. Adaptive path (``channel_masses`` given, aligned to
+    # ``isos`` by position): the IsoSpec **init (unlabeled)** averaged-isotopolog
+    # accurate mass per channel — iso0 is the precursor m0. The ppm_error below is
+    # taken vs this target, so on the adaptive path it reads the mass-defect drift
+    # from the θ=0 position (the orthogonal mass-defect-θ substrate, Track B).
+    iso_target_mz: dict[int, float] = {}
+    for k, iso in enumerate(isos):
+        if channel_masses is not None:
+            iso_target_mz[iso] = (channel_masses[k] + charge * proton) / charge
+        else:
+            iso_target_mz[iso] = peptide_prec + (iso * iso_added_mass / charge)
     targets: dict[str, float] = {}
     mz_weighted: dict[str, float] = {c: 0.0 for c in iso_cols_local}
     intens_total: dict[str, float] = {c: 0.0 for c in iso_cols_local}
@@ -626,7 +703,7 @@ def _extract_per_psm(
         rt = float(mzml.rt_idx[mzml.scan_idx == scan_int].item())
         for iso in isos:
             col = f"iso{iso}"
-            target = peptide_prec + (iso * iso_added_mass / charge)
+            target = iso_target_mz[iso]
             targets[col] = target
             delta = target * ppm_tol
             mask = np.abs(mz_arr - target) <= delta

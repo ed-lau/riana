@@ -115,7 +115,17 @@ def integrate(
         "0 1 2 3 4 5", "-i", "--iso",
         help="Isotopomers to integrate, comma/space separated. Default "
         "'0 1 2 3 4 5' is the m0-m5 envelope the D2O fit consumes; pick a "
-        "custom set for other workflows (e.g. SILAC cluster extraction via -F).",
+        "custom set for other workflows (e.g. SILAC cluster extraction via -F). "
+        "Pass 'auto' for adaptive N_ISO: per-peptide channels from the IsoSpec "
+        "init+final envelope (≥1% abundance), extracted at averaged-isotopolog "
+        "accurate mass. The output is padded to the run-wide max width.",
+    ),
+    ria: Optional[float] = typer.Option(
+        None, "--ria", metavar="FRAC",
+        help="Precursor enrichment (RIA max), e.g. 0.06 for 6% v/v D2O. Shapes the "
+        "final envelope under --iso auto. If omitted, taken from the SDRF "
+        "characteristics[precursor enrichment], else the 0.06 default; given here, "
+        "overrides the SDRF.",
     ),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
@@ -258,9 +268,16 @@ def integrate(
         raise typer.BadParameter(
             f"--sample must end with a number (got {sample!r}).")
 
-    isotopomers = _parse_number_list(iso, int, sort=True, unique=True)
-    if not isotopomers:
-        raise typer.BadParameter("--iso must list at least one isotopomer.")
+    # --iso auto = adaptive N_ISO (per-peptide envelope-driven channels). The
+    # explicit `isotopomers` tuple is then only a fallback for the few fixed-path
+    # branches; keep the m0-m5 default so anything reading it still sees a sane set.
+    adaptive_iso = iso.strip().lower() == "auto"
+    if adaptive_iso:
+        isotopomers = (0, 1, 2, 3, 4, 5)
+    else:
+        isotopomers = _parse_number_list(iso, int, sort=True, unique=True)
+        if not isotopomers:
+            raise typer.BadParameter("--iso must list at least one isotopomer.")
 
     ihw: float | str = ("auto" if integration_half_width == "auto"
                         else float(integration_half_width))
@@ -296,6 +313,30 @@ def integrate(
     else:
         mass_tol_ppm, mass_tol_src = _default_mass_tol, "default"
 
+    # Precursor enrichment (RIA max): --ria > SDRF characteristics[precursor
+    # enrichment] (experiment-level — physically one value per experiment) > the
+    # 0.06 default. Only load-bearing under --iso auto (it shapes the final
+    # envelope), but resolved uniformly so the header records it either way.
+    _default_ria = IntegrationConfig.__dataclass_fields__["ria_max"].default
+    if ria is not None:
+        ria_max, ria_src = float(ria), "--ria"
+    elif sdrf_table is not None:
+        _enrich = sorted({
+            round(float(r.precursor_enrichment), 6) for r in sdrf_table.runs
+            if r.precursor_enrichment is not None
+        })
+        if len(_enrich) == 1:
+            ria_max, ria_src = _enrich[0], "SDRF characteristics[precursor enrichment]"
+        elif len(_enrich) > 1:
+            # Physically constant within an experiment; if rows disagree take the
+            # max (the conservative — widest-envelope — choice for adaptive N_ISO).
+            ria_max, ria_src = _enrich[-1], (
+                f"SDRF characteristics[precursor enrichment] (max of {_enrich})")
+        else:
+            ria_max, ria_src = _default_ria, "default"
+    else:
+        ria_max, ria_src = _default_ria, "default"
+
     # The frozen config's __post_init__ owns the numeric domain validation
     # (mass_tol range, q_value range, peak_rt enum, ...); surface it as a clean
     # CLI error rather than a traceback.
@@ -303,6 +344,8 @@ def integrate(
         config = IntegrationConfig(
             sample=sample,
             isotopomers=isotopomers,
+            adaptive_iso=adaptive_iso,
+            ria_max=ria_max,
             mass_tol_ppm=mass_tol_ppm,
             extraction_half_width=ehw,
             peak_rt=peak_rt,
@@ -335,6 +378,12 @@ def integrate(
     logger.info(f"riana {__version__}")
     logger.info("integrate (typed pipeline)")
     logger.info(f"mass tolerance: ±{mass_tol_ppm} ppm (from {mass_tol_src})")
+    if adaptive_iso:
+        logger.info(
+            f"isotopomers: adaptive (--iso auto, ≥{config.iso_abundance_floor:.0%} "
+            f"abundance, RIA max {ria_max:g} from {ria_src})")
+    else:
+        logger.info(f"isotopomers: {list(isotopomers)} (fixed)")
 
     # --- SDRF path (primary): identity-keyed mzTab intake via the shared
     # pipeline — one <stem>_riana.txt per run + a manifest. ---------------------
