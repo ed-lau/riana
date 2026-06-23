@@ -775,10 +775,15 @@ static/SVG export, fit progress + real parallelism, modernize look. See Track E.
   biological keys (`meK###`/`me2R###`); composition is already in `mod_atoms` so it
   stays cheap, but demand is low and it is no longer a near-term priority. (K-acetyl
   already shipped.)
-- **DIA-NN phospho proteoform sites** — the `Protein.Sites` → site mapping is
-  deferred (no DIA fixture has phospho). The user is **rerunning DIA-NN with
-  variable phospho**; wire the site path when that lands. Until then DIA phospho
-  integrates correctly but folds into the bare protein.
+- **DIA-NN phospho proteoform sites — DONE 2026-06-23.** `io.diann` maps the
+  localized `Protein.Sites` → biological-mod proteoform suffix (`P35486_pS293`),
+  gated on `PTM.Site.Confidence` (default ≥ 0.75); Carbamidomethyl-C and Met-Ox-M
+  sites are excluded (only `BIOLOGICAL_MODS` define a proteoform), key format
+  byte-identical to the DDA/mzTab path. Validated on the cardiac variable-phospho
+  series (577 sited proteoforms). The two real searches are complementary
+  (`diann_results` = Met-Ox only, `diann_results_mods` = phospho only — quantms
+  library generation ran out of memory with both), so each path is exercised by
+  one dataset.
 - **Deamidation** — its own **side project** (the +0.984 / C13-M+1 isobaric overlap
   needs joint envelope + deamidation-proportion modeling). Not started.
 - **MBR-on-calibration RT correction (NOT a re-search — corrected 2026-06-23).** The

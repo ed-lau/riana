@@ -87,6 +87,69 @@ _COLUMNS = [
     "Protein.Ids",
 ]
 
+# Optional phospho-proteoform columns (M7 Stage B on the DIA path). DIA-NN emits
+# these only for a PTM-aware search; read them when present so an older / no-mod
+# report still loads. ``Protein.Sites`` is the localized site(s) in protein
+# coordinates (``[ACC:S287]`` / ``[ACC:C274,S287]`` — note it lists ALL modified
+# residues incl. fixed Carbamidomethyl); ``PTM.Site.Confidence`` is the
+# localization probability used to gate ambiguous calls.
+_SITE_COLUMNS = ["Protein.Sites", "PTM.Site.Confidence"]
+
+# Default localization gate: a peptidoform whose PTM.Site.Confidence is below this
+# folds into the bare protein (its site is too ambiguous to define a proteoform).
+# 0.75 = the common "class-I localized" cutoff (keeps ~73% of phospho rows on the
+# cardiac DIA series; the 27% below are genuinely ambiguous).
+_DEFAULT_MIN_SITE_CONFIDENCE = 0.75
+
+# A DIA-NN modified residue: a letter immediately followed by ``(UniMod:N)``.
+# A leading (N-terminal) mod has no preceding letter, so it does not match — it
+# folds into the bare protein, matching io.mztab's ``pos < 1`` skip.
+_DIANN_MOD_RE = re.compile(r"([A-Z])\(UniMod:(\d+)\)")
+# A residue+position token inside Protein.Sites, e.g. ``S287`` / ``C274``.
+_DIANN_SITE_RE = re.compile(r"([A-Z])(\d+)")
+
+
+def _diann_proteoform_sites(modified_sequence: str, protein_sites: object,
+                            confidence: object, min_confidence: float) -> str:
+    """``_``-joined biological-mod proteoform suffix (e.g. ``pS287`` /
+    ``pS1332_pS1333``) from DIA-NN's ``Protein.Sites``, byte-identical to the
+    mzTab/DDA key format (:func:`riana.io.mztab._proteoform_sites`).
+
+    Returns ``""`` — so the peptidoform folds into the bare protein — when it
+    carries no biological mod, ``Protein.Sites`` is missing, or the localization
+    ``confidence`` is below ``min_confidence``. DIA-NN lists *every* modified site
+    (including the constitutive fixed Carbamidomethyl on C); we keep only the
+    residues that carry a ``constants.BIOLOGICAL_MODS`` mod *in this peptidoform*
+    (so the C sites drop out), with the prefix from ``constants.MOD_SITE_PREFIX``.
+    """
+    ps = str(protein_sites)
+    if not ps or ps.lower() in ("nan", "none", "null"):
+        return ""
+    try:
+        if float(confidence) < min_confidence:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    # residue letter -> site prefix, for the biological mods actually on this
+    # peptidoform (phospho S/T/Y here; never the fixed Carbamidomethyl C).
+    bio_prefix = {
+        residue: constants.MOD_SITE_PREFIX.get(int(unimod), "")
+        for residue, unimod in _DIANN_MOD_RE.findall(str(modified_sequence))
+        if int(unimod) in constants.BIOLOGICAL_MODS
+    }
+    if not bio_prefix:
+        return ""
+    # Protein.Sites: "[ACC:S287,C274]" (a shared ';'-group -> first accession,
+    # matching mzTab's first-start convention). Tokens after the ':' are the sites.
+    first = ps.split(";")[0]
+    inner = first[first.find(":") + 1:] if ":" in first else ""
+    tags = [
+        (int(pos), f"{bio_prefix[residue]}{residue}{pos}")
+        for residue, pos in _DIANN_SITE_RE.findall(inner)
+        if residue in bio_prefix
+    ]
+    return "_".join(tag for _, tag in sorted(tags))
+
 
 def read_diann(
     path: str | os.PathLike[str],
@@ -94,6 +157,7 @@ def read_diann(
     *,
     drop_decoys: bool = True,
     drop_variable_mods: bool = True,
+    min_site_confidence: float = _DEFAULT_MIN_SITE_CONFIDENCE,
 ) -> tuple[list[PSMRecord], dict[int, str]]:
     """Parse a DIA-NN ``report.parquet`` into typed records, keyed by the SDRF.
 
@@ -124,8 +188,13 @@ def read_diann(
 
     try:
         import pandas as pd
+        import pyarrow.parquet as pq
 
-        df = pd.read_parquet(path, columns=_COLUMNS)
+        # Read the optional phospho-site columns only when the report carries them
+        # (a PTM-aware search), so a no-mod / older report still loads.
+        available = set(pq.ParquetFile(path).schema.names)
+        read_cols = _COLUMNS + [c for c in _SITE_COLUMNS if c in available]
+        df = pd.read_parquet(path, columns=read_cols)
     except ImportError as e:  # pragma: no cover - environment guard
         raise DataError(
             "reading DIA-NN parquet needs pyarrow — `pip install pyarrow` "
@@ -147,7 +216,11 @@ def read_diann(
         "Precursor.Mz": "precursor_mz",
         "Q.Value": "q_value",
         "Protein.Ids": "protein_ids",
+        "Protein.Sites": "protein_sites",
+        "PTM.Site.Confidence": "ptm_confidence",
     })
+    has_sites = "protein_sites" in df.columns
+    has_conf = "ptm_confidence" in df.columns
 
     if drop_decoys and "Decoy" in df.columns:
         df = df[df["Decoy"] == 0]
@@ -195,11 +268,16 @@ def read_diann(
             recomputed_mz = (peptide_mass + charge * proton) / charge
             mz_ppm_diffs.append((recomputed_mz - precursor_mz) / precursor_mz * 1e6)
         rt_min = _safe_float(row.RT, 0.0)
-        # NB: ``mod_sites`` (the M7 Stage B proteoform suffix) is left empty on the
-        # DIA path — no DIA fixture carries phospho yet, so the DIA-NN
-        # ``Protein.Sites`` → site mapping is deferred (a phospho peptidoform still
-        # integrates correctly via A2; it just folds into the bare protein until
-        # then). See PROJECT_REVIEW M7 Stage B.
+        # M7 Stage B proteoform key on the DIA path: map DIA-NN's localized
+        # ``Protein.Sites`` to the biological-mod suffix (e.g. ``pS287``), gated on
+        # ``PTM.Site.Confidence``. Only for a modeled peptidoform (``encoded`` set);
+        # an unmodelable one folds bare. Empty -> bare protein, exactly as before.
+        mod_sites = ""
+        if has_sites and encoded is not None:
+            mod_sites = _diann_proteoform_sites(
+                row.modified_sequence, row.protein_sites,
+                row.ptm_confidence if has_conf else 1.0, min_site_confidence,
+            )
         records.append(
             PSMRecord(
                 scan=-1,  # DIA: no MS2 scan — resolved from RT at integrate time.
@@ -219,6 +297,7 @@ def read_diann(
                 percolator_q_value=_safe_float(row.q_value, 1.0),
                 percolator_pep=_safe_float(row.PEP, 1.0),
                 distinct_matches=0,
+                mod_sites=mod_sites,
             )
         )
 

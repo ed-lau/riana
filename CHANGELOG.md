@@ -21,6 +21,22 @@ Zenodo DOI. (A `v1.0.0` git tag was cut 2026-06-23 at the rewrite + initial
 Track B work; the official release tag re-points to the N_ISO finish.) See
 `PROJECT_REVIEW.md` §3. Entries below are grouped by the work that produced them.
 
+### DIA-NN phospho proteoform sites (M7 Stage B, DIA path) — 2026-06-23
+
+#### Added
+
+- **DIA-NN phosphopeptidoforms roll up as distinct proteoforms.** `io.diann` now
+  maps DIA-NN's localized `Protein.Sites` to the biological-mod proteoform suffix
+  (e.g. `P35486_pS293`, `_pS1332_pS1333` for two sites) — **byte-identical to the
+  DDA/mzTab key format** — gated on `PTM.Site.Confidence` (default ≥ 0.75, the
+  class-I localized cutoff; sub-threshold folds into the bare protein). DIA-NN
+  lists *every* modified site, so the constitutive fixed Carbamidomethyl (C) and
+  Met-Ox (M, a chemical mod merged at fit) are excluded — only
+  `constants.BIOLOGICAL_MODS` define a proteoform. The PTM columns are read only
+  when present, so a no-mod / older report still loads (empty `mod_sites`). New
+  `read_diann(min_site_confidence=…)`. Validated on the cardiac variable-phospho
+  DIA series (577 sited proteoforms from 789 phospho precursors).
+
 ### GUI exposure of `--iso auto` + `--fs` scoring (Track B / Track E) — 2026-06-23
 
 #### Added
