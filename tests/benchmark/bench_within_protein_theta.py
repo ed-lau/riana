@@ -97,6 +97,7 @@ def compute_theta_long(
     coeffs: dict[str, float],
     ria_max: float,
     q_value: float,
+    score_channels: int | None = None,
 ) -> pd.DataFrame:
     """θ per (peptide, timepoint) via the production ``solve_fs_d2o``.
 
@@ -135,7 +136,8 @@ def compute_theta_long(
             spep_cache[seq] = spep
         try:
             thetas[i] = solve_fs_d2o(
-                seq, masses[i], iso[i], spep, ria_max=ria_max, n_iso=n_iso
+                seq, masses[i], iso[i], spep, ria_max=ria_max, n_iso=n_iso,
+                score_channels=score_channels,
             )
         except (KeyError, ValueError):
             thetas[i] = np.nan  # non-canonical residue etc.; drop cleanly
@@ -170,6 +172,7 @@ def score_method(
     coeffs: dict[str, float],
     ria_default: float,
     exclude_mbr: bool = False,
+    score_channels: int | None = None,
 ) -> pd.DataFrame:
     """Manifest → per-(condition, protein, stratum, sequence, timepoint) θ table.
 
@@ -194,7 +197,8 @@ def score_method(
 
     parts = []
     for (_experiment, condition), frame in curves.items():
-        theta_long = compute_theta_long(frame, coeffs, ria_max, config.q_value)
+        theta_long = compute_theta_long(
+            frame, coeffs, ria_max, config.q_value, score_channels=score_channels)
         if theta_long.empty:
             continue
         r2 = kinetic_r2(frame, config, coeffs)
@@ -320,6 +324,7 @@ def compare_methods(
     ria_default: float,
     min_pep: int,
     exclude_mbr: bool = False,
+    score_channels: int | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Score each named method's manifest on the frozen set; tabulate by method.
 
@@ -333,7 +338,7 @@ def compare_methods(
         t0 = time.time()
         print(f"[score] method {name!r} <- {manifest}", flush=True)
         seq_cell = score_method(manifest, frozen_pep, config, coeffs, ria_default,
-                                exclude_mbr=exclude_mbr)
+                                exclude_mbr=exclude_mbr, score_channels=score_channels)
         summaries[name] = summarize(seq_cell, min_pep)
         all_cell = cell_spreads(seq_cell, min_pep)
         all_cell.insert(0, "method", name)
@@ -389,6 +394,12 @@ def main() -> None:
         help="Min distinct peptides for a (protein, timepoint) cell to score "
         "[default: 3].",
     )
+    parser.add_argument(
+        "--score-channels", type=int, default=None,
+        help="Limited-isotopomer scoring (Track B / B4): score the FS fit on the "
+        "leading N channels only (e.g. 2 = iso0+iso1), dodging high-isotopomer "
+        "contaminants. Capture is unchanged; default scores all populated channels.",
+    )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -412,7 +423,7 @@ def main() -> None:
     )
     cells, summaries = compare_methods(
         methods, frozen_pep, config, coeffs, args.ria, args.min_peptides,
-        exclude_mbr=args.exclude_mbr,
+        exclude_mbr=args.exclude_mbr, score_channels=args.score_channels,
     )
 
     cells_path = args.output_dir / "within_protein_theta_cells.csv"

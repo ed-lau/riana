@@ -250,6 +250,15 @@ def peptide_spep_loss(
     return total_sse
 
 
+#: Channel count treated as the "full cluster" when normalizing the theoretical
+#: init / final envelopes before mixing (the H4′ basis). Wide enough that both
+#: the natural-abundance and the fully-labelled (≤ ria_max precursor enrichment)
+#: envelopes carry ~all their mass for any realistic peptide — so a convex
+#: mixture is itself full-cluster-normalized and per-channel values are true
+#: full-cluster fractions. iso_max (adaptive capture cap) is 15 < this.
+_FULL_CLUSTER_N = 24
+
+
 def solve_fs_d2o(
     sequence: str,
     pep_mass: float,
@@ -258,53 +267,84 @@ def solve_fs_d2o(
     ria_max: float = 0.06,
     n_iso: int = _DEFAULT_N_ISO,
     mods: tuple[int, ...] = (),
+    score_channels: int | None = None,
 ) -> float:
     """Per-timepoint fractional synthesis from one observed envelope.
 
-    Given a peptide's fitted Spep (from :func:`peptide_spep_loss`-minimized
-    optimization), this solves ``obs_norm ≈ (1-fs)·init_norm + fs·final_norm``
-    for ``fs`` via 1-D minimization on the SSE.
+    Given a peptide's fitted Spep, solve ``fs`` in ``obs ≈ mixture(fs)`` by
+    1-D SSE minimization, using the **H4′ normalization order** (the only order
+    that stays linear under truncation):
 
-    Bounds are widened to ``[-0.1, 1.2]`` so unphysical FS (from
-    integration noise / co-eluting interference) surfaces in the output
-    instead of being clipped — a diagnostic signal the downstream
-    R² curation gate can act on.
+        mix in the FULL-cluster basis → truncate to the SCORING channels →
+        renormalize → compare to the observed renormalized over the same channels.
+
+    IsoSpec returns each envelope already normalized over the whole cluster, so
+    a convex combination ``(1-fs)·init_full + fs·final_full`` is itself full-
+    cluster-normalized and each channel is a true full-cluster fraction. We then
+    truncate that mixture to the scoring channels and renormalize, matching the
+    observed cluster (raw intensities) renormalized over the same channels. This
+    is exact under any truncation, unlike normalize-each-then-mix (which is only
+    correct when init and final share the in-window mass fraction — the H4′
+    finding). It is the prerequisite for ``score_channels`` (limited-isotopomer
+    scoring): the narrower the subset, the more the two orders diverge.
+
+    Args:
+        score_channels: number of leading channels (m0..m{k-1}) to SCORE the fit
+            on. ``None`` (default) scores on the peptide's full populated channel
+            set. A small value (e.g. 2 = iso0+iso1) dodges co-eluting contaminants
+            in the high isotopomers — "integrate wide, fit narrow" (Track B / B4;
+            Sadygov & Currie JPR 2025). Capture (integrate) is unaffected; this is
+            a fit-time choice.
+
+    Bounds are widened to ``[-0.1, 1.2]`` so unphysical FS (from integration
+    noise / co-eluting interference) surfaces in the output instead of being
+    clipped — a diagnostic signal the downstream R² curation gate can act on.
     """
     from scipy.optimize import minimize_scalar  # local import keeps cold path fast
 
     obs = np.asarray(observed_iso, dtype=float)[:n_iso]
     # Adaptive N_ISO: a peptidoform integrated to fewer channels than the run-wide
     # output width carries **trailing NaN** padding. Use only its populated leading
-    # channels and build the IsoSpec envelope to that same width, so the padding
-    # neither nulls the peptide out nor imports phantom channels. On the fixed path
-    # ``obs`` has no NaN ⇒ ``n_real == n_iso`` ⇒ byte-identical to before.
+    # channels. On the fixed path ``obs`` has no NaN ⇒ ``n_real == n_iso``.
     valid = ~np.isnan(obs)
     if not valid.any():
         return float('nan')
     n_real = int(np.max(np.nonzero(valid)[0])) + 1
     obs = obs[:n_real]
     if np.isnan(obs).any():
-        # Interior NaN (a gap, not trailing padding) — unexpected; bail honestly
-        # rather than silently mis-aligning the envelope.
+        # Interior NaN (a gap, not trailing padding) — unexpected; bail honestly.
         return float('nan')
-    init_env = np.asarray(_get_init_env(sequence, pep_mass, n=n_real, mods=mods), dtype=float)
-    final_env = np.asarray(
-        _get_final_env(sequence, pep_mass, spep, ria_max, n=n_real, mods=mods), dtype=float,
-    )
-    obs_total = obs.sum()
+
+    # Scoring width: the chosen subset (B4), clamped to what the peptide actually
+    # has. Need ≥ 2 channels to separate init from final.
+    k = n_real if score_channels is None else min(int(score_channels), n_real)
+    k = max(2, min(k, n_real))
+    obs_score = obs[:k]
+    obs_total = obs_score.sum()
     if obs_total == 0:
         return float('nan')
-    obs_norm = obs / obs_total
-    i_sum = init_env.sum()
-    f_sum = final_env.sum()
+    obs_norm = obs_score / obs_total
+
+    # Full-cluster-normalized init / final (mix in this basis, THEN truncate).
+    n_full = max(_FULL_CLUSTER_N, n_real)
+    init_full = np.asarray(_get_init_env(sequence, pep_mass, n=n_full, mods=mods), dtype=float)
+    final_full = np.asarray(
+        _get_final_env(sequence, pep_mass, spep, ria_max, n=n_full, mods=mods), dtype=float,
+    )
+    i_sum = init_full.sum()
+    f_sum = final_full.sum()
     if i_sum == 0 or f_sum == 0:
         return float('nan')
-    init_norm = init_env / i_sum
-    final_norm = final_env / f_sum
+    init_full = init_full / i_sum
+    final_full = final_full / f_sum
 
     def sse(fs: float) -> float:
-        pred = (1.0 - fs) * init_norm + fs * final_norm
-        return float(np.sum((obs_norm - pred) ** 2))
+        pred_full = (1.0 - fs) * init_full + fs * final_full
+        pred_score = pred_full[:k]
+        ps = pred_score.sum()
+        if ps <= 0:
+            return 1e6
+        return float(np.sum((obs_norm - pred_score / ps) ** 2))
 
     return float(minimize_scalar(sse, bounds=FS_BOUNDS, method='bounded').x)
 

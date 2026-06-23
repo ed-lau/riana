@@ -369,17 +369,45 @@ def test_solve_fs_d2o_ragged_padding_matches_fixed_width():
     iso.clear_envelope_cache()
     pep_mass = _peptide_mass(_TEST_SEQ)
     spep = 8
-    init = iso._get_init_env(_TEST_SEQ, pep_mass, n=6)
-    final = iso._get_final_env(_TEST_SEQ, pep_mass, spep, ria_max=0.046, n=6)
-    init_n, final_n = init / init.sum(), final / final.sum()
+    # Physically-correct synthetic: the true mixture lives in the FULL-cluster
+    # basis; we then observe only the leading channels (a sub-vector that sums to
+    # the in-window fraction). The H4′ solver mixes full, truncates, renormalizes
+    # and recovers fs exactly.
+    obs6 = _full_cluster_obs(_TEST_SEQ, pep_mass, spep, ria_max=0.046, k=6)
     for fs_true in (0.0, 0.3, 0.7):
-        obs = (1 - fs_true) * init_n + fs_true * final_n
+        obs = obs6(fs_true)
         fs_fixed = iso.solve_fs_d2o(_TEST_SEQ, pep_mass, obs, spep, ria_max=0.046, n_iso=6)
         obs_padded = np.concatenate([obs, [np.nan, np.nan, np.nan]])
         fs_ragged = iso.solve_fs_d2o(
             _TEST_SEQ, pep_mass, obs_padded, spep, ria_max=0.046, n_iso=9)
         assert abs(fs_fixed - fs_ragged) < 1e-9
         assert abs(fs_ragged - fs_true) < 1e-3
+
+
+def _full_cluster_obs(seq, pep_mass, spep, *, ria_max, k):
+    """Return ``fs -> observed[:k]`` where the true mixture is full-cluster
+    normalized then truncated to k channels — the generative model the H4′
+    solver inverts (mix in the full basis, then truncate + renormalize)."""
+    nfull = iso._FULL_CLUSTER_N
+    init = np.asarray(iso._get_init_env(seq, pep_mass, n=nfull), float)
+    final = np.asarray(iso._get_final_env(seq, pep_mass, spep, ria_max, n=nfull), float)
+    init /= init.sum()
+    final /= final.sum()
+    return lambda fs: ((1 - fs) * init + fs * final)[:k]
+
+
+def test_solve_fs_d2o_limited_isotopomer_scoring_recovers_fs():
+    """B4 — scoring on a narrow subset (iso0+iso1) still recovers fs, because the
+    mixture is built in the full-cluster basis then truncated to the subset."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    spep = 8
+    obs = _full_cluster_obs(_TEST_SEQ, pep_mass, spep, ria_max=0.046, k=6)
+    for fs_true in (0.0, 0.25, 0.6, 0.9):
+        full = obs(fs_true)
+        fs2 = iso.solve_fs_d2o(
+            _TEST_SEQ, pep_mass, full, spep, ria_max=0.046, n_iso=6, score_channels=2)
+        assert abs(fs2 - fs_true) < 1e-2, f"iso0-1 scoring: {fs2:.3f} vs {fs_true}"
 
 
 def test_peptide_spep_loss_minimized_at_true_spep():
@@ -434,16 +462,13 @@ def test_solve_fs_d2o_recovers_known_fractions():
     iso.clear_envelope_cache()
     pep_mass = _peptide_mass(_TEST_SEQ)
     spep = 8
-    init = iso._get_init_env(_TEST_SEQ, pep_mass, n=4)
-    final = iso._get_final_env(_TEST_SEQ, pep_mass, spep, ria_max=0.06, n=4)
-    init_norm = init / init.sum()
-    final_norm = final / final.sum()
-
+    # Full-cluster mixture truncated to the 4 observed channels (the generative
+    # model the H4′ solver inverts).
+    obs4 = _full_cluster_obs(_TEST_SEQ, pep_mass, spep, ria_max=0.06, k=4)
     for true_fs in (0.0, 0.125, 0.5, 0.75, 1.0):
-        obs = (1 - true_fs) * init_norm + true_fs * final_norm
         # The solver expects un-normalized intensities (it normalizes
         # internally); scale by a synthetic peak area to test that path.
-        obs_unnorm = obs * 1e6
+        obs_unnorm = obs4(true_fs) * 1e6
         recovered = iso.solve_fs_d2o(_TEST_SEQ, pep_mass, obs_unnorm, spep, n_iso=4)
         assert abs(recovered - true_fs) < 0.02, (
             f"FS recovery {recovered:.3f} far from true {true_fs:.3f}"
