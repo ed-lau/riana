@@ -5,6 +5,11 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — Unreleased
+
+Post-1.0 development line. Track B–E follow-ons (per-peptide `--fs` keyed on the
+adaptive envelope, MBR tuning on the standing calibration benchmark, …).
+
 ## [1.0.0] — 2026-06-23
 
 The breaking 1.0 release: a new package structure, peak detection, baseline
