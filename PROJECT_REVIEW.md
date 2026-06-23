@@ -736,26 +736,38 @@ site updated to 1.0.0), and — **2026-06-23** — **Track B adaptive N_ISO** (`
 opt-in), the **H4′ mix-then-normalize FS solve**, and **`--fs` limited-isotopomer
 scoring** (the science win; see Track B RESULT + report
 `2026-06-23_adaptive_niso_limited_isotopomer.md`), plus the **`v1.0.0` git tag**
-(on `m3-rewrite`; version bumped to `1.1.0`). The next gaps, in order:
+(`v0.9.0` released on GitHub + Zenodo 2026-06-23; `m3-rewrite` merged to `master` at
+`9ebf08f`; `v1.0.0` is an internal tag; version `1.1.0`). The remaining **N_ISO line**
+closes out the (internal) 1.0.0 before an official 1.0.0 GitHub release; a `1.1.0`
+branch is cut *after* it lands. In order:
 
-1. **Per-peptide `--fs` keyed on the adaptive envelope — the next Track B item
-   (2026-06-23).** The flat global `--fs iso0-3` shipped this session is the keeper, but
-   it over-truncates the genuinely-wide-envelope peptides (N_ISO ≥ 12; crossover ≈ N_ISO
-   11). Make `score_channels` per-peptide — iso0-3 for short/medium, wider for very long
-   — keyed on the adaptive N_ISO (where `--iso auto` finally earns its keep, as the
-   scoring-width *supplier*). Currie-style but **extend, don't shift** (the RMSE
-   down-weights a suppressed iso0 automatically). Endgame = the soft robust matcher
-   (per-channel SNR/Huber weight). Full design in Track B; report Future Work.
-2. **`run_calibration_benchmark.py` driver (pure plumbing, spec'd).** One-command
+1. **`run_calibration_benchmark.py` driver (do first — pure plumbing, spec'd).** The
+   measurement harness for items 2–3, so they are an A/B not an anecdote. One-command
    per-cell-type integrate→recovery→within-protein into the standing
-   `runs/calib_<line>/<config>/` layout, so knob/MBR tuning is an A/B vs the committed
-   `benchmark_results/<line>/v1.0.0_fs0123/` anchor, not ad-hoc. Design + baselines in
+   `runs/calib_<line>/<config>/` layout, A/B vs the committed
+   `benchmark_results/<line>/v1.0.0_fs0123/` anchor. Design + baselines in
    `2026-06-23_calibration_benchmark_harness.md`.
-3. **GUI/UX easy wins (Track E) — sortable tables + graph export DONE 2026-06-21.**
-   Remaining Track E items deferred: faithful-to-smoothing chromatogram trace, the
-   **Δmass-over-time QC** (couple it to adaptive N_ISO's `iso{N}_ppm_error` /
-   orthogonal-θ substrate), matplotlib static/SVG export, fit progress + real
-   parallelism, modernize look. See Track E.
+2. **N_ISO-keyed `--fs` widening (first pass: heuristic, not individual-peptide).**
+   The flat global `--fs iso0-3` shipped 2026-06-23 is the keeper but over-truncates
+   genuinely-wide-envelope peptides (N_ISO ≥ 12; crossover ≈ N_ISO 11). **First version
+   is a heuristic widen of `score_channels` as a function of the IsoSpec adaptive N_ISO**
+   (iso0-3 short/medium, wider for the long tail) — *not* a per-peptide-specific optimum
+   yet. This is where `--iso auto` earns its keep, as the scoring-width *supplier*.
+   Currie-style but **extend, don't shift** (RMSE down-weights a suppressed iso0
+   automatically). Endgame = the soft robust matcher (per-channel SNR/Huber weight).
+   Full design in Track B; report Future Work.
+3. **Surface `--iso auto` + `--fs` channel scoring in the GUI (CLI↔GUI parity).**
+   The two new Track B knobs are CLI-only today; expose them on the Integrate/Model
+   tabs **before the official 1.0.0 GitHub release** so the GUI doesn't ship missing
+   CLI features. (The chemical-fold display is already pre-wired; this is the integrate
+   N_ISO mode toggle + the fit scoring-channel control.)
+
+After items 1–3 land (the N_ISO line), **cut a `1.1.0` branch** for subsequent work.
+
+**Deferred GUI/UX (Track E) — sortable tables + graph export DONE 2026-06-21.**
+Remaining: faithful-to-smoothing chromatogram trace, the **Δmass-over-time QC** (couple
+it to adaptive N_ISO's `iso{N}_ppm_error` / orthogonal-θ substrate), matplotlib
+static/SVG export, fit progress + real parallelism, modernize look. See Track E.
 
 **Demand-driven / blocked on data or a decision (do when unblocked):**
 - **K/R-methylation — relegated to Tier 2 (2026-06-21).** `UNIMOD:34/36/37`,
