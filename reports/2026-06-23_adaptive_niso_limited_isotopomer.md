@@ -147,12 +147,26 @@ close on the third); iso0-1 is a high-θ special case worth the per-peptide refi
 below, not a flat default.
 
 **No regression vs 0.9.0.** Re-running recovery on the committed `integrate_outputs/v0.9.0`
-(legacy 0.9.0 integration) vs `v1.0.0` (the M3 rewrite), same mzML + same Percolator IDs:
-`v1.0.0/all` == `v0.9.0/all` **exactly** on all three lines (the rewrite is a byte-faithful
-port, as the parity tests pin). `--fs iso0-3` is then a **pure improvement on top of the
-0.9.0 baseline** — within ±0.05 +1.8-2.8 pp at every proportion (ac16 f=1 25.5→27.3%, cm
-21.3→23.2%, ipsc 30.4→32.7%); adaptive ≈ v1.0.0 (capture neutral). So the shipped
-integration changes cost nothing vs 0.9.0, and the new fit lever is upside-only.
+(legacy 0.9.0 integration) vs `v1.0.0` (the M3 rewrite) and `adaptive`, same mzML + same
+Percolator IDs, `new`-solver within ±0.05 at the low/high-θ endpoints:
+
+| line | f | v0.9.0·all | v1.0.0·all | adapt·all | v1.0.0·iso0-3 | adapt·iso0-3 |
+|---|---|---|---|---|---|---|
+| ac16 | 0 | 19.4% | 19.4% | 18.0% | 22.1% | 21.9% |
+| ac16 | 1 | 25.5% | 25.5% | 25.2% | 27.3% | 27.3% |
+| cm   | 0 | 22.2% | 22.2% | 21.0% | 24.1% | 24.0% |
+| cm   | 1 | 21.3% | 21.3% | 21.2% | 23.2% | 23.0% |
+| ipsc | 0 | 21.1% | 21.1% | 20.4% | 23.9% | 23.2% |
+| ipsc | 1 | 30.4% | 30.4% | 30.7% | 32.7% | 32.6% |
+
+Three reads: (i) **`v1.0.0·all` == `v0.9.0·all` exactly** on all three lines — the rewrite is
+a byte-faithful port (as the parity tests pin), **no regression**; (ii) **`adapt·all` is
+neutral-to-slightly-below** the 0.9.0 baseline (wide capture adds noise, never signal); (iii)
+**`iso0-3` scoring is a pure improvement on top** — +1.8–2.8 pp within ±0.05 at every
+proportion, on either capture (`v1.0.0·iso0-3 ≈ adapt·iso0-3`). So the shipped integration
+changes cost nothing vs 0.9.0, and the new `--fs` lever is upside-only. (RMSE tells the same
+story: cm f=1 v0.9.0·all 0.276 → iso0-3 0.287 is the core-vs-tail trade noted above, but the
+*core* — IQR, within-±0.05/±0.10, bias — tightens everywhere.)
 
 ### 3. H4′ mix-then-normalize (B3) is a near-no-op at low θ
 

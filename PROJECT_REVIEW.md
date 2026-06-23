@@ -731,31 +731,31 @@ Met-Ox tier 1b) + **K-acetyl** proteoform key + **GUI chemical-fold point displa
 (pre-wired for TMT), the **`linear simple`** cross-sample Δk milestone, **MBR** for
 the mzTab/DDA path (gated RT-transfer, feature-complete 2026-06-20), the
 **advanced-knob exposure** (every `IntegrationConfig` dial reachable on both CLI +
-GUI; closed the `ppm_alert` asymmetry), and the **docs refresh** (README + Quarto
-site updated to 1.0.0). The next gaps, in order:
+GUI; closed the `ppm_alert` asymmetry), the **docs refresh** (README + Quarto
+site updated to 1.0.0), and — **2026-06-23** — **Track B adaptive N_ISO** (`--iso auto`,
+opt-in), the **H4′ mix-then-normalize FS solve**, and **`--fs` limited-isotopomer
+scoring** (the science win; see Track B RESULT + report
+`2026-06-23_adaptive_niso_limited_isotopomer.md`), plus the **`v1.0.0` git tag**
+(on `m3-rewrite`; version bumped to `1.1.0`). The next gaps, in order:
 
-1. **Adaptive N_ISO via IsoSpec-at-integrate — the next major integration-fidelity
-   item (prioritized 2026-06-21, AHEAD of TMT/SILAC/dimethyl).** Run the forward
-   model at integrate (today fit-only), set per-peptide N_ISO from the init+final
-   envelope union, adopt the averaged-isotopolog accurate mass (with `iso0` as the
-   precursor m0), and choose limited isotopomers at *fit* (e.g. iso0+iso1 SSE). Also
-   unlocks the orthogonal mass-defect θ estimator and subsumes TMT's precursor-mass
-   path. Full design + the H4′ normalize-before-truncate constraint in **Track B**;
-   memory `m8_adaptive_niso_robust_envelope`.
-2. **GUI/UX easy wins (Track E) — sortable tables + graph export DONE 2026-06-21.**
-   All three tabs now sort on header click via a pandas-backed
-   `DataFrameTableModel.sort()` (model-internal, *not* a proxy — keeps numeric
-   order numeric and the `iloc[row]` selection mapping intact; the vectorised sort
-   is also the large-table-responsiveness win), and the chromatogram + curve views
-   got a PNG "Save graph…" button (`riana/gui/export.py`) replacing `--plotcurves`.
-   Remaining Track E items deferred to future sessions: faithful-to-smoothing
-   chromatogram trace, Δmass-over-time QC (couple it to #1), matplotlib static/SVG
-   export, fit progress + real parallelism, modernize look. See Track E.
-3. **Cut the `v1.0.0` git tag + Zenodo DOI (release action — maintainer).** The
-   code is already `1.0.0` and the repo audited clean (2026-06-21; see Cross-cutting
-   chores) — what's left is the release decision: merge `m3-rewrite` → `master`,
-   `git tag v1.0.0`, push, mint the DOI. A maintainer call (branch/timing + an
-   external service), not a code task.
+1. **Per-peptide `--fs` keyed on the adaptive envelope — the next Track B item
+   (2026-06-23).** The flat global `--fs iso0-3` shipped this session is the keeper, but
+   it over-truncates the genuinely-wide-envelope peptides (N_ISO ≥ 12; crossover ≈ N_ISO
+   11). Make `score_channels` per-peptide — iso0-3 for short/medium, wider for very long
+   — keyed on the adaptive N_ISO (where `--iso auto` finally earns its keep, as the
+   scoring-width *supplier*). Currie-style but **extend, don't shift** (the RMSE
+   down-weights a suppressed iso0 automatically). Endgame = the soft robust matcher
+   (per-channel SNR/Huber weight). Full design in Track B; report Future Work.
+2. **`run_calibration_benchmark.py` driver (pure plumbing, spec'd).** One-command
+   per-cell-type integrate→recovery→within-protein into the standing
+   `runs/calib_<line>/<config>/` layout, so knob/MBR tuning is an A/B vs the committed
+   `benchmark_results/<line>/v1.0.0_fs0123/` anchor, not ad-hoc. Design + baselines in
+   `2026-06-23_calibration_benchmark_harness.md`.
+3. **GUI/UX easy wins (Track E) — sortable tables + graph export DONE 2026-06-21.**
+   Remaining Track E items deferred: faithful-to-smoothing chromatogram trace, the
+   **Δmass-over-time QC** (couple it to adaptive N_ISO's `iso{N}_ppm_error` /
+   orthogonal-θ substrate), matplotlib static/SVG export, fit progress + real
+   parallelism, modernize look. See Track E.
 
 **Demand-driven / blocked on data or a decision (do when unblocked):**
 - **K/R-methylation — relegated to Tier 2 (2026-06-21).** `UNIMOD:34/36/37`,
@@ -768,9 +768,16 @@ site updated to 1.0.0). The next gaps, in order:
   integrates correctly but folds into the bare protein.
 - **Deamidation** — its own **side project** (the +0.984 / C13-M+1 isobaric overlap
   needs joint envelope + deamidation-proportion modeling). Not started.
-- **MBR re-search (maintainer)** — re-search quantms on the exact `.mzML`, then
-  re-run the calibration sweep without `--no-rt-check` to close the retracted
-  high-label result.
+- **MBR-on-calibration RT correction (NOT a re-search — corrected 2026-06-23).** The
+  mzml re-search **landed and does NOT fix the offset**: measured median |mzML-scan-RT −
+  mzTab-RT| is *identical* for the `.raw`- and `.mzML`-searched mzTabs (ac16 0% file 2.16
+  vs 2.15 min; 100% file 0.56 vs 0.58), i.e. the offset is **OpenMS ProteomicsLFQ RT
+  alignment**, applied by both pipelines, not a search-input artifact (and it is *larger*
+  at low θ, so not a high-θ effect). To MBR the calibration, subtract the measured
+  per-run RT offset before `resolve_rt_anchored_scans` (or re-anchor MBR in scan space) —
+  then re-run `bench_mbr_apex_knobs.py` without `--no-rt-check`. For the Percolator-path
+  0.9.0 bench, irrelevant. See report `2026-06-23_adaptive_niso_limited_isotopomer.md` §4
+  + memory `mbr_rt_axis_dependency`.
 - **GG-remnant (tier 2 PTM)** — most turnover-relevant, but blocked on anti-K-ε-GG
   enriched D₂O data (none exists).
 - **Heads-up:** the user will rename the run `atf6small` → `atf6_lve`.
