@@ -146,6 +146,14 @@ iso0-3 0.218), so it is not a safe default. within ±0.05 at f=1 (fix arm):
 close on the third); iso0-1 is a high-θ special case worth the per-peptide refinement
 below, not a flat default.
 
+**No regression vs 0.9.0.** Re-running recovery on the committed `integrate_outputs/v0.9.0`
+(legacy 0.9.0 integration) vs `v1.0.0` (the M3 rewrite), same mzML + same Percolator IDs:
+`v1.0.0/all` == `v0.9.0/all` **exactly** on all three lines (the rewrite is a byte-faithful
+port, as the parity tests pin). `--fs iso0-3` is then a **pure improvement on top of the
+0.9.0 baseline** — within ±0.05 +1.8-2.8 pp at every proportion (ac16 f=1 25.5→27.3%, cm
+21.3→23.2%, ipsc 30.4→32.7%); adaptive ≈ v1.0.0 (capture neutral). So the shipped
+integration changes cost nothing vs 0.9.0, and the new fit lever is upside-only.
+
 ### 3. H4′ mix-then-normalize (B3) is a near-no-op at low θ
 
 Re-scoring LVE with the corrected solver moved `fixed·all` 0.1007→0.1026 and left
