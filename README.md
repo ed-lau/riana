@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17613314.svg)](https://doi.org/10.5281/zenodo.17613314)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10614233.svg)](https://doi.org/10.5281/zenodo.10614233)
 
 # Riana — Relative Isotope Abundance Analyzer
 
@@ -127,7 +127,7 @@ whatever workflow already runs them. The bundled Snakemake example was retired i
 If you use Riana in published work, please cite:
 
 > Lau, E. *Riana — Relative Isotope Abundance Analyzer*. Zenodo.
-> <https://doi.org/10.5281/zenodo.17613314>
+> <https://doi.org/10.5281/zenodo.10614233>
 
 ## Contributing
 
