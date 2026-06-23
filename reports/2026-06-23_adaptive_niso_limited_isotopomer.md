@@ -126,8 +126,12 @@ IQR (lower = tighter core):
   iso3) for a tighter, less-biased core. iso0-1 is too aggressive (loses signal at high
   f); **iso0-3 is the sweet spot.**
 
-(ipsc/cm confirmation in flight at time of writing; the capture-vs-scoring split is
-structural, expected to hold.)
+**cm replicates ac16** (drop50 config, RIA 0.0598): narrow scoring helps at every f
+(within ±0.05 +1.9 pp; IQR f=0 0.300→0.218), and `fix·iso0-3 ≈ adapt·iso0-3` again —
+capture adds nothing, `adapt·all` is worst (IQR f=0 0.383). The capture-vs-scoring
+conclusion holds on **two** independent cell lines. (ipsc adaptive integrate was
+pathologically slow — ~18 min/file on its denser profile mzML — so a third-line
+confirmation is deferred; the split is structural and expected to hold.)
 
 ### 3. H4′ mix-then-normalize (B3) is a near-no-op at low θ
 
