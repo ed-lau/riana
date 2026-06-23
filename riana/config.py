@@ -373,6 +373,14 @@ class FitConfig:
     #: has (per-peptide clamp). Set from the CLI ``--fs`` channel list (must be
     #: leading-contiguous from iso0, e.g. ``--fs 0 1 2 3`` ⇒ ``score_channels=4``).
     score_channels: int | None = None
+    #: --fs auto. **Adaptive limited-isotopomer scoring** (Track B). Instead of a
+    #: flat ``score_channels``, the fit picks per peptidoform: iso0-3 for typical
+    #: peptides, but **widens to all captured channels for peptides whose natural-
+    #: abundance envelope is broad** (init width ≥ threshold), where iso4-5 carry
+    #: clean signal that iso0-3 would truncate. The criterion is RIA-invariant by
+    #: construction — see ``core.fitting.FS_AUTO_*`` for the policy + the empirical
+    #: derivation. Mutually exclusive with an explicit ``score_channels``.
+    fs_auto: bool = False
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded
@@ -396,5 +404,9 @@ class FitConfig:
             raise ValueError(
                 "score_channels must be >= 2 (need m0 + a labelled channel to "
                 f"separate init from final), got {self.score_channels}")
+        if self.fs_auto and self.score_channels is not None:
+            raise ValueError(
+                "--fs auto (fs_auto) and an explicit --fs channel list "
+                "(score_channels) are mutually exclusive; set one.")
         if self.workers < 1:
             raise ValueError(f"workers must be >= 1, got {self.workers}")

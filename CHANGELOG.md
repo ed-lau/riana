@@ -21,6 +21,41 @@ Zenodo DOI. (A `v1.0.0` git tag was cut 2026-06-23 at the rewrite + initial
 Track B work; the official release tag re-points to the N_ISO finish.) See
 `PROJECT_REVIEW.md` §3. Entries below are grouped by the work that produced them.
 
+### Per-peptide `--fs auto` widening + CLI single-int `--fs`/`--iso` (Track B) — 2026-06-23
+
+#### Added
+
+- **`riana fit --fs auto` — per-peptide limited-isotopomer widening.** Instead of
+  a flat channel count, the fit picks per peptidoform: iso0-3 for typical peptides,
+  but **widens to all captured channels for peptides whose natural-abundance (θ=0)
+  envelope is broad** (`init_envelope_width ≥ 6`), where iso4-5 carry clean,
+  model-predicted signal that flat iso0-3 would truncate. The criterion is the
+  **natural envelope width — purely compositional, RIA-invariant** — so the
+  threshold is a named constant (`core.fitting.FS_AUTO_*`), not a user dial.
+  Derived on the calibration mixing series (crossover = init width 6, identical on
+  ac16/cm/ipsc) as a strict Pareto win over flat iso0-3, and ties an RIA-dependent
+  N_ISO-keyed alternative on the headline metric while needing no per-experiment
+  retuning (report `2026-06-23_adaptive_niso_limited_isotopomer.md`;
+  `bench_niso_crossover.py`). Free at fit — reuses the cached init envelope
+  `solve_fs_d2o` already builds. New `algorithms.isotope_dist.init_envelope_width`
+  + `FitConfig.fs_auto`.
+
+#### Changed
+
+- **`--fs` and `--iso` accept a single index `N`** (= the leading channels
+  iso0..isoN), the easy form replacing the leading-contiguous list: `--fs 3` =
+  iso0-iso3, `--iso 5` = the m0-m5 envelope (now the `--iso` default). An explicit
+  list is still accepted for a non-contiguous set (the o18 `0 6` pair), and `--fs`
+  also takes `auto`. Fixes a latent bug where the `--fs` *list* form
+  (`--fs 0 1 2 3`) was always rejected (tuple-vs-list comparison).
+
+#### Benchmarks / tooling
+
+- **`tests/benchmark/bench_niso_crossover.py` — crossover derivation.** Per-integer
+  N_ISO *and* init-width MAE strata + the heuristic A/B (flat / niso / init-width
+  binary / graded) on the fixed v1.0.0 integrate; the tool behind the `--fs auto`
+  decision.
+
 ### Standing calibration benchmark driver (Track B) — 2026-06-23
 
 #### Benchmarks / tooling

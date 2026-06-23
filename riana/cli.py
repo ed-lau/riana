@@ -112,13 +112,13 @@ def integrate(
         "(identity comes from the SDRF).",
     ),
     iso: str = typer.Option(
-        "0 1 2 3 4 5", "-i", "--iso",
-        help="Isotopomers to integrate, comma/space separated. Default "
-        "'0 1 2 3 4 5' is the m0-m5 envelope the D2O fit consumes; pick a "
-        "custom set for other workflows (e.g. SILAC cluster extraction via -F). "
-        "Pass 'auto' for adaptive N_ISO: per-peptide channels from the IsoSpec "
-        "init+final envelope (≥1% abundance), extracted at averaged-isotopolog "
-        "accurate mass. The output is padded to the run-wide max width.",
+        "5", "-i", "--iso",
+        help="Isotopomers to integrate. Give a single index N for the m0..mN "
+        "envelope (default '5' = m0-m5, what the D2O fit consumes). An explicit "
+        "comma/space list is still accepted for a non-contiguous set (e.g. the "
+        "o18 '0 6' pair). Pass 'auto' for adaptive N_ISO: per-peptide channels "
+        "from the IsoSpec init+final envelope (≥1% abundance), extracted at "
+        "averaged-isotopolog accurate mass, padded to the run-wide max width.",
     ),
     ria: Optional[float] = typer.Option(
         None, "--ria", metavar="FRAC",
@@ -275,9 +275,15 @@ def integrate(
     if adaptive_iso:
         isotopomers = (0, 1, 2, 3, 4, 5)
     else:
-        isotopomers = _parse_number_list(iso, int, sort=True, unique=True)
-        if not isotopomers:
-            raise typer.BadParameter("--iso must list at least one isotopomer.")
+        parsed = _parse_number_list(iso, int, sort=True, unique=True)
+        if not parsed:
+            raise typer.BadParameter("--iso must be 'auto', a single index N "
+                                     "(= iso0..isoN), or an explicit list.")
+        # A single int N is the easy form for the usual contiguous m0..mN capture
+        # (e.g. '5' = the m0-m5 D2O envelope). A multi-value list stays explicit,
+        # so a genuinely non-contiguous set (the o18 '0 6' pair) is preserved.
+        isotopomers = (tuple(range(parsed[0] + 1)) if len(parsed) == 1
+                       else tuple(parsed))
 
     ihw: float | str = ("auto" if integration_half_width == "auto"
                         else float(integration_half_width))
@@ -501,11 +507,13 @@ def fit(
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
     fs: Optional[str] = typer.Option(
-        None, "-f", "--fs", metavar="CHANNELS",
-        help="Limited-isotopomer scoring: fit the FS on a leading subset of "
-        "isotopomer channels (e.g. '0 1 2 3' = iso0-iso3) to dodge co-eluting "
-        "contaminants in the higher channels — integrate wide, fit narrow. Must "
-        "be leading-contiguous from iso0. Default: score the full envelope."),
+        None, "-f", "--fs", metavar="N|auto",
+        help="Limited-isotopomer scoring: fit the FS on the leading channels "
+        "iso0..isoN (give a single index N, e.g. '3' = iso0-iso3) to dodge "
+        "co-eluting contaminants in the higher channels — integrate wide, fit "
+        "narrow. Or 'auto': per-peptide width keyed on the natural-abundance "
+        "envelope (iso0-3 for typical peptides, wider for broad ones; "
+        "RIA-invariant). Default: score the full envelope."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
         help="Worker *processes* for the per-peptide fit [default: 1]. The "
@@ -542,17 +550,32 @@ def fit(
             "provide either positional _riana.txt file(s) (legacy path) or "
             "--manifest (the SDRF path), not both / neither.")
 
-    # --fs: parse the leading-contiguous channel list to a score-channel count.
-    # Must be iso0..iso{N-1} (the solver scores LEADING channels), so a gap or a
-    # non-zero start is a user error, not a silent reinterpretation.
+    # --fs: one of three forms — 'auto' (per-peptide init-width-keyed widening); a
+    # single int N meaning "score iso0..isoN" (the easy form, N is the highest
+    # channel index); or, for back-compat, the explicit leading-contiguous list
+    # iso0..isoN. The solver scores LEADING channels, so a gap or a non-zero start
+    # is a user error, not a silent reinterpretation. All resolve to a channel
+    # COUNT = N+1 = len(list).
     score_channels: Optional[int] = None
-    if fs is not None:
-        fs_list = _parse_number_list(fs, int, sort=True, unique=True)
-        if fs_list != list(range(len(fs_list))) or len(fs_list) < 2:
+    fs_auto = False
+    if fs is not None and fs.strip().lower() == "auto":
+        fs_auto = True
+    elif fs is not None:
+        # list(...) — _parse_number_list returns a tuple; compare as a list below.
+        fs_list = list(_parse_number_list(fs, int, sort=True, unique=True))
+        if len(fs_list) == 1:  # single int N -> iso0..isoN
+            score_channels = fs_list[0] + 1
+        elif fs_list == list(range(len(fs_list))):  # explicit leading list
+            score_channels = len(fs_list)
+        else:
             raise typer.BadParameter(
-                f"--fs must be leading-contiguous channels from iso0 with >=2 "
-                f"entries (e.g. '0 1 2 3'); got {fs!r}.")
-        score_channels = len(fs_list)
+                f"--fs must be 'auto', a single channel index N (e.g. '3' = "
+                f"iso0-iso3), or a leading-contiguous list from iso0 (e.g. "
+                f"'0 1 2 3'); got {fs!r}.")
+        if score_channels < 2:
+            raise typer.BadParameter(
+                f"--fs needs >=2 channels (iso0 + a labelled one), e.g. '1' = "
+                f"iso0-iso1; got {fs!r}.")
 
     # --coefficients is required for the hw path; o18 errors in fit_run anyway.
     if label == "hw" and not coefficients:
@@ -573,6 +596,7 @@ def fit(
             depth=int(depth),
             ria_max=float(ria),
             score_channels=score_channels,
+            fs_auto=fs_auto,
             workers=int(workers),
             out_dir=str(out),
             exclude_mbr=bool(exclude_mbr),
@@ -583,7 +607,10 @@ def fit(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("fit (typed pipeline)")
-    if score_channels is not None:
+    if fs_auto:
+        logger.info("limited-isotopomer scoring: --fs auto (per-peptide "
+                    "init-width-keyed widening)")
+    elif score_channels is not None:
         logger.info(
             f"limited-isotopomer scoring: --fs iso0-iso{score_channels - 1} "
             f"({score_channels} channels)"

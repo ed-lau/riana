@@ -741,28 +741,29 @@ scoring** (the science win; see Track B RESULT + report
 closes out the (internal) 1.0.0 before an official 1.0.0 GitHub release; a `1.1.0`
 branch is cut *after* it lands. In order:
 
-1. **`run_calibration_benchmark.py` driver (do first — pure plumbing, spec'd).** The
-   measurement harness for items 2–3, so they are an A/B not an anecdote. One-command
-   per-cell-type integrate→recovery→within-protein into the standing
-   `runs/calib_<line>/<config>/` layout, A/B vs the committed
-   `benchmark_results/<line>/v1.0.0_fs0123/` anchor. Design + baselines in
-   `2026-06-23_calibration_benchmark_harness.md`.
-2. **N_ISO-keyed `--fs` widening (first pass: heuristic, not individual-peptide).**
-   The flat global `--fs iso0-3` shipped 2026-06-23 is the keeper but over-truncates
-   genuinely-wide-envelope peptides (N_ISO ≥ 12; crossover ≈ N_ISO 11). **First version
-   is a heuristic widen of `score_channels` as a function of the IsoSpec adaptive N_ISO**
-   (iso0-3 short/medium, wider for the long tail) — *not* a per-peptide-specific optimum
-   yet. This is where `--iso auto` earns its keep, as the scoring-width *supplier*.
-   Currie-style but **extend, don't shift** (RMSE down-weights a suppressed iso0
-   automatically). Endgame = the soft robust matcher (per-channel SNR/Huber weight).
-   Full design in Track B; report Future Work.
+1. **`run_calibration_benchmark.py` driver — DONE 2026-06-23.** One-command
+   per-cell-type integrate→recovery into the standing `runs/calib_<line>/<config>/`
+   layout, A/B vs the committed `benchmark_results/<line>/v1.0.0_fs0123/` anchor
+   (reproduced exactly). Design: `2026-06-23_calibration_benchmark_harness.md`.
+2. **Per-peptide `--fs` widening — DONE 2026-06-23, shipped as `--fs auto`.** Keyed
+   not on the RIA-dependent integrate N_ISO but on the **natural-abundance (θ=0)
+   envelope width** (`init_envelope_width`), which is **RIA-invariant** — the measured
+   driver of a clean widen is iso4-5 sitting inside the peptide's *own* natural
+   envelope (signal at every timepoint), not labelling spread. Crossover derived =
+   init width 6, identical on ac16/cm/ipsc (`bench_niso_crossover.py`); a Pareto win
+   over flat iso0-3, ties the N_ISO-keyed alternative on the headline metric with no
+   per-experiment retuning. `score_channels = 4 if init_w < 6 else len(iso)`, free at
+   fit (cached init env). Threshold a named constant (`core.fitting.FS_AUTO_*`) with
+   documented revisit conditions; endgame is per-channel weighting (soft matcher).
+   Also: **`--fs`/`--iso` now take a single index `N`** (= iso0..N), the easy form.
 3. **Surface `--iso auto` + `--fs` channel scoring in the GUI (CLI↔GUI parity).**
    The two new Track B knobs are CLI-only today; expose them on the Integrate/Model
    tabs **before the official 1.0.0 GitHub release** so the GUI doesn't ship missing
    CLI features. (The chemical-fold display is already pre-wired; this is the integrate
    N_ISO mode toggle + the fit scoring-channel control.)
 
-After items 1–3 land (the N_ISO line), **cut a `1.1.0` branch** for subsequent work.
+After item 3 lands (items 1–2 done), the N_ISO line is complete → **cut a `1.1.0`
+branch** for subsequent work.
 
 **Deferred GUI/UX (Track E) — sortable tables + graph export DONE 2026-06-21.**
 Remaining: faithful-to-smoothing chromatogram trace, the **Δmass-over-time QC** (couple

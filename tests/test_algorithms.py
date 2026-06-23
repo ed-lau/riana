@@ -362,6 +362,27 @@ def test_adaptive_channel_masses_cached():
     np.testing.assert_allclose(c, a)  # same content (IsoSpec is ~1-ULP nondet)
 
 
+def test_init_envelope_width_discriminates_long_from_short():
+    """init_envelope_width is the natural-abundance (θ=0) envelope width — broad
+    peptides clear the --fs auto widen threshold (6) while short ones don't. It
+    takes no RIA argument (purely compositional), which is why it is the
+    RIA-invariant key for the per-peptide widening."""
+    iso.clear_envelope_cache()
+    short = "SAMPLEK"
+    long = "VLLLLDEPTNHLDIDAVHWLENLLAR"
+    w_short = iso.init_envelope_width(short, _peptide_mass(short))
+    w_long = iso.init_envelope_width(long, _peptide_mass(long))
+    assert w_short < 6 <= w_long
+
+
+def test_init_envelope_width_cached_int():
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    a = iso.init_envelope_width(_TEST_SEQ, pep_mass)
+    assert isinstance(a, int)
+    assert iso.init_envelope_width(_TEST_SEQ, pep_mass) == a  # cache hit
+
+
 def test_solve_fs_d2o_ragged_padding_matches_fixed_width():
     """The ragged-aware solver: a NaN-padded (adaptive) observed envelope trims
     to its real leading channels and recovers the SAME fs as the equivalent
