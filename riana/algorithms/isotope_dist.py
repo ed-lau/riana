@@ -315,10 +315,14 @@ def solve_fs_d2o(
         # Interior NaN (a gap, not trailing padding) — unexpected; bail honestly.
         return float('nan')
 
-    # Scoring width: the chosen subset (B4), clamped to what the peptide actually
-    # has. Need ≥ 2 channels to separate init from final.
+    # Scoring width (B4): the chosen subset, clamped per-peptide to what this
+    # peptidoform actually populated. A peptide so short its envelope ends before
+    # the requested subset (e.g. --fs iso0-3 but only iso0-2 clear 1%) is scored on
+    # the channels it has. Need ≥ 2 channels (m0 + a labelled one) to separate init
+    # from final; a 1-channel peptidoform cannot be fit → NaN (honest, not a crash).
     k = n_real if score_channels is None else min(int(score_channels), n_real)
-    k = max(2, min(k, n_real))
+    if k < 2:
+        return float('nan')
     obs_score = obs[:k]
     obs_total = obs_score.sum()
     if obs_total == 0:

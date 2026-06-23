@@ -362,13 +362,17 @@ class FitConfig:
     #: experiment because metabolic-water dilution and protocol
     #: variability push this around.
     ria_max: float = 0.06
-    #: -f / --fs. Reserved (post-M4): restrict the envelope SSE in
-    #: :func:`algorithms.isotope_dist.solve_fs_d2o` to a subset of isotopomer
-    #: channels (e.g. m0-m2) to reduce sensitivity to co-eluting contaminants
-    #: in the higher isotopomers. Currently **ignored** — the full integrated
-    #: envelope is used. Kept on the config so the post-M4 wiring is a localized
-    #: change. (Not the legacy fine-structure-ratio meaning.)
-    fs_formula: str | None = None
+    #: -f / --fs. **Limited-isotopomer scoring** (Track B / B4): restrict the
+    #: envelope SSE in :func:`algorithms.isotope_dist.solve_fs_d2o` to the leading
+    #: ``score_channels`` isotopomers (m0..m{N-1}), to reduce sensitivity to
+    #: co-eluting contaminants in the higher channels — "integrate wide, fit
+    #: narrow" (Sadygov & Currie JPR 2025). ``None`` (default) scores the full
+    #: integrated envelope. The fit normalizes in the full-cluster basis then
+    #: truncates to these channels (the H4′ order), so the subset is unbiased.
+    #: A peptidoform too short to populate all N channels is scored on the ones it
+    #: has (per-peptide clamp). Set from the CLI ``--fs`` channel list (must be
+    #: leading-contiguous from iso0, e.g. ``--fs 0 1 2 3`` ⇒ ``score_channels=4``).
+    score_channels: int | None = None
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded
@@ -388,5 +392,9 @@ class FitConfig:
             raise ValueError(f"q_value must be in [0, 1], got {self.q_value}")
         if self.depth < 1:
             raise ValueError(f"depth must be >= 1, got {self.depth}")
+        if self.score_channels is not None and self.score_channels < 2:
+            raise ValueError(
+                "score_channels must be >= 2 (need m0 + a labelled channel to "
+                f"separate init from final), got {self.score_channels}")
         if self.workers < 1:
             raise ValueError(f"workers must be >= 1, got {self.workers}")

@@ -266,13 +266,25 @@ def fit_run(
     # the legacy `--iso 0 6` pair) fails with a clear message instead of
     # silently misaligning the observed envelope against the IsoSpec model.
     present_isos = {int(c[3:]) for c in rdf.columns if re.match(r"^iso\d+$", c)}
-    missing = [i for i in _REQUIRED_D2O_ISOTOPOMERS if i not in present_isos]
+    # Required channels (Guard 1, run-level): the default full-envelope fit needs
+    # iso0-5; with --fs limited-isotopomer scoring it needs exactly the scored
+    # leading channels — so `integrate --iso 0 1 2 3` + `fit --fs 0 1 2 3` is valid
+    # (you only need to extract what you score). Error if any are absent as a
+    # COLUMN. (A short peptidoform whose envelope ends early — its high channel is
+    # NaN, not column-absent — is the separate per-peptide clamp in solve_fs_d2o.)
+    if config.score_channels is not None:
+        required = tuple(range(config.score_channels))
+        hint = f"--iso '{' '.join(map(str, required))}'"
+    else:
+        required = _REQUIRED_D2O_ISOTOPOMERS
+        hint = "--iso '0 1 2 3 4 5'"
+    missing = [i for i in required if i not in present_isos]
     if missing:
         raise ValueError(
-            f"The D2O fit needs isotopomers {list(_REQUIRED_D2O_ISOTOPOMERS)} in "
-            f"the integrate output, but {missing} are absent "
-            f"(found {sorted(present_isos)}). Re-run `riana integrate --iso "
-            f"'0 1 2 3 4 5'` (the default)."
+            f"The D2O fit needs isotopomers {list(required)} present in the "
+            f"integrate output, but {['iso%d' % i for i in missing]} are absent "
+            f"(found {sorted(present_isos)}). Re-run `riana integrate {hint}` "
+            f"or `--iso auto`."
         )
 
     rdf = rdf[rdf["percolator q-value"] < config.q_value].copy()
@@ -515,7 +527,7 @@ def _fit_one_concat(
                 fs_arr[i] = solve_fs_d2o(
                     seq, pep_mass_i, obs_matrix[i], spep_int,
                     ria_max=float(config.ria_max), n_iso=len(iso_cols),
-                    mods=mods_i,
+                    mods=mods_i, score_channels=config.score_channels,
                 )
     except (KeyError, ValueError):
         return _null_result(concat, protein_id, mod_sites)

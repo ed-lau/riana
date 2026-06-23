@@ -410,6 +410,32 @@ def test_solve_fs_d2o_limited_isotopomer_scoring_recovers_fs():
         assert abs(fs2 - fs_true) < 1e-2, f"iso0-1 scoring: {fs2:.3f} vs {fs_true}"
 
 
+def test_solve_fs_d2o_score_channels_clamps_to_short_peptidoform():
+    """B4 Guard 2: --fs asks for more channels than a short peptidoform populated
+    (its envelope ended early → trailing NaN); it is scored on the channels it has,
+    not crashed, and still recovers fs."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    spep = 8
+    obs = _full_cluster_obs(_TEST_SEQ, pep_mass, spep, ria_max=0.046, k=3)
+    full = obs(0.5)  # only iso0-2 populated
+    padded = np.concatenate([full, [np.nan] * 6])
+    fs = iso.solve_fs_d2o(
+        _TEST_SEQ, pep_mass, padded, spep, ria_max=0.046, n_iso=9, score_channels=4)
+    assert np.isfinite(fs) and abs(fs - 0.5) < 1e-2
+
+
+def test_solve_fs_d2o_single_channel_returns_nan():
+    """A peptidoform with only m0 populated cannot separate init from final → NaN
+    (not a shape crash), whatever score_channels asks for."""
+    iso.clear_envelope_cache()
+    pep_mass = _peptide_mass(_TEST_SEQ)
+    obs = np.array([1.0] + [np.nan] * 5)
+    assert np.isnan(
+        iso.solve_fs_d2o(_TEST_SEQ, pep_mass, obs, 8, ria_max=0.046,
+                         n_iso=6, score_channels=4))
+
+
 def test_peptide_spep_loss_minimized_at_true_spep():
     """Synthetic: build observed envelopes from a known Spep, then verify
     the SSE loss has its minimum near the true Spep."""

@@ -501,10 +501,11 @@ def fit(
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
     fs: Optional[str] = typer.Option(
-        None, "-f", "--fs",
-        help="Reserved (post-M4): restrict the envelope SSE to a subset of "
-        "isotopomer channels to reduce co-eluting-contaminant sensitivity. "
-        "Currently ignored — the full integrated envelope is used."),
+        None, "-f", "--fs", metavar="CHANNELS",
+        help="Limited-isotopomer scoring: fit the FS on a leading subset of "
+        "isotopomer channels (e.g. '0 1 2 3' = iso0-iso3) to dodge co-eluting "
+        "contaminants in the higher channels — integrate wide, fit narrow. Must "
+        "be leading-contiguous from iso0. Default: score the full envelope."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
         help="Worker *processes* for the per-peptide fit [default: 1]. The "
@@ -541,6 +542,18 @@ def fit(
             "provide either positional _riana.txt file(s) (legacy path) or "
             "--manifest (the SDRF path), not both / neither.")
 
+    # --fs: parse the leading-contiguous channel list to a score-channel count.
+    # Must be iso0..iso{N-1} (the solver scores LEADING channels), so a gap or a
+    # non-zero start is a user error, not a silent reinterpretation.
+    score_channels: Optional[int] = None
+    if fs is not None:
+        fs_list = _parse_number_list(fs, int, sort=True, unique=True)
+        if fs_list != list(range(len(fs_list))) or len(fs_list) < 2:
+            raise typer.BadParameter(
+                f"--fs must be leading-contiguous channels from iso0 with >=2 "
+                f"entries (e.g. '0 1 2 3'); got {fs!r}.")
+        score_channels = len(fs_list)
+
     # --coefficients is required for the hw path; o18 errors in fit_run anyway.
     if label == "hw" and not coefficients:
         presets = " | ".join(available_coefficient_presets())
@@ -559,7 +572,7 @@ def fit(
             q_value=float(q_value),
             depth=int(depth),
             ria_max=float(ria),
-            fs_formula=fs,
+            score_channels=score_channels,
             workers=int(workers),
             out_dir=str(out),
             exclude_mbr=bool(exclude_mbr),
@@ -570,10 +583,10 @@ def fit(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("fit (typed pipeline)")
-    if fs:
-        logger.warning(
-            "--fs is reserved for a post-M4 feature (channel-subset envelope "
-            "SSE) and is currently ignored; the full envelope is used."
+    if score_channels is not None:
+        logger.info(
+            f"limited-isotopomer scoring: --fs iso0-iso{score_channels - 1} "
+            f"({score_channels} channels)"
         )
 
     coeffs = load_aa_coefficients(coefficients) if coefficients else {}

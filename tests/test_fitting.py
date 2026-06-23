@@ -149,6 +149,32 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     np.testing.assert_allclose(np.sort(spep_arr), np.sort(expected), atol=1e-9)
 
 
+def test_fit_run_fs_score_channels_runs_and_guards_missing_channels():
+    """--fs limited-isotopomer scoring: fit_run accepts score_channels and still
+    recovers k; and Guard 1 errors if the integrate output lacks a requested
+    channel (user set integrate --iso too narrow)."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                    ria_max=0.06, score_channels=4)
+    # (a) full iso0-5 integrate, score iso0-3 → runs and converges.
+    result = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42)
+    assert result["k_deg"].notna().sum() >= int(0.9 * len(_TEST_PEPTIDES))
+
+    # (b) the relaxation: a MINIMAL integrate of exactly the scored channels
+    # (iso0-3) is valid — you only need to extract what you score.
+    minimal = [d.drop(columns=["iso4", "iso5"]) for d in dfs]
+    res_min = fit_run(cfg, minimal, coeffs, n_boot=0, random_state=42)
+    assert res_min["k_deg"].notna().sum() >= int(0.9 * len(_TEST_PEPTIDES))
+
+    # (c) Guard 1: integrate too narrow (iso0-2) but --fs asks iso0-3 → clear error.
+    narrow = [d.drop(columns=["iso3", "iso4", "iso5"]) for d in dfs]
+    with pytest.raises(ValueError, match=r"iso3|--iso"):
+        fit_run(cfg, narrow, coeffs, n_boot=0, random_state=42)
+
+
 def test_fit_run_workers_deterministic():
     """The process-pool fit (``workers>1``) must match the serial path exactly.
 
