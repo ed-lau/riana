@@ -137,8 +137,24 @@ class IntegrateTab(QWidget):
             "Ignored when an SDRF is set (identity comes from the SDRF).")
         form.addRow("Sample", self.sample_edit)
 
-        self.iso_edit = QLineEdit("0 1 2 3 4 5")
+        self.iso_edit = QLineEdit("5")
+        self.iso_edit.setToolTip(
+            "Isotopomers to integrate. A single index N = the m0..mN envelope "
+            "(e.g. '5' = m0-m5, the D2O default); an explicit list for a "
+            "non-contiguous set (e.g. '0 6'); or 'auto' for adaptive per-peptide "
+            "N_ISO from the IsoSpec init+final envelope.")
         form.addRow("Isotopomers", self.iso_edit)
+
+        self.ria_spin = QDoubleSpinBox()
+        self.ria_spin.setDecimals(3)
+        self.ria_spin.setRange(0.0, 1.0)
+        self.ria_spin.setSingleStep(0.005)
+        self.ria_spin.setValue(0.06)
+        self.ria_spin.setToolTip(
+            "Precursor enrichment (RIA max). Used with --iso auto to shape the "
+            "fully-labelled envelope; on the SDRF path it is read from "
+            "characteristics[precursor enrichment] instead.")
+        form.addRow("Precursor enrichment", self.ria_spin)
 
         self.qvalue_spin = QDoubleSpinBox()
         self.qvalue_spin.setDecimals(4)
@@ -461,12 +477,20 @@ class IntegrateTab(QWidget):
         :meth:`IntegrationConfig.__post_init__`, the *same* validator the CLI
         uses. Callers surface the message inline.
         """
+        # Mirror riana.cli.integrate: 'auto' = adaptive N_ISO; a single index N =
+        # the contiguous iso0..isoN capture; a multi-value list stays explicit
+        # (the o18 '0 6' pair).
         iso_text = self.iso_edit.text().strip()
-        isotopomers = tuple(
-            sorted({int(p) for p in re.split(r"[,\s]+", iso_text) if p})
-        )
-        if not isotopomers:
-            raise ValueError("Isotopomers must list at least one value, e.g. '0 6'.")
+        adaptive_iso = iso_text.lower() == "auto"
+        if adaptive_iso:
+            isotopomers = (0, 1, 2, 3, 4, 5)
+        else:
+            parsed = sorted({int(p) for p in re.split(r"[,\s]+", iso_text) if p})
+            if not parsed:
+                raise ValueError("Isotopomers must be 'auto', a single index N "
+                                 "(= iso0..isoN), or an explicit list, e.g. '0 6'.")
+            isotopomers = (tuple(range(parsed[0] + 1)) if len(parsed) == 1
+                           else tuple(parsed))
 
         ihw_text = self.ihw_edit.text().strip()
         ihw: float | str = "auto" if ihw_text == "auto" else float(ihw_text)
@@ -488,6 +512,8 @@ class IntegrateTab(QWidget):
         return IntegrationConfig(
             sample=self.sample_edit.text().strip(),
             isotopomers=isotopomers,
+            adaptive_iso=adaptive_iso,
+            ria_max=float(self.ria_spin.value()),
             mass_tol_ppm=int(self.mass_tol_spin.value()),
             extraction_half_width=ehw,
             peak_rt=peak_rt,

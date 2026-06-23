@@ -175,6 +175,17 @@ class ModelTab(QWidget):
         self.qvalue_spin.setValue(0.01)
         form.addRow("Max q-value", self.qvalue_spin)
 
+        self.fs_combo = QComboBox()
+        self.fs_combo.addItems(["full envelope", "auto",
+                                "iso0-1", "iso0-2", "iso0-3", "iso0-4", "iso0-5"])
+        self.fs_combo.setToolTip(
+            "Limited-isotopomer scoring (--fs): fit the FS on a leading channel "
+            "subset (iso0-N) to dodge co-eluting contaminants in the high "
+            "channels — integrate wide, fit narrow. 'auto' widens per-peptide by "
+            "the natural-abundance envelope width (RIA-invariant). Default scores "
+            "the full integrated envelope.")
+        form.addRow("FS scoring", self.fs_combo)
+
         self.exclude_mbr_check = QCheckBox("Exclude match-between-runs points")
         self.exclude_mbr_check.setChecked(False)
         self.exclude_mbr_check.setToolTip(
@@ -305,6 +316,14 @@ class ModelTab(QWidget):
     def build_config(self) -> FitConfig:
         """Build the frozen :class:`FitConfig`; ``__post_init__`` is the shared
         validator (raises ``ValueError`` on a bad value, surfaced inline)."""
+        # --fs scoring: 'full envelope' (None), 'auto' (per-peptide widening), or
+        # 'iso0-N' -> score_channels = N+1 (the same leading-channel count the CLI
+        # builds). Mutually exclusive (auto vs explicit) — FitConfig validates.
+        fs_text = self.fs_combo.currentText()
+        fs_auto = fs_text == "auto"
+        score_channels = (int(fs_text.rsplit("-", 1)[1]) + 1
+                          if fs_text.startswith("iso0-") else None)
+
         return FitConfig(
             model=self.model_combo.currentText(),
             label=self.label_combo.currentText(),
@@ -314,6 +333,8 @@ class ModelTab(QWidget):
             q_value=float(self.qvalue_spin.value()),
             depth=int(self.depth_spin.value()),
             ria_max=float(self.ria_spin.value()),
+            score_channels=score_channels,
+            fs_auto=fs_auto,
             workers=int(self.workers_spin.value()),
             exclude_mbr=self.exclude_mbr_check.isChecked(),
             out_dir=self.out_edit.text().strip() or ".",

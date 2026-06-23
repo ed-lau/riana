@@ -21,6 +21,17 @@ Zenodo DOI. (A `v1.0.0` git tag was cut 2026-06-23 at the rewrite + initial
 Track B work; the official release tag re-points to the N_ISO finish.) See
 `PROJECT_REVIEW.md` §3. Entries below are grouped by the work that produced them.
 
+### GUI exposure of `--iso auto` + `--fs` scoring (Track B / Track E) — 2026-06-23
+
+#### Added
+
+- **GUI parity for the Track B knobs.** The Integrate tab's *Isotopomers* field
+  now accepts `auto` (adaptive N_ISO) and a single index `N`, with a new
+  *Precursor enrichment* (RIA) spin that shapes the adaptive final envelope; the
+  Model tab gains an *FS scoring* dropdown (`full envelope` / `auto` / `iso0-N`)
+  wiring `FitConfig.score_channels` / `fs_auto`. Both build the same frozen config
+  the CLI does (GUI↔CLI parity before the 1.0.0 release).
+
 ### Per-peptide `--fs auto` widening + CLI single-int `--fs`/`--iso` (Track B) — 2026-06-23
 
 #### Added

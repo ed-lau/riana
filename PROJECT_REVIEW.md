@@ -756,14 +756,14 @@ branch is cut *after* it lands. In order:
    fit (cached init env). Threshold a named constant (`core.fitting.FS_AUTO_*`) with
    documented revisit conditions; endgame is per-channel weighting (soft matcher).
    Also: **`--fs`/`--iso` now take a single index `N`** (= iso0..N), the easy form.
-3. **Surface `--iso auto` + `--fs` channel scoring in the GUI (CLI↔GUI parity).**
-   The two new Track B knobs are CLI-only today; expose them on the Integrate/Model
-   tabs **before the official 1.0.0 GitHub release** so the GUI doesn't ship missing
-   CLI features. (The chemical-fold display is already pre-wired; this is the integrate
-   N_ISO mode toggle + the fit scoring-channel control.)
+3. **Surface `--iso auto` + `--fs` channel scoring in the GUI — DONE 2026-06-23.**
+   Integrate tab: *Isotopomers* accepts `auto` / single-int + a *Precursor enrichment*
+   (RIA) spin; Model tab: *FS scoring* dropdown (`full`/`auto`/`iso0-N`) → `score_channels`
+   / `fs_auto`. GUI builds the same frozen config as the CLI (test_gui coverage added).
 
-After item 3 lands (items 1–2 done), the N_ISO line is complete → **cut a `1.1.0`
-branch** for subsequent work.
+Items 1–3 done → **the N_ISO line is complete.** Before the official 1.0.0 GitHub
+release, consider the opportunistic small items below (e.g. DIA-NN phospho proteoform
+sites), then **cut a `1.1.0` branch** for subsequent work.
 
 **Deferred GUI/UX (Track E) — sortable tables + graph export DONE 2026-06-21.**
 Remaining: faithful-to-smoothing chromatogram trace, the **Δmass-over-time QC** (couple
