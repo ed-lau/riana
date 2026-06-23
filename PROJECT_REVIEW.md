@@ -786,6 +786,15 @@ static/SVG export, fit progress + real parallelism, modernize look. See Track E.
   one dataset.
 - **Deamidation** — its own **side project** (the +0.984 / C13-M+1 isobaric overlap
   needs joint envelope + deamidation-proportion modeling). Not started.
+- **Non-universal cysteine alkylation (far-future, deamidation-tier priority).** CAM
+  (UNIMOD:4) is today a fixed mod on *every* cysteine via the `mass_calc` `iaa=True`
+  flag (composition already the unified `mod_atoms[4]`), which is correct for standard
+  IAA data and is the only common denominator (Crux/Percolator never *declares* CAM —
+  its sequences are bare; mzTab/DIA-NN declare but strip it). Revisit only with data
+  that needs *partial* alkylation / alternative reagents (NEM) / free cysteines: then
+  CAM becomes a per-cysteine **variable** mod threaded via `count_atoms(mods=…)`, not
+  the blanket flag. Tokenizing it before that would just bloat every cysteine peptide's
+  `concat` identity for zero information. See the `_count_residue_atoms` comment.
 - **MBR-on-calibration RT correction (NOT a re-search — corrected 2026-06-23).** The
   mzml re-search **landed and does NOT fix the offset**: measured median |mzML-scan-RT −
   mzTab-RT| is *identical* for the `.raw`- and `.mzML`-searched mzTabs (ac16 0% file 2.16
