@@ -51,6 +51,7 @@ def _per_peptide_fs(
     proportions: np.ndarray,
     ria_max: float,
     label: int = 1,
+    score_channels: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute legacy and new FS for one peptide across all proportions.
 
@@ -63,7 +64,9 @@ def _per_peptide_fs(
         key=lambda c: int(c[3:]),
     )
     obs = df[iso_cols].to_numpy(dtype=np.float64)
-    sums = obs.sum(axis=1)
+    # nansum: adaptive (--iso auto) output NaN-pads channels a peptide doesn't use,
+    # so a plain sum would be NaN for every adaptive row. iso0 is always present.
+    sums = np.nansum(obs, axis=1)
 
     # Legacy: iso0 / Σ iso → analytic (a - a_0) / (a_max - a_0).
     mi = np.where(sums > 0, obs[:, 0] / np.where(sums > 0, sums, 1), 0.0)
@@ -76,9 +79,11 @@ def _per_peptide_fs(
     # recovery stats don't get pinned to 0 spuriously.
     fs_legacy = np.where(sums > 0, fs_legacy, np.nan)
 
-    # New: full-envelope solve_fs_d2o per row.
+    # New: full-envelope solve_fs_d2o per row (score_channels = limited-isotopomer
+    # subset for the B4 sweep; None = all populated channels).
     fs_new = np.array([
-        solve_fs_d2o(seq, pep_mass, obs[i], spep, ria_max=ria_max, n_iso=len(iso_cols))
+        solve_fs_d2o(seq, pep_mass, obs[i], spep, ria_max=ria_max,
+                     n_iso=len(iso_cols), score_channels=score_channels)
         if sums[i] > 0 else np.nan
         for i in range(len(obs))
     ])
@@ -102,6 +107,10 @@ def main() -> None:
     parser.add_argument("--ria", type=float, default=0.06,
                         help="precursor enrichment (default: 0.06 for 6%% v/v D2O)")
     parser.add_argument("--drop-proportion", type=float, nargs="+", default=[])
+    parser.add_argument("--score-channels", type=int, default=None,
+                        help="Limited-isotopomer scoring (B4): score the new-method FS "
+                        "fit on the leading N channels only (e.g. 2 = iso0+iso1). "
+                        "Default scores all populated channels.")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -147,6 +156,7 @@ def main() -> None:
             fs_legacy, fs_new = _per_peptide_fs(
                 peptide_rows, seq, spep_int, pep_mass, proportions,
                 ria_max=args.ria, label=args.label,
+                score_channels=args.score_channels,
             )
         except (KeyError, ValueError):
             continue

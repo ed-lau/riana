@@ -141,6 +141,11 @@ def main() -> None:
                         help="apex prominence floor multiplier (apex/auto)")
     parser.add_argument("--out-label", default=VERSION_LABEL,
                         help="integrate_outputs/<label>/ subdir to write into")
+    parser.add_argument("--adaptive", action="store_true",
+                        help="adaptive N_ISO (--iso auto): per-peptide envelope channels")
+    parser.add_argument("--ria", type=float, default=0.0598,
+                        help="precursor enrichment (RIA max) for the adaptive final "
+                        "envelope [default: 0.0598, the ac16 SDRF value]")
     args = parser.parse_args()
     targets = ["ac16", "ipsc", "cm"] if args.line == "all" else [args.line]
     ihw = ("auto" if args.integration_half_width == "auto"
@@ -158,7 +163,9 @@ def main() -> None:
                      width_rel_height=args.width_rel_height,
                      prominence_k=args.prominence_k,
                      baseline_method=args.baseline_method,
-                     extraction_half_width=extraction_half_width)
+                     extraction_half_width=extraction_half_width,
+                     adaptive_iso=args.adaptive,
+                     ria_max=args.ria)
     for line in targets:
         run_line(line, args.out_label, overrides)
 
