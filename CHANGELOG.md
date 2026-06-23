@@ -7,15 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.1.0] — Unreleased
 
-Post-1.0 development line. Track B–E follow-ons (per-peptide `--fs` keyed on the
-adaptive envelope, MBR tuning on the standing calibration benchmark, …).
+The experimental science line, opened after the 1.0.0 N_ISO finish: o18 rewrite
+(NB90b frozen coefficients), Δmass-over-time QC in the GUI, and mass-defect → θ
+fitting. See `PROJECT_REVIEW.md` §3.
 
-## [1.0.0] — 2026-06-23
+## [1.0.0] — Unreleased (N_ISO line in progress)
 
 The breaking 1.0 release: a new package structure, peak detection, baseline
-subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
-roadmap. Entries below are grouped by the work that produced them. (The git tag
-and Zenodo code DOI follow at release.)
+subtraction, mzTab intake, and a Qt GUI. Closes out with the Track B N_ISO line
+— the standing calibration benchmark driver, N_ISO-keyed `--fs` widening, and
+GUI exposure of `--iso auto` / `--fs` — before the official GitHub release +
+Zenodo DOI. (A `v1.0.0` git tag was cut 2026-06-23 at the rewrite + initial
+Track B work; the official release tag re-points to the N_ISO finish.) See
+`PROJECT_REVIEW.md` §3. Entries below are grouped by the work that produced them.
+
+### Standing calibration benchmark driver (Track B) — 2026-06-23
+
+#### Benchmarks / tooling
+
+- **`tests/benchmark/run_calibration_benchmark.py` — one-command calibration
+  A/B harness.** Thin orchestrator over `run_integrate_v1_0_0.run_line` +
+  `bench_fs_method_compare`: per cell line it integrates (or reuses a complete
+  `integrate_outputs/<label>/`), scores |θ−f| recovery vs the ground-truth
+  mixing proportion, writes the standing `runs/calib_<line>/<label>/`
+  (`recovery/`, `config.json`) layout, and appends a frozen line to
+  `BASELINE.md`. The default config + `--fs 0 1 2 3` reproduces the committed
+  `benchmark_results/<line>/v1.0.0_fs0123/` anchor, so integration-knob / MBR
+  tuning is an A/B against a recorded baseline. Design:
+  `2026-06-23_calibration_benchmark_harness.md`.
 
 ### Adaptive N_ISO, H4′ FS solve, and `--fs` limited-isotopomer scoring (Track B) — 2026-06-23
 

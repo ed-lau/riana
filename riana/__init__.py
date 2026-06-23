@@ -26,8 +26,9 @@ __all__ = [
     "data",
 ]
 
-# PEP 440. 1.0.0 (tagged v1.0.0, 2026-06-23) was the M1–M4 rewrite + Track B
-# adaptive N_ISO / H4′ FS solve / --fs limited-isotopomer scoring. 1.1.0 is the
-# post-1.0 development line (Track B–E follow-ons: per-peptide --fs, MBR tuning, …).
-__version_info__ = ("1", "1", "0")
+# PEP 440. 1.0.0 is the M1–M4 rewrite + the Track B N_ISO line (adaptive N_ISO,
+# H4′ FS solve, --fs limited-isotopomer scoring + its N_ISO-keyed widening and
+# GUI exposure) — everything through the N_ISO finish. 1.1.0 opens the more
+# experimental science line (o18, Δmass-over-time GUI + mass-defect→θ fitting).
+__version_info__ = ("1", "0", "0")
 __version__ = ".".join(__version_info__)
