@@ -2,9 +2,9 @@
 
 - **Date:** 2026-06-23
 - **Branch:** `m3-rewrite`
-- **Status:** investigation complete — **fit-side narrow scoring (`--fs`) is the keeper; integrate-side adaptive capture (`--iso auto`) is neutral, kept opt-in**
+- **Status:** investigation complete — **fit-side narrow scoring (`--fs`) is the keeper; integrate-side adaptive capture (`--iso auto`) is neutral, kept opt-in**. Follow-on 2026-06-23: **N_ISO-keyed `--fs` widening derived (crossover N_ISO 11, cross-line Pareto win) — GO**; see the penultimate section.
 - **Commits:** `92766d3` (B0-B2 adaptive integrate), `7d638e8` (B3 H4′ + B4 scoring), `ad9091f` (bench tooling), `2ecd920` (`--fs` productionized)
-- **Benches:** `bench_within_protein_theta.py` (+`--score-channels`), `bench_fs_method_compare.py` (+`--score-channels`, `nansum`), `run_integrate_v1_0_0.py` (+`--adaptive`/`--ria`)
+- **Benches:** `bench_within_protein_theta.py` (+`--score-channels`), `bench_fs_method_compare.py` (+`--score-channels`, `nansum`), `run_integrate_v1_0_0.py` (+`--adaptive`/`--ria`); `run_calibration_benchmark.py` (standing harness) + `bench_niso_crossover.py` (crossover derivation)
 - **Roadmap:** `PROJECT_REVIEW.md` → Track B (adaptive N_ISO); memory `m8_adaptive_niso_robust_envelope`
 
 ## Question
@@ -222,7 +222,7 @@ lever — see Future work.
   (`track_c_tmt_chemical_mod`), not envelope-width accuracy. Plausible accuracy payoff
   only at genuinely high enrichment where the labelled envelope truly spreads past iso5.
 
-## Future work — per-peptide `--fs` (brainstorm, not built)
+## Future work — per-peptide `--fs` (brainstorm → DERIVED 2026-06-23, see next section)
 
 Currie et al. used a crude per-peptide rule keyed on D₂O labelling sites (Spep): <15
 sites → iso0/iso1 ratio, 15-35 → iso0/iso2, >35 → iso1/iso3 — i.e. shift the scoring
@@ -236,9 +236,80 @@ key on N_ISO (already computed by `adaptive_channel_masses`) vs Spep; (iii) whet
 soft per-channel SNR/robust weight beats a hard per-peptide cutoff (the original "robust
 matcher" research question). This is the natural next refinement of the flat global `--fs`.
 
+## N_ISO-keyed `--fs` widening — crossover derived + A/B (2026-06-23 follow-on)
+
+The §5 brainstorm is now **measured**, via the standing calibration harness
+(`run_calibration_benchmark.py`) and a per-integer-N_ISO derivation
+(`bench_niso_crossover.py`). N_ISO is the IsoSpec init∪final >1 % envelope width
+from `adaptive_channel_masses` (the `--iso auto` quantity) — **not** a re-derived
+Currie Spep-site count. All on the fixed `v1.0.0` integrate (6 channels captured),
+RIA 0.0598, per-line coefficients (cm drop50 + drop 50 %).
+
+**Crossover = N_ISO 11, robustly cross-line.** Δ = MAE(iso0-3) − MAE(all) by N_ISO;
+positive ⇒ iso0-3 is *worse* (under-scoring the wide envelope):
+
+| line | N_ISO ≤9 | N_ISO 10 | **N_ISO 11** | N_ISO 12+ |
+|---|---|---|---|---|
+| ac16 | −0.019 … −0.028 | −0.009 | **+0.011** | +0.043 |
+| cm   | −0.010 … −0.022 | +0.001 (≈0) | **+0.014** | +0.036 |
+| ipsc | −0.012 … −0.022 | −0.002 | **+0.017** | +0.041 |
+
+N_ISO ≤10 is neutral-to-helping everywhere (cm's +0.0006 at 10 is noise); N_ISO 11
+flips clearly positive on all three. So **keep iso0-3 through N_ISO 10, widen at ≥11.**
+
+**The heuristic `score_channels = 4 if N_ISO ≤ 10 else all-captured` is a strict
+Pareto win on every line** — "extend, don't shift" (widen to all 6 captured, keep
+iso0). It beats *both* flat arms on overall recovery *and* matches flat-all on the
+wide tail, with zero downside:
+
+| line | flat iso0-3 (shipped) | flat all | **heuristic** | wide-tail (N_ISO≥12) MAE: iso0-3 → heuristic |
+|---|---|---|---|---|
+| ac16 | 24.8 % | 22.3 % | **25.0 %** | 0.249 → **0.206** |
+| cm   | 21.5 % | 20.0 % | **21.7 %** | 0.231 → **0.195** |
+| ipsc | 28.9 % | 26.1 % | **29.1 %** | 0.202 → **0.161** |
+
+Overall within±0.05 moves only +0.2 pp because the N_ISO≥11 tail is just 3.6–6.9 %
+of peptides at 6 % D₂O — but it is strictly dominant, and the tail share grows with
+enrichment, so the win scales.
+
+**N_ISO ↔ peptide length (the RIA caveat).** N_ISO tracks length tightly but not
+perfectly (Pearson 0.92–0.94; composition adds the scatter), so it is a
+composition-aware length proxy:
+
+| length | ≤8 | 9–12 | 13–16 | 17–20 | 21–25 | 26–30 | >30 |
+|---|---|---|---|---|---|---|---|
+| median N_ISO | 6 | 7 | 8 | 9 | 10 | 12 | 13 |
+
+The N_ISO 11 crossover ≈ a **24–25-residue** peptide here (range 18–32). **N_ISO is
+RIA-dependent**: a higher precursor enrichment spreads the labelled envelope, so the
+*same* peptide clears more >1 % channels and a *shorter* peptide reaches N_ISO 11.
+Keying the widen on N_ISO (not length) absorbs that envelope-width scaling by
+construction. **But** whether the crossover *sits* at N_ISO 11 at other enrichments
+is fit at 6 % only and not verifiable here — the calibration series is 6 %, and the
+LVE 4.6 % series has no fractional-pool ground truth. **Implication: ship the
+threshold as a config knob (default 11), not a hardcoded constant**, so it can be
+re-tuned if/when a non-6 % ground-truth series appears.
+
+**Second-order caveat — the fixed-6 capture caps the widen.** "All-captured" = iso0-5
+here, so for genuinely wide peptides (N_ISO 12–15) even iso0-5 truncates the true
+envelope; the heuristic recovers them only *to the best available within 6 channels*.
+Squeezing the rest needs `--iso auto` to *supply* >6 channels for the tail — the one
+place adaptive capture earns its keep (a follow-on, not v1).
+
+**Verdict: GO.** Productionize as a `FitConfig` policy (per-peptidoform N_ISO from
+`adaptive_channel_masses` → `score_channels = 4 if N_ISO ≤ threshold else len(iso)`),
+threshold a config knob defaulting to 11, surfaced as `--fs auto`. Pure fit-side;
+strictly ≥ the shipped flat iso0-3.
+
 ## Reproduce
 
 ```bash
+# N_ISO crossover + heuristic A/B (per line; reuses the fixed v1.0.0 integrate)
+python tests/benchmark/bench_niso_crossover.py --line all --threshold 11
+
+# standing calibration recovery anchor (reproduces benchmark_results/<line>/v1.0.0_fs0123)
+python tests/benchmark/run_calibration_benchmark.py --label v1.0.0 --fs 0 1 2 3
+
 # calibration adaptive integrate (Percolator path; fixed v1.0.0 already exists)
 python tests/benchmark/run_integrate_v1_0_0.py --line ac16 --adaptive --ria 0.0598 --out-label adaptive
 
