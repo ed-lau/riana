@@ -124,10 +124,19 @@ whatever workflow already runs them. The bundled Snakemake example was retired i
 
 ## Citation
 
-If you use Riana in published work, please cite:
+If you use Riana in published work, please consider citing the following papers:
 
-> Lau, E. *Riana — Relative Isotope Abundance Analyzer*. Zenodo.
-> <https://doi.org/10.5281/zenodo.10614233>
+> Alamillo, L. et al. *Protocol to Measure Protein Half-Life in Cell Culture Using Heavy Water*. STAR Protoc. 2026
+> <https://doi.org/10.1016/j.xpro.2026.104426>
+
+> Currie, J. et al. *Improved Method to Determine Protein Turnover Rates with Heavy Water Labeling by Mass Isotopomer Ratio Selection*. J Proteom Res. 2025
+> <https://doi.org/10.1021/acs.jproteome.4c01012>
+
+> Alamillo, L. et al. *Deuterium Labeling Enables Proteome Wide Turnover Kinetics in Cell Culture*. Cell Rep Methods. 2025
+> <https://doi.org/10.1016/j.crmeth.2025.101104>
+
+> Hammond, D. et al. *Harmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult Animals*. Mol Cell Proteomics. 2022
+> <https://doi.org/10.1016/j.mcpro.2022.100252>
 
 ## Contributing
 

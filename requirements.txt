@@ -6,3 +6,4 @@ scipy>=1
 scikit-learn>=1
 tqdm>=4,<5
 IsoSpecPy>=2
+PySide6>=6
