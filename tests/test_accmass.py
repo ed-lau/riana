@@ -1,6 +1,6 @@
 import unittest
 
-from riana import accmass
+from riana.algorithms import mass_calc as accmass
 
 
 class PeptideMassTest(unittest.TestCase):

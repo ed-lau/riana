@@ -1,0 +1,10 @@
+source_name,raw_filename,mzml_filename,riana_filename,nominal_proportion,raw_uri
+CM_0,20240619_000_D2O.raw,20240619_000_D2O.mzML.gz,time0_riana.txt,0.0,https://storage.jpostdb.org/JPST003582/20240619_000_D2O.raw
+CM_12.5,20240619_125_D2O.raw,20240619_125_D2O.mzML.gz,time12.5_riana.txt,12.5,https://storage.jpostdb.org/JPST003582/20240619_125_D2O.raw
+CM_25,20240619_250_D2O.raw,20240619_250_D2O.mzML.gz,time25_riana.txt,25.0,https://storage.jpostdb.org/JPST003582/20240619_250_D2O.raw
+CM_37.5,20240619_375_D2O.raw,20240619_375_D2O.mzML.gz,time37.5_riana.txt,37.5,https://storage.jpostdb.org/JPST003582/20240619_375_D2O.raw
+CM_50,20240619_500_D2O.raw,20240619_500_D2O.mzML.gz,time50_riana.txt,50.0,https://storage.jpostdb.org/JPST003582/20240619_500_D2O.raw
+CM_62.5,20240619_625_D2O.raw,20240619_625_D2O.mzML.gz,time62.5_riana.txt,62.5,https://storage.jpostdb.org/JPST003582/20240619_625_D2O.raw
+CM_75,20240619_750_D2O.raw,20240619_750_D2O.mzML.gz,time75_riana.txt,75.0,https://storage.jpostdb.org/JPST003582/20240619_750_D2O.raw
+CM_87.5,20240619_875_D2O.raw,20240619_875_D2O.mzML.gz,time87.5_riana.txt,87.5,https://storage.jpostdb.org/JPST003582/20240619_875_D2O.raw
+CM_100,20240619_100_D2O.raw,20240619_100_D2O.mzML.gz,time100_riana.txt,100.0,https://storage.jpostdb.org/JPST003582/20240619_100_D2O.raw

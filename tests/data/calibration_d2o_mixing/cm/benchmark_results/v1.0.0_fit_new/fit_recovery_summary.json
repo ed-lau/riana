@@ -1,0 +1,33 @@
+{
+  "k_deg0": 0.5,
+  "n_total": 14134,
+  "n_failed": 29,
+  "all": {
+    "n": 14105,
+    "median_k_deg": 0.467007800100833,
+    "median_k_rel_err": -0.06598439979833404,
+    "k_rel_err_rmse": 5.5649094321093076,
+    "k_rel_err_iqr": 1.2350018450009588,
+    "frac_within_10pct": 0.10556540233959588,
+    "frac_within_25pct": 0.2682736618220489
+  },
+  "well_fit": {
+    "r2_min": 0.9,
+    "n": 4458,
+    "median_k_deg": 0.4654956547002924,
+    "median_k_rel_err": -0.06900869059941511,
+    "k_rel_err_rmse": 2.04345995358371,
+    "k_rel_err_iqr": 0.47515270521000963,
+    "frac_within_10pct": 0.205697622252131,
+    "frac_within_25pct": 0.5103185284881112
+  },
+  "args": {
+    "inputs": "tests/data/calibration_d2o_mixing/cm/integrate_outputs/v1.0.0",
+    "ground_truth": "tests/data/calibration_d2o_mixing/cm/ground_truth.csv",
+    "pseudotime_map": "tests/data/calibration_d2o_mixing/pseudotime_map.csv",
+    "ria": 0.06,
+    "label": 1,
+    "depth": 3,
+    "q_value": 0.01
+  }
+}

@@ -1,0 +1,492 @@
+# MBR v1 — design (mzTab/DDA path)
+
+- **Date:** 2026-06-17
+- **Status:** SHIPPED — **v1 feature-complete 2026-06-20** across integrate → fit → rollup → GUI. Gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3` default, uncapped); `--exclude-mbr` opts out at fit and rollup; MBR points marked in the GUI; `n_mbr/n_metox/n_clean` census + per-run drop count surfaced. Fit A/B: ungated MBR is harmful, but gated MBR is neutral at strict R²>0.95 and net-positive at the in-vivo gates (+180 at R²>0.8) with no clean-curve pollution (§ Update 2026-06-18c). **Accuracy caveat (revised § Update 2026-06-20b):** validated on **Track D real turnover** (MBR points in-corridor, +37 proteins, +3.5% scatter). The earlier "mis-quantifies at high label" calibration result (§ Update 2026-06-19) is now **root-caused as an mzTab↔mzML RT-axis mismatch artifact, NOT a labeling effect** — the calibration mzTab was searched on `.raw` and run with `--no-rt-check`, so MBR's RT-anchored transfers landed 2–4 min off. **Retraction pending a same-mzML re-search** (TBD).
+- **Precursor:** [missingness + RT-alignment measurement](2026-06-17_mbr_dda_feasibility.md) (GO for DDA)
+- **Roadmap:** `PROJECT_REVIEW.md` → Track A
+
+Match-between-runs for the quantms **mzTab/DDA** path: transfer a confidently
+identified precursor's identity + retention time into the runs of its turnover
+curve that missed it, so curve points lost to stochastic MS2 sampling are
+recovered. The [measurement](2026-06-17_mbr_dda_feasibility.md) established this is
+worth doing (DDA curves 8–15% complete, ~40–45% recoverable gaps, 70% LVE
+t0-anchor loss; DIA needs none) and feasible (quantms RT is aligned to ~4–9 s with
+15–25 s run-specific residuals → a light per-run refinement suffices).
+
+## Decisions
+
+- **Ship v1 = pure RT-transfer.** Confident donors only; no mzTab changes.
+- **Sub-threshold "rescue" tier is a hypothetical future improvement, not v1.**
+  Promoting borderline acceptor IDs (q∈(0.01, 0.05]) would be the highest-confidence
+  transfer (real MS2 at that RT), but the current mzTab is pre-filtered at ~1%
+  PSM-FDR (247,723 PSMs ≤0.01; **179** in (0.01,0.02]; **0** above) — there is
+  nothing to promote without a looser-FDR quantms re-export. Parked; revisit only if
+  a looser export ever exists.
+- **MBR FDR is its own future study/report,** not a v1 gate. v1 leans on the
+  existing downstream R²>0.95 curation gate + an `evidence="mbr"` flag, and is
+  validated empirically (below).
+
+## Architecture
+
+The mzTab is a whole-experiment file, so the cross-run donor assembly is free.
+Hook in [`core/pipeline.plan_integration`](../riana/core/pipeline.py) after
+`all_psms` is read and before the per-run split:
+
+1. Group `all_psms` by `identity.group_key` = `(experiment, condition)` — one
+   turnover curve. Foundation: a peptide elutes at ~the same RT across labeling
+   times (D₂O changes the isotope envelope, not elution), confirmed by the
+   alignment measurement.
+2. `core/mbr.augment(all_psms, config)` appends synthetic MBR `PSMRecord`s.
+3. The existing flow handles them: `resolve_rt_anchored_scans` already RT-anchors
+   any `scan<0` row (acquisition-agnostic; selective — leaves real DDA scans
+   untouched), the apex finder re-centers, extraction is unchanged.
+
+**Integration-layer change (one, surgical):** the scan↔RT prefix-scramble guard
+currently skips the *whole run* when any `scan<0` exists; once MBR rows are mixed
+into a DDA run that would drop the guard for the real PSMs. Fix: guard only the
+*originally* directly-scanned subset (captured before `resolve_rt_anchored_scans`),
+so DIA stays a natural no-op and DDA+MBR keeps full protection. Behaviour is
+identical until MBR rows exist, so it lands first as a safe prep refactor.
+
+## Transfer algorithm (`core/mbr.py`)
+
+Per curve group, per fraction (transfers never cross fractions):
+
+1. **Observed sets** — per run, the precursor set (`concat = SEQUENCE_charge`).
+2. **Donor gate** — a precursor is a donor if identified at **q≤`mbr_donor_q`** in
+   **≥`mbr_min_donor_runs`** runs of the group (defaults 0.01 / 2; both tunable).
+   Keep each donor's sequence/charge/`peptide_mass`/`mod_sites`/`protein_id`, its
+   per-donor-run RT, and best q.
+3. **Per-run RT alignment** — for each acceptor run, fit a **robust** RT map from
+   the donor frame to that run from their co-identified precursors (median /
+   Theil-Sen offset; the measurement showed near-constant offsets, so a global
+   linear warp is unnecessary). Aligns the anchor to *this* run's frame.
+4. **Emit** — for each (donor precursor, acceptor run that lacks it): a synthetic
+   `PSMRecord(scan=−1, retention_time=aligned RT, evidence="mbr", q=0.0,
+   …donor seq/charge/mass/mod_sites…, identity=acceptor identity)`.
+5. Append to `all_psms`. The `evidence="mbr"` flag rides through to fit/rollup.
+
+**Graceful failure (load-bearing, not an afterthought).** A transferred precursor
+may have *no real peak* in the acceptor run (it was genuinely below detection, not
+just unsequenced). The transfer must then **drop the row**, never integrate
+baseline as signal. Mechanism: after the apex search for an MBR row, require a
+detected apex within the search window; if none, discard the MBR row (counted +
+logged, not written). This keeps MBR additive to yield without injecting noise.
+(Real q-value PSMs are unaffected — they keep today's behaviour.)
+
+*Open question — is the prominence gate strict enough? (spike, see below).* The
+existing apex finder (`algorithms/peaks.detect_peak`) gates on
+`prominence ≥ max(prominence_k · 1.4826·MAD, 1.0)` with `prominence_k=3.0` — a ~3σ
+floor relative to the **trace's own** MAD noise, returning `None` if nothing clears
+it. That floor is self-referential: on a near-pure-noise trace (precursor truly
+absent) MAD is small, so a modest noise bump can still clear 3×MAD and produce a
+*spurious* apex. So for MBR's absent-precursor case the prominence gate is likely a
+necessary-but-insufficient first filter. v1 implements the drop on the existing
+gate; **how often it false-fires must be measured** (spike), and an absolute
+SNR/intensity floor for MBR rows may be needed. Backstop: a noise extraction won't
+match the IsoSpec forward envelope, so the downstream R²>0.95 curation gate rejects
+it at fit time regardless.
+
+## Config surface
+
+- **Integrate** (`IntegrationConfig` + `--mbr` …): `mbr: bool = False` (opt-in),
+  `mbr_min_donor_runs: int = 2`, `mbr_donor_q: float = 1e-2`. (RT-alignment method
+  is internal for v1: robust per-run offset.)
+- **Fit / rollup opt-out** (`FitConfig` + `--exclude-mbr`): MBR points are *used by
+  default* (the whole point), but `--exclude-mbr` filters `evidence=="mbr"` rows so
+  the with/without A/B is a one-flag rerun and a cautious user can drop them.
+
+## Output, marking, and data-point accounting
+
+- **Export tables** already carry the `evidence` column (`q_value` | `mbr`); keep it
+  prominent in `_riana.txt` and the fit/rollup outputs.
+- **GUI** marks MBR points distinctly — a different point color in the Model curve
+  and Protein curve views, and the evidence value shown on row select. The
+  chromatogram view should indicate an MBR (RT-anchored) extraction.
+- **Data-point breakdown columns (scope bundled per request).** Expand the fit/rollup
+  "number of data points" reporting from a single `n` to a breakdown so the count of
+  *clean* points is explicit:
+  - `n_points` (total), `n_mbr` (MBR-transferred), `n_metox` (came from a Met-Ox
+    peptidoform merged at fit per M7 `CHEMICAL_MODS={35}`), `n_both`, `n_clean`
+    (neither). Applies per peptide (fit) and per protein (rollup).
+  - This needs the fit aggregation to read `evidence` (MBR) and the merged
+    peptidoform's mod state (Met-Ox) per data point — a fit-layer change downstream
+    of the integrate core.
+
+## Validation — preregistered readouts
+
+Run each metric **with vs without** MBR (`--exclude-mbr` toggles it):
+
+- **Primary accuracy — calibration ground truth.** The held-out approach is
+  *intensity-biased* (real IDs were picked because they were abundant, so they
+  transfer too easily to represent the genuinely-missing low-abundance peaks). Use
+  the D₂O mixing series instead (`data/calibration_{ac16,cm,ipsc}`): it has a known
+  θ at every mixing proportion *independent* of MS2 picking, so score MBR'd peaks
+  against ground-truth θ / predicted m0 across the intensity range — including the
+  hard low ones. Report bias + RMSE for MBR'd vs directly-IDed peaks.
+- **Secondary — within-protein-θ variance** (Track D `bench_within_protein_theta`)
+  on the in-vivo LVE/ATR sets: the guardrail. Should stay flat or *tighten*; if MBR
+  injects noise it widens.
+- **Yield / completeness:** # precursors past the R²>0.95 gate, # protein curves, and
+  the `bench_missingness` curve-completeness + t0-anchor recovery (expect ↑,
+  especially t0).
+- **k_deg stability:** median/IQR overall, and specifically on curves that gained a
+  t0 anchor — should sharpen, not shift systematically.
+- **Held-out (demoted, caveated):** drop/restore real IDs as a *sanity* check only,
+  acknowledging the intensity bias.
+- **Breakdown** by donor count and post-alignment RT residual — to locate where
+  transfer degrades.
+
+## Open spikes (surfaced 2026-06-17; resolve within the relevant phase)
+
+### `--depth` semantics with MBR + chemical mods
+`depth` is the curve-qualification gate (minimum data before a peptide is fit), but
+what it *counts* is already inconsistent and gets muddier with MBR + Met-Ox:
+
+- **Today:** the manifest/SDRF path counts `len(group)` = **rows** (so biological
+  replicates *and* Met-Ox-merged peptidoforms inflate it — `fitting.py:282`), while
+  the legacy path counts `sample.nunique()` = **distinct samples** (`fitting.py:288`).
+  Two different meanings.
+- **With MBR:** MBR rows add to the count, and (in the 1-rep LVE case) add genuine new
+  timepoints. Whether they *should* count toward `depth` is governed cleanly by
+  `--exclude-mbr`: excluded → depth on clean rows; included → recovered timepoints
+  (e.g. a restored t0) count, which is the intended benefit.
+- **With Met-Ox:** the gate is on the *merged* fit_key group, so oxidized + unoxidized
+  forms already pool into depth; the `n_metox`/`n_clean` breakdown exposes how much of
+  a curve is mod- or MBR-derived.
+
+**Recommendation:** harmonize `depth` to **distinct labeling timepoints**
+(`labeling_time` nunique) on both paths — it is the kinetic-identifiability quantity
+(a curve needs enough *distinct x* to estimate k), robust to replicate / peptidoform /
+MBR multiplicity, and it fixes the rows-vs-nunique inconsistency. Keep raw point count
+visible via `n_points`. A future **min-clean-depth** gate (≥N non-MBR / non-Met-Ox
+timepoints) is the refinement if the breakdown shows curves over-reliant on transferred
+or merged points.
+
+**Why a spike, not a snap change:** flipping the manifest path from rows→timepoints is
+a behaviour change (stricter for replicate-heavy data). Quantify first — how many
+curves change qualification under rows vs distinct-timepoints, with/without MBR, on
+LVE/ATR + the DIA (3 tp × 3 rep) set — then flip the default. (Per maintainer: this is
+its own spike; Met-Ox-counting reactivity rides along.)
+
+**Resolved 2026-06-20.** `tests/benchmark/bench_depth_semantics.py` on LVE/ATR (24 runs,
+2 conditions, replicating the real fit assembly): the modern gate counted **raw PSM
+rows** (median 5/curve, p90 16, max 431) with no recombine before it, while distinct
+labeling timepoints is median 5. Flipping to **distinct-timepoint** counting at the
+default depth=3 changes only **131 / 22,765 curves (0.6%)** — exactly the
+kinetically-unidentifiable ones (≥3 rows but <3 distinct x). Shipped the harmonization
+(`fitting.py` modern path → `x[time].nunique() >= depth`; the legacy path was already
+`sample.nunique`); `n_points` keeps the raw count. *With* MBR fewer curves flip (131 vs
+159 clean) — MBR restores real timepoints, the intended benefit. Confirmed by the
+maintainer: **(peptidoform, condition, distinct timepoint)** is the right depth key.
+
+**Follow-up (separate, tracked).** The gate now correctly ignores multi-file
+multiplicity at one timepoint, but the **fit still treats those rows as independent
+(t, θ) points** (pseudo-replication). LVE/ATR has 1 file per (condition, timepoint), but
+**published 2D-LC / technical-replicate data has many** — there the per-fraction signal
+should be *summed/merged* per (peptidoform, condition, timepoint) before computing θ, not
+weighted as independent draws. Needs a fractionated test file + a collapse policy — its
+own fitting-science item (Track C), noted in memory.
+
+### Apex false-peak rate on absent precursors
+See *graceful failure* above. Measure how often `detect_peak` returns a (spurious) apex
+when a precursor is genuinely absent, to decide whether the 3×MAD prominence gate needs
+an absolute SNR/intensity floor for MBR rows. Measurement: extract a set of precursors
+at runs where they are confidently absent (present in ≪ donor count, far below donor
+intensity), tabulate how many yield an apex and the prominence/intensity distribution
+vs real peaks. Backstop already exists (downstream R²>0.95 envelope gate).
+
+## Phasing
+
+1. **Prep refactor** — scan↔RT guard on the directly-scanned subset (safe, behaviour-
+   preserving). *(this turn)*
+2. **Integrate core** — `IntegrationConfig` knobs + `core/mbr.py` (donor assembly,
+   robust per-run RT offset, synthetic records) + `plan_integration` hook + graceful
+   failure + `--mbr` CLI + tests. Deliverable: `integrate --mbr` emits flagged,
+   RT-anchored MBR rows.
+3. **Fit / rollup** — `--exclude-mbr` filter + the `n_points/n_mbr/n_metox/n_clean`
+   breakdown columns.
+4. **GUI** — MBR point coloring + evidence on row select.
+5. **Validation** — calibration ground-truth bench (primary) + the Track D /
+   completeness / k_deg readouts; A/B report.
+
+## v1 validation — first real-data run (2026-06-18)
+
+Auditable record of the first `integrate --mbr` on real data.
+
+- **Run:** `riana integrate data/timeseries_lve_atr/mzml <mztab> --sdrf <…> --mbr -W 10 -o runs/lve_atr_mbr` — LVE+ATR, 24 runs, ±10 ppm (from SDRF), the apex defaults.
+- **Analysis:** `python tests/benchmark/bench_mbr_quality.py --run runs/lve_atr_mbr`.
+- **Metric note.** `m0 = iso0 / Σ(iso0..iso5)` is the **monoisotopic fraction**, the
+  integrate-stage observable (θ is a fit-stage quantity). In D₂O labeling m0
+  **declines** monotonically with labeling time (inverse of θ, which rises), so a
+  *good* transferred point sits on its precursor's m0 decline. The "monotone
+  corridor" flags points outside their `[next, prev]` real-neighbour bracket (±0.05);
+  the "interp |Δm0|" is the residual from a linear interp of the bracketing real
+  points. Both are **benchmarked against held-out real points** (drop a real point,
+  predict from its real neighbours) so the bar is "as good as a real point," not
+  "perfect" (real points themselves are ~94% in-corridor, |Δm0|~0.013, due to noise).
+
+**Survival (graceful no-apex drop).** 73,337 / ~131,023 planned transfers survived
+(**56%**); **44% dropped** for no detectable apex. (Drops = planned − surviving: the
+per-run drop log is emitted in worker processes so it does not reach the main
+logfile — to be surfaced via the result object.)
+
+**MS1 signal (surviving MBR vs directly-identified rows).**
+
+| evidence | n | iso0 p10/50/90 | frac iso0≤0 | m0 median |
+|----------|---|----------------|------------|-----------|
+| q_value | 247,723 | 87,245 / 710,014 / 12,639,672 | 0.4% | 0.317 |
+| mbr | 73,337 | 1,297 / 42,722 / 420,978 | **0.0%** | 0.336 |
+
+Survivors carry real intensity (≈17× lower median than real — expected, they were
+missed for being scarce) and none are empty (0.0% iso0≤0) — the drop removed the
+truly-absent traces.
+
+**Trajectory sense (m0 decline vs held-out real).**
+
+| chamber | interp \|Δm0\| MBR (med/p90) | interp \|Δm0\| real | corridor MBR | corridor real |
+|---------|------------------------------|---------------------|--------------|---------------|
+| LVE | 0.055 / 0.345 | 0.013 / 0.064 | 63.5% | 94.0% |
+| ATR | 0.095 / 0.498 | 0.013 / 0.063 | 50.0% | 94.6% |
+
+**Quality scales steeply with intensity** (MBR points with bracketing real
+neighbours, n=28,681, by iso0 quintile):
+
+| iso0 quintile | iso0 median | corridor | interp \|Δm0\| median |
+|---------------|-------------|----------|----------------------|
+| Q1 (low) | 2,041 | 22.8% | 0.228 |
+| Q2 | 20,347 | 45.7% | 0.112 |
+| Q3 | 62,581 | 60.7% | 0.067 |
+| Q4 | 156,587 | 72.1% | 0.046 |
+| Q5 (high) | 590,009 | 82.7% | 0.025 |
+| *real (held-out)* | *710,014* | *~94%* | *0.013* |
+
+**Verdict.** The no-apex drop is necessary but **insufficient**: ~40% of survivors
+are off-trajectory (corridor 50–64% vs 94% real, |Δm0| ~7× worse), and quality
+climbs monotonically with intensity (Q1 23% → Q5 83% ≈ real). The relative 3×MAD
+prominence gate passes too many wrong-peak (co-eluting / noise) picks. **v1 needs an
+MBR SNR/intensity floor** (the apex-spike's answer — yes), a tunable yield-vs-quality
+dial, with the downstream envelope-fit R²>0.95 gate as the backstop. **Do not fit
+floor-less MBR.** Next: add the floor, re-run, and re-measure corridor% toward real.
+
+### Update 2026-06-18 — the apex-SNR floor as defined does NOT work (degenerate on sparse traces)
+
+Emitted `apex_snr = prominence / (1.4826·MAD)` (commit `da94b81`) and re-ran
+(`runs/lve_atr_mbr`). Result: **81% of surviving MBR rows (59,334 / 73,337) have
+`apex_snr = inf`**, because their XIC is sparse (a mostly-zero centroid trace →
+MAD = 0 → zero noise → inf SNR). Those inf-SNR rows are the **low-intensity** ones
+(iso0 median **26k** vs **310k** for the finite-SNR rows) — i.e. exactly the
+bad-corridor points. So an absolute `--mbr-min-snr` floor **inverts**: `inf` clears
+any finite threshold, so it would keep the sparse junk and only gate the 19%
+already-decent dense points. (29% of *real* rows hit inf too — a general
+centroid-XIC sparsity effect, not MBR-specific.) The finite-SNR subset's quintiles
+are compressed (corridor 67→83%) and its per-run spread is **not** tighter than
+iso0's, so SNR is not the cleaner run-independent metric here.
+
+**The iso0 intensity stratification (23%→83% corridor) is still the better
+discriminator.** Decision before a usable floor: (a) give the noise estimate a
+floor so MAD=0 can't → inf (e.g. `noise = max(1.4826·MAD, k·apex)`), and/or (b) add
+a **minimum nonzero-scan count** in the window (a sparse trace can't define a
+reliable peak regardless — likely the root cause), and/or (c) gate on a
+**run-normalized** intensity (raw iso0 swings ~5× per run). The `apex_snr` column +
+`--mbr-min-snr` knob stay (the diagnostic is genuinely useful, incl. for the
+calibration noise-floor question), but the gate metric needs this rework first.
+
+### Update 2026-06-18b — two-part gate sweep + the abundance-filter caveat
+
+Re-ran with `n_scans` + `apex_snr` (inf=fail) emitted (commit `83c0204`) and swept
+`--mbr-min-scans` (N) × `--mbr-min-snr` (T) on the 28,681 MBR points with bracketing
+real neighbours (cell = keep% / corridor%; real held-out baseline ~94%):
+
+| N＼T | T≥0 | T≥4 | T≥6 | T≥8 |
+|------|-----|-----|-----|-----|
+| N≥0 | 100%/57% | 16%/79% | 8%/82% | 5%/83% |
+| N≥3 | 82%/62% | 16%/79% | 8%/82% | 5%/83% |
+| N≥7 | 58%/66% | 15%/80% | 8%/83% | 5%/85% |
+
+**The SNR gate with inf=fail is the dominant lever; `n_scans` is largely redundant**
+(inf ⟺ sparse). `--mbr-min-snr 4` → 16% keep, 79% corridor (the conservative target);
+`--mbr-min-scans` adds ~1pt.
+
+**Gate vs real points (calibration — does it discard genuine IDs too?).**
+
+| pop | inf-SNR | scans<3 | scans<7 | combined fail (N≥3,T≥4) |
+|-----|---------|---------|---------|--------------------------|
+| real | 29% | 2% | 10% | 67% |
+| MBR | 81% | 20% | 45% | 87% |
+
+**The gate is mostly an abundance/sparsity filter** — it fails 67–83% of *real*
+confident IDs too; MBR/real fail ratio only **1.2–1.3×**. It does not surgically
+detect transfer errors; it removes sparse low-abundance peaks. That is **appropriate
+for MBR** (a sparse transfer has no corroborating ID, unlike a sparse *real* point),
+but it means: (a) MBR keeps only ~16–20% of transfers, the high-abundance ones;
+(b) gated survivors (79%) still lag real (94%) — residual = high-SNR co-eluting picks
+(the `apex_search_half_width` lever); (c) a value tension — confidently-recoverable
+transfers are high-abundance (often barely missed), while high-value low-abundance
+recoveries are the untrustworthy sparse ones.
+
+**Decision:** recommended conservative gate `--mbr-min-snr 4` (inf=fail) +
+`--mbr-min-scans 3` (defensive); **default stays 0 pending the fit A/B** (envelope-R²
+/ within-protein-θ / k_deg, with vs without MBR via `--exclude-mbr`) — the real
+arbiter of whether the kept transfers help. Bench: `tests/benchmark/bench_mbr_quality.py`
+§5 (sweep) + §6 (gate-vs-real).
+
+### Update 2026-06-18c — fit A/B: gated MBR ships (uncapped, gate-on by default)
+
+The `--exclude-mbr` toggle + `n_mbr`/`n_clean` breakdown (commit `47bb806`) enabled
+the with/without-MBR fit A/B (`tests/benchmark/bench_mbr_ab.py`, on `runs/lve_atr_mbr`,
+commerford coefficients) — the real arbiter, not corridor.
+
+**Ungated MBR (all 73k transfers) — clearly harmful.** converged 21,103→24,978
+(+3,875) but **R²>0.95 5,312→3,726 (−1,586, −30%)**. R²-cutoff net (incl−excl):
+`>0.95 −1,586 · >0.9 −2,506 · >0.8 −2,939` — net-negative at *every* quality gate.
+MBR-enabled curves: 1% pass R²>0.95 (median 0.17, junk). Shared curves that gained
+MBR: ΔR² median **−0.077** (pollution). Dose by MBR-fraction: `<10% −0.009 · 25–50%
+−0.132 · >50% −0.174` — degradation scales with how much MBR *dominates* the curve.
+
+**Gated MBR (`--mbr-min-snr 4 --mbr-min-scans 3`; 9,347 pts, 4%) — net-positive.**
+converged 21,103→22,367 (+1,264); **R²>0.95 5,312→5,282 (−30, noise)**; R²-cutoff net:
+`>0.95 −30 · >0.9 −6 · `**`>0.8 +180 · >0.7 +317`**. MBR-enabled curves now **11% pass
+R²>0.95 (median 0.52, real)**; shared ΔR² median **−0.003** (pollution gone).
+
+**Cap-fraction guards would HURT** (post-hoc sim; over-cap curves revert to real-only):
+R²>0.8 net at cap `≤10% −31 · ≤25% −132` (below baseline!) `· ≤50% +80 · no-cap +180`.
+MBR's value is in the *high*-fraction curves — the 1,259 MBR-enabled point-starved
+rescues live in the 25–50% / >50% bins; capping drops exactly those. So fill-gaps-only
+is the wrong move — keep gated MBR **uncapped**.
+
+**Decision (shipped):** gated MBR is neutral at strict R²>0.95 and **net-positive at
+the in-vivo gates (0.7–0.8) with no clean-curve pollution**. Gate **defaults set to
+`--mbr-min-snr 4` + `--mbr-min-scans 3`** (so `--mbr` is beneficial out of the box;
+`0` = the ungated footgun), **uncapped**; `--exclude-mbr` + the `n_mbr`/`n_clean`
+breakdown let users audit/compare. Stronger within-protein-θ (Track D) check pending
+as evaluation. Benches: `bench_mbr_ab.py` (A/B) + `bench_mbr_quality.py` (corridor/SNR).
+
+### Update 2026-06-19 — evals: yield-for-consistency tradeoff; calibration route
+
+Gated MBR (`runs/lve_atr_mbr_gated`) vs real-only, evaluation only:
+
+- **Protein-level yield** (`bench_mbr_ab.py`): proteins at R²>0.8 **1,606 → 1,643
+  (+37)**, R²>0.9 +8, R²>0.95 −5 (noise). Mirrors the peptide yield.
+- **Within-protein θ spread** (Track D, `bench_within_protein_theta --exclude-mbr`):
+  +470 (protein,timepoint) cells / +5 proteins, but the robust-SD θ (1.4826·MAD,
+  median over cells) **widens 0.1007 → 0.1042 (+3.5%)**.
+- **Within-protein k_deg spread** (`bench_mbr_ab.py`; ≥3 peptides/protein, median
+  over proteins): the recommended cross-dataset metric is the **geometric robust CV
+  `1.4826·MAD(ln k)`** (scale-free, log-normal-appropriate) — **44.9% → 48.5%
+  (+3.5 pp)**; linear MAD/median 28.8% → 31.6% (+2.8 pp).
+
+So all three consistency metrics agree: gated MBR **adds yield/coverage (+37 proteins
+at R²>0.8) at a small within-protein scatter cost** (θ +3.5%, k-CV +3.5 pp) — a
+yield-for-consistency tradeoff, which is why it ships **as an option** (gate-on,
+`--exclude-mbr` reverts). The calibration ground-truth |θ−f| is the accuracy
+tiebreaker (`bench_mbr_calibration.py`).
+
+**Calibration mzTab route works (with one caveat).** The D₂O mixing-series mzTabs
+(`data/calibration_{ac16,ipsc,cm}`) + SDRFs (with `characteristics[mixing
+proportion]`) drive `integrate --mbr` end-to-end (resolution handles `.mzML.gz` ↔
+`.raw` stem; `experiment_type=calibration` dispatches). Caveat: quantms searched the
+`.raw` (its built-in conversion), so the mzTab `retention_time` is OpenMS-aligned and
+the calibration's alignment offset (**2.16 min** median vs LVE's ≤0.9) trips the
+scan↔RT guard — **not a scramble** (those are ~25×). Use `--no-rt-check` (the
+extraction keys on the scan, not the reported RT; verify via mass accuracy). The
+guard's 2.0-min default may warrant a small bump for multi-day acquisition.
+
+**Calibration θ-recovery (ac16; ground truth θ = mixing proportion f).**
+`bench_mbr_calibration.py` on `runs/cal_ac16_mbr` (mass accuracy **1.36 ppm** median →
+the local `.mzML.gz` scans truly correspond, so `--no-rt-check` was correct). Result:
+**MBR mis-quantifies θ** — overall |θ−f| **0.350 (mbr) vs 0.119 (real)**, ~3× worse,
+with a strong **bias toward θ≈0** that grows with f (at f=0.875 the MBR bias is −0.98 →
+θ≈0, an *unlabelled* envelope at an 87.5%-labelled proportion). The targeted clean case
+is no better: for peptides with **8/9 proportions directly quantified + 1 MBR fill**,
+the MBR point is in-corridor only **38%** (vs **86%** for held-out real points in
+9/9-complete peptides), |θ−f| 0.33 (n=34; ac16 is shallow). So the error is the
+**extraction at high label** — MBR's apex re-detect on a *suppressed* iso0 latches onto
+a co-eluting unlabelled species — **not** the MBR fraction; capping won't fix it.
+
+**Scope + verdict.** The calibration is a high-label **stress test** (fully-labelled
+RIA 6% mixed with unlabelled → iso0 deeply suppressed), the worst case for apex-on-iso0.
+**LVE turnover (RIA ~4.6%) keeps iso0 dominant**, which is why its evals were mild
+(+3.5% scatter, +37 proteins at R²>0.8). So MBR's transferred *quant* is fine for
+**low-RIA turnover** but **degrades with labelling level** (biased low). Ship gated MBR
+as the **opt-in coverage tool** it is — a small yield gain for a small consistency cost
+on turnover data — **with a documented caveat that it is unsuitable for high-label
+experiments**. **Deferred fix** (tight `apex_search_half_width` for MBR rows, forcing the
+apex onto the trustworthy aligned anchor instead of the tallest in-window peak) is the
+likely remedy — parked for a later improvement round.
+
+### Update 2026-06-20 — v1 implementation complete (rollup + GUI + drop-count)
+
+The last implementation pieces from § "Output, marking, and data-point accounting"
+landed, so MBR v1 is feature-complete end-to-end:
+
+- **rollup** (`6a93f7a`): `riana rollup --exclude-mbr` drops `evidence='mbr'`
+  fraction points before the protein refit, and the protein output carries the
+  `n_mbr` / `n_metox` / `n_clean` census (both the kinetic and `linear simple`
+  schemas). The census is **raw** (peptide × biorep × timepoint) point counts, so it
+  is *not* on the same scale as the collapsed `n_points` — it answers "how many of
+  this protein's measurements are clean" (documented in `PROTEIN_COLUMNS`). To carry
+  the Met-Ox flag past the fit, a per-point `metox` column was threaded onto
+  `riana_fit_fractions.txt` alongside `evidence`. *Note:* the planned separate
+  `n_both` column was dropped — a both-MBR-and-Met-Ox point simply counts in `n_mbr`
+  **and** `n_metox` (and not in `n_clean`), which is unambiguous without a fourth
+  column. Validated on `runs/lve_atr_mbr_gated`: 2,128 proteins, `n_mbr` 7,987
+  (1,692 proteins MBR-touched), `n_metox` 0 (non-mods mzTab).
+- **GUI marking** (`19e4957`): the Model-tab curve draws MBR-transferred points as
+  **orange triangles** (legend `MBR (N)`) against the blue circles of direct IDs
+  (`evidence` carried as an in-memory list-cell on the fit frame); the per-peptide
+  `n_points/n_mbr/n_metox/n_clean` census shows in the result table. Protein-tab
+  points are collapsed across peptides (mixed evidence), so they are left unmarked.
+- **Gate-drop count** (`19e4957`): integrate stashes `n_mbr_dropped` on the result
+  `.attrs` (it survives the worker→main pickle, where the per-run worker log does
+  not); the main `finalize_run` loop now logs `wrote <run>  (N MBR kept, M
+  gated/no-apex)` per run when `--mbr` is on.
+
+What remains is **not** v1 scope — it is the deferred-improvement backlog: the
+high-label `apex_search_half_width` fix (above), the `scan↔RT` guard default bump for
+multi-day acquisition (calibration tripped at 2.16 min), the `--depth`-semantics
+spike, the sub-threshold rescue tier, and an MBR-FDR study.
+
+### Update 2026-06-20b — calibration "mis-quantification" ROOT-CAUSED: RT-axis mismatch, not high label (§ Update 2026-06-19 RETRACTED pending re-search)
+
+The apex-knob sweep (`bench_mbr_apex_knobs.py`, ac16 coeffs) was built to test whether a
+suppressed-iso0 apex mis-pick caused the calibration |θ−f| (§ Update 2026-06-19).
+**It does not** — and the sweep, plus a code read, identified the real cause:
+
+- **The result is mechanism-blind to the apex knobs.** MBR θ ≈ 0 for *every* proportion
+  (per-f |θ−f| climbs 0.10 → 0.975 as f → 0.875; bias −0.225), and `apex_selection`
+  nearest = tallest (0.349 vs 0.350). If the apex were mis-picking, the pick rule would
+  matter. It doesn't — the apex is searching **at the wrong RT entirely**.
+- **The maintainer's objection was correct:** a D₂O *mixing* sample has **one co-eluting
+  envelope** per peptide (labelled + unlabelled molecules of the *same* peptide elute
+  together; the mix only re-weights isotopomers). There is no separate unlabelled peak to
+  "grab," so "tallest grabs the unlabelled co-eluter" was wrong.
+- **Root cause — RT-axis mismatch.** Direct extraction is **scan-based**
+  (`spectra_ref` → mzML scan, native axis) → immune (calibration direct |θ−f| 0.119 is
+  fine). **MBR is RT-based**: the transfer RT is built from the mzTab `retention_time`
+  ([io/mztab.py], [core/mbr.py]) and resolved to "the nearest MS1 scan in *this* mzML"
+  ([core/integration.py] `resolve_rt_anchored_scans`). The calibration mzTab was searched
+  on the **`.raw`** (OpenMS-aligned RT axis), so it is offset from the local `.mzML` by
+  **2.16–3.92 min** (exactly what the scan↔RT guard measured) — and we ran integrate with
+  **`--no-rt-check`** to bypass that guard. MBR's `consensus + run_offset` reconstructs the
+  mzTab-axis RT, which resolves to an mzML scan `axis_offset` minutes off the true peak →
+  the 0.15-min window never overlaps the peptide → garbage θ. **Track D MBR is fine
+  because its mzTab was searched on the same mzML (axis_offset ≈ 0).** The deuterium RT
+  shift (~seconds) is a red herring next to the multi-minute axis offset.
+
+**Consequences / TBD:**
+1. **§ Update 2026-06-19 is retracted** as a labeling-level claim. The calibration is the
+   wrong dataset to judge MBR accuracy *while its mzTab is `.raw`-searched*. **TBD
+   (maintainer):** re-run quantms on the **exact `.mzML`**, then integrate `--mbr`
+   *without* `--no-rt-check` and re-run `bench_mbr_apex_knobs.py` / `bench_mbr_calibration.py`
+   — MBR θ should track f. Until then the only trustworthy MBR accuracy evidence is Track D.
+2. **`consensus` + MBR is gate-incompatible (TBD code):** `consensus_apex` returns a
+   *spread*, not an SNR, so `apex_snr` is NaN and the MBR SNR gate drops **every**
+   consensus row (n_mbr = 0 in the sweep). Make `consensus_apex` emit a consensus SNR
+   (e.g. min/median per-channel SNR) so `peak_rt="consensus"` can be used with `--mbr`.
+3. **Safety gap (recommended):** MBR structurally depends on the RT axis the scan↔RT guard
+   validates, yet nothing stops `--mbr` + `--no-rt-check` (or MBR on a large measured
+   offset) — that combination produced this. Add a refuse/warn when both are set.
+4. No integration **defaults were changed** — the sweep justified none (it was confounded).
+   The shipped MBR (Track-D-validated) stands. `--apex-search-half-width` was added as a
+   CLI flag (it was config-only) and is genuinely useful regardless.

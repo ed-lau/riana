@@ -1,12 +1,14 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17613314.svg)](https://doi.org/10.5281/zenodo.17613314)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10614233.svg)](https://doi.org/10.5281/zenodo.10614233)
 
 # Riana — Relative Isotope Abundance Analyzer
 
-Riana takes standard mass-spectrometry spectra (mzML) and peptide-spectrum-match
-files (Percolator output today; mzTab via quantms in 1.0) and returns mass
-isotopomer distributions, e.g. for protein turnover analysis. It also fits
-kinetic models (one-exponential, Guan, Fornasiero) to time-series isotopomer
-data.
+Riana takes standard mass-spectrometry spectra (mzML) and peptide identifications
+(quantms **mzTab** for DDA, **DIA-NN** `report.parquet` for DIA, or Percolator
+output) and returns mass isotopomer distributions for protein-turnover analysis.
+It then fits kinetic models (one-exponential, Guan, Fornasiero) to the
+time-series, rolls peptides up to proteins, and can test **cross-condition
+turnover differences** (Δk) with a linearized model. A PySide6 desktop GUI
+(`riana gui`) drives the same steps interactively.
 
 Full documentation: <https://ed-lau.github.io/riana/>
 
@@ -28,63 +30,104 @@ pip install -e ".[dev]"
 
 ## Quickstart
 
-### Integrate
+### Project workflow (recommended)
 
-Extract isotopomer intensities from one fraction's mzML using a Percolator PSM
-table:
+Riana's primary path keys every run off an **SDRF** sample sheet and a quantms
+**mzTab** (DDA) or DIA-NN **report.parquet** (DIA, with the `[dia]` extra). It
+writes one identity-stamped `<run>_riana.txt` per run plus a `riana_manifest.tsv`
+that chains the stages, so `fit` and `rollup` re-group runs from the manifest
+rather than from filenames:
+
+```bash
+# 1. Integrate every run in the experiment (one mzML in memory per worker)
+riana integrate <mzml_dir> report.mzTab --sdrf samplesheet.sdrf.tsv \
+    --workers 4 --out ./out
+
+# 2. Fit the kinetic curve per peptidoform (grouped by the manifest)
+riana fit --manifest ./out/riana_manifest.tsv \
+    --coefficients commerford --ria 0.06 --depth 3 --out ./out
+
+# 3. Roll peptides up to proteins
+riana rollup --manifest ./out/riana_manifest.tsv \
+    --parsimony unique --method weighted --out ./out
+```
+
+Add `--mbr` to `integrate` to recover time points lost to stochastic MS2
+sampling (gated match-between-runs, DDA only). For a two-condition experiment,
+`rollup --model "linear simple" --reference-condition <name>` fits turnover in
+φ-space and reports a per-protein Δk with Benjamini–Hochberg-adjusted p-values.
+
+### Single-fraction (Percolator) path
+
+Without `--sdrf`, the ID file is read as a Percolator `target.psms.txt` for a
+single mzML (a simpler, demoted tier):
 
 ```bash
 riana integrate <mzml_dir> <percolator_psms.txt> \
-    --sample time1 \
-    --iso 0 1 2 3 4 5 6 \
-    --q_value 0.01 \
-    --r_time 0.5 \
-    --mass_tol 25 \
-    --out ./out
-```
+    --sample time1 --iso "0 1 2 3 4 5" --q_value 0.01 --mass_tol 25 --out ./out
 
-### Fit
-
-Fit a kinetic model across timepoints:
-
-```bash
 riana fit ./out/time0_riana.txt ./out/time1_riana.txt ./out/time3_riana.txt \
-    --model simple \
-    --label 1 \
-    --ria 0.06 \
-    --depth 3 \
-    --out ./out
+    --model simple --label hw --coefficients commerford --ria 0.06 --out ./out
 ```
 
-See `riana integrate --help` and `riana fit --help` for the full argument set,
-or the [online docs](https://ed-lau.github.io/riana/) for tutorials.
+Fitting is heavy-water (D₂O) only and needs a per-amino-acid labeling-site table
+via `--coefficients` — a bundled preset (`commerford` literature, or the `ac16` /
+`ipsc` / `cm` calibration tables) or a path to your own `(amino_acid,
+coefficient)` CSV.
+
+By default integration uses an apex-centred narrow window
+(`--integration-half-width 0.15`, dial it to your chromatographic peak width);
+power-user dials live under the **Advanced integration** group of
+`riana integrate --help`. To reproduce the 0.9.0 fixed-window behaviour, add
+`--peak-rt ms2 --integration-half-width 1.0`.
+
+### GUI
+
+`riana gui` (install the `[gui]` extra) opens a PySide6 desktop app with
+**Integrate**, **Model** (fit), and **Protein** (rollup) tabs over the same
+engine, with interactive chromatogram, fitted-curve, and φ-space plots.
+
+See `riana <command> --help` for the full argument set, or the
+[online docs](https://ed-lau.github.io/riana/) for tutorials. (List flags like
+`--iso` take a single comma/space-separated token.)
 
 ## File formats
 
-- **mzML** (gzipped or plain) — MS1 spectra, parsed with pymzml
-- **Percolator** `target.psms.txt` — Crux Percolator or standalone Percolator
-  output (auto-detected by header)
-- **Output** — tab-delimited `<sample>_riana.txt` with one row per PSM and
-  one column per integrated isotopomer
+Inputs:
 
-mzTab (quantms) intake is planned for the 1.0 release; see `PROJECT_REVIEW.md`.
+- **mzML** (gzipped or plain) — MS1 spectra, streamed one fraction at a time
+- **SDRF** `.sdrf.tsv` — the sample sheet that carries run identity (condition,
+  biological replicate, labeling time, acquisition, precursor enrichment); the
+  primary intake key
+- **mzTab** (quantms / OpenMS) — the DDA peptide identifications
+- **DIA-NN** `report.parquet` — the DIA identifications (apex RT resolved to the
+  nearest MS1 scan); needs the `[dia]` extra
+- **Percolator** `target.psms.txt` — single-mzML demoted tier (header-autodetected)
 
-## Snakemake workflow
+Outputs (each with a provenance header):
 
-A reference Snakemake pipeline (Comet → Percolator → Riana integrate → Riana
-fit) is bundled at `workflow/Snakefile`. Edit `config_template.yaml` to point at
-your tooling and data, then:
+- `<run>_riana.txt` — one row per PSM, one column per integrated isotopomer
+- `riana_manifest.tsv` — the stage-aware project index (`integrate` / `fit` /
+  `rollup` rows) that chains the steps
+- `riana_fit_peptides.txt` / `riana_fit_fractions.txt` — per-peptidoform kinetics
+  and the per-timepoint fraction-new with prediction intervals
+- `riana_rollup_proteins.txt` / `riana_rollup_fractions.txt` — protein-level k
+  (and Δk under the `linear simple` model)
 
-```bash
-snakemake -c -s workflow/Snakefile -d out/snakemake_test --configfile config_template.yaml
-```
+## Pipeline
+
+Riana is orchestration-agnostic: search + identification are owned upstream
+(e.g. quantms for DDA, DIA-NN for DIA), and Riana is a linear
+`integrate → fit → rollup` chain glued by the manifest, which you compose into
+whatever workflow already runs them. The bundled Snakemake example was retired in
+1.0.0 — drive the subcommands directly, or from your own workflow manager.
 
 ## Citation
 
 If you use Riana in published work, please cite:
 
 > Lau, E. *Riana — Relative Isotope Abundance Analyzer*. Zenodo.
-> <https://doi.org/10.5281/zenodo.17613314>
+> <https://doi.org/10.5281/zenodo.10614233>
 
 ## Contributing
 

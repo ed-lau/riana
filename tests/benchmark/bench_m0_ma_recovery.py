@@ -220,17 +220,26 @@ def main() -> None:
                              'build_frozen_tables.py (the constant reference)')
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--n-iso', type=int, default=4)
+    parser.add_argument('--drop-proportion', type=float, nargs='+', default=[],
+                        metavar='PCT',
+                        help='nominal proportion(s) to exclude from scoring, '
+                             'e.g. --drop-proportion 50 — use this to keep the '
+                             'recovery population consistent with a frozen '
+                             'table built with the same --drop-proportion')
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f'[load] inputs={args.inputs}  coefficients={args.coefficients}')
+    if args.drop_proportion:
+        print(f'[load] dropping proportion(s): {args.drop_proportion}')
     ground_truth = pd.read_csv(args.ground_truth)
     coeff_df = pd.read_csv(args.coefficients)
     coeff_dict = dict(zip(coeff_df['amino_acid'], coeff_df['coefficient']))
 
     # r2_min=-1 keeps the full uncurated population (M2 finding 2). The
     # downstream split into curated/uncurated uses the per-peptide r2 column.
-    riana_df = load_and_curate(args.inputs, ground_truth, r2_min=-1.0)
+    riana_df = load_and_curate(args.inputs, ground_truth, r2_min=-1.0,
+                               drop_proportions=tuple(args.drop_proportion))
     n_curated = int((riana_df['r2'] > 0.95).sum())
     print(f'[curate] {riana_df["concat"].nunique()} peptides, {len(riana_df)} rows '
           f'(of which {n_curated} curated rows with r2>0.95)')

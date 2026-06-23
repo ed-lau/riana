@@ -1,0 +1,6 @@
+source name	characteristics[organism]	characteristics[biological replicate]	characteristics[precursor enrichment]	characteristics[labeling time]	comment[data file]	comment[fraction identifier]	comment[technical replicate]	comment[modification parameters]	comment[proteomics data acquisition method]	factor value[condition]
+ctrl_t0_r1	Mus musculus	1	0.046	0 day	ctrl_t0_r1.raw	1	1	NT=Carbamidomethyl;TA=C;AC=UNIMOD:4;MT=Fixed	NT=data-independent acquisition;AC=MS:1003215	control
+ctrl_t14_r1	Mus musculus	1	0.046	14 day	ctrl_t14_r1.raw	1	1	NT=Carbamidomethyl;TA=C;AC=UNIMOD:4;MT=Fixed	NT=data-independent acquisition;AC=MS:1003215	control
+ctrl_t14_r2	Mus musculus	2	0.046	14 day	ctrl_t14_r2.raw	1	1	NT=Carbamidomethyl;TA=C;AC=UNIMOD:4;MT=Fixed	NT=data-independent acquisition;AC=MS:1003215	control
+ko_t0_r1	Mus musculus	1	0.046	0 day	ko_t0_r1.raw	1	1	NT=Carbamidomethyl;TA=C;AC=UNIMOD:4;MT=Fixed	NT=data-independent acquisition;AC=MS:1003215	knockout
+ko_t14_r1	Mus musculus	1	0.046	14 day	ko_t14_r1.raw	1	1	NT=Carbamidomethyl;TA=C;AC=UNIMOD:4;MT=Fixed	NT=data-independent acquisition;AC=MS:1003215	knockout

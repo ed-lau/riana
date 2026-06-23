@@ -27,31 +27,55 @@ classifiers = [
 
 dependencies = [
     "pymzml>=2,<3",
+    "pyteomics>=4.7",
+    "pybaselines>=1.1",
     "scipy>=1",
     "pandas>=2",
     "matplotlib>=3,<4",
     "numpy>=1.24",
     "tqdm>=4,<5",
     "scikit-learn>=1",
+    "statsmodels>=0.14",
     "IsoSpecPy>=2",
+    "typer>=0.12",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7",
     "pytest-cov>=4",
+    "pytest-qt>=4",
+    "pyarrow>=14",
+]
+# DIA intake (M6b). Reading the DIA-NN report.parquet needs pyarrow; kept
+# optional so a DDA-only install stays lightweight (io.diann imports it lazily
+# and raises a clear install hint if missing).
+dia = [
+    "pyarrow>=14",
+]
+# Qt GUI (M4 Phase 2). Kept optional so the core CLI stays lightweight:
+# PySide6 (LGPL) for widgets, qasync to bridge asyncio with the Qt event loop,
+# pyqtgraph for fast embedded chromatogram plotting.
+gui = [
+    "PySide6>=6.6",
+    "qasync>=0.27",
+    "pyqtgraph>=0.13",
 ]
 
 [project.scripts]
-riana = "riana.main:main"
+riana = "riana.cli:main"
 
 [project.urls]
 Homepage = "https://ed-lau.github.io/riana/"
 Source = "https://github.com/ed-lau/riana"
 "Lau Lab" = "https://www.laulab.net"
 
-[tool.setuptools]
-packages = ["riana"]
+[tool.setuptools.packages.find]
+include = ["riana*"]
+
+[tool.setuptools.package-data]
+"riana.data.coefficients" = ["*.csv"]
+"riana.gui.resources" = ["*.png"]
 
 [tool.setuptools.dynamic]
 version = { attr = "riana.__version__" }

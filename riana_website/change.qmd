@@ -3,13 +3,31 @@ title: "Change Log"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
 abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
 author: "Edward Lau"
 date: "`r Sys.Date()`"
 image-caption: "RIANA logo"
 image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 ---
+
+## Update v1.0.0
+
+A major, breaking rewrite. See the repository `CHANGELOG.md` for the full enumerated list.
+
+* **New package + typed streaming pipeline.** mzML is read one fraction at a time; configuration is shared between the CLI and GUI so the two cannot drift.
+* **Peak detection.** Integration defaults to an apex-centred narrow window (`--peak-rt apex`, `--integration-half-width 0.15`) instead of a fixed retention-time rectangle. Reproduce the old behaviour with `--peak-rt ms2 --integration-half-width 1.0`.
+* **Fractional synthesis via an IsoSpec forward model.** `riana fit` solves θ against the full m0–m5 envelope with a per-peptide labeling-site (Spep) estimate, replacing the fixed-site analytic calculation; bootstrap confidence intervals and per-timepoint fraction-new (`riana_fit_fractions.txt`) are reported.
+* **Identification intake.** quantms **mzTab** (DDA) and **DIA-NN** `report.parquet` (DIA) are now first-class, keyed off an **SDRF** sample sheet; a stage-aware `riana_manifest.tsv` chains `integrate → fit → rollup`. Percolator remains as a single-mzML tier.
+* **Protein roll-up.** New `riana rollup` aggregates peptides to proteins (`--parsimony unique|isoform`, `--method weighted|pooled`). `--model "linear simple"` fits turnover in φ-space and reports a per-protein cross-condition **Δk** with Benjamini–Hochberg adjustment.
+* **Match-between-runs** returns for the DDA path as a gated, quality-controlled transfer (`integrate --mbr`).
+* **Modifications.** Variable-modification peptidoforms (phospho, acetyl, oxidation, …) are integrated at their correct m/z and envelope; phospho and side-chain acetyl roll up as distinct proteoforms.
+* **New GUI.** A PySide6 desktop app, `riana gui`, with Integrate / Model / Protein tabs (install the `[gui]` extra). The old Tkinter GUI was removed.
+* **CLI rewrite (breaking).** A Typer CLI replaces the argparse interface; `riana fit` requires `--coefficients`; thread flags were replaced by process workers (`-W/--workers`); the bundled Snakemake pipeline was retired in favour of an orchestration-agnostic design.
+
+## Update v0.9.0
+* Stabilization release ahead of the 1.0 rewrite: correctness fixes, modern packaging, and continuous integration.
+* **Mass-tolerance semantics corrected** — `-m N` now means ±N ppm (previously applied at half the requested value).
 
 ## Update v.0.8.3
 * Minor bug fixes

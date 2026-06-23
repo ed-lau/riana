@@ -53,7 +53,11 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _helpers.forward_model import RIA_D2O  # noqa: E402
+
+# RIA_D2O used to come from _helpers.forward_model (M2 oracle, frozen). The
+# bench's --ria default now lives inline at 0.06 (≈ 6% v/v D₂O) so it
+# matches FitConfig.ria_max and the new CLI default in main.py.
+_DEFAULT_RIA_D2O = 0.06
 
 WELL_FIT_R2 = 0.9
 
@@ -106,7 +110,8 @@ def relabel_inputs(inputs_dir: Path, gt: pd.DataFrame, pt_map: pd.DataFrame,
         src = inputs_dir / fname
         if not src.exists():
             raise FileNotFoundError(f'integrate output missing: {src}')
-        df = pd.read_csv(src, sep='\t', index_col=0)
+        # M3 Week 4: _riana.txt now carries a provenance header; comment='#' skips it.
+        df = pd.read_csv(src, sep='\t', index_col=0, comment='#')
         df['sample'] = f'time{t:.6f}'
         dst = dest / fname
         df.to_csv(dst, sep='\t')
@@ -114,9 +119,12 @@ def relabel_inputs(inputs_dir: Path, gt: pd.DataFrame, pt_map: pd.DataFrame,
     return out
 
 
-def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: int,
-                  depth: int, q_value: float, threads: int) -> Path:
+def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: str,
+                  depth: int, q_value: float, workers: int,
+                  coefficients: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
+    if label == 'hw' and coefficients is None:
+        raise ValueError("riana fit --label hw requires a coefficients CSV path")
     cmd = [
         sys.executable, '-m', 'riana', 'fit',
         *[str(f) for f in files],
@@ -125,9 +133,11 @@ def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: int,
         '-r', str(ria),
         '-q', str(q_value),
         '-d', str(depth),
-        '-t', str(threads),
+        '-W', str(workers),
         '-o', str(out_dir),
     ]
+    if coefficients is not None:
+        cmd.extend(['--coefficients', str(coefficients)])
     print(f'[fit] {" ".join(cmd)}')
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
@@ -201,12 +211,19 @@ def main() -> None:
     parser.add_argument('--k-deg0', type=float, default=0.5,
                         help='target rate constant; only used when the '
                              'pseudotime map must be built [default: 0.5]')
-    parser.add_argument('--ria', type=float, default=round(RIA_D2O, 6),
+    parser.add_argument('--ria', type=float, default=_DEFAULT_RIA_D2O,
                         help='ria_max for riana fit [default: 6%% D2O RIA]')
-    parser.add_argument('--label', type=int, default=1)
+    parser.add_argument('--label', type=str, default='hw',
+                        help="labeling chemistry [default: hw]")
     parser.add_argument('--depth', type=int, default=3)
     parser.add_argument('--q-value', type=float, default=0.01)
-    parser.add_argument('--threads', type=int, default=4)
+    parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--coefficients', type=str, default=None,
+                        help='per-AA coefficient table for `riana fit` — a '
+                             'bundled preset (commerford|ac16|ipsc|cm) or a CSV '
+                             'path (e.g. tests/data/calibration_d2o_mixing/'
+                             '<line>/d2o_aa_coefficients_<line>.csv). Required '
+                             'for --label hw.')
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,8 +243,10 @@ def main() -> None:
         fit_out = Path(td) / 'fit_out'
         result_path = run_riana_fit(files, fit_out, ria=args.ria,
                                     label=args.label, depth=args.depth,
-                                    q_value=args.q_value, threads=args.threads)
-        fit_df = pd.read_csv(result_path, sep='\t')
+                                    q_value=args.q_value, workers=args.workers,
+                                    coefficients=args.coefficients)
+        # M3 Week 4: riana_fit_peptides.txt carries a provenance header.
+        fit_df = pd.read_csv(result_path, sep='\t', comment='#')
 
     scored = score(fit_df, k_deg0)
     scored.to_csv(args.output_dir / 'fit_recovery.csv', index=False)

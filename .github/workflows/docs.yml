@@ -1,0 +1,53 @@
+name: Docs
+
+# Renders the Quarto site under riana_website/ and publishes it to GitHub Pages.
+# This replaces the committed docs/ tree that 1.0.0 retired.
+#
+# ONE-TIME REPO SETTING: Settings → Pages → "Build and deployment" → Source must
+# be set to "GitHub Actions" for the deploy step below to take effect. A green
+# run of this workflow must precede the m3-rewrite → master merge, or the live
+# site (https://ed-lau.github.io/riana/) goes dark.
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "riana_website/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; cancel in-progress runs of this workflow.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Render site
+        uses: quarto-dev/quarto-actions/render@v2
+        with:
+          path: riana_website
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: riana_website/_site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

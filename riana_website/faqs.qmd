@@ -3,7 +3,7 @@ title: "Frequently Asked Questions"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
 abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments. Supports multiple labeling strategies, including labeled amino acid and heavy water."
+description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
 author: "Edward Lau"
 date: "`r Sys.Date()`"
 image-caption: "RIANA logo"
@@ -15,47 +15,37 @@ image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 
 ### Integrate
 
-#### Q: What does the `-D --mass_defect` argument do for the integrate function?
+#### Q: What does the `-D --mass_difference` argument do for the integrate function?
 
-A: The `-D` flag specifies the accurate mass difference between each unit isotopomer and can be set to `D`, `C13`, or
-`SILAC`, which will dictate the mass difference across each successive peak to be 1.0063 (mass difference of
-deuterium and protium), 1.003 (mass difference of ^13^C and ^12^C), and 1.001 (custom SILAC mass), respectively. This is
-set so that RIANA can find the correct accurate mass for integration when multiple atom centers are added. E.g., if
-deuterium labeled amino acids are used, e.g., D^3^-leucine, the argument should be set to `-D D` and the integrated
-isotopomer argument set to `-i 0, 3`. Alternatively if ^13^C~6~-lysines, the arguments should be `-D C13` and `i 0,6`.
+A: The `--mass_difference` argument sets the accurate mass spacing between successive isotopomer channels. It defaults to
+**1.003355**, the ^13^C − ^12^C mass difference, which is the correct unit spacing for heavy-water labeling (the labeled
+peptide's envelope advances in ~1 Da neutron-mass steps). RIANA uses it to compute the accurate m/z of each successive
+isotopomer for extraction. (The earlier `D`/`C13`/`SILAC` token options were removed; supply a float directly.)
 
 ### Fit
 
 #### Q: What are the kinetic models being specified by the different fit options?
 
-A: The `simple`, `guan`, and `fornasiero` options for the model argument refer to a simple exponential (one-pool) model,
-a two-compartment model, and a two-compartment model that includes label reutilization.
+A: The `simple`, `guan`, and `fornasiero` options for the `--model` argument refer to a simple exponential (one-pool) model,
+a two-compartment model, and a two-compartment model that includes label reutilization. For protein-level analysis,
+`riana rollup` additionally offers `"linear simple"`, a linearized φ-space fit that supports a cross-condition Δk test.
 See the [Documentation](about.qmd) page for details.
 
-#### Q: What does the `-l --label` argument do?
+#### Q: What does the `-l --label` argument do, and how do I set the labeling sites?
 
-A: The `--label` argument determines how the fraction of new proteins at a particular labeling time point is calculated
-from the relative abundance of isotopomers. The option `aa` assumes that the first peaks of light or heavy amino acids
-are used for calculations (e.g., m0, m6 for ^13^C~6~-lysine) and hence the initial pre-label fraction of the light peak
-(m0) is assumed to be 1. The option `hw` assumes a heavy water type labeling experiment where the entire isotopomer
-cluster of the peptide is integrated (e.g., m0, m1, m2, m3, m4, m5), and hence the pre-labeling fraction of the m0 peak
-is calculated from peptide relative isotopomer abundance based on naturally occurring isotopes.
+A: `--label` selects the labeling chemistry — `hw` (heavy water / D~2~O, the default and only validated path; `o18` is in
+progress). Cell-type or tissue specificity is **not** set through the label; it comes from the per-amino-acid
+labeling-site (Spep) table supplied with `--coefficients`. Pass a bundled preset — `commerford` (literature mammalian
+values) or the `ac16` / `ipsc` / `cm` cell-line calibration tables — or a path to your own `(amino_acid, coefficient)`
+CSV. (The earlier amino-acid / SILAC fitting path and the `hw_cell` / `params.py` mechanism were removed in 1.0.0.)
 
-**To perform cell culture analysis:** Use `-l hw_cell` to use the labeling sites calibrated for human AC6 cells (see Alamillo et al. bioRxiv 2025 for details). To alter the heavy water per-residue labeling sites for other cell types or organisms, modify the `params.py` file directly and run from the modified copy of RIANA.
+#### Q: Does RIANA perform protein-level curve fitting?
 
-#### Q: How are the plotted curves separated to the curves_fast_fit, curves_mid_fit, and curve_slow_fit directories?
-
-A: The directories are intended to facilitate navigation only rather than a rigorous indication of data quality.
-Plots for fitted curves with k < 0.01 are in the "slow" directory, 0.01 <= k <= 1 in the "mid" directory, and
-1 < k in the "fast" directory. Plots for fitted curves with R^2^ >= 0.5 are in the "fit" directory, and those with
-R^2^ < 0.5 are in the "poor" directory.
-
-#### Q: Does RIANA fit perform protein level curve fitting?
-
-A: RIANA currently performs curve fitting at the peptide level only. Users can perform protein-level curve fitting
-using the `{sample}_riana.txt` integration result files. Alternatively, protein-level rate constants can be derived
-by taking a median or harmonic mean of the peptide-level rate constants with similar results, as we showed in our recent 
-[publication](https://doi.org/10.1016/j.mcpro.2022.100252).
+A: Yes — `riana rollup` aggregates the peptide-level fits to proteins. Shared peptides are resolved by parsimony
+(`--parsimony unique|isoform`) and protein rate constants are estimated by an inverse-variance-weighted per-timepoint
+collapse (`--method weighted`) or a pooled fit (`--method pooled`). The earlier practice of taking a median or harmonic
+mean of peptide-level rate constants (as in our [2022 publication](https://doi.org/10.1016/j.mcpro.2022.100252)) is still
+available as a column on the output, but the weighted refit is the default.
 
 #### Q: How do I retrieve half-life information on the peptide and protein?
 
@@ -64,9 +54,14 @@ A: The half-life of a peptide or protein can be calculated from the output `k` p
 $$ t_{1/2} = ln(2)/k $$
 
 
-#### Q: How do I use limited mass isotopomers or rule-based mass isotopomer selection for fractional synthesis rate calculation?
+#### Q: How is fractional synthesis calculated, and can I restrict the isotopomers used?
 
-A: This can be  modified under `-f --fs`. The default option is m0/mA `m0_mA` and can be changed to `m0_m1` or `Auto` - please see Currie et al. J Proteome Res 2025 for details.
+A: In 1.0.0 fractional synthesis (θ) is solved against the **full m0–m5 isotopomer envelope** using an IsoSpec forward
+model — RIANA fits θ as the mixture of the natural-abundance and fully-labeled envelopes that best matches the observed
+pattern, given a per-peptide labeling-site estimate (see [Documentation](about.qmd)). This supersedes the earlier
+fine-structure ratio selection (`m0_mA`, `Auto`; Currie et al. *J Proteome Res* 2025). The `--fs` flag is reserved for a
+future channel-subset option (restricting the envelope to chosen isotopomers to dodge co-eluting interference) and is
+currently inactive.
 
 
 ### General
