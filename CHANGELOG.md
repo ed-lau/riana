@@ -5,12 +5,57 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] — 2026-06-07
+## [1.0.0] — 2026-06-23
 
 The breaking 1.0 release: a new package structure, peak detection, baseline
 subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
 roadmap. Entries below are grouped by the work that produced them. (The git tag
 and Zenodo code DOI follow at release.)
+
+### Adaptive N_ISO, H4′ FS solve, and `--fs` limited-isotopomer scoring (Track B) — 2026-06-23
+
+#### Added
+
+- **`riana fit --fs 0 1 2 3` — limited-isotopomer scoring.** Fit the per-timepoint
+  fractional synthesis on a *leading subset* of isotopomer channels (e.g. iso0-iso3)
+  rather than the full integrated envelope, to reduce sensitivity to co-eluting
+  contaminants in the high channels — "integrate wide, fit narrow" (Sadygov & Currie,
+  JPR 2025). On the D₂O calibration mixing series (ac16/cm/ipsc) this **tightens FS
+  recovery** (within-±0.05 +1.8–2.8 pp at every mixing proportion, lower IQR and bias)
+  and is a **pure improvement over the 0.9.0 baseline**, which it leaves byte-identical
+  when unused. `FitConfig.score_channels`. Two guards: a **run-level** check that the
+  requested channels were actually integrated (so `integrate --iso 0 1 2 3` +
+  `fit --fs 0 1 2 3` is valid, and a too-narrow integrate errors clearly), and a
+  **per-peptide clamp** (a peptidoform whose envelope ends before the subset is scored
+  on the channels it has; a 1-channel peptidoform returns NaN rather than crashing).
+- **`riana integrate --iso auto` — adaptive N_ISO (opt-in).** Runs the IsoSpec forward
+  model per peptidoform at integrate time and sets the isotopomer channel set from the
+  envelope (init∪final ≥1 % abundance, conservative Commerford upper-bound labelling
+  sites), replacing the fixed `--iso` tuple; `iso0` is the precursor m0 and the
+  extraction target is the averaged-isotopolog accurate mass. **Off by default** —
+  evaluated on LVE and the calibration series and found neutral-to-slightly-negative on
+  recovery/θ-spread and ~3–5× slower to integrate, so it stays opt-in (the science win
+  is the fit-side `--fs` lever, not wide capture). `--ria` sets the precursor enrichment
+  (also read from the SDRF `characteristics[precursor enrichment]`).
+
+#### Changed
+
+- **`solve_fs_d2o` mixes the init/final envelopes in the full-cluster basis before
+  truncating to the scoring channels (the "H4′" order).** The previous
+  normalize-each-then-mix order is correct only when the natural and labelled envelopes
+  carry the same in-window mass fraction; the new order is exact under any truncation,
+  which `--fs` limited-isotopomer scoring requires. A near-no-op at low labelling (LVE
+  RIA 4.6 %: within ~1e-3), load-bearing for narrow scoring and high θ.
+
+#### Benchmarks / tooling
+
+- `bench_fs_method_compare.py` and `bench_within_protein_theta.py` gained
+  `--score-channels`; `run_integrate_v1_0_0.py` gained `--adaptive` / `--ria`. New
+  committed anchor `benchmark_results/<line>/v1.0.0_fs0123/` (recovery at the recommended
+  `--fs 0 1 2 3`). Reports: `2026-06-23_adaptive_niso_limited_isotopomer.md` (the
+  capture-vs-scoring investigation + no-regression-vs-0.9.0), `2026-06-23_robust_turnover_cv.md`
+  (derivation of the `1.4826·MAD(ln k)` within-protein k-CV),
+  `2026-06-23_calibration_benchmark_harness.md` (standing-benchmark design).
 
 ### Sortable result tables + graph export (Track E easy wins) — 2026-06-21
 

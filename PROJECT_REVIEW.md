@@ -1049,6 +1049,30 @@ N_ISO all interact:
     is cached by `(sequence, mods)` and the distinct-peptidoform count ≪ PSM count,
     so it is bounded and parallel-safe under `-W`. The `use_nominal_masses` envelope
     cache (`algorithms.isotope_dist`) already exists.
+  - **RESULT (SHIPPED 2026-06-23; report `2026-06-23_adaptive_niso_limited_isotopomer.md`).**
+    Built B0–B4 and ran the 2×2 capture×scoring control on the calibration mixing series
+    (ac16/cm/ipsc, ground-truth |θ−f|). **The science win is the fit-side scoring choice,
+    not adaptive capture.** `--fs 0 1 2 3` (iso0-3) tightens recovery on all three lines
+    (within-±0.05 +1.8–2.8 pp, lower IQR/bias) and is a *pure improvement over 0.9.0*
+    (`v1.0.0/all == v0.9.0/all` exactly — byte-faithful port — no regression). Adaptive
+    capture is neutral-to-slightly-negative *and* ~3–5× slower, with `fix·iso0-3 ≈
+    adapt·iso0-3` everywhere. **Shipped:** `riana fit --fs` (`FitConfig.score_channels`,
+    H4′ mix-then-normalize in `solve_fs_d2o`, run-level + per-peptide guards);
+    `riana integrate --iso auto` stays **opt-in** (its live justifications are UX —
+    parameter-free integrate — and the TMT precursor-mass-from-`iso0` path, not N_ISO
+    accuracy).
+  - **NEXT — per-peptide `--fs` (parked, designed; brainstorm in the report's Future
+    Work).** The flat global `--fs iso0-3` over-truncates the genuinely-wide-envelope
+    peptides (N_ISO ≥ 12: +0.08 recovery error — crossover at ≈ N_ISO 11). A **per-peptide
+    `score_channels = f(N_ISO)`** (iso0-3 for short/medium, wider for very long peptides)
+    captures Currie et al.'s site-keyed heuristic (<15 / 15-35 / >35 D-sites → higher
+    channels) in the whole-cluster-RMSE paradigm. Two notes: (i) **extend, don't shift** —
+    unlike Currie's 2-channel ratio (which drops a suppressed iso0 at high Spep), the RMSE
+    abundance-down-weights iso0 automatically, so keep it; (ii) key on **N_ISO** (already
+    computed by `adaptive_channel_masses` — this is where `--iso auto` finally earns its
+    keep, as the per-peptide scoring-width *supplier*) or the cheaper Spep proxy. The
+    research-grade endgame is the original **soft robust matcher** (per-channel SNR/Huber
+    weight) rather than a hard per-peptide cutoff.
 
 Gated by both the mixing-series benchmarks and the new animal benchmark
 (Track D).
