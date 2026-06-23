@@ -1,7 +1,9 @@
 # Standing calibration benchmark — layout, baselines, and tuning workflow
 
 - **Date:** 2026-06-23
-- **Status:** design + baselines recorded; **driver script is the next build** (spec'd below)
+- **Status:** **driver shipped** 2026-06-23 (`tests/benchmark/run_calibration_benchmark.py`);
+  reproduces the committed `v1.0.0_fs0123` anchor on all three lines (within±0.05
+  ac16 24.8 % / cm 21.5 % / ipsc 28.9 %). Design + baselines below.
 - **Purpose:** a persistent, per-cell-type calibration harness so future integration-knob
   and MBR tuning is a one-command A/B against a recorded baseline, not an ad-hoc re-run
 - **Lines:** ac16, ipsc, cm (D₂O mixing series, 0→100% with ground-truth proportions)

@@ -132,12 +132,16 @@ FS_BOUNDS = (-0.1, 1.2)
 # key are idempotent at CPython dict level; worst case is duplicated work,
 # not corruption. Call ``clear_envelope_cache()`` between independent runs.
 _envelope_cache: dict = {}
+#: Memoized natural-abundance (θ=0) envelope WIDTH (init_w), keyed by
+#: (sequence, mods). One small int per peptidoform — see ``init_envelope_width``.
+_init_width_cache: dict = {}
 
 
 def clear_envelope_cache() -> None:
     """Drop the memoized envelopes — for tests / repeated independent runs."""
     _envelope_cache.clear()
     _adaptive_cache.clear()
+    _init_width_cache.clear()
 
 
 def get_envelope(dist, pep_mass: float, n: int = 8) -> list[float]:
@@ -171,6 +175,39 @@ def _get_init_env(sequence: str, pep_mass: float,
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
     return _envelope_cache[key]
+
+
+def init_envelope_width(sequence: str, pep_mass: float, *,
+                        mods: tuple[int, ...] = (),
+                        abundance_floor: float = 0.01, n: int = 12) -> int:
+    """Last isotopomer index whose relative abundance clears ``abundance_floor``
+    in the **natural-abundance (unlabeled, θ=0) envelope** — i.e. channels
+    ``0..init_w`` are populated by the peptide's own isotope pattern alone.
+
+    This is a *purely compositional* width: it depends only on the peptide's
+    atoms (via the same `_get_init_env` the FS solver already builds), with **no
+    RIA, no labelling sites, and no Commerford union** — unlike the integrate-time
+    "N_ISO" from ``adaptive_channel_masses``, which unions this init envelope with
+    the fully-labelled final and so *grows with enrichment*. That RIA-independence
+    is exactly why it is the criterion used to widen `--fs` scoring (see
+    ``core.fitting.FS_AUTO_*``): a channel inside the natural envelope carries
+    clean, model-predicted signal at *every* timepoint, so scoring it is safe
+    regardless of θ or RIA.
+
+    One init-envelope computation per (sequence, mods) — cached as a single int,
+    so it is amortized over the per-peptide bootstrap's many solve calls. ``n``
+    only needs to exceed the widen threshold; the exact value past it is unused.
+    """
+    key = (sequence, tuple(mods), round(float(abundance_floor), 6), int(n))
+    cached = _init_width_cache.get(key)
+    if cached is not None:
+        return cached
+    env = _get_init_env(sequence, pep_mass, n=int(n), mods=tuple(mods))
+    tot = float(env.sum()) or 1.0
+    last = max((i for i in range(len(env)) if env[i] / tot >= abundance_floor),
+               default=0)
+    _init_width_cache[key] = last
+    return last
 
 
 def _get_final_env(sequence: str, pep_mass: float, spep: int,

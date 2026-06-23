@@ -175,6 +175,36 @@ def test_fit_run_fs_score_channels_runs_and_guards_missing_channels():
         fit_run(cfg, narrow, coeffs, n_boot=0, random_state=42)
 
 
+def test_fit_run_fs_auto_runs_and_guards_base_channels():
+    """--fs auto: per-peptide init-width-keyed scoring runs and converges, and
+    Guard 1 needs only the base (iso0-3) present (auto widens *within* whatever
+    was captured)."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                    ria_max=0.06, fs_auto=True)
+    result = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42)
+    assert result["k_deg"].notna().sum() >= int(0.9 * len(_TEST_PEPTIDES))
+
+    # A minimal iso0-3 integrate is valid under auto (only the base is required).
+    minimal = [d.drop(columns=["iso4", "iso5"]) for d in dfs]
+    res_min = fit_run(cfg, minimal, coeffs, n_boot=0, random_state=42)
+    assert res_min["k_deg"].notna().sum() >= int(0.9 * len(_TEST_PEPTIDES))
+
+    # Guard 1: integrate narrower than the base (iso0-2) → clear error.
+    narrow = [d.drop(columns=["iso3", "iso4", "iso5"]) for d in dfs]
+    with pytest.raises(ValueError, match=r"iso3|--iso"):
+        fit_run(cfg, narrow, coeffs, n_boot=0, random_state=42)
+
+
+def test_fit_config_fs_auto_and_score_channels_mutually_exclusive():
+    """--fs auto and an explicit --fs channel count cannot both be set."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        FitConfig(fs_auto=True, score_channels=4)
+
+
 def test_fit_run_workers_deterministic():
     """The process-pool fit (``workers>1``) must match the serial path exactly.
 

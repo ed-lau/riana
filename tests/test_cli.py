@@ -52,6 +52,23 @@ def test_integrate_ms2_runs_and_writes_output(tmp_path):
         assert c in df.columns
 
 
+def test_integrate_iso_single_int_is_contiguous_range(tmp_path):
+    """-i N is the easy form for the m0..mN contiguous capture (e.g. '5' =
+    iso0-iso5); an explicit multi-value list (test above, '0 6') stays as-is."""
+    result = runner.invoke(app, [
+        "integrate", str(SAMPLE1), str(PSMS),
+        "-s", "sample1", "-o", str(tmp_path),
+        "-i", "5", "-q", "1.0",
+        "--peak-rt", "ms2", "--integration-half-width", "1.0", "-m", "50",
+    ])
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(tmp_path / "sample1_riana.txt", sep="\t", index_col=0,
+                     comment="#")
+    for i in range(6):
+        assert f"iso{i}" in df.columns
+    assert "iso6" not in df.columns
+
+
 def test_integrate_sample_must_end_with_digit(tmp_path):
     result = runner.invoke(app, [
         "integrate", str(SAMPLE1), str(PSMS),
@@ -149,6 +166,26 @@ def test_fit_resolves_bundled_preset(tmp_path):
     msg = (result.output or "") + str(result.exception or "")
     assert "coefficients from commerford" in msg  # preset resolved + loaded
     assert "isotopomers" in msg                    # reached fit_run's guard
+
+
+def test_fit_fs_single_int_and_auto_parse(tmp_path):
+    """--fs accepts a single channel index N (= iso0..isoN), 'auto', or the
+    explicit leading list; a non-contiguous list is a clear error."""
+    base = ["fit", str(ONE_TIMEPOINT), "--coefficients", "commerford",
+            "-o", str(tmp_path)]
+    # single int N=3 -> iso0..iso3 = 4 channels (logged before the fit guard fires)
+    r = runner.invoke(app, base + ["--fs", "3"])
+    assert "iso0-iso3 (4 channels)" in (r.output or "") + str(r.exception or "")
+    # auto -> the per-peptide policy
+    r2 = runner.invoke(app, base + ["--fs", "auto"])
+    assert "--fs auto" in (r2.output or "") + str(r2.exception or "")
+    # the explicit list still works (back-compat) and resolves to the same count
+    r3 = runner.invoke(app, base + ["--fs", "0 1 2 3"])
+    assert "iso0-iso3 (4 channels)" in (r3.output or "") + str(r3.exception or "")
+    # a non-contiguous / gapped set is rejected
+    r4 = runner.invoke(app, ["fit", str(ONE_TIMEPOINT), "--fs", "0 2"])
+    assert r4.exit_code != 0
+    assert "--fs" in (r4.output or "") + str(r4.exception or "")
 
 
 def test_fit_and_rollup_via_manifest_chain(tmp_path):

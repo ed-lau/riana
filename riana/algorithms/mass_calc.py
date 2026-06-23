@@ -36,11 +36,22 @@ def _count_residue_atoms(seq: str,
             raise KeyError
 
     if iaa:
-        # Carbamidomethyl (UNIMOD:4) as a fixed mod on every cysteine — the
-        # composition now comes from the unified UniMod-keyed ``mod_atoms``
-        # table (was a dedicated ``'IAA'`` key). M7 will retire this fixed-mod
-        # flag in favour of passing CAM through ``count_atoms(mods=...)`` once
-        # the IO layer threads per-cysteine mods.
+        # Carbamidomethyl (UNIMOD:4) as a fixed mod on EVERY cysteine. The
+        # composition is the unified UniMod-keyed ``mod_atoms[4]`` ([2,3,1,1,0,0],
+        # +57.0215), so it is principled at the atom level (was a dedicated
+        # ``'IAA'`` key pre-M7).
+        #
+        # CAM stays a flag here rather than a ``[UNIMOD:4]`` sequence token on
+        # purpose: all three IO paths normalize to a bare-cysteine sequence and
+        # rely on this flag (Percolator/Crux never *declares* CAM — its sequences
+        # are bare; mzTab and DIA-NN declare it but strip it, see
+        # ``io.mztab._encode_peptidoform`` / ``io.diann._encode_peptidoform``). A
+        # universal fixed mod carries no per-residue information, so tokenizing it
+        # would bloat every cysteine peptide's ``concat`` identity for nothing and
+        # break Crux parity. Tokenizing CAM only becomes warranted for
+        # NON-universal cysteine states (partial alkylation, NEM, free Cys) — a
+        # variable-mod feature (threaded via ``count_atoms(mods=...)``), not a
+        # refactor of this fixed-mod path.
         num_cysteines = seq.count('C')
         cam_atoms = [atom * num_cysteines for atom in constants.mod_atoms[4]]
         tot_atoms = [tot_atoms[i] + cam_atoms[i] for i in range(len(tot_atoms))]

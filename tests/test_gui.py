@@ -453,6 +453,25 @@ def test_build_config_advanced_widgets_flow_through(main_window):
     assert cfg.mbr_min_snr == 6.0 and cfg.mbr_min_scans == 5
 
 
+def test_build_config_iso_auto_single_int_and_list(main_window):
+    """--iso exposure: 'auto' sets adaptive_iso (+ ria_max from the spin); a single
+    index N = the iso0..isoN range; an explicit list stays non-contiguous."""
+    tab = main_window.integrate_tab
+    tab.iso_edit.setText("auto")
+    tab.ria_spin.setValue(0.046)
+    cfg = tab.build_config()
+    assert cfg.adaptive_iso is True
+    assert cfg.ria_max == pytest.approx(0.046)
+
+    tab.iso_edit.setText("3")
+    cfg2 = tab.build_config()
+    assert cfg2.adaptive_iso is False
+    assert cfg2.isotopomers == (0, 1, 2, 3)
+
+    tab.iso_edit.setText("0 6")
+    assert tab.build_config().isotopomers == (0, 6)
+
+
 def test_integrate_tab_has_sdrf_and_workers(main_window):
     tab = main_window.integrate_tab
     assert tab.sdrf_edit.text() == ""              # SDRF path (optional) wired
@@ -502,6 +521,25 @@ def test_model_tab_build_config_defaults(main_window):
     assert cfg.ria_max == pytest.approx(0.06)
     # The coefficients combo defaults to the bundled literature preset.
     assert main_window.model_tab.coeff_combo.currentText() == "commerford"
+    # --fs defaults to the full envelope (no limited-isotopomer scoring).
+    assert cfg.score_channels is None and cfg.fs_auto is False
+
+
+def test_model_tab_build_config_fs_scoring(main_window):
+    """--fs exposure: 'full envelope' -> None; 'auto' -> fs_auto; 'iso0-N' ->
+    score_channels = N+1 (the same count the CLI builds)."""
+    tab = main_window.model_tab
+    tab.fs_combo.setCurrentText("auto")
+    cfg = tab.build_config()
+    assert cfg.fs_auto is True and cfg.score_channels is None
+
+    tab.fs_combo.setCurrentText("iso0-3")
+    cfg2 = tab.build_config()
+    assert cfg2.score_channels == 4 and cfg2.fs_auto is False
+
+    tab.fs_combo.setCurrentText("full envelope")
+    cfg3 = tab.build_config()
+    assert cfg3.score_channels is None and cfg3.fs_auto is False
 
 
 def test_model_tab_plots_fitted_curve_on_row_selection(main_window):

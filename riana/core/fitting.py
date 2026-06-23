@@ -53,7 +53,9 @@ import pandas as pd
 from scipy.optimize import curve_fit
 
 from riana import constants
-from riana.algorithms.isotope_dist import solve_fs_d2o, spep_from_coefficients
+from riana.algorithms.isotope_dist import (
+    init_envelope_width, solve_fs_d2o, spep_from_coefficients,
+)
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
 from riana.config import FitConfig
 from riana.core import models
@@ -116,6 +118,34 @@ def _fit_key(concat: str) -> str:
 #: the ``riana integrate --iso`` default. A future ``--fs`` may let the fit use a
 #: subset, but integrate should still emit the full set.
 _REQUIRED_D2O_ISOTOPOMERS = (0, 1, 2, 3, 4, 5)
+
+# --fs auto (init-width-keyed limited-isotopomer scoring; FitConfig.fs_auto).
+# Per peptidoform the fit scores the leading FS_AUTO_BASE channels (iso0-3) — the
+# flat default that tightens recovery for the bulk — but WIDENS to all captured
+# channels for peptides whose natural-abundance envelope reaches index
+# >= FS_AUTO_INIT_W_THRESHOLD, i.e. iso4-5 sit *inside* that envelope and carry
+# clean, model-predicted signal at every timepoint (so iso0-3 would truncate real
+# signal). Keyed on the natural (θ=0) init width, NOT the integrate-time N_ISO:
+# init width is purely compositional (RIA-/θ-independent), so the threshold needs
+# no per-experiment retuning.
+#
+# Derivation (D2O calibration mixing series ac16/cm/ipsc, RIA 6%, ground-truth θ;
+# report 2026-06-23_adaptive_niso_limited_isotopomer.md): MAE(iso0-3) vs MAE(all)
+# crosses over at init width 6 on ALL three lines (Δ ≈ 0 at 5, clearly +ve at 6);
+# the resulting policy is a strict Pareto win over flat iso0-3 (better overall
+# within±0.05 AND recovers the wide-tail MAE). See bench_niso_crossover.py.
+#
+# REVISIT IF: (a) unusually high RIA — init width keys on the *natural* envelope,
+# so at high enrichment the *labelling* can push real signal into iso4-5 for
+# peptides whose natural width is < 6; init-width keying deliberately ignores that
+# (conservative), so a higher-enrichment study with ground truth might justify a
+# lower threshold or an N_ISO/init-width blend. (b) Samples of only very long
+# peptides — nearly all would widen, so the base/threshold split stops
+# discriminating. (c) The endgame is per-channel abundance weighting (soft
+# matcher), which dissolves the hard threshold entirely. Threshold kept as a
+# named constant (not a user dial) so a revisit is a one-line, documented change.
+FS_AUTO_BASE = 4
+FS_AUTO_INIT_W_THRESHOLD = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,7 +302,13 @@ def fit_run(
     # (you only need to extract what you score). Error if any are absent as a
     # COLUMN. (A short peptidoform whose envelope ends early — its high channel is
     # NaN, not column-absent — is the separate per-peptide clamp in solve_fs_d2o.)
-    if config.score_channels is not None:
+    if config.fs_auto:
+        # auto scores iso0-3 by default and widens *within* the captured channels,
+        # so it needs only the base present; the widen target is whatever was
+        # integrated (len(iso_cols)). Require the base leading channels.
+        required = tuple(range(FS_AUTO_BASE))
+        hint = f"--iso '{' '.join(map(str, required))}'"
+    elif config.score_channels is not None:
         required = tuple(range(config.score_channels))
         hint = f"--iso '{' '.join(map(str, required))}'"
     else:
@@ -515,6 +551,18 @@ def _fit_one_concat(
     except (KeyError, ValueError):
         return _null_result(concat, protein_id, mod_sites)
 
+    # --fs auto: per-peptidoform score width keyed on the natural-abundance (θ=0)
+    # init width — iso0-3 for typical peptides, all captured channels for ones
+    # whose natural envelope is broad enough that iso4-5 carry clean signal. One
+    # cached init-width lookup per form. (Flat --fs / full-envelope: one scalar.)
+    if config.fs_auto:
+        form_score = {
+            rc: (FS_AUTO_BASE
+                 if init_envelope_width(seq, pm, mods=md) < FS_AUTO_INIT_W_THRESHOLD
+                 else len(iso_cols))
+            for rc, (md, pm) in forms.items()
+        }
+
     # Per-timepoint FS via solve_fs_d2o, at the experiment's precursor
     # enrichment ``config.ria_max``.
     sums = obs_matrix.sum(axis=1)
@@ -524,10 +572,12 @@ def _fit_one_concat(
         for i in range(len(t_arr)):
             if valid[i]:
                 mods_i, pep_mass_i = forms[row_concats[i]]
+                score_channels_i = (form_score[row_concats[i]] if config.fs_auto
+                                    else config.score_channels)
                 fs_arr[i] = solve_fs_d2o(
                     seq, pep_mass_i, obs_matrix[i], spep_int,
                     ria_max=float(config.ria_max), n_iso=len(iso_cols),
-                    mods=mods_i, score_channels=config.score_channels,
+                    mods=mods_i, score_channels=score_channels_i,
                 )
     except (KeyError, ValueError):
         return _null_result(concat, protein_id, mod_sites)

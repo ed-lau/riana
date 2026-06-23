@@ -7,15 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.1.0] — Unreleased
 
-Post-1.0 development line. Track B–E follow-ons (per-peptide `--fs` keyed on the
-adaptive envelope, MBR tuning on the standing calibration benchmark, …).
+The experimental science line, opened after the 1.0.0 N_ISO finish: o18 rewrite
+(NB90b frozen coefficients), Δmass-over-time QC in the GUI, and mass-defect → θ
+fitting. See `PROJECT_REVIEW.md` §3.
 
-## [1.0.0] — 2026-06-23
+## [1.0.0] — Unreleased (N_ISO line in progress)
 
 The breaking 1.0 release: a new package structure, peak detection, baseline
-subtraction, mzTab intake, and a Qt GUI. See `PROJECT_REVIEW.md` §3 for the
-roadmap. Entries below are grouped by the work that produced them. (The git tag
-and Zenodo code DOI follow at release.)
+subtraction, mzTab intake, and a Qt GUI. Closes out with the Track B N_ISO line
+— the standing calibration benchmark driver, N_ISO-keyed `--fs` widening, and
+GUI exposure of `--iso auto` / `--fs` — before the official GitHub release +
+Zenodo DOI. (A `v1.0.0` git tag was cut 2026-06-23 at the rewrite + initial
+Track B work; the official release tag re-points to the N_ISO finish.) See
+`PROJECT_REVIEW.md` §3. Entries below are grouped by the work that produced them.
+
+### DIA-NN phospho proteoform sites (M7 Stage B, DIA path) — 2026-06-23
+
+#### Added
+
+- **DIA-NN phosphopeptidoforms roll up as distinct proteoforms.** `io.diann` now
+  maps DIA-NN's localized `Protein.Sites` to the biological-mod proteoform suffix
+  (e.g. `P35486_pS293`, `_pS1332_pS1333` for two sites) — **byte-identical to the
+  DDA/mzTab key format** — gated on `PTM.Site.Confidence` (default ≥ 0.75, the
+  class-I localized cutoff; sub-threshold folds into the bare protein). DIA-NN
+  lists *every* modified site, so the constitutive fixed Carbamidomethyl (C) and
+  Met-Ox (M, a chemical mod merged at fit) are excluded — only
+  `constants.BIOLOGICAL_MODS` define a proteoform. The PTM columns are read only
+  when present, so a no-mod / older report still loads (empty `mod_sites`). New
+  `read_diann(min_site_confidence=…)`. Validated on the cardiac variable-phospho
+  DIA series (577 sited proteoforms from 789 phospho precursors).
+
+### GUI exposure of `--iso auto` + `--fs` scoring (Track B / Track E) — 2026-06-23
+
+#### Added
+
+- **GUI parity for the Track B knobs.** The Integrate tab's *Isotopomers* field
+  now accepts `auto` (adaptive N_ISO) and a single index `N`, with a new
+  *Precursor enrichment* (RIA) spin that shapes the adaptive final envelope; the
+  Model tab gains an *FS scoring* dropdown (`full envelope` / `auto` / `iso0-N`)
+  wiring `FitConfig.score_channels` / `fs_auto`. Both build the same frozen config
+  the CLI does (GUI↔CLI parity before the 1.0.0 release).
+
+### Per-peptide `--fs auto` widening + CLI single-int `--fs`/`--iso` (Track B) — 2026-06-23
+
+#### Added
+
+- **`riana fit --fs auto` — per-peptide limited-isotopomer widening.** Instead of
+  a flat channel count, the fit picks per peptidoform: iso0-3 for typical peptides,
+  but **widens to all captured channels for peptides whose natural-abundance (θ=0)
+  envelope is broad** (`init_envelope_width ≥ 6`), where iso4-5 carry clean,
+  model-predicted signal that flat iso0-3 would truncate. The criterion is the
+  **natural envelope width — purely compositional, RIA-invariant** — so the
+  threshold is a named constant (`core.fitting.FS_AUTO_*`), not a user dial.
+  Derived on the calibration mixing series (crossover = init width 6, identical on
+  ac16/cm/ipsc) as a strict Pareto win over flat iso0-3, and ties an RIA-dependent
+  N_ISO-keyed alternative on the headline metric while needing no per-experiment
+  retuning (report `2026-06-23_adaptive_niso_limited_isotopomer.md`;
+  `bench_niso_crossover.py`). Free at fit — reuses the cached init envelope
+  `solve_fs_d2o` already builds. New `algorithms.isotope_dist.init_envelope_width`
+  + `FitConfig.fs_auto`.
+
+#### Changed
+
+- **`--fs` and `--iso` accept a single index `N`** (= the leading channels
+  iso0..isoN), the easy form replacing the leading-contiguous list: `--fs 3` =
+  iso0-iso3, `--iso 5` = the m0-m5 envelope (now the `--iso` default). An explicit
+  list is still accepted for a non-contiguous set (the o18 `0 6` pair), and `--fs`
+  also takes `auto`. Fixes a latent bug where the `--fs` *list* form
+  (`--fs 0 1 2 3`) was always rejected (tuple-vs-list comparison).
+
+#### Benchmarks / tooling
+
+- **`tests/benchmark/bench_niso_crossover.py` — crossover derivation.** Per-integer
+  N_ISO *and* init-width MAE strata + the heuristic A/B (flat / niso / init-width
+  binary / graded) on the fixed v1.0.0 integrate; the tool behind the `--fs auto`
+  decision.
+
+### Standing calibration benchmark driver (Track B) — 2026-06-23
+
+#### Benchmarks / tooling
+
+- **`tests/benchmark/run_calibration_benchmark.py` — one-command calibration
+  A/B harness.** Thin orchestrator over `run_integrate_v1_0_0.run_line` +
+  `bench_fs_method_compare`: per cell line it integrates (or reuses a complete
+  `integrate_outputs/<label>/`), scores |θ−f| recovery vs the ground-truth
+  mixing proportion, writes the standing `runs/calib_<line>/<label>/`
+  (`recovery/`, `config.json`) layout, and appends a frozen line to
+  `BASELINE.md`. The default config + `--fs 0 1 2 3` reproduces the committed
+  `benchmark_results/<line>/v1.0.0_fs0123/` anchor, so integration-knob / MBR
+  tuning is an A/B against a recorded baseline. Design:
+  `2026-06-23_calibration_benchmark_harness.md`.
 
 ### Adaptive N_ISO, H4′ FS solve, and `--fs` limited-isotopomer scoring (Track B) — 2026-06-23
 

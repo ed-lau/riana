@@ -50,6 +50,22 @@ def _row(run, seq, mod_seq, z, decoy=0, q=0.001, rt=40.0, prot="Q3TW96"):
     ))
 
 
+_SITE_COLS = ["Run", "Stripped.Sequence", "Modified.Sequence", "Precursor.Charge",
+              "Precursor.Mz", "Decoy", "Q.Value", "PEP", "RT", "Protein.Ids",
+              "Protein.Sites", "PTM.Site.Confidence"]
+
+
+def _site_row(run, seq, mod_seq, z, sites, conf, prot="Q3TW96", rt=40.0):
+    """A row with DIA-NN's PTM-aware columns (Protein.Sites + confidence)."""
+    return dict(zip(_SITE_COLS,
+                    [run, seq, mod_seq, z, 800.0, 0, 0.001, 0.001, rt, prot,
+                     sites, conf]))
+
+
+def _write_parquet_sites(path: Path, rows: list[dict]) -> None:
+    pd.DataFrame(rows, columns=_SITE_COLS).to_parquet(path, index=False)
+
+
 def test_read_diann_basic(tmp_path, sample_map):
     p = tmp_path / "diann_report.parquet"
     _write_parquet(p, [
@@ -99,6 +115,67 @@ def test_read_diann_encodes_supported_mods_drops_unsupported_and_decoys(tmp_path
     records2, _ = read_diann(p, sample_map, drop_variable_mods=False)
     assert {r.sequence for r in records2} == {
         "AAADEWTTCTPPSGLQGK", "M[UNIMOD:35]LSEDQVK", "NLSEDQVK"}
+
+
+def test_read_diann_phospho_proteoform_sites(tmp_path, sample_map):
+    """M7 Stage B on the DIA path: DIA-NN's localized Protein.Sites -> the
+    biological-mod proteoform suffix (pS###), gated on PTM.Site.Confidence and
+    filtered to phospho (the constitutive Carbamidomethyl C site is dropped)."""
+    p = tmp_path / "report.parquet"
+    _write_parquet_sites(p, [
+        # confident single phospho -> pS9
+        _site_row("843_LV", "AAADGDDSLYPIAVLIDELR",
+                  "AAADGDDS(UniMod:21)LYPIAVLIDELR", 2, "[Q76MZ3:S9]", 1.0,
+                  prot="Q76MZ3"),
+        # phospho + carbamidomethyl: the C100 site is constitutive -> dropped, pS98
+        _site_row("843_LV", "ADLSNCLYKDMPATIDSVFAR",
+                  "ADLS(UniMod:21)NC(UniMod:4)LYKDMPATIDSVFAR", 2,
+                  "[Q0II04:S98,C100]", 0.93, prot="Q0II04"),
+        # low confidence (< 0.75) -> folds into the bare protein
+        _site_row("930_LV", "AAAESSAIQSISHV",
+                  "AAAES(UniMod:21)SAIQSISHV", 2, "[P14404:S1223]", 0.60,
+                  prot="P14404"),
+        # two confident phospho sites -> pS1332_pS1333 (sorted, _-joined)
+        _site_row("930_LV", "AIRLGKELSSAESQLHDTQELLQEETR",
+                  "AIRLGKELS(UniMod:21)S(UniMod:21)AESQLHDTQELLQEETR", 3,
+                  "[Q6URW6:S1332,S1333]", 0.99, prot="Q6URW6"),
+    ])
+    records, _ = read_diann(p, sample_map)
+    by_seq = {r.sequence: r.mod_sites for r in records}
+    assert by_seq["AAADGDDS[UNIMOD:21]LYPIAVLIDELR"] == "pS9"
+    assert by_seq["ADLS[UNIMOD:21]NCLYKDMPATIDSVFAR"] == "pS98"   # C100 dropped
+    assert by_seq["AAAES[UNIMOD:21]SAIQSISHV"] == ""              # gated -> bare
+    assert by_seq["AIRLGKELS[UNIMOD:21]S[UNIMOD:21]AESQLHDTQELLQEETR"] == \
+        "pS1332_pS1333"
+
+    # A custom gate keeps the 0.60 row (proves the threshold is honoured).
+    recs2, _ = read_diann(p, sample_map, min_site_confidence=0.5)
+    assert {r.mod_sites for r in recs2 if r.sequence ==
+            "AAAES[UNIMOD:21]SAIQSISHV"} == {"pS1223"}
+
+
+def test_read_diann_metox_excluded_from_phospho_key(tmp_path, sample_map):
+    """A Met-Ox + phospho peptidoform keys on the phospho site ONLY — Met-Ox (a
+    CHEMICAL_MODS member, merged at fit) never defines a proteoform, just like
+    Carbamidomethyl. (The two real searches don't co-occur, so this is synthetic.)"""
+    p = tmp_path / "report.parquet"
+    _write_parquet_sites(p, [
+        _site_row("843_LV", "MLSPEPTIDESK", "M(UniMod:35)LS(UniMod:21)PEPTIDESK",
+                  2, "[Q9Z1P6:M87,S89]", 1.0, prot="Q9Z1P6"),
+    ])
+    records, _ = read_diann(p, sample_map)
+    assert len(records) == 1
+    assert records[0].sequence == "M[UNIMOD:35]LS[UNIMOD:21]PEPTIDESK"  # Ox kept
+    assert records[0].mod_sites == "pS89"  # M87 (Met-Ox) excluded from the key
+
+
+def test_read_diann_no_site_columns_still_loads(tmp_path, sample_map):
+    """A report without the PTM-aware columns (older / no-mod search) loads with
+    empty mod_sites — graceful degradation, no hard failure."""
+    p = tmp_path / "report.parquet"
+    _write_parquet(p, [_row("843_LV", "SAMPLEDPEPTIDEK", "SAMPLEDPEPTIDEK", 2)])
+    records, _ = read_diann(p, sample_map)
+    assert len(records) == 1 and records[0].mod_sites == ""
 
 
 def test_read_diann_unmatched_run_errors(tmp_path, sample_map):
