@@ -126,12 +126,25 @@ IQR (lower = tighter core):
   iso3) for a tighter, less-biased core. iso0-1 is too aggressive (loses signal at high
   f); **iso0-3 is the sweet spot.**
 
-**cm replicates ac16** (drop50 config, RIA 0.0598): narrow scoring helps at every f
-(within ±0.05 +1.9 pp; IQR f=0 0.300→0.218), and `fix·iso0-3 ≈ adapt·iso0-3` again —
-capture adds nothing, `adapt·all` is worst (IQR f=0 0.383). The capture-vs-scoring
-conclusion holds on **two** independent cell lines. (ipsc adaptive integrate was
-pathologically slow — ~18 min/file on its denser profile mzML — so a third-line
-confirmation is deferred; the split is structural and expected to hold.)
+**Confirmed on all three cell lines (ac16, cm, ipsc), with iso0-1 added to the sweep.**
+Across every line: (i) `fix·iso0-K ≈ adapt·iso0-K` at matched scoring — **capture is
+irrelevant**; (ii) `adapt·all` (wide capture + wide scoring) is consistently the worst
+cell; (iii) **iso0-3 is the robust sweet spot** — best or tied-best on within-±0.05/±0.10
+and IQR at essentially every proportion. **iso0-1 is more variable:** it occasionally
+edges iso0-3 at the extreme high-θ end (cm within-±0.05 at f=1: iso0-1 25.4% > iso0-3
+23.2% — strong iso0-1 signal + maximally contaminated high channels, à la Currie's
+>35-site rule) but loses at the low-θ end and is noisier (cm IQR f=0: iso0-1 0.281 vs
+iso0-3 0.218), so it is not a safe default. within ±0.05 at f=1 (fix arm):
+
+| line | all | iso0-1 | iso0-3 |
+|---|---|---|---|
+| ac16 | 25.5% | 27.1% | 27.3% |
+| cm   | 21.3% | 25.4% | 23.2% |
+| ipsc | 30.4% | 31.9% | 32.7% |
+
+→ **iso0-3 (`--fs 0 1 2 3`) is the robust cross-line choice** (wins or ties 2/3 lines,
+close on the third); iso0-1 is a high-θ special case worth the per-peptide refinement
+below, not a flat default.
 
 ### 3. H4′ mix-then-normalize (B3) is a near-no-op at low θ
 
