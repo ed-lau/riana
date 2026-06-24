@@ -28,6 +28,9 @@ classifiers = [
 dependencies = [
     "pymzml>=2,<3",
     "pyteomics>=4.7",
+    # pyteomics.mzml (riana.io.mzml) hard-imports lxml for XML parsing — it is
+    # not pulled transitively, so a fresh install without it cannot read mzML.
+    "lxml>=4",
     "pybaselines>=1.1",
     "scipy>=1",
     "pandas>=2",
