@@ -44,7 +44,6 @@ dependencies = [
 dev = [
     "pytest>=7",
     "pytest-cov>=4",
-    "pytest-qt>=4",
     "pyarrow>=14",
 ]
 # DIA intake (M6b). Reading the DIA-NN report.parquet needs pyarrow; kept
@@ -61,6 +60,11 @@ gui = [
     "qasync>=0.27",
     "pyqtgraph>=0.13",
 ]
+# NB: pytest-qt is intentionally in NEITHER [dev] nor [gui]. The plugin aborts
+# the whole pytest session at configure when no Qt binding is importable, so it
+# must not be installed in the GUI-less main matrix; and it is a test tool, not a
+# runtime gui dep, so it does not belong in the end-user [gui] extra. The CI gui
+# job installs it ad-hoc (pip install pytest-qt) alongside .[dev,gui].
 
 [project.scripts]
 riana = "riana.cli:main"
