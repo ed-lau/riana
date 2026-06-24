@@ -9,6 +9,7 @@ CLI wiring.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,20 @@ from riana import __version__
 from riana.cli import app
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _norm(text: str) -> str:
+    """Normalize Typer/rich CLI output for substring assertions. rich styles
+    option names with ANSI color codes (splitting tokens like ``--coefficients``
+    from the rest of the phrase) and wraps errors in an 80-col box with
+    ``│``/``─`` borders + newlines, so raw substring matches are fragile across
+    rich/typer versions and terminal widths. Strip the ANSI + box-drawing chars
+    and collapse whitespace so the message reads as one continuous line."""
+    text = _ANSI_RE.sub("", text)
+    text = re.sub(r"[│╭╮╰╯─]", " ", text)
+    return re.sub(r"\s+", " ", text)
 
 SAMPLE1 = Path("tests/data/sample1")
 PSMS = SAMPLE1 / "percolator.target.psms.txt"
@@ -75,7 +90,7 @@ def test_integrate_sample_must_end_with_digit(tmp_path):
         "-s", "sample", "-o", str(tmp_path), "-i", "0 6",
     ])
     assert result.exit_code != 0
-    assert "must end with a number" in result.output
+    assert "must end with a number" in _norm(result.output)
 
 
 # --- M6a SDRF / manifest paths ----------------------------------------------
@@ -130,13 +145,13 @@ def test_fit_requires_exactly_one_input_source(tmp_path):
     # neither positional files nor --manifest
     result = runner.invoke(app, ["fit", "--coefficients", "commerford"])
     assert result.exit_code != 0
-    assert "either positional" in result.output
+    assert "either positional" in _norm(result.output)
 
 
 def test_fit_requires_coefficients_for_hw():
     result = runner.invoke(app, ["fit", str(ONE_TIMEPOINT)])
     assert result.exit_code != 0
-    assert "--coefficients is required" in result.output
+    assert "--coefficients is required" in _norm(result.output)
 
 
 def test_fit_label_o18_is_recognised_but_errors():
@@ -185,7 +200,7 @@ def test_fit_fs_single_int_and_auto_parse(tmp_path):
     # a non-contiguous / gapped set is rejected
     r4 = runner.invoke(app, ["fit", str(ONE_TIMEPOINT), "--fs", "0 2"])
     assert r4.exit_code != 0
-    assert "--fs" in (r4.output or "") + str(r4.exception or "")
+    assert "--fs" in _norm((r4.output or "") + str(r4.exception or ""))
 
 
 def test_fit_and_rollup_via_manifest_chain(tmp_path):
