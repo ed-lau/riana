@@ -724,46 +724,47 @@ which emits its own SDRF (a near-identical variant, a few columns different) —
 so the identity model is shared; only the PSM/quant file format differs (mzTab
 vs DIA-NN parquet).
 
-#### Handoff — ordered priorities (next sessions, as of 2026-06-21)
+#### Handoff — 1.1.0 planning round (as of 2026-06-24)
 
-**Recently shipped** (now in CHANGELOG; cleared from this list): **M7** v1 (A1–B +
-Met-Ox tier 1b) + **K-acetyl** proteoform key + **GUI chemical-fold point display**
-(pre-wired for TMT), the **`linear simple`** cross-sample Δk milestone, **MBR** for
-the mzTab/DDA path (gated RT-transfer, feature-complete 2026-06-20), the
-**advanced-knob exposure** (every `IntegrationConfig` dial reachable on both CLI +
-GUI; closed the `ppm_alert` asymmetry), the **docs refresh** (README + Quarto
-site updated to 1.0.0), and — **2026-06-23** — **Track B adaptive N_ISO** (`--iso auto`,
-opt-in), the **H4′ mix-then-normalize FS solve**, and **`--fs` limited-isotopomer
-scoring** (the science win; see Track B RESULT + report
-`2026-06-23_adaptive_niso_limited_isotopomer.md`), plus the **`v1.0.0` git tag**
-(`v0.9.0` released on GitHub + Zenodo 2026-06-23; `m3-rewrite` merged to `master` at
-`9ebf08f`; `v1.0.0` is an internal tag; version `1.1.0`). The remaining **N_ISO line**
-closes out the (internal) 1.0.0 before an official 1.0.0 GitHub release; a `1.1.0`
-branch is cut *after* it lands. In order:
+**1.0.0 RELEASED 2026-06-24** — GitHub release + Zenodo DOI; `v1.0.0` annotated tag at
+`master` `c2c3d7b`. Shipped across the whole 1.0 line (now in CHANGELOG; cleared from
+this list): the M3 rewrite, M7 v1 + Met-Ox + K-acetyl proteoform keys, the `linear
+simple` cross-sample Δk milestone, MBR (mzTab/DDA), advanced-knob CLI+GUI exposure,
+the docs refresh, and the **Track B N_ISO line** — adaptive `--iso auto`, the H4′ FS
+solve, `--fs` limited-isotopomer scoring, the `run_calibration_benchmark.py` driver,
+**`--fs auto`** per-peptide widening (keyed on the RIA-invariant natural-abundance
+*init width*; crossover init-width 6 cross-line; `core.fitting.FS_AUTO_*`), single-int
+`--fs`/`--iso`, **GUI parity** for those knobs, **DIA-NN phospho proteoforms**
+(`io.diann` `Protein.Sites`→`pS###`, conf≥0.75), and the release-hardening dependency
+fixes (**`lxml`** declared, **`pyteomics<5`** pinned — a fresh install reads mzML).
 
-1. **`run_calibration_benchmark.py` driver — DONE 2026-06-23.** One-command
-   per-cell-type integrate→recovery into the standing `runs/calib_<line>/<config>/`
-   layout, A/B vs the committed `benchmark_results/<line>/v1.0.0_fs0123/` anchor
-   (reproduced exactly). Design: `2026-06-23_calibration_benchmark_harness.md`.
-2. **Per-peptide `--fs` widening — DONE 2026-06-23, shipped as `--fs auto`.** Keyed
-   not on the RIA-dependent integrate N_ISO but on the **natural-abundance (θ=0)
-   envelope width** (`init_envelope_width`), which is **RIA-invariant** — the measured
-   driver of a clean widen is iso4-5 sitting inside the peptide's *own* natural
-   envelope (signal at every timepoint), not labelling spread. Crossover derived =
-   init width 6, identical on ac16/cm/ipsc (`bench_niso_crossover.py`); a Pareto win
-   over flat iso0-3, ties the N_ISO-keyed alternative on the headline metric with no
-   per-experiment retuning. `score_channels = 4 if init_w < 6 else len(iso)`, free at
-   fit (cached init env). Threshold a named constant (`core.fitting.FS_AUTO_*`) with
-   documented revisit conditions; endgame is per-channel weighting (soft matcher).
-   Also: **`--fs`/`--iso` now take a single index `N`** (= iso0..N), the easy form.
-3. **Surface `--iso auto` + `--fs` channel scoring in the GUI — DONE 2026-06-23.**
-   Integrate tab: *Isotopomers* accepts `auto` / single-int + a *Precursor enrichment*
-   (RIA) spin; Model tab: *FS scoring* dropdown (`full`/`auto`/`iso0-N`) → `score_channels`
-   / `fs_auto`. GUI builds the same frozen config as the CLI (test_gui coverage added).
+**`1.1.0` branch cut 2026-06-24** (off `master` `c2c3d7b`; version bumped to `1.1.0`).
+This is the experimental-science line. A fresh planning round is pending; the agreed
+ordered items + the user's framing (2026-06-24):
 
-Items 1–3 done → **the N_ISO line is complete.** Before the official 1.0.0 GitHub
-release, consider the opportunistic small items below (e.g. DIA-NN phospho proteoform
-sites), then **cut a `1.1.0` branch** for subsequent work.
+1. **Δmass-over-time QC (GUI) — FIRST; lays the groundwork for mass-defect→θ.** Plot
+   per-peptide observed Δmass (from the `iso{N}_ppm_error` / orthogonal-θ substrate
+   adaptive N_ISO already emits) vs labeling time. Build this diagnostic view first,
+   then the **mass-defect → θ estimator** on the *same* substrate (θ from the labelled
+   envelope's mass shift, orthogonal to the abundance-ratio FS). Track E → Track B.
+2. **Pyteomics 5.x upgrade — SECOND.** Unpin `pyteomics<5` (the 1.0.0 release fix) and
+   add `psims`; 5.0 brings the PSI-MS CV resolver and **potential per-mzML
+   multithreading** worth evaluating for integrate. Verify mzML parity vs 4.7.5 first.
+3. **o18 rewrite — blocked on data (re-run in progress, ~this week).** `fit --label
+   o18` errors until: (a) the o18 calibration data is **re-run through the mzTab path**,
+   and (b) a **new coefficient-type structure** is set up and trained with the
+   **reverse model** — the same calibration→coefficients pipeline that produced the
+   ac16/cm/ipsc D₂O tables, but for ¹⁸O (the NB90b frozen-coefficient artifact).
+4. **TMT chemical-mod fit-merge — most invasive; deferred.** The principled fix:
+   **inject heavy-element UniMods as pseudo-elements** (the same mechanism as the D₂O /
+   ¹⁸O labels — heavy atoms the IsoSpec envelope tracks), *not* a mass override. This
+   is the key that unblocks a **third label class: multiplexed dimethylation /
+   SILAC-D₂O**. Blocked on data: the user has **TMT-D₂O** to process; **dimethyl-D₂O**
+   needs reprocessing public **Sadygov** data. See `track_c_tmt_chemical_mod`.
+
+Smaller / deferred items are in the lists below (deamidation side-project, non-universal
+cysteine CAM, K/R-methylation Tier 2, MBR-on-calibration RT correction, chromatogram-
+smoothing trace, matplotlib export, modernize look).
 
 **Deferred GUI/UX (Track E) — sortable tables + graph export DONE 2026-06-21.**
 Remaining: faithful-to-smoothing chromatogram trace, the **Δmass-over-time QC** (couple
