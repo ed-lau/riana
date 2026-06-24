@@ -755,12 +755,20 @@ ordered items + the user's framing (2026-06-24):
    and (b) a **new coefficient-type structure** is set up and trained with the
    **reverse model** — the same calibration→coefficients pipeline that produced the
    ac16/cm/ipsc D₂O tables, but for ¹⁸O (the NB90b frozen-coefficient artifact).
-4. **TMT chemical-mod fit-merge — most invasive; deferred.** The principled fix:
-   **inject heavy-element UniMods as pseudo-elements** (the same mechanism as the D₂O /
-   ¹⁸O labels — heavy atoms the IsoSpec envelope tracks), *not* a mass override. This
-   is the key that unblocks a **third label class: multiplexed dimethylation /
-   SILAC-D₂O**. Blocked on data: the user has **TMT-D₂O** to process; **dimethyl-D₂O**
-   needs reprocessing public **Sadygov** data. See `track_c_tmt_chemical_mod`.
+4. **TMT — most invasive; deferred. Sets up a THIRD mod-handling type: multiplexing.**
+   The mod taxonomy: **chemical** (Met-Ox, CAM) folds at the *peptide* level
+   (`_fit_key` merge); **biological** (phospho, K-acetyl) gets a distinct *proteoform*
+   rollup key; **multiplexing** (TMT, dimethyl, SILAC) tags **sample identity** — fit
+   each channel's peptides *separately*, then combine at rollup **as if from different
+   experiments — which they are** (each channel = a different biological sample). That
+   needs an **SDRF channel→sample mapping** (TMT has a documented way to record per-
+   channel biological samples; the dimethyl/SILAC SDRF syntax is TBD — to look into).
+   **NB: TMT is a *chemical* mod as far as D₂O is concerned — there is one D₂O peptide
+   cluster** (isobaric across channels); it multiplexes *other* information, not the D₂O
+   envelope. Envelope mechanism: inject TMT's heavy ¹³C/¹⁵N as **pseudo-elements** the
+   IsoSpec envelope tracks (like the D₂O/¹⁸O labels), *not* a mass override. Blocked on
+   data: user has **TMT-D₂O** to process; **dimethyl-D₂O** needs reprocessing public
+   **Sadygov** data. See `track_c_tmt_chemical_mod`.
 
 Smaller / deferred items are in the lists below (deamidation side-project, non-universal
 cysteine CAM, K/R-methylation Tier 2, MBR-on-calibration RT correction, chromatogram-
