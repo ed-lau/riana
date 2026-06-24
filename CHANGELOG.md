@@ -11,15 +11,15 @@ The experimental science line, opened after the 1.0.0 N_ISO finish: o18 rewrite
 (NB90b frozen coefficients), Δmass-over-time QC in the GUI, and mass-defect → θ
 fitting. See `PROJECT_REVIEW.md` §3.
 
-## [1.0.0] — Unreleased (N_ISO line in progress)
+## [1.0.0] — 2026-06-24
 
-The breaking 1.0 release: a new package structure, peak detection, baseline
-subtraction, mzTab intake, and a Qt GUI. Closes out with the Track B N_ISO line
-— the standing calibration benchmark driver, N_ISO-keyed `--fs` widening, and
-GUI exposure of `--iso auto` / `--fs` — before the official GitHub release +
-Zenodo DOI. (A `v1.0.0` git tag was cut 2026-06-23 at the rewrite + initial
-Track B work; the official release tag re-points to the N_ISO finish.) See
-`PROJECT_REVIEW.md` §3. Entries below are grouped by the work that produced them.
+The breaking 1.0 release (GitHub release + Zenodo DOI): a new package structure,
+peak detection, baseline subtraction, mzTab + DIA-NN intake, protein rollup, and
+a Qt GUI, closing with the Track B N_ISO line — the standing calibration
+benchmark driver, init-width-keyed `--fs auto` widening, adaptive `--iso`, and
+GUI parity — plus DIA-NN phospho proteoforms and the `lxml` / `pyteomics<5`
+dependency fixes. `v1.0.0` is tagged at the N_ISO finish. See `PROJECT_REVIEW.md`
+§3. Entries below are grouped by the work that produced them.
 
 ### DIA-NN phospho proteoform sites (M7 Stage B, DIA path) — 2026-06-23
 
