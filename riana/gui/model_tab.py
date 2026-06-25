@@ -303,13 +303,16 @@ class ModelTab(QWidget):
             self.view_group.addButton(rb)
             mode_row.addWidget(rb)
             rb.toggled.connect(self._on_view_changed)
-        self._anchor_check = QCheckBox("anchor t0/f0")
+        self._anchor_check = QCheckBox("anchor t0/f0 (display)")
         self._anchor_check.setToolTip(
-            "Subtract the unlabelled (t/f=0) point's Δ from every point — the "
-            "empirical f0/t0 anchor: removes the per-peptide reference offset so the "
-            "Δ-views start at 0 and show the pure labelling signal. Applies to the "
-            "Δ spacing / Δ mass views only (needs a t/f=0 point).")
-        self._anchor_check.toggled.connect(self._on_view_changed)
+            "DISPLAY ONLY — subtract the unlabelled (t/f=0) point's Δ from every "
+            "point in the Δ spacing / Δ mass views (needs a t/f=0 point), so they "
+            "start at 0 and show the pure labelling signal. Does NOT change the "
+            "written fs_ds column, which is always t0/f0-anchored at fit time.")
+        # A checkbox needs to re-render on BOTH transitions; the radios' _on_view_changed
+        # guards on `checked` (to dodge their paired off/on double-fire), which would
+        # swallow the un-check here — so use a dedicated always-render slot.
+        self._anchor_check.toggled.connect(self._on_anchor_changed)
         mode_row.addWidget(self._anchor_check)
         mode_row.addStretch(1)
         curve_layout.addLayout(mode_row)
@@ -551,6 +554,11 @@ class ModelTab(QWidget):
         # button; act only on the on-event (the other carries the same render).
         if checked:
             self._render_curve()
+
+    def _on_anchor_changed(self, _checked: bool) -> None:
+        # The anchor checkbox must re-render on BOTH check and un-check (unlike the
+        # radios), so it does not share _on_view_changed's `if checked` guard.
+        self._render_curve()
 
     def _render_curve(self) -> None:
         """Draw the selected peptide in the view the toggle selects (Fit / Δ)."""

@@ -254,7 +254,7 @@ class FitResult:
     #: drift-robust SECOND fraction-new estimate from the Δspacing (iso0–3, anchored,
     #: weighted median + MAD), to cross-check the intensity FS — never the primary θ.
     #: NaN per point when < 2 channels are usable; empty when no obs_mz / no charge.
-    theta_ds: list[float] = field(default_factory=list)
+    fs_ds: list[float] = field(default_factory=list)
     #: Census of the **fitted** points (a curve's composition): total, the count
     #: from MBR transfers, the count from Met-Ox peptidoforms merged at fit (M7
     #: tier 1b), and the count that are neither ("clean"). A point that is both MBR
@@ -803,7 +803,7 @@ def _fit_one_concat(
     # intensity FS (never displacing it). iso0–3 only, anchored to the unlabelled
     # point when present, weighted median + MAD (see _theta_delta_s). ΔSₓmax (the
     # normalizer) is the IsoSpec init→final spacing change for this peptidoform.
-    theta_ds_fit: list[float] = []
+    fs_ds_fit: list[float] = []
     if dspacing_fit:
         first_i = int(np.nonzero(fit_mask)[0][0])
         mods0, pep_mass0 = forms[row_concats[first_i]]
@@ -815,9 +815,9 @@ def _fit_one_concat(
                     float(config.ria_max), mods=mods0,
                     label_int=(3 if is_o18 else 1),
                 )
-                theta_ds_fit = _theta_delta_s(dspacing_fit, t_fit, dsmax)
+                fs_ds_fit = _theta_delta_s(dspacing_fit, t_fit, dsmax)
             except (KeyError, ValueError):
-                theta_ds_fit = []
+                fs_ds_fit = []
 
     return FitResult(
         concat=concat,
@@ -838,7 +838,7 @@ def _fit_one_concat(
         metox=[bool(m) for m in metox_fit],
         dmass=dmass_fit,
         dspacing=dspacing_fit,
-        theta_ds=theta_ds_fit,
+        fs_ds=fs_ds_fit,
         n_points=int(fit_mask.sum()),
         n_mbr=int(mbr_fit.sum()),
         n_metox=int(metox_fit.sum()),
@@ -881,7 +881,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
             "metox": r.metox,
             "dmass": r.dmass,
             "dspacing": r.dspacing,
-            "theta_ds": r.theta_ds,
+            "fs_ds": r.fs_ds,
             "k_deg": r.k_deg,
             "R_squared": r.r_squared,
             "sd": r.sd,
@@ -903,7 +903,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
 #: Column order for the M5 long-format per-timepoint fraction-new table.
 _FRACTIONS_LONG_COLUMNS = [
     "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-    "fs", "fs_lower", "fs_upper", "theta_ds", "evidence", "metox",
+    "fs", "fs_lower", "fs_upper", "fs_ds", "evidence", "metox",
 ]
 
 #: Per-timepoint list-cell columns on the wide per-peptide frame. They duplicate
@@ -911,7 +911,7 @@ _FRACTIONS_LONG_COLUMNS = [
 #: dropped when *writing* ``riana_fit_peptides.txt`` but kept in-memory (the GUI
 #: curve reads ``t``/``fs``/``evidence`` from the result frame, not the file).
 _PER_TIMEPOINT_COLS = ("t", "fs", "fs_lower", "fs_upper", "evidence", "metox",
-                       "dmass", "dspacing", "theta_ds")
+                       "dmass", "dspacing", "fs_ds")
 
 
 def peptide_summary(result_df: pd.DataFrame) -> pd.DataFrame:
@@ -945,7 +945,7 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
         mx = r.metox if len(r.metox) == len(r.t) else [False] * len(r.t)
         dm = r.dmass if len(r.dmass) == len(r.t) else [None] * len(r.t)
         ds = r.dspacing if len(r.dspacing) == len(r.t) else [None] * len(r.t)
-        tds = r.theta_ds if len(r.theta_ds) == len(r.t) else [float("nan")] * len(r.t)
+        tds = r.fs_ds if len(r.fs_ds) == len(r.t) else [float("nan")] * len(r.t)
         for ti, fsi, lo, hi, br, evi, mxi, dmi, dsi, tdi in zip(
             r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev, mx, dm, ds, tds
         ):
@@ -958,7 +958,7 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
                 "fs": float(fsi),
                 "fs_lower": float(lo),
                 "fs_upper": float(hi),
-                "theta_ds": float(tdi),
+                "fs_ds": float(tdi),
                 "evidence": evi,
                 "metox": bool(mxi),
             }

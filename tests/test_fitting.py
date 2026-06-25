@@ -360,7 +360,7 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     long = result.attrs["fractions_long"]
     assert list(long.columns) == [
         "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-        "fs", "fs_lower", "fs_upper", "theta_ds", "evidence", "metox",
+        "fs", "fs_lower", "fs_upper", "fs_ds", "evidence", "metox",
     ]
     # Synthetic data has no MBR -> every point is a direct ID.
     assert (long["evidence"] == "q_value").all()
