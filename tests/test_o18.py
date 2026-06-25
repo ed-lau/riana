@@ -79,7 +79,7 @@ def test_o18_preset_loads_all_features():
 def test_o18_previs_preset_matches_paper_worked_example():
     """The in-vivo o18_previs (mouse) preset reproduces Previs' own worked
     example: LGEYGFQNAILVR → 12 peptide bonds + N + Q + 2·E = 16
-    (Rachdaoui/Previs, Mol Cell Proteomics 2017). Backbone is 1 ¹⁸O per peptide
+    (Rachdaoui/Previs, Mol Cell Proteomics 2009; 8(12):2653). Backbone is 1 ¹⁸O/peptide
     bond in vivo, vs ~0.16 in the in-vitro AC16 table — the regime difference."""
     prev = load_o18_coefficients("o18_previs")
     assert prev == {"length_minus1": 1.0, "D": 0.0, "E": 2.0,
