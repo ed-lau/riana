@@ -755,6 +755,15 @@ ordered items + the user's framing (2026-06-24):
    and (b) a **new coefficient-type structure** is set up and trained with the
    **reverse model** — the same calibration→coefficients pipeline that produced the
    ac16/cm/ipsc D₂O tables, but for ¹⁸O (the NB90b frozen-coefficient artifact).
+   **Cleanup folded into this rewrite (user 2026-06-24):** collapse the *internal*
+   `get_peptide_distribution`/`fsynthesis` integer `label` {1 = D₂O in-vivo, 2 = D₂O
+   in-vitro, 3 = ¹⁸O} to clear string labels `"D2O"` / `"O18"` (+ future double-water,
+   post-1.2.0). The 1-vs-2 in-vivo/in-vitro split is obsolete — D₂O cell-specificity is
+   the **coefficient table** (Commerford mammalian → ac16/ipsc/cm), not the label, just
+   as the CLI already collapsed `--label` to `hw` (consider aligning `hw`→`D2O`). NB the
+   `label == 3` branch in `isotope_dist.get_peptide_distribution` is currently a **stub**
+   — it extends `atom_count` + isotope mass but NOT `isotope_probability_list` (and reuses
+   the ¹⁶O mass), so the envelope can't run for ¹⁸O until the rewrite completes it.
 4. **TMT — most invasive; deferred. Sets up a THIRD mod-handling type: multiplexing.**
    The mod taxonomy: **chemical** (Met-Ox, CAM) folds at the *peptide* level
    (`_fit_key` merge); **biological** (phospho, K-acetyl) gets a distinct *proteoform*
