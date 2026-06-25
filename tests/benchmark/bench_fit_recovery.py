@@ -220,7 +220,7 @@ def main() -> None:
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--coefficients', type=str, default=None,
                         help='per-AA coefficient table for `riana fit` — a '
-                             'bundled preset (commerford|ac16|ipsc|cm) or a CSV '
+                             'bundled preset (commerford_1983|ac16|ipsc|cm) or a CSV '
                              'path (e.g. tests/data/calibration_d2o_mixing/'
                              '<line>/d2o_aa_coefficients_<line>.csv). Required '
                              'for --label hw.')

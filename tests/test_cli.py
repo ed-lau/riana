@@ -143,7 +143,7 @@ def test_integrate_sdrf_writes_per_run_output_and_manifest(tmp_path):
 
 def test_fit_requires_exactly_one_input_source(tmp_path):
     # neither positional files nor --manifest
-    result = runner.invoke(app, ["fit", "--coefficients", "commerford"])
+    result = runner.invoke(app, ["fit", "--coefficients", "commerford_1983"])
     assert result.exit_code != 0
     assert "either positional" in _norm(result.output)
 
@@ -167,7 +167,7 @@ def test_fit_label_o18_is_supported_and_requires_coefficients():
 
 
 def test_fit_resolves_bundled_preset(tmp_path):
-    """--coefficients commerford resolves the bundled table and reaches fit_run.
+    """--coefficients commerford_1983 resolves the bundled table and reaches fit_run.
 
     The committed single-timepoint golden was integrated with `--iso 0 6`, so
     fit_run's canonical-isotopomer guard fires — which proves the preset loaded
@@ -176,19 +176,19 @@ def test_fit_resolves_bundled_preset(tmp_path):
     """
     result = runner.invoke(app, [
         "fit", str(ONE_TIMEPOINT),
-        "--coefficients", "commerford",
+        "--coefficients", "commerford_1983",
         "-o", str(tmp_path),
     ])
     assert result.exit_code != 0
     msg = (result.output or "") + str(result.exception or "")
-    assert "coefficients from commerford" in msg  # preset resolved + loaded
+    assert "coefficients from commerford_1983" in msg  # preset resolved + loaded
     assert "isotopomers" in msg                    # reached fit_run's guard
 
 
 def test_fit_fs_single_int_and_auto_parse(tmp_path):
     """--fs accepts a single channel index N (= iso0..isoN), 'auto', or the
     explicit leading list; a non-contiguous list is a clear error."""
-    base = ["fit", str(ONE_TIMEPOINT), "--coefficients", "commerford",
+    base = ["fit", str(ONE_TIMEPOINT), "--coefficients", "commerford_1983",
             "-o", str(tmp_path)]
     # single int N=3 -> iso0..iso3 = 4 channels (logged before the fit guard fires)
     r = runner.invoke(app, base + ["--fs", "3"])

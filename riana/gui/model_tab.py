@@ -143,8 +143,8 @@ class ModelTab(QWidget):
         self.coeff_combo.setEditable(True)
         presets = available_coefficient_presets()
         self.coeff_combo.addItems(presets)
-        if "commerford" in presets:
-            self.coeff_combo.setCurrentText("commerford")
+        if "commerford_1983" in presets:
+            self.coeff_combo.setCurrentText("commerford_1983")
         self.coeff_combo.lineEdit().setPlaceholderText("preset name or CSV path")
         coeff_row = QHBoxLayout()
         coeff_row.addWidget(self.coeff_combo, stretch=1)

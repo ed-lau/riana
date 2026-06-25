@@ -19,7 +19,7 @@ size behind each within-protein-θ median.
 
 θ per (peptide, timepoint) is solved with the **production** IsoSpec forward
 model — :func:`solve_fs_d2o` against an Spep from the literature mammalian
-coefficient table (``commerford``; Spep is trusted input here, not fit) at the
+coefficient table (``commerford_1983``; Spep is trusted input here, not fit) at the
 sample's precursor enrichment. This is exactly what ``riana fit`` computes per
 timepoint (``FitResult.fs``), so the long-format θ this bench materializes is
 also a preview of the M5 per-timepoint-FS substrate.
@@ -369,9 +369,9 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
-        "--coefficients", default="commerford",
+        "--coefficients", default="commerford_1983",
         help="Per-AA Spep coefficient table — preset name or CSV path "
-        "[default: commerford (literature mammalian)].",
+        "[default: commerford_1983 (literature mammalian)].",
     )
     parser.add_argument(
         "--ria", type=float, default=0.06,
