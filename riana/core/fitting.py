@@ -54,7 +54,8 @@ from scipy.optimize import curve_fit
 
 from riana import constants
 from riana.algorithms.isotope_dist import (
-    init_envelope_width, solve_fs_d2o, spep_from_coefficients,
+    init_envelope_width, solve_fs_d2o, solve_fs_o18,
+    spep_from_coefficients, spep_from_length_coefficients,
 )
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
 from riana.config import FitConfig
@@ -235,6 +236,27 @@ def load_aa_coefficients(path: str | Path) -> dict[str, float]:
     return {str(aa): float(c) for aa, c in zip(df["amino_acid"], df["coefficient"])}
 
 
+def load_o18_coefficients(path: str | Path) -> dict[str, float]:
+    """Load an ¹⁸O length-model coefficient table for ``--label o18``.
+
+    Like :func:`load_aa_coefficients`, ``path`` is a **bundled preset name**
+    (e.g. ``"o18_ac16"``) or a **filesystem path** to a CSV — here with columns
+    ``feature, coefficient`` (the format written by
+    ``tests/benchmark/bench_o18_coefficients.py``; features =
+    :data:`riana.algorithms.isotope_dist.O18_LENGTH_FEATURES`). The returned
+    ``{feature: coefficient}`` dict feeds
+    :func:`riana.algorithms.isotope_dist.spep_from_length_coefficients`.
+    """
+    name = str(path)
+    if name in available_coefficient_presets():
+        src = importlib.resources.files(_COEFF_PKG).joinpath(f"{name}.csv")
+        with importlib.resources.as_file(src) as real_path:
+            df = pd.read_csv(real_path)
+    else:
+        df = pd.read_csv(path)
+    return {str(f): float(c) for f, c in zip(df["feature"], df["coefficient"])}
+
+
 def fit_run(
     config: FitConfig,
     integrate_dfs: list[pd.DataFrame],
@@ -272,16 +294,9 @@ def fit_run(
         DataFrame indexed by ``concat`` with columns
         ``k_deg, R_squared, sd, spep, ci_lo, ci_hi, t, fs, protein id``.
     """
-    if config.label != "hw":
-        # The M4 fit engine is heavy-water (D₂O) only. o18 fitting lived in the
-        # removed legacy engine and is being reimplemented post-M4 (it will move
-        # off the per-AA dict to a length + selected-residue model). Integrate
-        # is label-agnostic, so o18 *extraction* is unaffected.
-        raise ValueError(
-            f"riana fit supports --label hw (heavy water / D₂O) only in this "
-            f"release; got {config.label!r}. o18 fitting is being reimplemented "
-            f"post-M4. (o18 peak integration is unaffected.)"
-        )
+    # config.label is validated to {"hw", "o18"} by FitConfig.__post_init__. hw
+    # uses the per-AA D₂O Spep + solve_fs_d2o; o18 uses the length-model Spep +
+    # solve_fs_o18 (the 3-isotope-O envelope). The dispatch is in _fit_one_concat.
     if config.model not in _MODELS:
         raise ValueError(
             f"unknown kinetic model {config.model!r}; "
@@ -523,7 +538,11 @@ def _fit_one_concat(
     # mods). ``seq`` (brackets and charge stripped) feeds spep_from_coefficients
     # and solve_fs_d2o's residue iteration; it requires pure AA letters.
     seq = strip_concat(concat)
-    spep_float = spep_from_coefficients(seq, aa_coefficients)
+    # Label dispatch: o18 uses the length-model Spep (b·(L-1) + carboxyl/amide/
+    # hydroxyl side chains); hw (D₂O) uses the per-AA labile-H table.
+    is_o18 = config.label == "o18"
+    spep_float = (spep_from_length_coefficients(seq, aa_coefficients) if is_o18
+                  else spep_from_coefficients(seq, aa_coefficients))
     spep_int = max(1, int(round(spep_float)))
 
     # Per-ROW peptidoform identity — its mods (parsed off the row's own concat)
@@ -574,7 +593,7 @@ def _fit_one_concat(
                 mods_i, pep_mass_i = forms[row_concats[i]]
                 score_channels_i = (form_score[row_concats[i]] if config.fs_auto
                                     else config.score_channels)
-                fs_arr[i] = solve_fs_d2o(
+                fs_arr[i] = (solve_fs_o18 if is_o18 else solve_fs_d2o)(
                     seq, pep_mass_i, obs_matrix[i], spep_int,
                     ria_max=float(config.ria_max), n_iso=len(iso_cols),
                     mods=mods_i, score_channels=score_channels_i,

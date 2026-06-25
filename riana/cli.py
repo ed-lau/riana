@@ -472,19 +472,20 @@ def fit(
     ),
     coefficients: Optional[str] = typer.Option(
         None, "--coefficients",
-        help="Per-AA D2O labeling-site table — REQUIRED for --label hw. Either "
-        "a bundled preset name (commerford | ac16 | ipsc | cm) or a path to a "
-        "CSV with columns (amino_acid, coefficient).",
+        help="Labeling-site coefficient table — REQUIRED; the format depends on "
+        "--label. hw: a per-AA D2O table (preset commerford | ac16 | ipsc | cm, "
+        "or an (amino_acid, coefficient) CSV). o18: a length-model table (preset "
+        "o18_ac16, or a (feature, coefficient) CSV).",
     ),
     model: str = typer.Option(
         "simple", "-m", "--model",
         help="Kinetic model: simple (default), guan, fornasiero."),
     label: str = typer.Option(
         "hw", "-l", "--label",
-        help="Labeling chemistry: 'hw' (heavy water / D2O, default). 'o18' is "
-        "recognized but its fit is being reimplemented post-M4. (Amino-acid / "
-        "SILAC fitting was dropped — integrate SILAC peaks, fit L/(H+L) "
-        "downstream.)",
+        help="Labeling chemistry: 'hw' (heavy water / D2O, default) or 'o18' "
+        "(metabolic H2-18O; length-model Spep + 3-isotope-O envelope). Each "
+        "needs its matching --coefficients table. (Amino-acid / SILAC fitting "
+        "was dropped — integrate SILAC peaks, fit L/(H+L) downstream.)",
     ),
     kp: float = typer.Option(
         0.5, "--kp", help="Precursor rate constant (two-compartment models)."),
@@ -534,7 +535,7 @@ def fit(
     from riana.config import FitConfig
     from riana.core.fitting import (
         available_coefficient_presets, fit_run, load_aa_coefficients,
-        peptide_summary,
+        load_o18_coefficients, peptide_summary,
     )
     from riana.io.writers import (
         ESTIMATE_FLOAT_FORMAT, make_provenance, write_dataframe_tsv,
@@ -577,12 +578,16 @@ def fit(
                 f"--fs needs >=2 channels (iso0 + a labelled one), e.g. '1' = "
                 f"iso0-iso1; got {fs!r}.")
 
-    # --coefficients is required for the hw path; o18 errors in fit_run anyway.
-    if label == "hw" and not coefficients:
+    # --coefficients is required for both labels — hw uses a per-AA D₂O table,
+    # o18 uses a length-model table; the two CSV formats differ, so pick the
+    # preset matching the label.
+    if not coefficients:
         presets = " | ".join(available_coefficient_presets())
+        fmt = ("(feature, coefficient) — e.g. o18_ac16" if label == "o18"
+               else "(amino_acid, coefficient) — e.g. commerford | ac16 | ipsc | cm")
         raise typer.BadParameter(
-            "--coefficients is required for --label hw. Pass a bundled preset "
-            f"({presets}) or a path to a (amino_acid, coefficient) CSV.")
+            f"--coefficients is required for --label {label}. Pass a bundled "
+            f"preset ({presets}) or a path to a {fmt} CSV.")
 
     os.makedirs(out, exist_ok=True)
     try:
@@ -616,9 +621,10 @@ def fit(
             f"({score_channels} channels)"
         )
 
-    coeffs = load_aa_coefficients(coefficients) if coefficients else {}
+    _load_coeffs = load_o18_coefficients if label == "o18" else load_aa_coefficients
+    coeffs = _load_coeffs(coefficients) if coefficients else {}
     if coeffs:
-        logger.info(f"loaded {len(coeffs)} AA coefficients from {coefficients}")
+        logger.info(f"loaded {len(coeffs)} {label} coefficients from {coefficients}")
 
     if manifest is not None:
         from riana.core.pipeline import fit_project

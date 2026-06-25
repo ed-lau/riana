@@ -154,14 +154,16 @@ def test_fit_requires_coefficients_for_hw():
     assert "--coefficients is required" in _norm(result.output)
 
 
-def test_fit_label_o18_is_recognised_but_errors():
+def test_fit_label_o18_is_supported_and_requires_coefficients():
+    """o18 is now a supported label (the removed post-M4 'not implemented' stub
+    is gone); like hw it requires its own --coefficients table (length-model)."""
     result = runner.invoke(
         app, ["fit", str(ONE_TIMEPOINT), "--label", "o18"]
     )
     assert result.exit_code != 0
-    # The engine-side guard message (raised in fit_run), surfaced by Typer.
-    msg = (result.output or "") + str(result.exception or "")
-    assert "o18" in msg and "hw" in msg
+    out = _norm(result.output)
+    assert "--coefficients is required" in out   # reaches the new required check
+    assert "reimplemented" not in out            # the old post-M4 stub is gone
 
 
 def test_fit_resolves_bundled_preset(tmp_path):

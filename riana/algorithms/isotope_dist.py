@@ -91,10 +91,25 @@ def get_peptide_distribution(peptide: str,
             # TODO: include the background deuterium level here too?
 
     elif label == 3:
-        atom_count_list[2] = atom_count_list[2] - num_labeling_sites
-        atom_count_list.extend([num_labeling_sites])
-        # Extend the isotope mass list for O18, which is the same as O16
-        isotope_mass_list.extend([isotope_mass_list[2]])
+        # ¹⁸O metabolic labeling (H₂¹⁸O): move ``num_labeling_sites`` oxygens into
+        # an enriched-O pseudo-element. Unlike the D₂O 2-isotope H/D swap, labeled
+        # O is a 3-isotope element (¹⁶O/¹⁷O/¹⁸O) — the enrichment dilutes the
+        # natural pool and lifts ¹⁸O by the labeling fraction (the +2 Da shift).
+        # ``deuterium_enrichment_level`` carries the o18 RIA here (a generic
+        # "enrichment level"; renamed in the post-o18 label-taxonomy cleanup).
+        # Matches the NB90c reverse model + tests/benchmark/_helpers/o18_forward_model.
+        if num_labeling_sites > 0 and deuterium_enrichment_level is not None:
+            atom_count_list[2] = atom_count_list[2] - num_labeling_sites
+            atom_count_list.extend([num_labeling_sites])
+            # Labeled O shares oxygen's exact-mass table (¹⁶O/¹⁷O/¹⁸O).
+            isotope_mass_list.extend([isotope_mass_list[2]])
+            nat16, nat17, nat18 = isotope_probability_list[2]
+            ria = deuterium_enrichment_level
+            isotope_probability_list.extend([(
+                nat16 * (1 - ria),
+                nat17 * (1 - ria),
+                nat18 + (1 - nat18) * ria,
+            )])
 
     # print(f'Isotope probability list: {isotope_probability_list}')
 
@@ -601,3 +616,125 @@ def spep_from_coefficients(
     return float(sum(
         aa_coefficients.get(aa, default_per_residue) for aa in sequence
     ))
+
+
+# ---------------------------------------------------------------------------
+# o18 (¹⁸O) Spep / FS solver — the NB90c reverse model (v1.1.0)
+# ---------------------------------------------------------------------------
+
+#: o18 length-model feature spec, aligned to the trained coefficient table
+#: (``riana/data/coefficients/o18_*.csv``). Spep is
+#: ``b·(L-1) + c_D·D + c_E·E + c_N·N + c_Q·Q + c_S·S`` (intercept 0). Backbone is
+#: ``L-1`` — the two C-terminal carboxyl oxygens back-exchange with the H₂¹⁶O
+#: digest (Previs), leaving the (L-1) internal peptide-bond carbonyls as the
+#: stable backbone sites; serine's hydroxyl O is the one labile side-chain site
+#: beyond NB90c's D/E/N/Q (threonine/tyrosine were tested and are null).
+O18_LENGTH_FEATURES = ("length_minus1", "D", "E", "N", "Q", "S")
+
+
+def spep_from_length_coefficients(
+    sequence: str,
+    coefficients: dict[str, float],
+) -> float:
+    """Per-peptide ¹⁸O Spep from the length-model coefficient table.
+
+    The o18 production analogue of :func:`spep_from_coefficients` (the per-AA
+    D₂O model). ``coefficients`` maps each feature in
+    :data:`O18_LENGTH_FEATURES` to its learned value. ``sequence`` must be a bare
+    AA string (mods stripped) so length and residue counts match the design
+    matrix used at training.
+    """
+    n = len(sequence)
+    total = 0.0
+    for feat in O18_LENGTH_FEATURES:
+        x = (n - 1) if feat == "length_minus1" else sequence.count(feat)
+        total += coefficients.get(feat, 0.0) * x
+    return float(total)
+
+
+def _get_o18_final_env(sequence: str, pep_mass: float, spep: int,
+                       ria_max: float,
+                       n: int = _DEFAULT_N_ISO,
+                       mods: tuple[int, ...] = ()) -> np.ndarray:
+    """Fully-labeled ¹⁸O envelope at precursor enrichment ``ria_max`` with
+    ``spep`` labile oxygen sites — the o18 analogue of :func:`_get_final_env`.
+
+    The init (natural-abundance) envelope is label-independent, so
+    :func:`_get_init_env` is shared with the D₂O path; only the labeled envelope
+    differs (¹⁸O 3-isotope O vs D₂O H/D). Cached under a ``'final_o18'`` key so it
+    never collides with the D₂O final-envelope cache.
+    """
+    ria_key = round(float(ria_max), 6)
+    key = ('final_o18', sequence, mods, spep, ria_key, n)
+    if key not in _envelope_cache:
+        dist = get_peptide_distribution(
+            sequence,
+            deuterium_enrichment_level=ria_max,
+            label=3,
+            num_labeling_sites=spep,
+            mods=mods,
+        )
+        env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
+        _envelope_cache[key] = env
+    return _envelope_cache[key]
+
+
+def solve_fs_o18(
+    sequence: str,
+    pep_mass: float,
+    observed_iso,
+    spep: int,
+    ria_max: float = 0.06,
+    n_iso: int = _DEFAULT_N_ISO,
+    mods: tuple[int, ...] = (),
+    score_channels: int | None = None,
+) -> float:
+    """Per-timepoint fractional synthesis from one observed ¹⁸O envelope.
+
+    The o18 analogue of :func:`solve_fs_d2o`, with the identical H4′
+    normalization order (mix full-cluster → truncate to scoring channels →
+    renormalize) and widened FS bounds; only the labeled (final) envelope
+    differs. See :func:`solve_fs_d2o` for the full rationale. The body is kept
+    parallel rather than refactored so the heavily-tested D₂O path stays
+    untouched.
+    """
+    from scipy.optimize import minimize_scalar  # local import keeps cold path fast
+
+    obs = np.asarray(observed_iso, dtype=float)[:n_iso]
+    valid = ~np.isnan(obs)
+    if not valid.any():
+        return float('nan')
+    n_real = int(np.max(np.nonzero(valid)[0])) + 1
+    obs = obs[:n_real]
+    if np.isnan(obs).any():
+        return float('nan')
+    k = n_real if score_channels is None else min(int(score_channels), n_real)
+    if k < 2:
+        return float('nan')
+    obs_score = obs[:k]
+    obs_total = obs_score.sum()
+    if obs_total == 0:
+        return float('nan')
+    obs_norm = obs_score / obs_total
+
+    n_full = max(_FULL_CLUSTER_N, n_real)
+    init_full = np.asarray(_get_init_env(sequence, pep_mass, n=n_full, mods=mods), dtype=float)
+    final_full = np.asarray(
+        _get_o18_final_env(sequence, pep_mass, spep, ria_max, n=n_full, mods=mods), dtype=float,
+    )
+    i_sum = init_full.sum()
+    f_sum = final_full.sum()
+    if i_sum == 0 or f_sum == 0:
+        return float('nan')
+    init_full = init_full / i_sum
+    final_full = final_full / f_sum
+
+    def sse(fs: float) -> float:
+        pred_full = (1.0 - fs) * init_full + fs * final_full
+        pred_score = pred_full[:k]
+        ps = pred_score.sum()
+        if ps <= 0:
+            return 1e6
+        return float(np.sum((obs_norm - pred_score / ps) ** 2))
+
+    return float(minimize_scalar(sse, bounds=FS_BOUNDS, method='bounded').x)
