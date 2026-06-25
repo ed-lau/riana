@@ -499,37 +499,45 @@ def _make_calibration_dfs(peptides, spep_by_seq):
     return dfs
 
 
-def test_theta_delta_s_known_answer_and_anchor():
-    """_theta_delta_s: weighted-median of ΔSₓ/ΔSₓmax over iso1-3, t0-anchored."""
-    from riana.core.fitting import _theta_delta_s
-    dsmax = (0.0, 1.0, 2.0, 3.0)          # mDa per channel (iso0 unused)
-    t = np.array([0.0, 0.5, 1.0])
-    # Perfect signal: row k = f · dsmax[k]  →  θ = f after /ΔSₓmax.
-    rows = [[0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.5, 1.0, 1.5],
-            [0.0, 1.0, 2.0, 3.0]]
-    np.testing.assert_allclose(_theta_delta_s(rows, t, dsmax), [0.0, 0.5, 1.0], atol=1e-9)
-    # Anchoring removes a per-peptide constant offset on every channel (here +0.4):
-    rows_off = [[0.0, 0.4, 0.4, 0.4],
-                [0.0, 0.9, 1.4, 1.9],
-                [0.0, 1.4, 2.4, 3.4]]
-    np.testing.assert_allclose(_theta_delta_s(rows_off, t, dsmax), [0.0, 0.5, 1.0],
-                               atol=1e-9)
-    # A channel with negligible ΔSₓmax is dropped (needs ≥2 usable channels).
-    assert np.isnan(_theta_delta_s([[0.0, 1.0, 0.0, 0.0]], np.array([1.0]),
-                                   (0.0, 1.0, 0.0, 0.0)))
-
-
-def test_delta_spacing_max_is_positive_monotone_for_d2o():
-    """ΔSₓmax(k): iso0≡0, grows with channel (D heavier than ¹³C → positive)."""
-    from riana.algorithms.isotope_dist import delta_spacing_max, clear_envelope_cache
+def test_solve_fs_d2o_ds_recovers_known_fraction():
+    """solve_fs_d2o_ds inverts the nonlinear mixture-spacing curve: feeding it the
+    theoretical ΔSₓ(k) at a known f recovers that f (the calibration of the
+    inverter — no measurement noise)."""
+    from riana.algorithms.isotope_dist import (
+        _spacing_components, _mixture_dspacing, solve_fs_d2o_ds, clear_envelope_cache)
     clear_envelope_cache()
-    seq = "VAPEPTIDEK"
-    dsmax = delta_spacing_max(seq, calculate_ion_mz(seq), spep=8, charge=2,
-                              n=6, ria_max=0.06, label_int=1)
-    assert dsmax[0] == 0.0
-    assert dsmax[2] > dsmax[1] > 0          # positive, growing for D₂O
-    assert all(np.isfinite(dsmax))
+    seq, z, spep, n = "VAPEPTIDEK", 2, 8, 6
+    pm = calculate_ion_mz(seq)
+    im, ip, fm, fp = _spacing_components(seq, pm, spep, 0.06, n, (), 1)
+    for f_true in (0.2, 0.5, 0.8):
+        obs = {k: _mixture_dspacing(f_true, im, ip, fm, fp, z, k) for k in (1, 2, 3)}
+        f_hat = solve_fs_d2o_ds(seq, pm, obs, spep, z, ria_max=0.06, n_iso=n)
+        assert f_hat == pytest.approx(f_true, abs=2e-3)
+    # < 2 usable channels -> NaN.
+    assert np.isnan(solve_fs_d2o_ds(seq, pm, {1: 0.5}, spep, z, ria_max=0.06, n_iso=n))
+
+
+def test_fs_ds_anchoring_removes_per_peptide_offset():
+    """_fs_ds_points anchors to the t=0 point: a constant per-channel offset added
+    to every timepoint's Δspacing (the per-peptide reference offset) is cancelled,
+    so the recovered fs_ds is unchanged."""
+    from riana.algorithms.isotope_dist import (
+        _spacing_components, _mixture_dspacing, clear_envelope_cache)
+    from riana.core.fitting import _fs_ds_points
+    clear_envelope_cache()
+    seq, z, spep, n = "VAPEPTIDEK", 2, 8, 6
+    pm = calculate_ion_mz(seq)
+    im, ip, fm, fp = _spacing_components(seq, pm, spep, 0.06, n, (), 1)
+    t = np.array([0.0, 0.4, 0.8])
+    rows = [[0.0] + [_mixture_dspacing(f, im, ip, fm, fp, z, k) for k in range(1, n)]
+            for f in (0.0, 0.4, 0.8)]
+    kw = dict(seq=seq, pep_mass=pm, spep=spep, charge=z, ria_max=0.06, n_iso=n,
+              mods=(), label_int=1)
+    clean = _fs_ds_points(rows, t, **kw)
+    np.testing.assert_allclose(clean, [0.0, 0.4, 0.8], atol=3e-3)
+    # Add a constant +0.5 mDa offset to every channel & timepoint → anchoring cancels.
+    rows_off = [[v + (0.5 if k > 0 else 0.0) for k, v in enumerate(r)] for r in rows]
+    np.testing.assert_allclose(_fs_ds_points(rows_off, t, **kw), clean, atol=1e-9)
 
 
 def test_fit_config_accepts_calibration_model():

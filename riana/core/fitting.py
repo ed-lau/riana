@@ -54,8 +54,8 @@ from scipy.optimize import curve_fit
 
 from riana import constants
 from riana.algorithms.isotope_dist import (
-    delta_spacing_max, init_channel_masses, init_envelope_width,
-    solve_fs_d2o, solve_fs_o18,
+    init_channel_masses, init_envelope_width,
+    solve_fs_d2o, solve_fs_d2o_ds, solve_fs_o18,
     spep_from_coefficients, spep_from_length_coefficients,
 )
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
@@ -154,29 +154,36 @@ _REQUIRED_D2O_ISOTOPOMERS = (0, 1, 2, 3, 4, 5)
 FS_AUTO_BASE = 4
 FS_AUTO_INIT_W_THRESHOLD = 6
 
-#: Mass-defect θ (θ_ΔS, the orthogonal DeuteRater second estimate; v1.1.0 item 1b).
-#: Scored on the low, well-measured spacing channels only — the high channels carry
+#: Mass-defect fs_ds (the orthogonal DeuteRater second estimate; v1.1.0 item 1b).
+#: Inverted on the low, well-measured spacing channels only — the high channels carry
 #: a per-peptide model-vs-centroid reference offset (report 2026-06-25); iso4/5 stay
-#: in the GUI for QC but out of the number. A channel needs |ΔSₓmax| over this floor
-#: (mDa) to contribute (negligible-range channels are pure noise).
+#: in the GUI for QC but out of the number. iso0's spacing is ≡0 (no signal).
 THETA_DS_CHANNELS = (1, 2, 3)
-THETA_DS_DSMAX_FLOOR = 0.2
 
 
-def _theta_delta_s(
+def _fs_ds_points(
     dspacing_rows: list[list[float]],
     t_fit: np.ndarray,
-    dsmax: tuple[float, ...],
+    *,
+    seq: str,
+    pep_mass: float,
+    spep: int,
+    charge: int,
+    ria_max: float,
+    n_iso: int,
+    mods: tuple[int, ...],
+    label_int: int,
 ) -> list[float]:
-    """Per-timepoint mass-defect θ_ΔS from the per-channel Δspacing rows.
+    """Per-timepoint mass-defect fs_ds by **nonlinear spacing inversion**
+    (:func:`solve_fs_d2o_ds`) — the spacing analog of the intensity FS solve.
 
-    θ_ΔS(point) = weighted median over :data:`THETA_DS_CHANNELS` of
-    ``ΔSₓ(k) / ΔSₓmax(k)`` (weights ∝ |ΔSₓmax(k)|, the signal range), with a
-    3·MAD outlier guard across channels. ΔSₓ is **anchored to the unlabelled
-    (t/f == 0) point** when one is present among the fitted points (subtract its
-    per-channel Δspacing — removes the per-peptide reference offset, report
-    2026-06-25); otherwise the theory-referenced Δspacing is used as-is (fallback).
-    Returns NaN for a point with < 2 usable channels.
+    For each fitted point, the per-channel Δspacing (:data:`THETA_DS_CHANNELS`,
+    iso1-3) is **anchored to the unlabelled (t/f == 0) point** when one is present
+    among the fitted points (subtract its Δspacing — removes the per-peptide
+    reference offset; theory-referenced fallback otherwise), then inverted against
+    the init↔final mixture-spacing curve. Replaces the earlier linear
+    ``ΔSₓ/ΔSₓmax`` ratio, which over-read mid-range (the mixture mass-shift is
+    concave in f — report 2026-06-25). NaN for a point with < 2 usable channels.
     """
     if not dspacing_rows:
         return []
@@ -184,30 +191,20 @@ def _theta_delta_s(
     anchor = dspacing_rows[zero_idx] if zero_idx is not None else None
     out: list[float] = []
     for row in dspacing_rows:
-        vals: list[float] = []
-        wts: list[float] = []
+        obs_ds: dict[int, float] = {}
         for k in THETA_DS_CHANNELS:
-            if k >= len(row) or k >= len(dsmax):
+            if k >= len(row):
                 continue
-            mx = dsmax[k]
-            ds = row[k] - (anchor[k] if anchor is not None else 0.0)
-            if abs(mx) < THETA_DS_DSMAX_FLOOR or not np.isfinite(ds):
-                continue
-            vals.append(ds / mx)
-            wts.append(abs(mx))
-        if len(vals) < 2:
+            v = row[k] - (anchor[k] if anchor is not None else 0.0)
+            if np.isfinite(v):
+                obs_ds[k] = float(v)
+        if len(obs_ds) < 2:
             out.append(float("nan"))
             continue
-        v = np.asarray(vals)
-        med = np.median(v)
-        mad = np.median(np.abs(v - med)) or 1e-9
-        keep = np.abs(v - med) <= 3.0 * mad
-        if keep.sum() < 2:
-            keep = np.ones_like(v, dtype=bool)
-        vk = v[keep]
-        wk = np.asarray(wts)[keep]
-        order = np.argsort(vk)
-        out.append(float(vk[order][np.searchsorted(np.cumsum(wk[order]), wk.sum() / 2.0)]))
+        out.append(solve_fs_d2o_ds(
+            seq, pep_mass, obs_ds, spep, charge,
+            ria_max=ria_max, n_iso=n_iso, mods=mods, label_int=label_int,
+        ))
     return out
 
 
@@ -798,24 +795,26 @@ def _fit_one_concat(
             dmass_fit.append([float(x) for x in dmass])
             dspacing_fit.append([float(x) for x in dspacing])
 
-    # v1.1.0 item 1b — the mass-defect θ (θ_ΔS): an orthogonal, drift-robust SECOND
+    # v1.1.0 item 1b — the mass-defect fs_ds: an orthogonal, drift-robust SECOND
     # estimate of fraction-new from the per-channel Δspacing, cross-checking the
     # intensity FS (never displacing it). iso0–3 only, anchored to the unlabelled
-    # point when present, weighted median + MAD (see _theta_delta_s). ΔSₓmax (the
-    # normalizer) is the IsoSpec init→final spacing change for this peptidoform.
+    # point when present, then NONLINEARLY inverted against the init↔final mixture
+    # spacing curve (solve_fs_d2o_ds — the spacing analog of the intensity solve;
+    # the old linear ΔS/ΔSₓmax over-read mid-range, report 2026-06-25). D₂O only for
+    # now: the ¹⁸O spacing estimator (different labelled-envelope chemistry) is a
+    # future variant, so o18 fs_ds stays empty.
     fs_ds_fit: list[float] = []
-    if dspacing_fit:
+    if dspacing_fit and not is_o18:
         first_i = int(np.nonzero(fit_mask)[0][0])
         mods0, pep_mass0 = forms[row_concats[first_i]]
         z0 = int(charge_arr[first_i]) if np.isfinite(charge_arr[first_i]) else 0
         if z0 > 0:
             try:
-                dsmax = delta_spacing_max(
-                    seq, pep_mass0, spep_int, z0, len(iso_cols),
-                    float(config.ria_max), mods=mods0,
-                    label_int=(3 if is_o18 else 1),
+                fs_ds_fit = _fs_ds_points(
+                    dspacing_fit, t_fit, seq=seq, pep_mass=pep_mass0,
+                    spep=spep_int, charge=z0, ria_max=float(config.ria_max),
+                    n_iso=len(iso_cols), mods=mods0, label_int=1,
                 )
-                fs_ds_fit = _theta_delta_s(dspacing_fit, t_fit, dsmax)
             except (KeyError, ValueError):
                 fs_ds_fit = []
 

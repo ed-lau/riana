@@ -50,6 +50,47 @@ def delta_s_max(seq: str, charge: int, coeffs: dict, ria: float, n: int = 4) -> 
             for k in range(1, n + 1)}
 
 
+def delta_s_curve(seq, charge, coeffs, ria, label_int, n=6, grid=None):
+    """Theoretical **ΔSₓ(f, k)** over f∈grid (m/z mDa) — the nonlinear mixture
+    curve, the spacing analog of solve_fs_d2o's intensity mixture. Per channel:
+    centroid_k(f) = intensity-weighted mean of the init & final channel-k
+    averaged-isotopolog masses; ΔSₓ(f,k) = [centroid_k(f)−centroid_0(f)] − (its f=0
+    value). Returns (grid, {k: array}). Un-truncated full-cluster init∪final."""
+    if grid is None:
+        grid = np.linspace(0.0, 1.2, 241)
+    pm = calculate_ion_mz(seq)
+    spep = max(1, int(round(spep_from_coefficients(seq, coeffs))))
+    init = get_peptide_distribution(seq, label=1)
+    final = get_peptide_distribution(seq, deuterium_enrichment_level=ria,
+                                     label=label_int, num_labeling_sites=spep)
+    im, ip = _binned_envelope(init, pm, n)
+    fm, fp = _binned_envelope(final, pm, n)
+    im, fm = np.array(im), np.array(fm)
+    ip, fp = np.array(ip) / np.sum(ip), np.array(fp) / np.sum(fp)
+
+    def centroid(f, k):
+        w = (1 - f) * ip[k] + f * fp[k]
+        return ((1 - f) * ip[k] * im[k] + f * fp[k] * fm[k]) / w if w > 0 else np.nan
+
+    curves = {}
+    for k in CHANNELS:
+        s = np.array([(centroid(f, k) - centroid(f, 0)) / charge * 1e3 for f in grid])
+        curves[k] = s - s[0]          # ΔSₓ(f,k) relative to f=0
+    return grid, curves
+
+
+def fs_ds_inversion(ds_by_k, grid, curves):
+    """Solve f by least-squares of observed ΔSₓ(k) against the theoretical mixture
+    curves (the spacing analog of solve_fs_d2o's intensity SSE). iso0-3, equal weight."""
+    ks = [k for k in CHANNELS if not np.isnan(ds_by_k.get(k, np.nan)) and k in curves]
+    if len(ks) < 2:
+        return float("nan")
+    sse = np.zeros_like(grid)
+    for k in ks:
+        sse += (ds_by_k[k] - curves[k]) ** 2
+    return float(grid[int(np.argmin(sse))])
+
+
 def weighted_median(vals: np.ndarray, wts: np.ndarray) -> float:
     order = np.argsort(vals)
     v, w = np.asarray(vals)[order], np.asarray(wts)[order]
@@ -80,9 +121,13 @@ def main() -> None:
     ap.add_argument("--ria", type=float, default=0.06)
     ap.add_argument("--no-anchor", action="store_true",
                     help="use theory-referenced dspacing everywhere (A/B the f0 anchor)")
+    ap.add_argument("--method", choices=("ratio", "inversion"), default="ratio",
+                    help="ratio = ΔS/ΔSₓmax (linear); inversion = solve f against the "
+                         "nonlinear mixture spacing curve (the solve_fs_d2o analog)")
     a = ap.parse_args()
 
     coeffs = load_aa_coefficients(a.coefficients)
+    label_int = 3 if a.coefficients.startswith("o18") else 1
     d = pd.read_table(a.fractions, comment="#")
     f0 = d["labeling_time"].min()
     # Average the unlabeled anchor per concat (replicate t0/f0 rows — bioreps —
@@ -91,33 +136,43 @@ def main() -> None:
             .groupby("concat")[[f"dspacing_iso{k}" for k in CHANNELS]]
             .mean())
 
-    dsmax = {}
+    dsmax, curves = {}, {}
     for c in d["concat"].unique():
         m = re.match(r"(.+)_(\d+)$", c)
+        seq, z = re.sub(r"\[[^\]]*\]", "", m.group(1)), int(m.group(2))
         try:
-            dsmax[c] = delta_s_max(re.sub(r"\[[^\]]*\]", "", m.group(1)),
-                                   int(m.group(2)), coeffs, a.ria)
+            if a.method == "ratio":
+                dsmax[c] = delta_s_max(seq, z, coeffs, a.ria)
+            else:
+                curves[c] = delta_s_curve(seq, z, coeffs, a.ria, label_int)
         except Exception:
-            dsmax[c] = None
+            dsmax[c] = curves[c] = None
 
     rows = []
     for _, r in d.iterrows():
         c = r["concat"]
-        dm = dsmax.get(c)
-        if dm is None:
-            continue
         ds = {}
         anchored = (not a.no_anchor) and (c in base.index)
         for k in CHANNELS:
             theory = r.get(f"dspacing_iso{k}", np.nan)
             ds[k] = theory - base.loc[c, f"dspacing_iso{k}"] if anchored else theory
+        if a.method == "ratio":
+            dm = dsmax.get(c)
+            if dm is None:
+                continue
+            est = theta_ds(ds, dm)
+        else:
+            cv = curves.get(c)
+            if cv is None:
+                continue
+            est = fs_ds_inversion(ds, cv[0], cv[1])
         rows.append({"concat": c, "f": r["labeling_time"], "fs": r["fs"],
-                     "theta_ds": theta_ds(ds, dm)})
+                     "theta_ds": est})
 
     o = pd.DataFrame(rows).dropna(subset=["theta_ds", "fs"])
     o = o[np.isfinite(o["theta_ds"]) & np.isfinite(o["fs"])]
     mode = "theory-only" if a.no_anchor else "f0-anchored (theory fallback)"
-    print(f"=== fs_ds prototype [{mode}] — {len(o)} points ===")
+    print(f"=== fs_ds prototype [{a.method} | {mode}] — {len(o)} points ===")
     print(f"corr(fs_ds, fs):      r={np.corrcoef(o['theta_ds'], o['fs'])[0,1]:.3f}")
     print(f"corr(fs_ds, known f): r={np.corrcoef(o['theta_ds'], o['f'])[0,1]:.3f}")
     print(f"corr(fs, known f):    r={np.corrcoef(o['fs'], o['f'])[0,1]:.3f}")

@@ -623,46 +623,86 @@ def init_channel_masses(
     return out
 
 
-def delta_spacing_max(
-    sequence: str,
-    pep_mass: float,
-    spep: int,
-    charge: int,
-    n: int,
-    ria_max: float,
-    mods: tuple[int, ...] = (),
-    label_int: int = 1,
-) -> tuple[float, ...]:
-    """Theoretical **ΔSₓmax(k)** — the init→final M0-internal spacing change per
-    channel, in **m/z mDa** — the normalizer for the mass-defect θ
-    (``fraction_new = ΔSₓ / ΔSₓmax``; v1.1.0 item 1b).
-
-    ``ΔSₓmax(k) = [final_avg(k)−final_avg(0)] − [init_avg(k)−init_avg(0)]`` over the
-    averaged-isotopolog masses, divided by ``charge`` to m/z and ×1e3 to mDa — the
-    spacing a fully-labelled peptide's neutromer k gains over the unlabelled
-    reference. ``label_int`` selects the labelled-envelope chemistry (1 = D₂O H/D,
-    3 = ¹⁸O), matching :func:`get_peptide_distribution`. Final masses cached.
-    """
-    init_m = init_channel_masses(sequence, pep_mass, n, mods=mods)
-    key = ('final_mass', sequence, tuple(mods), int(spep),
+def _spacing_components(
+    sequence: str, pep_mass: float, spep: int, ria_max: float, n: int,
+    mods: tuple[int, ...], label_int: int,
+):
+    """Cached per-channel (mass, prob) of the init and final envelopes — the pieces
+    the mixture-spacing curve is built from. NaN-bin masses fall back to the analytic
+    neutron comb. Returns ``(init_m, init_p, final_m, final_p)`` as np arrays."""
+    key = ('spacing_comp', sequence, tuple(mods), int(spep),
            round(float(ria_max), 6), int(n), int(label_int))
-    final_m = _envelope_cache.get(key)
-    if final_m is None:
-        dist = get_peptide_distribution(
+    cached = _envelope_cache.get(key)
+    if cached is None:
+        init = get_peptide_distribution(sequence, label=1, mods=tuple(mods))
+        final = get_peptide_distribution(
             sequence, deuterium_enrichment_level=ria_max, label=label_int,
             num_labeling_sites=spep, mods=tuple(mods),
         )
-        fm, _ = _binned_envelope(dist, pep_mass, int(n))
-        final_m = tuple(
-            m if not math.isnan(m) else pep_mass + iso * 1.003354835
-            for iso, m in enumerate(fm)
-        )
-        _envelope_cache[key] = final_m
-    z = max(1, int(charge))
-    return tuple(
-        ((final_m[k] - final_m[0]) - (init_m[k] - init_m[0])) / z * 1e3
-        for k in range(int(n))
-    )
+        im, ip = _binned_envelope(init, pep_mass, int(n))
+        fm, fp = _binned_envelope(final, pep_mass, int(n))
+        im = np.array([m if not math.isnan(m) else pep_mass + j * 1.003354835
+                       for j, m in enumerate(im)])
+        fm = np.array([m if not math.isnan(m) else pep_mass + j * 1.003354835
+                       for j, m in enumerate(fm)])
+        ip = np.asarray(ip, float); fp = np.asarray(fp, float)
+        ip = ip / ip.sum() if ip.sum() > 0 else ip
+        fp = fp / fp.sum() if fp.sum() > 0 else fp
+        cached = (im, ip, fm, fp)
+        _envelope_cache[key] = cached
+    return cached
+
+
+def _mixture_dspacing(f, im, ip, fm, fp, charge, k):
+    """Predicted **ΔSₓ(f, k)** in m/z mDa for the init↔final mixture at fraction
+    ``f``: the M0-internal spacing of the per-channel intensity-weighted mixture
+    centroid, minus its f=0 value. The nonlinear (concave) curve fs_ds inverts."""
+    def cz(j):
+        w = (1.0 - f) * ip[j] + f * fp[j]
+        return ((1.0 - f) * ip[j] * im[j] + f * fp[j] * fm[j]) / w if w > 0 else np.nan
+    s_f = cz(k) - cz(0)
+    s_0 = im[k] - im[0]          # mixture at f=0 is the init envelope
+    return (s_f - s_0) / max(1, int(charge)) * 1e3
+
+
+def solve_fs_d2o_ds(
+    sequence: str,
+    pep_mass: float,
+    obs_dspacing: dict[int, float],
+    spep: int,
+    charge: int,
+    ria_max: float = 0.06,
+    n_iso: int = _DEFAULT_N_ISO,
+    mods: tuple[int, ...] = (),
+    label_int: int = 1,
+) -> float:
+    """Mass-defect fraction-new from the **per-channel Δspacing** — the spacing
+    analog of :func:`solve_fs_d2o` (v1.1.0 item 1b).
+
+    Solves ``f`` in ``obs_ΔSₓ(k) ≈ ΔSₓ(f, k)`` by 1-D SSE minimization over the
+    given channels, where ``ΔSₓ(f, k)`` is the **nonlinear** init↔final mixture
+    spacing curve (:func:`_mixture_dspacing`) — NOT the linear ``ΔSₓ/ΔSₓmax``, which
+    over-reads mid-range because the mixture mass-shift is concave in f (Price 2017;
+    report 2026-06-25). ``obs_dspacing`` is the **t0/f0-anchored** observed
+    M0-internal Δspacing per channel (m/z mDa), keyed by isotopomer index (iso0 is
+    ≡0 and excluded by the caller). Needs ≥ 2 channels → else NaN. Bounds match
+    :data:`FS_BOUNDS`. ``label_int`` = 1 (D₂O); the ¹⁸O analog is a future variant
+    (its labelled-envelope chemistry differs).
+    """
+    from scipy.optimize import minimize_scalar  # local import keeps cold path fast
+
+    ks = [k for k, v in obs_dspacing.items() if v is not None and np.isfinite(v)]
+    if len(ks) < 2:
+        return float("nan")
+    im, ip, fm, fp = _spacing_components(
+        sequence, pep_mass, spep, ria_max, int(n_iso), tuple(mods), int(label_int))
+
+    def sse(f: float) -> float:
+        return float(sum(
+            (obs_dspacing[k] - _mixture_dspacing(f, im, ip, fm, fp, charge, k)) ** 2
+            for k in ks))
+
+    return float(minimize_scalar(sse, bounds=FS_BOUNDS, method="bounded").x)
 
 
 def spep_from_coefficients(

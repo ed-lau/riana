@@ -111,6 +111,36 @@ even a single clean channel's linear-R² vs known f is only 0.6–0.7 (whole-ran
 mDa ≈ per-point noise). So θ_ΔS is **only usable as the iso0–3 weighted-median**, and its value is
 as an orthogonal cross-check — its mid-range disagreement with θ_ΔI is itself a finding.
 
+### 5. The estimator must be a nonlinear inversion, not ΔSₓ/ΔSₓmax
+
+The mass shift of a two-population isotopologue mixture is **nonlinear (concave) in f**
+(Price 2017), so `fraction_new = ΔSₓ/ΔSₓmax` over-reads mid-range. Noise-free theory
+(perfect data, exact RIA) confirms it — fs_ds(f=0.5) lands at 0.51–0.68 (channel-
+dependent: iso1 under-reads, iso2/iso3 over-read), and it is **worse at lower RIA**
+(same peptide, iso2 at f=0.5: 0.56 at 4.6% vs 0.51 at 6.0%). So the LVE>calib excess is
+substantially structural + low-RIA, not primarily Orbitrap intensity compression (which
+the calibration ground truth argues against — fs is the accurate one there) nor a simple
+RIA mis-estimate.
+
+**Fix — `solve_fs_d2o_ds`:** invert observed (t0/f0-anchored) ΔSₓ against the theoretical
+init↔final **mixture-spacing curve** (the spacing analog of `solve_fs_d2o`). A/B vs the
+linear ratio:
+
+| | calib (known f) ratio → **inversion** | LVE ratio → **inversion** |
+|---|---|---|
+| Bland-Altman bias | +0.074 → **+0.013** | +0.123 → **+0.084** |
+| BA SD | 0.711 → **0.428** | 0.659 → **0.481** |
+| corr(fs_ds, f) | 0.39 → **0.53** | — |
+| mid-range bias (f≈0.38) | +0.12 → **≈0** | — |
+
+On calibration (RIA known-correct) the inversion drives the structural bias to ~0 and
+halves the spread. A residual **+0.084** persists on LVE that does **not** reduce with
+higher RIA (the sweep makes it worse) → likely the Commerford Spep model (LVE) vs the
+data-trained `ac16` (calib), to revisit (a Sadygov-style nested whole-dataset site fit
+could re-estimate in-vivo labelling sites). **Shipped: `solve_fs_d2o_ds` replaces the
+linear ratio**; the ¹⁸O spacing inverter (different labelled-envelope chemistry) is a
+future variant, so o18 fs_ds is currently empty.
+
 ## Decision (1b)
 
 - **θ_main = intensity FS (θ_ΔI)** — primary, written, unchanged.
