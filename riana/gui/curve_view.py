@@ -82,6 +82,7 @@ class CurveView(QWidget):
         metox: list[bool] | None = None,
         protein: str | None = None,
         condition: str | None = None,
+        fs_ds: list[float] | None = None,
     ) -> None:
         """Scatter the (t, fs) data and overlay the fitted model curve.
 
@@ -144,6 +145,21 @@ class CurveView(QWidget):
                 symbol=symbol, symbolSize=size, symbolBrush=colour,
                 symbolPen=colour, name=name,
             )
+
+        # Optional overlay: the orthogonal mass-defect SECOND estimate fs_ds, as its
+        # own series (hollow green ◇), so its per-timepoint agreement with the intensity
+        # fs is visible at a glance. fs_ds is already t0/f0-anchored at fit; NaN points
+        # (insufficient channels) are skipped.
+        if fs_ds is not None and len(fs_ds) == len(t):
+            pts = [(ti, vi) for ti, vi in zip(t, fs_ds)
+                   if vi is not None and math.isfinite(vi)]
+            if pts:
+                self.plot.plot(
+                    [p[0] for p in pts], [p[1] for p in pts], pen=None,
+                    symbol="d", symbolSize=9, symbolBrush=None,
+                    symbolPen=pg.mkPen("#2ca02c", width=1.5),
+                    name=f"fs_ds (mass-defect, {len(pts)})",
+                )
 
         # Calibration recovery view: x is the known mixing proportion, not time,
         # and the ideal is the 1:1 line (FS = f). k_deg is the recovered slope.

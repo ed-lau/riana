@@ -607,6 +607,52 @@ def test_curve_view_plot_dmass_draws_per_channel_series(main_window):
     assert xs == sorted(xs)  # ascending x, no zig-zag
 
 
+def test_curve_view_fit_overlays_fs_ds(main_window):
+    """plot_fit overlays fs_ds as its own series (skipping NaN) when given."""
+    from pyqtgraph import PlotDataItem
+
+    cv = main_window.protein_tab.curve
+    t = [0.0, 1.0, 2.0, 4.0]
+    fs = [0.0, 0.3, 0.5, 0.7]
+    fs_ds = [0.0, 0.35, float("nan"), 0.66]  # one NaN point is dropped
+    cv.plot_fit("PEP", t, fs, 0.2, "simple", {}, fs_ds=fs_ds)
+    series = {i.name(): i for i in cv.plot.items if isinstance(i, PlotDataItem)}
+    fsds_series = [n for n in series if n and n.startswith("fs_ds")]
+    assert fsds_series, "fs_ds overlay series missing"
+    xs, _ = series[fsds_series[0]].getData()
+    assert len(xs) == 3  # the NaN point is skipped
+
+
+def test_model_tab_show_fsds_toggle_overlays(main_window):
+    """The Fit-view 'show fs_ds' checkbox overlays the second estimate on selection."""
+    from pyqtgraph import PlotDataItem
+
+    tab = main_window.model_tab
+    rdf = pd.DataFrame(
+        {
+            "t": [[0.0, 1.0, 2.0, 3.0]],
+            "fs": [[0.0, 0.3, 0.55, 0.7]],
+            "fs_ds": [[0.0, 0.33, 0.5, 0.72]],
+            "k_deg": [0.4], "R_squared": [0.98], "sd": [0.02], "spep": [8.0],
+            "ci_lo": [0.36], "ci_hi": [0.44], "protein id": ["sp|X|T"],
+        },
+        index=pd.Index(["PEPTIDEK_2"], name="concat"),
+    )
+    tab._result_df = rdf
+    tab._last_config = tab.build_config()
+    tab._populate_results(rdf)
+    tab.table.setCurrentIndex(tab.model.index(0, 0))
+
+    # Off by default: observed + fit line only.
+    assert not tab._show_fsds_check.isChecked()
+    n_off = len([i for i in tab.curve.plot.items if isinstance(i, PlotDataItem)])
+    tab._show_fsds_check.setChecked(True)
+    names = {i.name() for i in tab.curve.plot.items if isinstance(i, PlotDataItem)}
+    assert any(n and n.startswith("fs_ds") for n in names)
+    assert len([i for i in tab.curve.plot.items
+                if isinstance(i, PlotDataItem)]) == n_off + 1
+
+
 def test_curve_view_plot_dmass_anchor_zeroes_t0(main_window):
     """anchor=True subtracts the unlabelled (t=0) point's per-channel Δ from every
     point, so each channel's series starts at 0."""

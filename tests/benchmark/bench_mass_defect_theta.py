@@ -117,17 +117,32 @@ def main() -> None:
     o = pd.DataFrame(rows).dropna(subset=["theta_ds", "fs"])
     o = o[np.isfinite(o["theta_ds"]) & np.isfinite(o["fs"])]
     mode = "theory-only" if a.no_anchor else "f0-anchored (theory fallback)"
-    print(f"=== θ_ΔS prototype [{mode}] — {len(o)} points ===")
-    print(f"corr(θ_ΔS, θ_ΔI=fs):  r={np.corrcoef(o['theta_ds'], o['fs'])[0,1]:.3f}")
-    print(f"corr(θ_ΔS, known f):  r={np.corrcoef(o['theta_ds'], o['f'])[0,1]:.3f}")
-    print(f"corr(θ_ΔI, known f):  r={np.corrcoef(o['fs'], o['f'])[0,1]:.3f}")
-    diff = o["theta_ds"] - o["fs"]
-    print(f"θ_ΔS − θ_ΔI: median={diff.median():+.3f}  "
-          f"MAD={np.median(np.abs(diff - diff.median())):.3f}")
-    print("\n  f     median θ_ΔS   median θ_ΔI   (n)")
+    print(f"=== fs_ds prototype [{mode}] — {len(o)} points ===")
+    print(f"corr(fs_ds, fs):      r={np.corrcoef(o['theta_ds'], o['fs'])[0,1]:.3f}")
+    print(f"corr(fs_ds, known f): r={np.corrcoef(o['theta_ds'], o['f'])[0,1]:.3f}")
+    print(f"corr(fs, known f):    r={np.corrcoef(o['fs'], o['f'])[0,1]:.3f}")
+
+    # --- agreement panel: fs_ds vs fs (the cross-check) ----------------------- #
+    diff = (o["theta_ds"] - o["fs"]).to_numpy()
+    bias, sd = np.median(diff), diff.std()
+    print("\n--- agreement fs_ds vs fs (per-timepoint cross-check) ---")
+    print(f"Bland-Altman bias (median fs_ds−fs): {bias:+.3f}  SD {sd:.3f}  "
+          f"95% LoA [{bias-1.96*sd:+.3f}, {bias+1.96*sd:+.3f}]")
+    for tol in (0.05, 0.10, 0.20):
+        print(f"  |fs_ds − fs| < {tol:.2f}: {100*np.mean(np.abs(diff) < tol):.1f}%")
+    # accuracy vs ground truth where known f spans [0,1] (calibration):
+    fnorm = o["f"] / o["f"].max() if o["f"].max() > 1.5 else o["f"]
+    if fnorm.between(0, 1).all():
+        for name, col in (("fs_ds", "theta_ds"), ("fs", "fs")):
+            e = np.abs(o[col] - fnorm)
+            print(f"  median |{name} − f|: {np.median(e):.3f}  "
+                  f"(within ±0.1: {100*np.mean(e<0.1):.1f}%)")
+
+    print("\n  f     median fs_ds   median fs   median(fs_ds−fs)   (n)")
     for f, g in o.groupby("f"):
-        print(f"{f:5.3f}     {g['theta_ds'].median():6.3f}       "
-              f"{g['fs'].median():6.3f}    ({len(g)})")
+        d = (g["theta_ds"] - g["fs"])
+        print(f"{f:6.2f}    {g['theta_ds'].median():6.3f}      "
+              f"{g['fs'].median():6.3f}      {d.median():+6.3f}          ({len(g)})")
 
 
 if __name__ == "__main__":

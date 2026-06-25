@@ -312,8 +312,17 @@ class ModelTab(QWidget):
         # A checkbox needs to re-render on BOTH transitions; the radios' _on_view_changed
         # guards on `checked` (to dodge their paired off/on double-fire), which would
         # swallow the un-check here — so use a dedicated always-render slot.
-        self._anchor_check.toggled.connect(self._on_anchor_changed)
+        self._anchor_check.toggled.connect(self._on_display_toggle)
         mode_row.addWidget(self._anchor_check)
+        # Fit view: overlay the orthogonal mass-defect second estimate fs_ds on the
+        # main fs curve, so the per-timepoint cross-check is visible at a glance.
+        self._show_fsds_check = QCheckBox("show fs_ds (Fit)")
+        self._show_fsds_check.setToolTip(
+            "Overlay the mass-defect second estimate fs_ds (already t0/f0-anchored) "
+            "as hollow green ◇ on the Fit graph, to compare it per-timepoint against "
+            "the intensity fs. Applies to the Fit view.")
+        self._show_fsds_check.toggled.connect(self._on_display_toggle)
+        mode_row.addWidget(self._show_fsds_check)
         mode_row.addStretch(1)
         curve_layout.addLayout(mode_row)
         self.curve = CurveView()
@@ -555,9 +564,9 @@ class ModelTab(QWidget):
         if checked:
             self._render_curve()
 
-    def _on_anchor_changed(self, _checked: bool) -> None:
-        # The anchor checkbox must re-render on BOTH check and un-check (unlike the
-        # radios), so it does not share _on_view_changed's `if checked` guard.
+    def _on_display_toggle(self, _checked: bool) -> None:
+        # The display checkboxes (anchor, show fs_ds) must re-render on BOTH check and
+        # un-check (unlike the radios), so they don't share _on_view_changed's guard.
         self._render_curve()
 
     def _render_curve(self) -> None:
@@ -590,6 +599,7 @@ class ModelTab(QWidget):
         kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
         ev = row.get("evidence")
         mx = row.get("metox")
+        fsds = row.get("fs_ds") if self._show_fsds_check.isChecked() else None
         self.curve.plot_fit(
             concat, list(row["t"]), list(row["fs"]),
             float(row["k_deg"]), cfg.model, kinetic,
@@ -599,6 +609,7 @@ class ModelTab(QWidget):
             metox=list(mx) if mx is not None else None,
             protein=row.get("protein id"),
             condition=row.get("condition"),
+            fs_ds=list(fsds) if fsds is not None else None,
         )
 
     # --- small helpers ------------------------------------------------------ #
