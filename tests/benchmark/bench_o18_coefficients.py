@@ -160,9 +160,8 @@ def fit_spep_per_peptide(riana_df: pd.DataFrame, n_iso: int) -> pd.DataFrame:
 def _build_design_matrix(spep_df: pd.DataFrame) -> pd.DataFrame:
     df = spep_df.copy()
     clean = df['sequence'].apply(o18.clean_seq)
-    df['length_minus1'] = clean.str.len() - 1
-    for aa in ['D', 'E', 'N', 'Q']:
-        df[aa] = clean.str.count(aa)
+    for f in o18.FEATURE_COLS:
+        df[f] = (clean.str.len() - 1) if f == 'length_minus1' else clean.str.count(f)
     return df
 
 
@@ -193,7 +192,7 @@ def fit_length_model(spep_df: pd.DataFrame, random_state: int) -> dict:
         'feature': o18.FEATURE_COLS,
         'coefficient': coef,
         'std_error': std_errors,
-        'isotope': '18O — IsoSpec forward model (NB90c length model)',
+        'isotope': '18O — IsoSpec forward model (DENQ+S length model)',
         'intercept': 0.0,
         'train_r2': train_r2,
         'test_r2': test_r2,
@@ -236,12 +235,12 @@ def main() -> None:
     result = fit_length_model(spep_df, random_state=args.random_state)
     result['coeff_df'].to_csv(args.output_dir / 'o18_length_coefficients.csv', index=False)
 
-    b, c_D, c_E, c_N, c_Q = result['coef']
+    coef_by_feature = dict(zip(o18.FEATURE_COLS, result['coef']))
     summary = {
         'n_peptides': int(len(spep_df)),
         'n_train': result['n_train'], 'n_test': result['n_test'],
         'train_r2': result['train_r2'], 'test_r2': result['test_r2'],
-        'coef': {'b': b, 'c_D': c_D, 'c_E': c_E, 'c_N': c_N, 'c_Q': c_Q},
+        'coef': coef_by_feature,
         'RIA_O18': o18.RIA_O18,
         'args': {'inputs': str(args.inputs), 'ground_truth': str(args.ground_truth),
                  'n_iso': args.n_iso, 'random_state': args.random_state, 'r2_min': args.r2_min},
@@ -249,10 +248,10 @@ def main() -> None:
     with (args.output_dir / 'summary.json').open('w') as f:
         json.dump(summary, f, indent=2)
 
+    terms = ' + '.join(f'{c:.4f}·{f}' for f, c in zip(o18.FEATURE_COLS, result['coef']))
     print(f'\n[done] n_peptides={summary["n_peptides"]}  '
           f'train_r2={summary["train_r2"]:.4f}  test_r2={summary["test_r2"]:.4f}')
-    print(f'       Spep = {b:.4f}·(L-1) + {c_D:.4f}·D + {c_E:.4f}·E '
-          f'+ {c_N:.4f}·N + {c_Q:.4f}·Q')
+    print(f'       Spep = {terms}')
     print(f'       outputs -> {args.output_dir}')
 
 

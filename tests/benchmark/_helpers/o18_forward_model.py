@@ -75,13 +75,29 @@ AA_LIST = [
 # explicit `n_iso` and only fall back to this default when unset.
 N_ISO = 6
 
-# ── Length-model feature spec (NB90c) ────────────────────────────────────────
-# Spep = b·(L-1) + c_D·D + c_E·E + c_N·N + c_Q·Q ; intercept fixed at 0.
-# Bounds from oxygen counts: b ∈ [0,1] (one backbone carbonyl O per residue),
-# c_D,c_E ∈ [0,2] (Asp/Glu carry 2 extra side-chain O), c_N,c_Q ∈ [0,1].
-FEATURE_COLS = ['length_minus1', 'D', 'E', 'N', 'Q']
-FEATURE_BOUNDS_LOW = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
-FEATURE_BOUNDS_HIGH = np.array([1.0, 2.0, 2.0, 1.0, 1.0])
+# ── Length-model feature spec (NB90c + serine) ───────────────────────────────
+# Spep = b·(L-1) + c_D·D + c_E·E + c_N·N + c_Q·Q + c_S·S ; intercept fixed at 0.
+# Extends NB90c's DENQ model with serine: on the AC16 calibration S is a strong,
+# significant ¹⁸O site (c_S≈0.52, 21σ; +3.4 pt held-out R² → 0.90), biochemically
+# coherent (serine sits in one-carbon metabolism, its O exchanges). Threonine and
+# tyrosine were tested and are empirically NULL (coef→0, no R² gain — their O is
+# retained), so they are excluded. Bounds from oxygen counts: b ∈ [0,1] (one
+# backbone carbonyl O per residue), c_D,c_E ∈ [0,2] (Asp/Glu carry 2 side-chain
+# O), c_N,c_Q,c_S ∈ [0,1] (one side-chain O — amide N/Q, hydroxyl S).
+FEATURE_COLS = ['length_minus1', 'D', 'E', 'N', 'Q', 'S']
+FEATURE_BOUNDS_LOW = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+FEATURE_BOUNDS_HIGH = np.array([1.0, 2.0, 2.0, 1.0, 1.0, 1.0])
+
+
+def length_model_features(clean_sequence: str) -> list[float]:
+    """Feature values for a (mod-stripped) sequence, aligned to ``FEATURE_COLS``.
+
+    ``length_minus1`` is L−1; every other feature is a residue count. Single
+    source of truth for both the trainer's design matrix and the Spep evaluator,
+    so the model structure lives in exactly one place.
+    """
+    return [(len(clean_sequence) - 1) if f == 'length_minus1'
+            else clean_sequence.count(f) for f in FEATURE_COLS]
 
 
 # ── Sequence cleaning ─────────────────────────────────────────────────────────
@@ -246,16 +262,13 @@ def peptide_spep_loss(
 # ── Length-model Spep evaluator + FS recovery solver ─────────────────────────
 
 def estimate_spep_from_length(sequence: str, coef) -> int:
-    """Spep from the 5-param length model coefficients ``(b, c_D, c_E, c_N, c_Q)``.
+    """Spep from the length-model coefficients, aligned to ``FEATURE_COLS``.
 
     Floored at 1. ``sequence`` is cleaned of mods first so the length feature is
     consistent with the design matrix used at training.
     """
-    b, c_D, c_E, c_N, c_Q = coef
-    seq = clean_seq(sequence)
-    L = len(seq)
-    raw = (b * (L - 1) + c_D * seq.count('D') + c_E * seq.count('E')
-           + c_N * seq.count('N') + c_Q * seq.count('Q'))
+    feats = length_model_features(clean_seq(sequence))
+    raw = sum(c * x for c, x in zip(coef, feats))
     return max(1, round(raw))
 
 
