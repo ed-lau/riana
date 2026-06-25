@@ -1,0 +1,7 @@
+feature,coefficient,note
+length_minus1,1.0,Previs in-vivo: 1 (18)O per peptide bond (L-1 = amino acids minus the terminal one whose O back-exchanges in tryptic digest)
+D,0.0,Previs in-vivo: aspartate side-chain omitted from the explicit count (discussion expects ~asparagine)
+E,2.0,Previs in-vivo: glutamate +2 side-chain (18)O via de-/reamination
+N,1.0,Previs in-vivo: asparagine +1 side-chain (18)O
+Q,1.0,Previs in-vivo: glutamine +1 side-chain (18)O
+S,0.0,not in the Previs model; serine is an in-vitro-only empirical addition (kept for the fitted cell-line tables)
