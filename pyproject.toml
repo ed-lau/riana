@@ -27,14 +27,18 @@ classifiers = [
 
 dependencies = [
     "pymzml>=2,<3",
-    # Pinned <5: pyteomics 5.0 changed mzML parsing to require `psims` (a PSI-MS
-    # CV resolver not pulled by even pyteomics[XML]); the 4.7.x line riana is
-    # tested against needs only lxml. Bumping to 5.x (and adding psims) is a
-    # post-1.0 follow-up once verified.
-    "pyteomics>=4.7,<5",
-    # pyteomics.mzml (riana.io.mzml) hard-imports lxml for XML parsing — it is
-    # not pulled transitively, so a fresh install without it cannot read mzML.
+    # pyteomics 5.0 moved mzML CV-term resolution onto `psims`. Verified
+    # byte-identical mzML/mzTab parity vs 4.7.5 on 2026-06-24 (sample1 golden
+    # within 1e-3; 70/70 io + integration + algorithm tests). Pinned <6 to gate
+    # the next major bump the same way 1.0.0 gated <5.
+    "pyteomics>=5,<6",
+    # lxml (XML parser) and psims (PSI-MS CV resolver) are used *internally* by
+    # pyteomics.mzml (riana.io.mzml) but are NOT pulled by a bare `pyteomics`
+    # install — only by the `pyteomics[xml]` extra. Declared explicitly so a
+    # fresh install can read mzML. psims is the new hard requirement in 5.0 (the
+    # reason 1.0.0 pinned pyteomics<5); lxml was the analogous 1.0.0 fix.
     "lxml>=4",
+    "psims>=1.3",
     "pybaselines>=1.1",
     "scipy>=1",
     "pandas>=2",
