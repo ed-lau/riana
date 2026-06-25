@@ -26,6 +26,7 @@ _MODEL_FNS = {
     "simple": models.one_exponent,
     "guan": models.two_compartment_guan,
     "fornasiero": models.two_compartment_fornasiero,
+    "calibration": models.calibration_line,
 }
 
 # Per-condition colours for the linear (φ-space) overlay; cycled if exceeded.
@@ -144,6 +145,10 @@ class CurveView(QWidget):
                 symbolPen=colour, name=name,
             )
 
+        # Calibration recovery view: x is the known mixing proportion, not time,
+        # and the ideal is the 1:1 line (FS = f). k_deg is the recovered slope.
+        is_calib = model_name == "calibration"
+
         # Fitted model curve on a dense grid, when k_deg converged.
         if k_deg is not None and math.isfinite(k_deg):
             model_fn = _MODEL_FNS.get(model_name, models.one_exponent)
@@ -160,12 +165,109 @@ class CurveView(QWidget):
                 self._ci_band(grid, _curve(ci_lo), _curve(ci_hi), (214, 39, 40))
             self.plot.plot(
                 grid, _curve(k_deg),
-                pen=pg.mkPen("#d62728", width=2), name=f"fit (k_deg={k_deg:.3g})",
+                pen=pg.mkPen("#d62728", width=2),
+                name=(f"recovery (slope={k_deg:.3g})" if is_calib
+                      else f"fit (k_deg={k_deg:.3g})"),
             )
+        if is_calib:
+            # 1:1 ideal (perfect recovery) as a grey dashed reference — a
+            # PlotCurveItem, so it is not counted as a plotted data series.
+            m = max(t)
+            ideal = pg.PlotCurveItem(
+                [0.0, m], [0.0, m],
+                pen=pg.mkPen("#888888", style=Qt.PenStyle.DashLine))
+            self.plot.addItem(ideal)
         self.plot.setYRange(0.0, 1.0)
         self.plot.setLabel("left", "Fraction new")
+        self.plot.setLabel("bottom", "Mixing proportion" if is_calib else "Time")
         header = "  •  ".join(str(p) for p in (concat, protein, condition) if p)
         self.plot.setTitle(header)
+
+    def plot_dmass(
+        self,
+        concat: str,
+        t: list[float],
+        dmass: list[list[float]],
+        dspacing: list[list[float]],
+        mode: str = "spacing",
+        protein: str | None = None,
+        condition: str | None = None,
+        x_label: str = "Time",
+        anchor: bool = False,
+    ) -> None:
+        """Δmass-over-time QC view (v1.1.0 item 1a) — one series per channel.
+
+        D₂O labeling walks each neutromer's accurate mass to the right (D heavier
+        than the ¹³C it displaces). ``dmass`` / ``dspacing`` are per-fitted-point ×
+        channel arrays in **mDa**, aligned to ``t`` (built in
+        :func:`riana.core.fitting._fit_one_concat`):
+
+        * ``mode="spacing"`` (primary) — the M0-internal ΔSₓ
+          ``(obs[k]−obs[0])−(ref[k]−ref[0])``; drift-robust (a global m/z offset
+          cancels), the DeuteRater turnover metric. iso0 is ≡0 so it is omitted.
+        * ``mode="mass"`` — the absolute shift ``obs[k]−ref[k]``; drift-sensitive,
+          a sanity/instrument-drift overlay. All channels (iso0 included) shown.
+
+        ``anchor`` (the GUI toggle): when set and an unlabelled (t/f == 0) point is
+        present, subtract that point's per-channel value from every point — the
+        empirical f0/t0 anchor (1b), which removes the per-peptide model-vs-centroid
+        reference offset so the curve starts at 0 and shows the pure labelling signal.
+
+        A peptide from an integrate run without the ``iso{N}_obs_mz`` columns has
+        empty arrays → a placeholder telling the user to re-run integrate.
+        """
+        self.plot.clear()
+        data = dspacing if mode == "spacing" else dmass
+        label = "Δ spacing (mDa)" if mode == "spacing" else "Δ mass (mDa)"
+        if not t or not data or all(not row for row in data):
+            self.show_placeholder(
+                f"{concat}: no mass-accuracy data — re-run integrate to record "
+                "iso{N}_obs_mz columns.")
+            return
+        # f0/t0 anchor: subtract the unlabelled point's per-channel ΔS from all points.
+        if anchor:
+            zero_idx = next((i for i, tt in enumerate(t) if tt == 0.0), None)
+            if zero_idx is not None:
+                base = data[zero_idx]
+                data = [[(v - base[k]) if k < len(base) else v
+                         for k, v in enumerate(row)] for row in data]
+                label += " — t0-anchored"
+        self._title = "_".join(
+            str(p) for p in (concat, condition, mode) if p
+        ).replace("|", "_").replace("/", "_")
+        self.save_button.setEnabled(True)
+
+        n_ch = max(len(row) for row in data)
+        # Spacing's iso0 is identically 0 — start at iso1 so the axis auto-ranges on
+        # the real signal; absolute mass keeps iso0 (the precursor's own drift).
+        first = 1 if mode == "spacing" else 0
+        # Sort by x: the points arrive in file/concat order, not ascending x, so the
+        # connecting lines would zig-zag (e.g. 0,12.5,…,then 1.0). plot_fit is immune
+        # (it scatters with pen=None); the Δ view draws lines, so it must sort.
+        order = np.argsort(np.asarray(t, dtype=float))
+        t_arr = np.asarray(t, dtype=float)[order]
+        for k in range(first, n_ch):
+            ys = np.array(
+                [row[k] if k < len(row) else float("nan") for row in data],
+                dtype=float)[order]
+            finite = np.isfinite(t_arr) & np.isfinite(ys)
+            if not finite.any():
+                continue
+            colour = _CONDITION_COLOURS[k % len(_CONDITION_COLOURS)]
+            self.plot.plot(
+                t_arr[finite].tolist(), ys[finite].tolist(),
+                pen=pg.mkPen(colour, width=1), symbol="o", symbolSize=6,
+                symbolBrush=colour, symbolPen=colour, name=f"iso{k}",
+            )
+        # Zero line — the θ=0 reference the labelled peaks walk away from.
+        self.plot.addItem(pg.InfiniteLine(
+            pos=0.0, angle=0,
+            pen=pg.mkPen("#888888", style=Qt.PenStyle.DashLine)))
+        self.plot.setLabel("left", label)
+        self.plot.setLabel("bottom", x_label)
+        self.plot.enableAutoRange(axis="y")
+        header = "  •  ".join(str(p) for p in (concat, protein, condition) if p)
+        self.plot.setTitle(f"{header}  —  {label}")
 
     def _ci_band(self, x, lower, upper, rgb: tuple) -> None:
         """Shade a confidence ribbon between *lower* and *upper* over *x*.

@@ -27,8 +27,10 @@ from riana.algorithms.isotope_dist import (
     _get_final_env,
     _get_init_env,
     clear_envelope_cache,
+    init_channel_masses,
 )
 from riana.algorithms.mass_calc import calculate_ion_mz
+from riana.constants import PROTON_MASS
 from riana.config import FitConfig
 from riana.core.fitting import fit_run
 from riana.core import models
@@ -306,8 +308,13 @@ def test_fit_run_requires_canonical_isotopomers():
     dfs = [df.drop(columns=["iso4", "iso5"]) for df in dfs]
     config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
-    with pytest.raises(ValueError, match="isotopomers"):
+    with pytest.raises(ValueError, match="D2O fit needs isotopomers"):
         fit_run(config, dfs, coeffs, n_boot=10)
+    # The guard names the active label (o18 vs D2O), not always "D2O".
+    o18_cfg = FitConfig(model="simple", label="o18", q_value=0.05, depth=3,
+                        ria_max=0.06)
+    with pytest.raises(ValueError, match="o18 fit needs isotopomers"):
+        fit_run(o18_cfg, dfs, coeffs, n_boot=10)
 
 
 def test_fit_run_handles_bracketed_modification_strings():
@@ -353,7 +360,7 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     long = result.attrs["fractions_long"]
     assert list(long.columns) == [
         "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-        "fs", "fs_lower", "fs_upper", "evidence", "metox",
+        "fs", "fs_lower", "fs_upper", "theta_ds", "evidence", "metox",
     ]
     # Synthetic data has no MBR -> every point is a direct ID.
     assert (long["evidence"] == "q_value").all()
@@ -369,6 +376,182 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     assert (long["biological_replicate"] == 1).all()
     # The wide frame also carries the PI list-cells for the GUI curve view.
     assert {"fs_lower", "fs_upper"} <= set(result.columns)
+
+
+def _add_obs_mz(dfs, peptides, shift_per_channel):
+    """Inject ``iso{k}_obs_mz`` columns at the init reference + a per-channel m/z
+    shift, so the v1.1.0 item-1a Δmass path has known-answer inputs.
+
+    ``shift_per_channel`` is a sequence of per-channel m/z offsets (length = number
+    of iso channels) added to the init (θ=0) averaged-isotopolog reference m/z.
+    The same shift is used at every timepoint — enough to check the arithmetic.
+    """
+    n = len(shift_per_channel)
+    for df in dfs:
+        cols = {f"iso{k}_obs_mz": [] for k in range(n)}
+        for _, row in df.iterrows():
+            seq = row["sequence"]
+            z = int(row["charge"])
+            pep_mass = calculate_ion_mz(seq)
+            ref_neutral = init_channel_masses(seq, pep_mass, n)
+            for k in range(n):
+                ref_mz = (ref_neutral[k] + z * PROTON_MASS) / z
+                cols[f"iso{k}_obs_mz"].append(ref_mz + shift_per_channel[k])
+        for c, vals in cols.items():
+            df[c] = vals
+    return dfs
+
+
+def test_init_channel_masses_reference():
+    """The θ=0 reference: iso0 is the monoisotopic mass, channels step by ~1 Da."""
+    clear_envelope_cache()
+    seq, n = "VAPEPTIDEK", 6
+    pep_mass = calculate_ion_mz(seq)
+    masses = init_channel_masses(seq, pep_mass, n)
+    assert len(masses) == n
+    # iso0's averaged-isotopolog mass is dominated by the monoisotopic peak.
+    assert masses[0] == pytest.approx(pep_mass, abs=2e-3)
+    # Successive channels are ~one neutron apart (slightly > 1 from the averaging).
+    steps = np.diff(masses)
+    assert np.all(steps > 0.99) and np.all(steps < 1.02)
+
+
+def test_dmass_dspacing_known_answer_and_global_drift_cancels():
+    """Item 1a: dmass = obs − init_ref; dspacing is M0-internal so a uniform m/z
+    drift cancels out of it while dmass records it."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+
+    # (a) Uniform +5 mDa drift on every channel -> dmass ≈ 5 mDa everywhere;
+    #     dspacing ≈ 0 (the M0-internal subtraction removes the global offset).
+    drift = 5e-3  # m/z
+    dfs = _add_obs_mz(
+        _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq),
+        _TEST_PEPTIDES, [drift] * 6)
+    long = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42).attrs["fractions_long"]
+    for k in range(6):
+        assert f"dmass_iso{k}" in long.columns
+        assert f"dspacing_iso{k}" in long.columns
+    # charges in _TEST_PEPTIDES are all 2 -> the m/z drift is the same number.
+    np.testing.assert_allclose(long["dmass_iso3"].to_numpy(), 5.0, atol=1e-6)
+    np.testing.assert_allclose(long["dspacing_iso3"].to_numpy(), 0.0, atol=1e-6)
+    assert (long["dspacing_iso0"] == 0.0).all()  # iso0 spacing is 0 by definition
+
+    # (b) A per-channel ramp k*2 mDa -> dspacing_iso{k} ≈ k*2 mDa (relative to iso0).
+    ramp = [k * 2e-3 for k in range(6)]
+    dfs2 = _add_obs_mz(
+        _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq),
+        _TEST_PEPTIDES, ramp)
+    long2 = fit_run(cfg, dfs2, coeffs, n_boot=0, random_state=42).attrs["fractions_long"]
+    for k in range(6):
+        np.testing.assert_allclose(long2[f"dspacing_iso{k}"].to_numpy(), k * 2.0,
+                                   atol=1e-6)
+        np.testing.assert_allclose(long2[f"dmass_iso{k}"].to_numpy(), k * 2.0,
+                                   atol=1e-6)
+
+
+def test_dmass_is_additive_no_effect_on_k_deg():
+    """Regression: the Δmass path is purely additive — adding obs_mz columns leaves
+    the FS / k_deg output identical (and omitting them omits the Δ columns)."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+
+    base = fit_run(cfg, _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq),
+                   coeffs, n_boot=0, random_state=42)
+    with_mz = fit_run(
+        cfg,
+        _add_obs_mz(_make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq),
+                    _TEST_PEPTIDES, [1e-3] * 6),
+        coeffs, n_boot=0, random_state=42)
+
+    # The FS solve is byte-identical; only floating-point summation order differs.
+    np.testing.assert_allclose(base["k_deg"].to_numpy(), with_mz["k_deg"].to_numpy(),
+                               rtol=1e-9, atol=1e-12, equal_nan=True)
+    # No obs_mz -> no Δ columns; obs_mz present -> Δ columns appear.
+    base_long = base.attrs["fractions_long"]
+    assert not any(c.startswith(("dmass_", "dspacing_")) for c in base_long.columns)
+    assert any(c.startswith("dmass_") for c in with_mz.attrs["fractions_long"].columns)
+
+
+def _make_calibration_dfs(peptides, spep_by_seq):
+    """Mixing-calibration series: ``sample`` encodes the heavy fraction f (0..1)
+    directly (``time{f}``), so the legacy x-parse yields the proportion and a
+    perfect integrator recovers FS == f — a 1:1 line."""
+    clear_envelope_cache()
+    dfs = []
+    for f in _PROPORTIONS:
+        rows = []
+        for k, (seq, charge) in enumerate(peptides):
+            pep_mass = calculate_ion_mz(seq)
+            init = _get_init_env(seq, pep_mass, n=6)
+            final = _get_final_env(seq, pep_mass, spep_by_seq[seq], ria_max=0.06, n=6)
+            mix = (1 - f) * (init / init.sum()) + f * (final / final.sum())
+            scaled = mix * 1e6
+            rows.append({
+                "file_idx": 0, "charge": charge, "concat": f"{seq}_{charge}",
+                "sequence": seq, "sample": f"time{f:.6f}",
+                "percolator q-value": 1e-4, "protein id": f"sp|P{k}|TEST",
+                **{f"iso{j}": scaled[j] for j in range(6)},
+            })
+        dfs.append(pd.DataFrame(rows))
+    return dfs
+
+
+def test_theta_delta_s_known_answer_and_anchor():
+    """_theta_delta_s: weighted-median of ΔSₓ/ΔSₓmax over iso1-3, t0-anchored."""
+    from riana.core.fitting import _theta_delta_s
+    dsmax = (0.0, 1.0, 2.0, 3.0)          # mDa per channel (iso0 unused)
+    t = np.array([0.0, 0.5, 1.0])
+    # Perfect signal: row k = f · dsmax[k]  →  θ = f after /ΔSₓmax.
+    rows = [[0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.5, 1.0, 1.5],
+            [0.0, 1.0, 2.0, 3.0]]
+    np.testing.assert_allclose(_theta_delta_s(rows, t, dsmax), [0.0, 0.5, 1.0], atol=1e-9)
+    # Anchoring removes a per-peptide constant offset on every channel (here +0.4):
+    rows_off = [[0.0, 0.4, 0.4, 0.4],
+                [0.0, 0.9, 1.4, 1.9],
+                [0.0, 1.4, 2.4, 3.4]]
+    np.testing.assert_allclose(_theta_delta_s(rows_off, t, dsmax), [0.0, 0.5, 1.0],
+                               atol=1e-9)
+    # A channel with negligible ΔSₓmax is dropped (needs ≥2 usable channels).
+    assert np.isnan(_theta_delta_s([[0.0, 1.0, 0.0, 0.0]], np.array([1.0]),
+                                   (0.0, 1.0, 0.0, 0.0)))
+
+
+def test_delta_spacing_max_is_positive_monotone_for_d2o():
+    """ΔSₓmax(k): iso0≡0, grows with channel (D heavier than ¹³C → positive)."""
+    from riana.algorithms.isotope_dist import delta_spacing_max, clear_envelope_cache
+    clear_envelope_cache()
+    seq = "VAPEPTIDEK"
+    dsmax = delta_spacing_max(seq, calculate_ion_mz(seq), spep=8, charge=2,
+                              n=6, ria_max=0.06, label_int=1)
+    assert dsmax[0] == 0.0
+    assert dsmax[2] > dsmax[1] > 0          # positive, growing for D₂O
+    assert all(np.isfinite(dsmax))
+
+
+def test_fit_config_accepts_calibration_model():
+    assert FitConfig(model="calibration").model == "calibration"
+    with pytest.raises(ValueError, match="calibration"):
+        FitConfig(model="nonsense")
+
+
+def test_calibration_model_recovers_unit_slope():
+    """--model calibration: a through-origin line of recovered FS vs known mixing
+    proportion. On clean synthetic mixing data the slope ≈ 1 and R² ≈ 1."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_calibration_dfs(_TEST_PEPTIDES, spep_by_seq)
+    cfg = FitConfig(model="calibration", label="hw", q_value=0.05, depth=3,
+                    ria_max=0.06)
+    out = fit_run(cfg, dfs, coeffs, n_boot=20, random_state=1)
+    slopes = out["k_deg"].dropna().to_numpy()
+    r2 = out["R_squared"].dropna().to_numpy()
+    assert len(slopes) == len(_TEST_PEPTIDES)
+    np.testing.assert_allclose(slopes, 1.0, atol=0.05)
+    assert (r2 > 0.999).all()
 
 
 def test_breakdown_columns_and_exclude_mbr():

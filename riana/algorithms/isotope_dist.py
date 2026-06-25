@@ -586,6 +586,85 @@ def adaptive_channel_masses(
     return result
 
 
+def init_channel_masses(
+    sequence: str,
+    pep_mass: float,
+    n: int,
+    mods: tuple[int, ...] = (),
+) -> tuple[float, ...]:
+    """Per-channel **init (unlabeled, θ=0) averaged-isotopolog NEUTRAL masses**.
+
+    The θ=0 reference for the orthogonal mass-defect θ (DeuteRater ΔS / Δmass,
+    v1.1.0 item 1). Each entry is the abundance-weighted average exact mass of the
+    nominal bin ``round(pep_mass)+iso`` in the natural-abundance envelope — i.e.
+    the *centroid* the labelled peak walks away from as deuterium incorporates.
+
+    This is the "init half" of :func:`adaptive_channel_masses` (which documents
+    these as the drift-robust θ=0 anchor) but with the channel count ``n`` given
+    by the caller — at fit the integrated width is already known, so no Commerford
+    final-envelope width union is needed. An empty init bin (pathological) falls
+    back to the analytic neutron-spacing comb. Cached in the shared
+    :data:`_envelope_cache` (cleared by :func:`clear_envelope_cache`).
+
+    Companion to :func:`_get_init_env` (abundances): same distribution, but the
+    averaged masses rather than the per-channel probabilities.
+    """
+    key = ('init_mass', sequence, mods, int(n))
+    cached = _envelope_cache.get(key)
+    if cached is not None:
+        return cached
+    dist = get_peptide_distribution(sequence, label=1, mods=tuple(mods))
+    init_m, _init_p = _binned_envelope(dist, pep_mass, int(n))
+    out = tuple(
+        m if not math.isnan(m) else pep_mass + iso * 1.003354835
+        for iso, m in enumerate(init_m)
+    )
+    _envelope_cache[key] = out
+    return out
+
+
+def delta_spacing_max(
+    sequence: str,
+    pep_mass: float,
+    spep: int,
+    charge: int,
+    n: int,
+    ria_max: float,
+    mods: tuple[int, ...] = (),
+    label_int: int = 1,
+) -> tuple[float, ...]:
+    """Theoretical **ΔSₓmax(k)** — the init→final M0-internal spacing change per
+    channel, in **m/z mDa** — the normalizer for the mass-defect θ
+    (``fraction_new = ΔSₓ / ΔSₓmax``; v1.1.0 item 1b).
+
+    ``ΔSₓmax(k) = [final_avg(k)−final_avg(0)] − [init_avg(k)−init_avg(0)]`` over the
+    averaged-isotopolog masses, divided by ``charge`` to m/z and ×1e3 to mDa — the
+    spacing a fully-labelled peptide's neutromer k gains over the unlabelled
+    reference. ``label_int`` selects the labelled-envelope chemistry (1 = D₂O H/D,
+    3 = ¹⁸O), matching :func:`get_peptide_distribution`. Final masses cached.
+    """
+    init_m = init_channel_masses(sequence, pep_mass, n, mods=mods)
+    key = ('final_mass', sequence, tuple(mods), int(spep),
+           round(float(ria_max), 6), int(n), int(label_int))
+    final_m = _envelope_cache.get(key)
+    if final_m is None:
+        dist = get_peptide_distribution(
+            sequence, deuterium_enrichment_level=ria_max, label=label_int,
+            num_labeling_sites=spep, mods=tuple(mods),
+        )
+        fm, _ = _binned_envelope(dist, pep_mass, int(n))
+        final_m = tuple(
+            m if not math.isnan(m) else pep_mass + iso * 1.003354835
+            for iso, m in enumerate(fm)
+        )
+        _envelope_cache[key] = final_m
+    z = max(1, int(charge))
+    return tuple(
+        ((final_m[k] - final_m[0]) - (init_m[k] - init_m[0])) / z * 1e3
+        for k in range(int(n))
+    )
+
+
 def spep_from_coefficients(
     sequence: str,
     aa_coefficients: dict[str, float],

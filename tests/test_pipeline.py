@@ -104,6 +104,75 @@ def _integrate_rows_from_dfs(tmp_path, dfs, *, condition="control"):
     return rows
 
 
+def _calibration_rows_from_dfs(tmp_path, dfs, *, condition="control"):
+    """Per-run _riana.txt + manifest rows for a mixing-calibration series — each
+    run carries ``mixing_proportion`` (the heavy fraction) instead of a labeling
+    time, so RunIdentity.experiment_type == 'calibration'."""
+    rows = []
+    for prop, df in zip(_PROPORTIONS, dfs):
+        stem = f"calrun_f{prop:.4f}"
+        path = tmp_path / f"{stem}_riana.txt"
+        df.to_csv(path, sep="\t", index=False)
+        ident = RunIdentity(
+            experiment="syn", sample=stem, data_file=stem,
+            mixing_proportion=float(prop), condition=condition,
+        )
+        rows.append(ManifestRow("integrate", str(path), ident))
+    return rows
+
+
+def _make_calibration_dfs(coeffs):
+    """Mixing-calibration envelopes (FS == proportion); proportion comes from the
+    manifest identity, so the sample string is just a label here."""
+    spep_by = _spep_by_seq(coeffs)
+    clear_envelope_cache()
+    dfs = []
+    for prop in _PROPORTIONS:
+        rows = []
+        for k, (seq, charge) in enumerate(_TEST_PEPTIDES):
+            pep_mass = calculate_ion_mz(seq)
+            init = _get_init_env(seq, pep_mass, n=6)
+            final = _get_final_env(seq, pep_mass, spep_by[seq], ria_max=0.06, n=6)
+            mix = (1 - prop) * (init / init.sum()) + prop * (final / final.sum())
+            scaled = mix * 1e6
+            rows.append({
+                "file_idx": 0, "charge": charge, "concat": f"{seq}_{charge}",
+                "sequence": seq, "sample": f"cal{prop:.4f}",
+                "percolator q-value": 1e-4, "protein id": f"sp|P{k}|TEST",
+                **{f"iso{j}": scaled[j] for j in range(6)},
+            })
+        dfs.append(pd.DataFrame(rows))
+    return dfs
+
+
+def test_fit_project_auto_dispatches_calibration_model(tmp_path):
+    """A manifest whose runs carry mixing_proportion (experiment_type==calibration)
+    is fit with the calibration recovery line — even when config.model is the
+    kinetic default — so the recovered slope ≈ 1 and R² ≈ 1, and a default-model
+    run matches an explicit --model calibration run."""
+    coeffs = _coeffs()
+    rows = _calibration_rows_from_dfs(tmp_path, _make_calibration_dfs(coeffs))
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+
+    # config.model is the kinetic default; the manifest's calibration identity
+    # must override it (the decided experiment-type dispatch).
+    auto = fit_project(FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                                 ria_max=0.06), mf, coeffs, n_boot=0, random_state=1)
+    slopes = auto["k_deg"].dropna().to_numpy()
+    np.testing.assert_allclose(slopes, 1.0, atol=0.05)
+    assert (auto["R_squared"].dropna().to_numpy() > 0.999).all()
+
+    # An explicit --model calibration produces the identical result — proof the
+    # default-model run dispatched to calibration, not the simple exponential.
+    explicit = fit_project(FitConfig(model="calibration", label="hw", q_value=0.05,
+                                     depth=3, ria_max=0.06), mf, coeffs,
+                           n_boot=0, random_state=1)
+    np.testing.assert_allclose(auto.sort_index()["k_deg"].to_numpy(dtype=float),
+                               explicit.sort_index()["k_deg"].to_numpy(dtype=float),
+                               rtol=0, atol=1e-9, equal_nan=True)
+
+
 def test_recombine_groups_by_condition(tmp_path):
     coeffs = _coeffs()
     rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs),

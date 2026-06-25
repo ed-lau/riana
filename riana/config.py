@@ -323,7 +323,9 @@ class FitConfig:
     post-M4 placeholder).
     """
 
-    #: -m / --model. One of "simple", "guan", "fornasiero".
+    #: -m / --model. Kinetic: "simple", "guan", "fornasiero"; or "calibration"
+    #: (through-origin FS-vs-mixing-proportion recovery line, auto-dispatched for
+    #: calibration runs).
     model: str = "simple"
     #: -l / --label. The labeling chemistry. ``"hw"`` (heavy water / D₂O,
     #: default) is the only path the M4 fit engine implements — cell/tissue
@@ -392,8 +394,10 @@ class FitConfig:
     out_dir: str = "."
 
     def __post_init__(self) -> None:
-        if self.model not in ("simple", "guan", "fornasiero"):
-            raise ValueError(f"model must be simple/guan/fornasiero, got {self.model!r}")
+        if self.model not in ("simple", "guan", "fornasiero", "calibration"):
+            raise ValueError(
+                f"model must be simple/guan/fornasiero/calibration, "
+                f"got {self.model!r}")
         if self.label not in ("hw", "o18"):
             raise ValueError(f"label must be 'hw' or 'o18', got {self.label!r}")
         if not 0.0 <= self.q_value <= 1.0:

@@ -54,7 +54,8 @@ from scipy.optimize import curve_fit
 
 from riana import constants
 from riana.algorithms.isotope_dist import (
-    init_envelope_width, solve_fs_d2o, solve_fs_o18,
+    delta_spacing_max, init_channel_masses, init_envelope_width,
+    solve_fs_d2o, solve_fs_o18,
     spep_from_coefficients, spep_from_length_coefficients,
 )
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
@@ -68,6 +69,11 @@ _MODELS: dict[str, Callable] = {
     "simple": models.one_exponent,
     "guan": models.two_compartment_guan,
     "fornasiero": models.two_compartment_fornasiero,
+    # Calibration recovery (mixing-proportion runs): a through-origin line FS≈f
+    # fit by the same curve_fit path; ``k_deg`` holds the recovered slope, R² the
+    # recovery quality. Dispatched automatically for experiment_type=="calibration"
+    # (see core.pipeline.fit_project) and selectable via --model / the GUI combo.
+    "calibration": models.calibration_line,
 }
 
 _K_DEG_INIT = 0.5
@@ -148,6 +154,62 @@ _REQUIRED_D2O_ISOTOPOMERS = (0, 1, 2, 3, 4, 5)
 FS_AUTO_BASE = 4
 FS_AUTO_INIT_W_THRESHOLD = 6
 
+#: Mass-defect θ (θ_ΔS, the orthogonal DeuteRater second estimate; v1.1.0 item 1b).
+#: Scored on the low, well-measured spacing channels only — the high channels carry
+#: a per-peptide model-vs-centroid reference offset (report 2026-06-25); iso4/5 stay
+#: in the GUI for QC but out of the number. A channel needs |ΔSₓmax| over this floor
+#: (mDa) to contribute (negligible-range channels are pure noise).
+THETA_DS_CHANNELS = (1, 2, 3)
+THETA_DS_DSMAX_FLOOR = 0.2
+
+
+def _theta_delta_s(
+    dspacing_rows: list[list[float]],
+    t_fit: np.ndarray,
+    dsmax: tuple[float, ...],
+) -> list[float]:
+    """Per-timepoint mass-defect θ_ΔS from the per-channel Δspacing rows.
+
+    θ_ΔS(point) = weighted median over :data:`THETA_DS_CHANNELS` of
+    ``ΔSₓ(k) / ΔSₓmax(k)`` (weights ∝ |ΔSₓmax(k)|, the signal range), with a
+    3·MAD outlier guard across channels. ΔSₓ is **anchored to the unlabelled
+    (t/f == 0) point** when one is present among the fitted points (subtract its
+    per-channel Δspacing — removes the per-peptide reference offset, report
+    2026-06-25); otherwise the theory-referenced Δspacing is used as-is (fallback).
+    Returns NaN for a point with < 2 usable channels.
+    """
+    if not dspacing_rows:
+        return []
+    zero_idx = next((i for i, tt in enumerate(t_fit) if tt == 0.0), None)
+    anchor = dspacing_rows[zero_idx] if zero_idx is not None else None
+    out: list[float] = []
+    for row in dspacing_rows:
+        vals: list[float] = []
+        wts: list[float] = []
+        for k in THETA_DS_CHANNELS:
+            if k >= len(row) or k >= len(dsmax):
+                continue
+            mx = dsmax[k]
+            ds = row[k] - (anchor[k] if anchor is not None else 0.0)
+            if abs(mx) < THETA_DS_DSMAX_FLOOR or not np.isfinite(ds):
+                continue
+            vals.append(ds / mx)
+            wts.append(abs(mx))
+        if len(vals) < 2:
+            out.append(float("nan"))
+            continue
+        v = np.asarray(vals)
+        med = np.median(v)
+        mad = np.median(np.abs(v - med)) or 1e-9
+        keep = np.abs(v - med) <= 3.0 * mad
+        if keep.sum() < 2:
+            keep = np.ones_like(v, dtype=bool)
+        vk = v[keep]
+        wk = np.asarray(wts)[keep]
+        order = np.argsort(vk)
+        out.append(float(vk[order][np.searchsorted(np.cumsum(wk[order]), wk.sum() / 2.0)]))
+    return out
+
 
 @dataclass(frozen=True, slots=True)
 class FitResult:
@@ -179,6 +241,20 @@ class FitResult:
     #: Per-point Met-Ox flag, aligned 1:1 with ``t``/``fs`` (the point came from a
     #: chemical-mod peptidoform merged at fit). Carries the breakdown to the rollup.
     metox: list[bool] = field(default_factory=list)
+    #: v1.1.0 item 1a — the orthogonal mass-defect QC substrate, aligned 1:1 with
+    #: ``t``/``fs`` (one inner list per fitted point, per isotopomer channel, in
+    #: **mDa**). ``dmass`` is the absolute shift ``obs_mz[k] − init_ref[k]`` (drift-
+    #: sensitive); ``dspacing`` is the M0-internal ``(obs_mz[k]−obs_mz[0]) −
+    #: (init_ref[k]−init_ref[0])`` (DeuteRater ΔSₓ, drift-robust; index 0 ≡ 0). Empty
+    #: when the integrate output carries no ``iso{N}_obs_mz`` columns (QC is opt-in
+    #: on the data). NaN per channel when that channel was not observed in-window.
+    dmass: list[list[float]] = field(default_factory=list)
+    dspacing: list[list[float]] = field(default_factory=list)
+    #: v1.1.0 item 1b — the mass-defect θ (θ_ΔS), aligned 1:1 with ``t``/``fs``: a
+    #: drift-robust SECOND fraction-new estimate from the Δspacing (iso0–3, anchored,
+    #: weighted median + MAD), to cross-check the intensity FS — never the primary θ.
+    #: NaN per point when < 2 channels are usable; empty when no obs_mz / no charge.
+    theta_ds: list[float] = field(default_factory=list)
     #: Census of the **fitted** points (a curve's composition): total, the count
     #: from MBR transfers, the count from Met-Ox peptidoforms merged at fit (M7
     #: tier 1b), and the count that are neither ("clean"). A point that is both MBR
@@ -331,9 +407,10 @@ def fit_run(
         hint = "--iso '0 1 2 3 4 5'"
     missing = [i for i in required if i not in present_isos]
     if missing:
+        label_name = "o18" if config.label == "o18" else "D2O"
         raise ValueError(
-            f"The D2O fit needs isotopomers {list(required)} present in the "
-            f"integrate output, but {['iso%d' % i for i in missing]} are absent "
+            f"The {label_name} fit needs isotopomers {list(required)} present in "
+            f"the integrate output, but {['iso%d' % i for i in missing]} are absent "
             f"(found {sorted(present_isos)}). Re-run `riana integrate {hint}` "
             f"or `--iso auto`."
         )
@@ -682,6 +759,66 @@ def _fit_one_concat(
     # Census of the fitted points (aligned to fit_mask): MBR / Met-Ox / clean.
     mbr_fit = is_mbr[fit_mask]
     metox_fit = is_metox[fit_mask]
+
+    # v1.1.0 item 1a — orthogonal mass-defect QC, per fitted point × channel (mDa).
+    # The observed per-channel m/z (iso{k}_obs_mz, written by integrate) compared to
+    # the init (θ=0) averaged-isotopolog reference recomputed HERE from IsoSpec —
+    # path-independent, NOT the recorded ppm_error (which is init-anchored on
+    # --iso auto but an analytic comb on the fixed path). ``dmass`` = absolute shift
+    # obs−init_ref; ``dspacing`` = M0-internal (obs[k]−obs[0])−(ref[k]−ref[0]), the
+    # drift-robust DeuteRater ΔSₓ. Empty when the integrate output predates the
+    # obs_mz columns (QC is opt-in on the data); NaN per channel not seen in-window.
+    obs_mz_cols = [f"{c}_obs_mz" for c in iso_cols]
+    dmass_fit: list[list[float]] = []
+    dspacing_fit: list[list[float]] = []
+    if all(c in peptide_rows.columns for c in obs_mz_cols):
+        obs_mz_matrix = peptide_rows[obs_mz_cols].to_numpy(dtype=np.float64)
+        charge_arr = (
+            peptide_rows["charge"].to_numpy(dtype=np.float64)
+            if "charge" in peptide_rows.columns
+            else np.full(len(peptide_rows), np.nan)
+        )
+        n_ch = len(iso_cols)
+        nan_row = [float("nan")] * n_ch
+        for i in np.nonzero(fit_mask)[0]:
+            z = charge_arr[i]
+            mods_i, pep_mass_i = forms[row_concats[i]]
+            if not np.isfinite(z) or z <= 0:
+                dmass_fit.append(list(nan_row))
+                dspacing_fit.append(list(nan_row))
+                continue
+            ref_neutral = np.asarray(
+                init_channel_masses(seq, pep_mass_i, n_ch, mods=mods_i),
+                dtype=np.float64,
+            )
+            init_ref_mz = (ref_neutral + z * constants.PROTON_MASS) / z
+            obs = obs_mz_matrix[i]
+            dmass = (obs - init_ref_mz) * 1e3
+            dspacing = ((obs - obs[0]) - (init_ref_mz - init_ref_mz[0])) * 1e3
+            dmass_fit.append([float(x) for x in dmass])
+            dspacing_fit.append([float(x) for x in dspacing])
+
+    # v1.1.0 item 1b — the mass-defect θ (θ_ΔS): an orthogonal, drift-robust SECOND
+    # estimate of fraction-new from the per-channel Δspacing, cross-checking the
+    # intensity FS (never displacing it). iso0–3 only, anchored to the unlabelled
+    # point when present, weighted median + MAD (see _theta_delta_s). ΔSₓmax (the
+    # normalizer) is the IsoSpec init→final spacing change for this peptidoform.
+    theta_ds_fit: list[float] = []
+    if dspacing_fit:
+        first_i = int(np.nonzero(fit_mask)[0][0])
+        mods0, pep_mass0 = forms[row_concats[first_i]]
+        z0 = int(charge_arr[first_i]) if np.isfinite(charge_arr[first_i]) else 0
+        if z0 > 0:
+            try:
+                dsmax = delta_spacing_max(
+                    seq, pep_mass0, spep_int, z0, len(iso_cols),
+                    float(config.ria_max), mods=mods0,
+                    label_int=(3 if is_o18 else 1),
+                )
+                theta_ds_fit = _theta_delta_s(dspacing_fit, t_fit, dsmax)
+            except (KeyError, ValueError):
+                theta_ds_fit = []
+
     return FitResult(
         concat=concat,
         k_deg=k_deg,
@@ -699,6 +836,9 @@ def _fit_one_concat(
         bio_rep=[int(b) for b in bio_rep_arr[fit_mask]],
         evidence=["mbr" if m else "q_value" for m in mbr_fit],
         metox=[bool(m) for m in metox_fit],
+        dmass=dmass_fit,
+        dspacing=dspacing_fit,
+        theta_ds=theta_ds_fit,
         n_points=int(fit_mask.sum()),
         n_mbr=int(mbr_fit.sum()),
         n_metox=int(metox_fit.sum()),
@@ -739,6 +879,9 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
             "fs_upper": r.fs_hi,
             "evidence": r.evidence,
             "metox": r.metox,
+            "dmass": r.dmass,
+            "dspacing": r.dspacing,
+            "theta_ds": r.theta_ds,
             "k_deg": r.k_deg,
             "R_squared": r.r_squared,
             "sd": r.sd,
@@ -760,14 +903,15 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
 #: Column order for the M5 long-format per-timepoint fraction-new table.
 _FRACTIONS_LONG_COLUMNS = [
     "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
-    "fs", "fs_lower", "fs_upper", "evidence", "metox",
+    "fs", "fs_lower", "fs_upper", "theta_ds", "evidence", "metox",
 ]
 
 #: Per-timepoint list-cell columns on the wide per-peptide frame. They duplicate
 #: the tidy ``riana_fit_fractions.txt`` (and lose its biorep labels), so they are
 #: dropped when *writing* ``riana_fit_peptides.txt`` but kept in-memory (the GUI
 #: curve reads ``t``/``fs``/``evidence`` from the result frame, not the file).
-_PER_TIMEPOINT_COLS = ("t", "fs", "fs_lower", "fs_upper", "evidence", "metox")
+_PER_TIMEPOINT_COLS = ("t", "fs", "fs_lower", "fs_upper", "evidence", "metox",
+                       "dmass", "dspacing", "theta_ds")
 
 
 def peptide_summary(result_df: pd.DataFrame) -> pd.DataFrame:
@@ -790,15 +934,22 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
     contribute no rows (their ``t`` list is empty).
     """
     rows = []
+    # v1.1.0 item 1a — per-channel mass-defect columns (dmass_iso{k} / dspacing_iso{k},
+    # mDa). Exploded here from the per-point inner lists; collected so the column set
+    # is stable across peptides and omitted entirely when no peptide carried obs_mz.
+    extra_cols: set[str] = set()
     for r in results:
         if r is None:
             continue
         ev = r.evidence if len(r.evidence) == len(r.t) else ["q_value"] * len(r.t)
         mx = r.metox if len(r.metox) == len(r.t) else [False] * len(r.t)
-        for ti, fsi, lo, hi, br, evi, mxi in zip(
-            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev, mx
+        dm = r.dmass if len(r.dmass) == len(r.t) else [None] * len(r.t)
+        ds = r.dspacing if len(r.dspacing) == len(r.t) else [None] * len(r.t)
+        tds = r.theta_ds if len(r.theta_ds) == len(r.t) else [float("nan")] * len(r.t)
+        for ti, fsi, lo, hi, br, evi, mxi, dmi, dsi, tdi in zip(
+            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev, mx, dm, ds, tds
         ):
-            rows.append({
+            row = {
                 "concat": r.concat,
                 "protein id": r.protein_id,
                 "mod sites": r.mod_sites,
@@ -807,7 +958,22 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
                 "fs": float(fsi),
                 "fs_lower": float(lo),
                 "fs_upper": float(hi),
+                "theta_ds": float(tdi),
                 "evidence": evi,
                 "metox": bool(mxi),
-            })
-    return pd.DataFrame(rows, columns=_FRACTIONS_LONG_COLUMNS)
+            }
+            if dmi is not None:
+                for k, v in enumerate(dmi):
+                    col = f"dmass_iso{k}"
+                    row[col] = float(v)
+                    extra_cols.add(col)
+            if dsi is not None:
+                for k, v in enumerate(dsi):
+                    col = f"dspacing_iso{k}"
+                    row[col] = float(v)
+                    extra_cols.add(col)
+            rows.append(row)
+    ordered_extra = sorted(
+        extra_cols, key=lambda c: (c.rsplit("_iso", 1)[0], int(c.rsplit("iso", 1)[1]))
+    )
+    return pd.DataFrame(rows, columns=_FRACTIONS_LONG_COLUMNS + ordered_extra)

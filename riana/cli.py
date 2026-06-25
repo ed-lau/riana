@@ -479,7 +479,9 @@ def fit(
     ),
     model: str = typer.Option(
         "simple", "-m", "--model",
-        help="Kinetic model: simple (default), guan, fornasiero."),
+        help="Kinetic model: simple (default), guan, fornasiero. Or 'calibration' "
+             "— a through-origin FS-vs-mixing-proportion recovery line (R² = "
+             "recovery quality); auto-selected on --manifest calibration runs."),
     label: str = typer.Option(
         "hw", "-l", "--label",
         help="Labeling chemistry: 'hw' (heavy water / D2O, default) or 'o18' "

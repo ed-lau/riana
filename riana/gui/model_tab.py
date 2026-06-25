@@ -25,6 +25,7 @@ import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QSplitter,
     QTableView,
@@ -86,6 +88,9 @@ class ModelTab(QWidget):
         self._future: Future | None = None
         self._result_df: pd.DataFrame | None = None
         self._last_config: FitConfig | None = None
+        #: (concat, result-row) of the table selection, so the Fit/Δ view toggle can
+        #: re-render the same peptide without a fresh row-change event.
+        self._selected: tuple[str, pd.Series] | None = None
 
         self._build_ui()
 
@@ -149,7 +154,12 @@ class ModelTab(QWidget):
         form.addRow("Coefficients", _row(coeff_row))
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["simple", "guan", "fornasiero"])
+        self.model_combo.addItems(["simple", "guan", "fornasiero", "calibration"])
+        self.model_combo.setToolTip(
+            "Kinetic models (simple/guan/fornasiero) fit k_deg vs labeling time. "
+            "'calibration' fits a through-origin FS-vs-mixing-proportion recovery "
+            "line (R² = recovery quality) — pick it for a mixing-calibration run, "
+            "or use a manifest and it is auto-selected.")
         form.addRow("Model", self.model_combo)
 
         self.label_combo = QComboBox()
@@ -270,8 +280,42 @@ class ModelTab(QWidget):
         self.table.selectionModel().currentRowChanged.connect(self._on_row_changed)
         results_split.addWidget(self.table)
 
+        # Curve panel: a Fit / Δspacing / Δmass view toggle above the plot. Δspacing
+        # (the drift-robust M0-internal mass-defect, DeuteRater ΔSₓ) leads the two Δ
+        # modes; Fit is the default. The same selected peptide re-renders on toggle.
+        curve_panel = QWidget()
+        curve_layout = QVBoxLayout(curve_panel)
+        curve_layout.setContentsMargins(0, 0, 0, 0)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("View:"))
+        self.view_group = QButtonGroup(self)
+        self._fit_radio = QRadioButton("Fit")
+        self._fit_radio.setChecked(True)
+        self._spacing_radio = QRadioButton("Δ spacing")
+        self._mass_radio = QRadioButton("Δ mass")
+        self._spacing_radio.setToolTip(
+            "M0-internal mass-defect ΔSₓ over time (drift-robust; DeuteRater). The "
+            "labelled neutromers' spacing from M0 widens as deuterium incorporates.")
+        self._mass_radio.setToolTip(
+            "Absolute accurate-mass shift obs − init reference per channel "
+            "(drift-sensitive; instrument-drift / sanity QC).")
+        for rb in (self._fit_radio, self._spacing_radio, self._mass_radio):
+            self.view_group.addButton(rb)
+            mode_row.addWidget(rb)
+            rb.toggled.connect(self._on_view_changed)
+        self._anchor_check = QCheckBox("anchor t0/f0")
+        self._anchor_check.setToolTip(
+            "Subtract the unlabelled (t/f=0) point's Δ from every point — the "
+            "empirical f0/t0 anchor: removes the per-peptide reference offset so the "
+            "Δ-views start at 0 and show the pure labelling signal. Applies to the "
+            "Δ spacing / Δ mass views only (needs a t/f=0 point).")
+        self._anchor_check.toggled.connect(self._on_view_changed)
+        mode_row.addWidget(self._anchor_check)
+        mode_row.addStretch(1)
+        curve_layout.addLayout(mode_row)
         self.curve = CurveView()
-        results_split.addWidget(self.curve)
+        curve_layout.addWidget(self.curve)
+        results_split.addWidget(curve_panel)
         results_split.setSizes([320, 300])
         layout.addWidget(results_split, stretch=1)
         return panel
@@ -350,6 +394,7 @@ class ModelTab(QWidget):
         self.model.set_dataframe(pd.DataFrame())
         self.curve.show_placeholder("Fitting…")
         self._result_df = None
+        self._selected = None
         self._cancelled = False
 
         try:
@@ -485,10 +530,12 @@ class ModelTab(QWidget):
     # --- fitted curve on selection (pure, no worker) ------------------------ #
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if not current.isValid() or self._running or self._result_df is None:
+            self._selected = None
             return
         sel = self.model.dataframe.iloc[current.row()]
         concat = sel["concat"]
         if concat not in self._result_df.index:
+            self._selected = None
             return
         row = self._result_df.loc[concat]
         if isinstance(row, pd.DataFrame):  # manifest path: same peptide, >1 group
@@ -496,12 +543,47 @@ class ModelTab(QWidget):
             # selected table row belongs to, not just the first — else the curve
             # silently shows a different condition than the row's n_* counts.
             row = _match_group(row, sel)
+        self._selected = (str(concat), row)
+        self._render_curve()
+
+    def _on_view_changed(self, checked: bool) -> None:
+        # QButtonGroup toggled fires for both the de-selected and the newly selected
+        # button; act only on the on-event (the other carries the same render).
+        if checked:
+            self._render_curve()
+
+    def _render_curve(self) -> None:
+        """Draw the selected peptide in the view the toggle selects (Fit / Δ)."""
+        if self._selected is None:
+            return
+        concat, row = self._selected
+        if self._spacing_radio.isChecked() or self._mass_radio.isChecked():
+            mode = "spacing" if self._spacing_radio.isChecked() else "mass"
+            dm = row.get("dmass")
+            ds = row.get("dspacing")
+            x_label = ("Mixing proportion"
+                       if self._last_config is not None
+                       and self._last_config.model == "calibration"
+                       else "Time")
+            self.curve.plot_dmass(
+                concat, list(row["t"]),
+                list(dm) if dm is not None else [],
+                list(ds) if ds is not None else [],
+                mode=mode,
+                protein=row.get("protein id"),
+                condition=row.get("condition"),
+                x_label=x_label,
+                anchor=self._anchor_check.isChecked(),
+            )
+            return
         cfg = self._last_config
+        if cfg is None:
+            return
         kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
         ev = row.get("evidence")
         mx = row.get("metox")
         self.curve.plot_fit(
-            str(concat), list(row["t"]), list(row["fs"]),
+            concat, list(row["t"]), list(row["fs"]),
             float(row["k_deg"]), cfg.model, kinetic,
             ci_lo=_safe_float(row.get("ci_lo")),
             ci_hi=_safe_float(row.get("ci_hi")),

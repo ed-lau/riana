@@ -571,6 +571,120 @@ def test_model_tab_plots_fitted_curve_on_row_selection(main_window):
     assert title.startswith("PEPTIDEK_2") and "sp|X|T" in title
 
 
+def test_curve_view_plot_dmass_draws_per_channel_series(main_window):
+    """plot_dmass draws one series per channel; spacing drops iso0 (≡0), absolute
+    keeps it; empty arrays fall back to the placeholder."""
+    from pyqtgraph import PlotDataItem
+
+    cv = main_window.protein_tab.curve
+    t = [0.0, 1.0, 2.0, 4.0]
+    # 4 points × 4 channels (mDa). iso0 spacing is 0 by construction.
+    dmass = [[0.0, 1.0, 2.0, 3.0], [0.0, 2.0, 4.0, 6.0],
+             [0.0, 3.0, 6.0, 9.0], [0.0, 4.0, 8.0, 12.0]]
+    dspacing = [[0.0, 0.5, 1.0, 1.5], [0.0, 1.0, 2.0, 3.0],
+                [0.0, 1.5, 3.0, 4.5], [0.0, 2.0, 4.0, 6.0]]
+
+    cv.plot_dmass("PEP", t, dmass, dspacing, mode="spacing")
+    series = [i for i in cv.plot.items if isinstance(i, PlotDataItem)]
+    assert {i.name() for i in series} == {"iso1", "iso2", "iso3"}  # iso0 dropped
+
+    cv.plot_dmass("PEP", t, dmass, dspacing, mode="mass")
+    series = [i for i in cv.plot.items if isinstance(i, PlotDataItem)]
+    assert {i.name() for i in series} == {"iso0", "iso1", "iso2", "iso3"}
+
+    # No mass-accuracy data -> placeholder, no series.
+    cv.plot_dmass("PEP", t, [], [], mode="spacing")
+    series = [i for i in cv.plot.items if isinstance(i, PlotDataItem)]
+    assert not series
+
+    # Out-of-order input (file/concat order, not ascending x) must be sorted before
+    # the connecting line is drawn — else the line zig-zags. x=1.0 arrives early.
+    t_unsorted = [0.0, 1.0, 0.25, 0.5]
+    ds_unsorted = [[0.0, 0.1], [0.0, 0.4], [0.0, 0.2], [0.0, 0.3]]
+    cv.plot_dmass("PEP", t_unsorted, ds_unsorted, ds_unsorted, mode="spacing")
+    line = next(i for i in cv.plot.items if isinstance(i, PlotDataItem))
+    xs = list(line.getData()[0])
+    assert xs == sorted(xs)  # ascending x, no zig-zag
+
+
+def test_curve_view_plot_dmass_anchor_zeroes_t0(main_window):
+    """anchor=True subtracts the unlabelled (t=0) point's per-channel Δ from every
+    point, so each channel's series starts at 0."""
+    from pyqtgraph import PlotDataItem
+
+    cv = main_window.protein_tab.curve
+    t = [0.0, 0.5, 1.0]
+    ds = [[0.0, 0.4, 0.8], [0.0, 0.9, 1.6], [0.0, 1.4, 2.4]]  # offset +0.4/+0.8 at t0
+    cv.plot_dmass("PEP", t, ds, ds, mode="spacing", anchor=True)
+    series = {i.name(): i for i in cv.plot.items if isinstance(i, PlotDataItem)}
+    # iso1's first (t=0) value is the anchor → 0 after subtraction.
+    xs, ys = series["iso1"].getData()
+    assert ys[list(xs).index(0.0)] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_model_tab_view_toggle_switches_fit_and_dmass(main_window):
+    """The Model-tab View toggle re-renders the selected peptide as Fit / Δspacing /
+    Δmass without a fresh row selection."""
+    from pyqtgraph import PlotDataItem
+
+    tab = main_window.model_tab
+    rdf = pd.DataFrame(
+        {
+            "t": [[0.0, 1.0, 2.0, 3.0]],
+            "fs": [[0.0, 0.3, 0.55, 0.7]],
+            "dmass": [[[0.0, 1.0, 2.0], [0.0, 2.0, 4.0],
+                       [0.0, 3.0, 6.0], [0.0, 4.0, 8.0]]],
+            "dspacing": [[[0.0, 0.5, 1.0], [0.0, 1.0, 2.0],
+                          [0.0, 1.5, 3.0], [0.0, 2.0, 4.0]]],
+            "k_deg": [0.4], "R_squared": [0.98], "sd": [0.02], "spep": [8.0],
+            "ci_lo": [0.36], "ci_hi": [0.44], "protein id": ["sp|X|T"],
+        },
+        index=pd.Index(["PEPTIDEK_2"], name="concat"),
+    )
+    tab._result_df = rdf
+    tab._last_config = tab.build_config()
+    tab._populate_results(rdf)
+    tab.table.setCurrentIndex(tab.model.index(0, 0))
+
+    # Default view = Fit: observed scatter + fitted line.
+    assert tab._fit_radio.isChecked()
+    assert len([i for i in tab.curve.plot.items if isinstance(i, PlotDataItem)]) == 2
+
+    # Toggle Δspacing -> per-channel series (iso1, iso2; iso0 dropped).
+    tab._spacing_radio.setChecked(True)
+    names = {i.name() for i in tab.curve.plot.items if isinstance(i, PlotDataItem)}
+    assert names == {"iso1", "iso2"}
+
+    # Toggle Δmass -> all channels including iso0.
+    tab._mass_radio.setChecked(True)
+    names = {i.name() for i in tab.curve.plot.items if isinstance(i, PlotDataItem)}
+    assert names == {"iso0", "iso1", "iso2"}
+
+
+def test_curve_view_calibration_draws_unit_line(main_window):
+    """plot_fit in 'calibration' mode draws the recovery line, a 1:1 ideal
+    reference (PlotCurveItem, not a data series), and labels x as mixing proportion."""
+    from pyqtgraph import PlotCurveItem, PlotDataItem
+
+    cv = main_window.protein_tab.curve
+    f = [0.0, 0.25, 0.5, 0.75]
+    fs = [0.0, 0.26, 0.49, 0.74]
+    cv.plot_fit("PEP", f, fs, 0.98, "calibration", {})
+    series = [i for i in cv.plot.items if isinstance(i, PlotDataItem)]
+    # observed scatter + recovery line (no CI here) = 2 data series.
+    assert len(series) == 2
+    assert any((n := i.name()) and n.startswith("recovery") for i in series)
+    # The 1:1 ideal is a PlotCurveItem, deliberately not a data series.
+    assert any(isinstance(i, PlotCurveItem) for i in cv.plot.items)
+    assert cv.plot.getAxis("bottom").labelText == "Mixing proportion"
+
+
+def test_model_tab_combo_offers_calibration(main_window):
+    items = [main_window.model_tab.model_combo.itemText(i)
+             for i in range(main_window.model_tab.model_combo.count())]
+    assert "calibration" in items
+
+
 # --- Track E: sortable tables + graph export --------------------------------- #
 
 

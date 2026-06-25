@@ -400,17 +400,33 @@ def fit_project(
         raise DataError(f"no integrate rows in manifest {manifest_path}")
     curves = recombine_for_fit(integrate_rows)
 
+    # Experiment-type → model dispatch (the decided behavior): a mixing-proportion
+    # run is fit with the calibration recovery line, a labeling-time run with the
+    # kinetic model. recombine_for_fit already routes the right x-axis
+    # (RunIdentity.independent_value → mixing_proportion for calibration); here we
+    # pick the matching model per curve, overriding a kinetic default. An explicit
+    # ``--model calibration`` is respected on turnover data too (it just stays).
+    exp_type = {r.identity.group_key: r.identity.experiment_type
+                for r in integrate_rows if r.stage == "integrate"}
+
     results: list[pd.DataFrame] = []
     long_frames: list[pd.DataFrame] = []
     for group_key, frame in sorted(curves.items()):
         experiment, condition = group_key
+        curve_config = config
+        if exp_type.get(group_key) == "calibration" and config.model != "calibration":
+            curve_config = dataclasses.replace(config, model="calibration")
+            log.info(
+                "calibration run → fitting the FS-vs-mixing-proportion recovery "
+                "line (experiment=%s condition=%s)", experiment, condition or "-",
+            )
         log.info(
             "fitting curve experiment=%s condition=%s (%d rows)",
             experiment, condition or "-", len(frame),
         )
         try:
             result = fit_run(
-                config, [frame], aa_coefficients,
+                curve_config, [frame], aa_coefficients,
                 time_column="labeling_time", **fit_kwargs,
             )
         except ValueError as exc:

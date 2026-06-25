@@ -97,6 +97,34 @@ def two_compartment_fornasiero(t,
     return a_0 + (a_max-a_0) * (1. - np.exp(-k_deg * t) * x)
 
 
+def calibration_line(x,
+                     k_deg: float,
+                     a_0: float = 0.,
+                     a_max: float = 1.,
+                     **_,
+                     ) -> float:
+    """Calibration recovery line — observed FS vs. **known mixing proportion**.
+
+    NOT a kinetic decay. For a mixing-calibration run (``experiment_type ==
+    "calibration"``; the SDRF carries ``characteristics[mixing proportion]``
+    instead of ``[labeling time]``) the x-axis is the nominal heavy fraction
+    ``f`` and y is the recovered fractional synthesis. A perfect integrator/solver
+    recovers ``FS = f`` — a 1:1 line through the origin — so we fit a through-origin
+    line and report the recovered **slope** in the ``k_deg`` slot (≈ 1 = unbiased
+    recovery; the deviation from 1 is the multiplicative bias) with R² as the
+    per-peptide recovery-quality metric. Sharing the ``(x, k_deg, a_0, a_max)``
+    signature lets it dispatch through the same ``curve_fit`` + residual-bootstrap
+    path as the kinetic models (``a_0`` is held at 0 → through the origin).
+
+    :param x:       known mixing proportion / heavy fraction (0..1)
+    :param k_deg:   recovered slope (the fitted parameter; ≈1 ideal)
+    :param a_0:     intercept, held at 0 (recovery is through the origin)
+    :param a_max:   unused (kept for signature parity with the kinetic models)
+    :return:        predicted FS at proportion ``x``
+    """
+    return a_0 + k_deg * x
+
+
 def plot_model(protein,
                peptide,
                k_deg,
