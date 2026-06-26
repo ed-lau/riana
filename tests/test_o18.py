@@ -3,7 +3,7 @@
 Covers the production o18 path added in v1.1.0: the 3-isotope enriched-O
 envelope (``get_peptide_distribution`` ``label=3``), ``solve_fs_o18``, the
 length-model Spep (``spep_from_length_coefficients``), and the bundled
-``o18_ac16`` coefficient preset. The science is validated against the NB90c
+``juber_2026_o18_ac16`` coefficient preset. The science is validated against the NB90c
 reverse model (``tests/benchmark/_helpers/o18_forward_model.py``); these tests
 just pin the production wiring so it cannot silently regress.
 """
@@ -68,8 +68,8 @@ def test_o18_spep_length_model():
 
 
 def test_o18_preset_loads_all_features():
-    """The bundled o18_ac16 preset carries every length-model feature."""
-    coef = load_o18_coefficients("o18_ac16")
+    """The bundled juber_2026_o18_ac16 preset carries every length-model feature."""
+    coef = load_o18_coefficients("juber_2026_o18_ac16")
     assert set(coef) == set(O18_LENGTH_FEATURES)
     # carboxyl (D/E) dominate the in-vitro signal; backbone is small; Q ~ 0.
     assert coef["D"] > coef["S"] > coef["length_minus1"]
@@ -77,11 +77,11 @@ def test_o18_preset_loads_all_features():
 
 
 def test_o18_previs_preset_matches_paper_worked_example():
-    """The in-vivo o18_previs (mouse) preset reproduces Previs' own worked
+    """The in-vivo rachdaoui_2009_o18 (mouse) preset reproduces Previs' own worked
     example: LGEYGFQNAILVR → 12 peptide bonds + N + Q + 2·E = 16
     (Rachdaoui/Previs, Mol Cell Proteomics 2009; 8(12):2653). Backbone is 1 ¹⁸O/peptide
     bond in vivo, vs ~0.16 in the in-vitro AC16 table — the regime difference."""
-    prev = load_o18_coefficients("o18_previs")
+    prev = load_o18_coefficients("rachdaoui_2009_o18")
     assert prev == {"length_minus1": 1.0, "D": 0.0, "E": 2.0,
                     "N": 1.0, "Q": 1.0, "S": 0.0}
     assert spep_from_length_coefficients("LGEYGFQNAILVR", prev) == 16.0

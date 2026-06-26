@@ -316,7 +316,7 @@ def load_o18_coefficients(path: str | Path) -> dict[str, float]:
     """Load an ¹⁸O length-model coefficient table for ``--label o18``.
 
     Like :func:`load_aa_coefficients`, ``path`` is a **bundled preset name**
-    (e.g. ``"o18_ac16"``) or a **filesystem path** to a CSV — here with columns
+    (e.g. ``"juber_2026_o18_ac16"``) or a **filesystem path** to a CSV — here with columns
     ``feature, coefficient`` (the format written by
     ``tests/benchmark/bench_o18_coefficients.py``; features =
     :data:`riana.algorithms.isotope_dist.O18_LENGTH_FEATURES`). The returned
