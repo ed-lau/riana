@@ -117,7 +117,7 @@ def theta_ds(ds_by_k: dict, dsmax_by_k: dict) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("fractions")
-    ap.add_argument("--coefficients", default="ac16")
+    ap.add_argument("--coefficients", default="alamillo_2025_ac16")
     ap.add_argument("--ria", type=float, default=0.06)
     ap.add_argument("--no-anchor", action="store_true",
                     help="use theory-referenced dspacing everywhere (A/B the f0 anchor)")

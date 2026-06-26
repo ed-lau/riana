@@ -46,7 +46,7 @@ _MZTAB = ("data/calibration_ac16/quantms_results/quant_tables/"
           "samplesheet_ac16_alpine.sdrf_openms_design_openms.mzTab")
 _SDRF = "data/calibration_ac16/samplesheet_ac16.sdrf.tsv"
 _RIA = 0.0598
-_COEFFS = "ac16"
+_COEFFS = "alamillo_2025_ac16"
 _OUT = "runs/cal_ac16_knobs"
 
 # (name, integrate flags). First arm is the shipped default = baseline.

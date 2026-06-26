@@ -520,7 +520,7 @@ def test_model_tab_build_config_defaults(main_window):
     assert cfg.depth == 3
     assert cfg.ria_max == pytest.approx(0.06)
     # The coefficients combo defaults to the bundled literature preset.
-    assert main_window.model_tab.coeff_combo.currentText() == "commerford_1983"
+    assert main_window.model_tab.coeff_combo.currentText() == "deberneh_2025_rss"
     # --fs defaults to the full envelope (no limited-isotopomer scoring).
     assert cfg.score_channels is None and cfg.fs_auto is False
 

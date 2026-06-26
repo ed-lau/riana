@@ -61,7 +61,7 @@ def _theta_for_run(path: str, coeffs: dict, ria: float, q_value: float) -> pd.Da
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run", required=True, help="integrate --mbr output dir (manifest)")
-    ap.add_argument("--coefficients", default="ac16", help="per-AA Spep table [ac16]")
+    ap.add_argument("--coefficients", default="alamillo_2025_ac16", help="per-AA Spep table [alamillo_2025_ac16]")
     ap.add_argument("--ria", type=float, default=0.06, help="D₂O enrichment [0.06]")
     ap.add_argument("--q-value", type=float, default=1e-2)
     args = ap.parse_args()

@@ -275,13 +275,12 @@ def available_coefficient_presets() -> list[str]:
     """Names of the bundled ``--coefficients`` presets (CSV stems).
 
     These ship inside the package (``riana/data/coefficients/*.csv``):
-    ``commerford_1983`` (Commerford 1983 tritium literature, the mammalian default);
-    the LC-MS in-vivo mouse tables ``ilchenko_2019`` (M0-M1 N_aa) and
-    ``deberneh_2025_rss`` (N_EH by the recommended RSS nested-fit) — both tighten
-    within-protein k agreement vs commerford_1983 (report 2026-06-25_d2o_coefficient_tables);
-    plus the
-    calibration-derived ``ac16`` / ``ipsc`` / ``cm`` cell-line tables. A user may
-    also pass a filesystem path to their own re-derived table.
+    ``deberneh_2025_rss`` (N_EH by the recommended RSS nested-fit — the in-vivo D₂O
+    **default**) and ``ilchenko_2019`` (M0-M1 N_aa), both LC-MS in-vivo mouse tables
+    that tighten within-protein k agreement vs the ``commerford_1983`` tritium
+    literature (report 2026-06-25_d2o_coefficient_tables); plus the calibration-derived
+    cell-line tables ``alamillo_2025_{ac16,ipsc,cm}``. A user may also pass a
+    filesystem path to their own re-derived table.
     """
     try:
         root = importlib.resources.files(_COEFF_PKG)
@@ -297,7 +296,7 @@ def load_aa_coefficients(path: str | Path) -> dict[str, float]:
     """Load a per-AA coefficient table into the dict ``fit_run`` expects.
 
     ``path`` is resolved as either a **bundled preset name** (one of
-    :func:`available_coefficient_presets`, e.g. ``"commerford_1983"``, ``"ac16"``)
+    :func:`available_coefficient_presets`, e.g. ``"deberneh_2025_rss"``)
     or a **filesystem path** to a CSV in the same format — two required columns
     ``amino_acid, coefficient`` (the format committed under
     ``tests/data/calibration_d2o_mixing/<line>/``). Extra columns (bootstrap

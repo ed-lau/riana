@@ -473,9 +473,10 @@ def fit(
     coefficients: Optional[str] = typer.Option(
         None, "--coefficients",
         help="Labeling-site coefficient table — REQUIRED; the format depends on "
-        "--label. hw: a per-AA D2O table (preset commerford_1983 | ilchenko_2019 | "
-        "deberneh_2025_rss | ac16 | ipsc | cm, or an (amino_acid, coefficient) CSV). "
-        "o18: a length-model table (preset o18_ac16, or a (feature, coefficient) CSV).",
+        "--label. hw: a per-AA D2O table (preset deberneh_2025_rss [recommended] | "
+        "ilchenko_2019 | commerford_1983 | alamillo_2025_{ac16,ipsc,cm}, or an "
+        "(amino_acid, coefficient) CSV). o18: a length-model table (preset o18_ac16, "
+        "or a (feature, coefficient) CSV).",
     ),
     model: str = typer.Option(
         "simple", "-m", "--model",
@@ -586,7 +587,8 @@ def fit(
     if not coefficients:
         presets = " | ".join(available_coefficient_presets())
         fmt = ("(feature, coefficient) — e.g. o18_ac16" if label == "o18"
-               else "(amino_acid, coefficient) — e.g. commerford_1983 | ac16 | ipsc | cm")
+               else "(amino_acid, coefficient) — e.g. deberneh_2025_rss | ilchenko_2019 "
+               "| commerford_1983 | alamillo_2025_{ac16,ipsc,cm}")
         raise typer.BadParameter(
             f"--coefficients is required for --label {label}. Pass a bundled "
             f"preset ({presets}) or a path to a {fmt} CSV.")
