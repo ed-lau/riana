@@ -85,3 +85,30 @@ def test_o18_previs_preset_matches_paper_worked_example():
     assert prev == {"length_minus1": 1.0, "D": 0.0, "E": 2.0,
                     "N": 1.0, "Q": 1.0, "S": 0.0}
     assert spep_from_length_coefficients("LGEYGFQNAILVR", prev) == 16.0
+
+
+def test_o18_dspacing_iso1_flat_iso2_carries_signal():
+    """¹⁸O (+2 Da) leaves iso1 flat — no ¹⁸O-bearing isotopolog reaches +1 — while
+    iso2 carries the mass-defect shift (one ¹⁸O is ~2.5 mDa lighter than 2×¹³C)."""
+    from riana.algorithms.isotope_dist import _spacing_components, _mixture_dspacing
+    pm = calculate_ion_mz(_SEQ)
+    im, ip, fm, fp = _spacing_components(_SEQ, pm, _SPEP, _RIA_O18, 6, (), 3)
+    s_iso1 = _mixture_dspacing(0.8, im, ip, fm, fp, 2, 1)
+    s_iso2 = _mixture_dspacing(0.8, im, ip, fm, fp, 2, 2)
+    assert abs(s_iso1) < abs(s_iso2)
+
+
+def test_o18_solve_fs_ds_recovers_known_mix():
+    """solve_fs_o18_ds inverts the ¹⁸O Δspacing (the label=3 envelope) back to the
+    known fraction-new on the iso2-4 channels — the spacing analog of solve_fs_o18.
+    (Self-consistency against its own forward model: signal is small but nonzero, so
+    the noiseless minimum is unique.)"""
+    from riana.algorithms.isotope_dist import (
+        _spacing_components, _mixture_dspacing, solve_fs_o18_ds)
+    pm = calculate_ion_mz(_SEQ)
+    z = 2
+    im, ip, fm, fp = _spacing_components(_SEQ, pm, _SPEP, _RIA_O18, 6, (), 3)
+    for f_true in (0.25, 0.5, 0.75):
+        obs = {k: _mixture_dspacing(f_true, im, ip, fm, fp, z, k) for k in (2, 3, 4)}
+        f = solve_fs_o18_ds(_SEQ, pm, obs, _SPEP, z, ria_max=_RIA_O18, n_iso=6)
+        assert abs(f - f_true) < 0.05

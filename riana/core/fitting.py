@@ -55,7 +55,7 @@ from scipy.optimize import curve_fit
 from riana import constants
 from riana.algorithms.isotope_dist import (
     init_channel_masses, init_envelope_width,
-    solve_fs_d2o, solve_fs_d2o_ds, solve_fs_o18,
+    solve_fs_d2o, solve_fs_d2o_ds, solve_fs_o18, solve_fs_o18_ds,
     spep_from_coefficients, spep_from_length_coefficients,
 )
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
@@ -159,6 +159,13 @@ FS_AUTO_INIT_W_THRESHOLD = 6
 #: a per-peptide model-vs-centroid reference offset (report 2026-06-25); iso4/5 stay
 #: in the GUI for QC but out of the number. iso0's spacing is ≡0 (no signal).
 THETA_DS_CHANNELS = (1, 2, 3)
+#: ¹⁸O Δspacing channels. ¹⁸O is a +2 Da label so iso1 is the *only* channel free of
+#: an ¹⁸O-bearing isotopolog (iso2 = one ¹⁸O; iso3 = one ¹⁸O + one ¹³C; iso4 = two
+#: ¹⁸O / one ¹⁸O + two ¹³C all carry signal) — score iso2–4, skipping the flat iso1.
+#: NB the ¹⁸O-vs-¹³C mass-defect difference is small (~2.5 mDa at iso2), so o18 fs_ds
+#: is a low-signal completeness estimate, not a reliable second estimate (see
+#: :func:`~riana.algorithms.isotope_dist.solve_fs_o18_ds`).
+THETA_DS_CHANNELS_O18 = (2, 3, 4)
 
 
 def _fs_ds_points(
@@ -189,10 +196,13 @@ def _fs_ds_points(
         return []
     zero_idx = next((i for i, tt in enumerate(t_fit) if tt == 0.0), None)
     anchor = dspacing_rows[zero_idx] if zero_idx is not None else None
+    # ¹⁸O (+2 Da) scores iso2–4 (iso1 is flat); D₂O scores iso1–3.
+    is_o18 = label_int == 3
+    channels = THETA_DS_CHANNELS_O18 if is_o18 else THETA_DS_CHANNELS
     out: list[float] = []
     for row in dspacing_rows:
         obs_ds: dict[int, float] = {}
-        for k in THETA_DS_CHANNELS:
+        for k in channels:
             if k >= len(row):
                 continue
             v = row[k] - (anchor[k] if anchor is not None else 0.0)
@@ -201,10 +211,14 @@ def _fs_ds_points(
         if len(obs_ds) < 2:
             out.append(float("nan"))
             continue
-        out.append(solve_fs_d2o_ds(
-            seq, pep_mass, obs_ds, spep, charge,
-            ria_max=ria_max, n_iso=n_iso, mods=mods, label_int=label_int,
-        ))
+        if is_o18:
+            out.append(solve_fs_o18_ds(
+                seq, pep_mass, obs_ds, spep, charge,
+                ria_max=ria_max, n_iso=n_iso, mods=mods))
+        else:
+            out.append(solve_fs_d2o_ds(
+                seq, pep_mass, obs_ds, spep, charge,
+                ria_max=ria_max, n_iso=n_iso, mods=mods, label_int=label_int))
     return out
 
 
@@ -800,14 +814,15 @@ def _fit_one_concat(
 
     # v1.1.0 item 1b — the mass-defect fs_ds: an orthogonal, drift-robust SECOND
     # estimate of fraction-new from the per-channel Δspacing, cross-checking the
-    # intensity FS (never displacing it). iso0–3 only, anchored to the unlabelled
-    # point when present, then NONLINEARLY inverted against the init↔final mixture
-    # spacing curve (solve_fs_d2o_ds — the spacing analog of the intensity solve;
-    # the old linear ΔS/ΔSₓmax over-read mid-range, report 2026-06-25). D₂O only for
-    # now: the ¹⁸O spacing estimator (different labelled-envelope chemistry) is a
-    # future variant, so o18 fs_ds stays empty.
+    # intensity FS (never displacing it). Anchored to the unlabelled point when
+    # present, then NONLINEARLY inverted against the init↔final mixture spacing
+    # curve (solve_fs_d2o_ds / solve_fs_o18_ds — the spacing analog of the intensity
+    # solve; the old linear ΔS/ΔSₓmax over-read mid-range, report 2026-06-25).
+    # Label-dispatched: D₂O scores iso1–3, ¹⁸O scores iso2–4 (only iso1 is free of an
+    # ¹⁸O isotopolog). The ¹⁸O variant is a low-signal completeness estimate (small
+    # ¹⁸O-vs-¹³C mass-defect difference) — see solve_fs_o18_ds.
     fs_ds_fit: list[float] = []
-    if dspacing_fit and not is_o18:
+    if dspacing_fit:
         first_i = int(np.nonzero(fit_mask)[0][0])
         mods0, pep_mass0 = forms[row_concats[first_i]]
         z0 = int(charge_arr[first_i]) if np.isfinite(charge_arr[first_i]) else 0
@@ -816,7 +831,8 @@ def _fit_one_concat(
                 fs_ds_fit = _fs_ds_points(
                     dspacing_fit, t_fit, seq=seq, pep_mass=pep_mass0,
                     spep=spep_int, charge=z0, ria_max=float(config.ria_max),
-                    n_iso=len(iso_cols), mods=mods0, label_int=1,
+                    n_iso=len(iso_cols), mods=mods0,
+                    label_int=(3 if is_o18 else 1),
                 )
             except (KeyError, ValueError):
                 fs_ds_fit = []

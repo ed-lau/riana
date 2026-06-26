@@ -686,8 +686,8 @@ def solve_fs_d2o_ds(
     report 2026-06-25). ``obs_dspacing`` is the **t0/f0-anchored** observed
     M0-internal Δspacing per channel (m/z mDa), keyed by isotopomer index (iso0 is
     ≡0 and excluded by the caller). Needs ≥ 2 channels → else NaN. Bounds match
-    :data:`FS_BOUNDS`. ``label_int`` = 1 (D₂O); the ¹⁸O analog is a future variant
-    (its labelled-envelope chemistry differs).
+    :data:`FS_BOUNDS`. ``label_int`` selects the labeled-envelope chemistry
+    (1 = D₂O); the ¹⁸O entry point is :func:`solve_fs_o18_ds` (``label_int=3``).
     """
     from scipy.optimize import minimize_scalar  # local import keeps cold path fast
 
@@ -857,3 +857,40 @@ def solve_fs_o18(
         return float(np.sum((obs_norm - pred_score / ps) ** 2))
 
     return float(minimize_scalar(sse, bounds=FS_BOUNDS, method='bounded').x)
+
+
+def solve_fs_o18_ds(
+    sequence: str,
+    pep_mass: float,
+    obs_dspacing: dict[int, float],
+    spep: int,
+    charge: int,
+    ria_max: float = 0.06,
+    n_iso: int = _DEFAULT_N_ISO,
+    mods: tuple[int, ...] = (),
+) -> float:
+    """¹⁸O mass-defect fraction-new from the per-channel Δspacing — the ¹⁸O analog
+    of :func:`solve_fs_d2o_ds`. Mechanically identical (the same nonlinear
+    init↔final mixture-spacing inversion over the t0/f0-anchored ``obs_dspacing``),
+    but with the **3-isotope enriched-O reverse model** (``label=3``: the
+    weighted-average mass shift under ¹⁸O masses at ``ria_max`` with ``spep`` labile
+    O sites). Thin delegation to :func:`solve_fs_d2o_ds` with ``label_int=3`` so the
+    heavily-tested spacing core is shared.
+
+    **Channels.** ¹⁸O is a +2 Da label, so only **iso1** is free of any ¹⁸O-bearing
+    isotopolog; **iso2** (one ¹⁸O), **iso3** (one ¹⁸O + one ¹³C, +2+1) and **iso4**
+    (two ¹⁸O, or one ¹⁸O + two ¹³C) all carry signal — the caller
+    (:func:`riana.core.fitting._fs_ds_points`) scores iso2–4.
+
+    **Low-signal caveat (implemented for completeness/symmetry).** The Δspacing reads
+    the mass-defect *difference* between the heavy isotopolog and the ¹³C peak it
+    displaces. For ¹⁸O that difference is small — the ¹⁸O isotopolog at iso2 is only
+    ~2.5 mDa lighter than 2×¹³C (≈half the per-mass-unit defect of D₂O's D-vs-¹³C) —
+    and ¹⁸O carries few labile sites, so the ¹⁸O Δspacing holds far less information
+    than D₂O's. This is a symmetry estimator, **not** a reliable second estimate; the
+    intensity :func:`solve_fs_o18` stays primary.
+    """
+    return solve_fs_d2o_ds(
+        sequence, pep_mass, obs_dspacing, spep, charge,
+        ria_max=ria_max, n_iso=n_iso, mods=mods, label_int=3,
+    )
