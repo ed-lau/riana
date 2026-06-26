@@ -148,7 +148,10 @@ def run_fit_manifest(
     from riana.core.pipeline import fit_project
 
     coeffs = load_aa_coefficients(coefficients) if coefficients else {}
-    return fit_project(config, manifest_path, coeffs)
+    # The Model tab's RIA spin is an explicit user value → pass it as the override
+    # so it wins over the manifest's per-experiment enrichment (preserves the
+    # GUI's current behavior; CLI without --ria defers to the manifest instead).
+    return fit_project(config, manifest_path, coeffs, ria_override=config.ria_max)
 
 
 def run_rollup(

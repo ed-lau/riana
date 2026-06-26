@@ -505,10 +505,12 @@ def fit(
         help="Fit only peptidoforms seen at this many distinct labeling "
         "timepoints (per condition) [default: 3]. Counts distinct timepoints, "
         "not raw PSM rows — repeats at one timepoint don't count toward depth."),
-    ria: float = typer.Option(
-        0.06, "-r", "--ria",
-        help="Precursor enrichment level (asymptotic D2O fraction, e.g. 0.06 "
-        "for 6%% v/v) [default: 0.06]."),
+    ria: Optional[float] = typer.Option(
+        None, "-r", "--ria",
+        help="Precursor enrichment (asymptotic labeled fraction, e.g. 0.06 for "
+        "6%% v/v). Default: per-experiment from the manifest's "
+        "precursor_enrichment (the SDRF value); given here, it overrides that "
+        "for every curve. The legacy non-manifest path falls back to 0.06."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
     fs: Optional[str] = typer.Option(
@@ -604,7 +606,8 @@ def fit(
             r_p=float(rp),
             q_value=float(q_value),
             depth=int(depth),
-            ria_max=float(ria),
+            ria_max=(float(ria) if ria is not None
+                     else FitConfig.__dataclass_fields__["ria_max"].default),
             score_channels=score_channels,
             fs_auto=fs_auto,
             workers=int(workers),
@@ -644,7 +647,8 @@ def fit(
                 proj_dir, out)
         out = proj_dir
         logger.info(f"fitting from manifest {manifest}")
-        result_df = fit_project(config, manifest, coeffs, logger=logger)
+        result_df = fit_project(config, manifest, coeffs, logger=logger,
+                                ria_override=ria)
         id_source = str(manifest)
     else:
         dfs = [pd.read_table(p, comment="#") for p in riana_path]

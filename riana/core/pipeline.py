@@ -383,6 +383,7 @@ def fit_project(
     aa_coefficients: Mapping[str, float],
     *,
     logger: logging.Logger | None = None,
+    ria_override: float | None = None,
     **fit_kwargs,
 ) -> pd.DataFrame:
     """Fit every kinetic curve indexed by the manifest, tagged by condition.
@@ -408,6 +409,14 @@ def fit_project(
     # ``--model calibration`` is respected on turnover data too (it just stays).
     exp_type = {r.identity.group_key: r.identity.experiment_type
                 for r in integrate_rows if r.stage == "integrate"}
+    # Per-experiment precursor enrichment (RIA) from the manifest — physically one
+    # value per experiment (the SDRF characteristics[precursor enrichment]). Used
+    # to shape the labeled envelope per curve unless an explicit ria_override is
+    # given (CLI --ria / GUI spin). Load-bearing for ¹⁸O (AC16=0.0583 vs
+    # iPSC=0.0897 differ sharply; the old config.ria_max default of 0.06 would
+    # mis-shape the envelope and bias every FS/k).
+    exp_ria = {r.identity.group_key: r.identity.precursor_enrichment
+               for r in integrate_rows if r.stage == "integrate"}
 
     results: list[pd.DataFrame] = []
     long_frames: list[pd.DataFrame] = []
@@ -415,14 +424,24 @@ def fit_project(
         experiment, condition = group_key
         curve_config = config
         if exp_type.get(group_key) == "calibration" and config.model != "calibration":
-            curve_config = dataclasses.replace(config, model="calibration")
+            curve_config = dataclasses.replace(curve_config, model="calibration")
             log.info(
                 "calibration run → fitting the FS-vs-mixing-proportion recovery "
                 "line (experiment=%s condition=%s)", experiment, condition or "-",
             )
+        # Resolve the curve's RIA: explicit override > manifest enrichment > default.
+        manifest_ria = exp_ria.get(group_key)
+        if ria_override is not None:
+            curve_ria, ria_src = ria_override, "--ria"
+        elif manifest_ria is not None:
+            curve_ria, ria_src = manifest_ria, "manifest precursor_enrichment"
+        else:
+            curve_ria, ria_src = config.ria_max, "default"
+        if curve_ria != curve_config.ria_max:
+            curve_config = dataclasses.replace(curve_config, ria_max=curve_ria)
         log.info(
-            "fitting curve experiment=%s condition=%s (%d rows)",
-            experiment, condition or "-", len(frame),
+            "fitting curve experiment=%s condition=%s (%d rows; RIA=%.4f from %s)",
+            experiment, condition or "-", len(frame), curve_ria, ria_src,
         )
         try:
             result = fit_run(

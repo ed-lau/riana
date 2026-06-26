@@ -173,6 +173,49 @@ def test_fit_project_auto_dispatches_calibration_model(tmp_path):
                                rtol=0, atol=1e-9, equal_nan=True)
 
 
+def test_fit_project_resolves_ria_per_experiment(tmp_path, monkeypatch):
+    """Each curve is shaped with the manifest's precursor_enrichment (the SDRF
+    RIA), and an explicit ria_override wins over it — the ¹⁸O head-to-head needs
+    AC16=0.0583 vs iPSC=0.0897 honored, not the 0.06 config default."""
+    import riana.core.fitting as fitting_mod
+
+    coeffs = _coeffs()
+    dfs = _make_timepoint_dfs(coeffs)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06)
+
+    # Manifest rows carrying an experiment-level enrichment ≠ the 0.06 default.
+    rows = []
+    for ti, df in zip(_TIMES, dfs):
+        stem = f"riaE_t{ti:.4f}"
+        path = tmp_path / f"{stem}_riana.txt"
+        df.to_csv(path, sep="\t", index=False)
+        rows.append(ManifestRow("integrate", str(path), RunIdentity(
+            experiment="syn", sample=stem, data_file=stem,
+            labeling_time=float(ti), labeling_time_unit="au", condition="control",
+            precursor_enrichment=0.0897)))
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+
+    # Spy on the ria_max each curve's fit_run receives. fit_project re-imports
+    # fit_run from riana.core.fitting per call, so patching the source attr works.
+    seen: list[float] = []
+    real = fitting_mod.fit_run
+
+    def _spy(cfg, *a, **k):
+        seen.append(cfg.ria_max)
+        return real(cfg, *a, **k)
+
+    monkeypatch.setattr(fitting_mod, "fit_run", _spy)
+
+    fit_project(config, mf, coeffs, n_boot=0, random_state=0)
+    assert seen == [pytest.approx(0.0897)]            # manifest enrichment, not 0.06
+
+    seen.clear()
+    fit_project(config, mf, coeffs, n_boot=0, random_state=0, ria_override=0.05)
+    assert seen == [pytest.approx(0.05)]              # explicit override wins
+
+
 def test_recombine_groups_by_condition(tmp_path):
     coeffs = _coeffs()
     rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs),
