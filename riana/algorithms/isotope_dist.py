@@ -5,12 +5,13 @@
 Two layers:
 
 1. ``get_peptide_distribution`` — production forward model, lifted unchanged
-   from ``riana.utils.get_peptide_distribution`` in M3. Supports label types
-   1 (D₂O in vivo), 2 (D₂O in vitro), 3 (¹⁸O). Used by ``riana fit``.
+   from ``riana.utils.get_peptide_distribution`` in M3. Labeling chemistry is
+   selected by the string ``label``: ``"D2O"`` (heavy water; subsumes the old
+   in-vivo/in-vitro split) or ``"O18"`` (¹⁸O). Used by ``riana fit``.
 2. M3 Week 4 solver layer: ``get_envelope``, ``peptide_spep_loss``,
    ``solve_fs_d2o`` — lifted from the M2 benchmark's
    ``tests/benchmark/_helpers/forward_model.py``. They compose on top of
-   ``get_peptide_distribution(label=1)`` and use the integer-nominal ±0.5
+   ``get_peptide_distribution(label="D2O")`` and use the integer-nominal ±0.5
    envelope-binning convention (the M2 oracle's choice; validated by
    ``bench_fs_recovery``).
 
@@ -36,7 +37,7 @@ from riana.algorithms.mass_calc import count_atoms
 
 def get_peptide_distribution(peptide: str,
                              deuterium_enrichment_level: float = None,
-                             label: int = 1,
+                             label: str = "D2O",
                              num_labeling_sites: int = 0,
                              mods: list = (),
                              ) -> IsoSpecPy.Iso:
@@ -45,8 +46,12 @@ def get_peptide_distribution(peptide: str,
     Calculates the total isotope distribution of a peptide given the peptide sequence and deuterium enrichment level
 
     :param peptide:                     the peptide sequence
-    :param deuterium_enrichment_level:  the deuterium enrichment level of the sample
-    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
+    :param deuterium_enrichment_level:  the labeling enrichment (RIA) of the sample
+                                        (the ²H fraction for ``"D2O"``, the ¹⁸O
+                                        fraction for ``"O18"``)
+    :param label:       str: the labeling chemistry — ``"D2O"`` (heavy water, the
+                        ²H H/D swap; subsumes the old in-vivo/in-vitro split) or
+                        ``"O18"`` (¹⁸O metabolic labeling, the 3-isotope-O shift)
     :param num_labeling_sites:          the number of labeling sites
     :param mods:        iterable of UniMod accession ids for variable mods on this
                         peptidoform (M7); their atom compositions shape the
@@ -54,8 +59,7 @@ def get_peptide_distribution(peptide: str,
     :return:                            IsoSpecPy Distribution of atom counts, isotope masses, and isotope probabilities
     """
 
-    # Check that label must be one of hw, hw_cell, or o18
-    assert label in [1, 2, 3], 'Label must be one of 1 (2H_in_vivo), 2 (2H_in_vitro), or 3 (18O)'
+    assert label in ("D2O", "O18"), 'Label must be "D2O" (heavy water / ²H) or "O18" (¹⁸O)'
 
     if deuterium_enrichment_level is not None:
         assert 0 < deuterium_enrichment_level <= 1, 'Deuterium enrichment level must be greater than 0 and no greater than 1'
@@ -73,7 +77,7 @@ def get_peptide_distribution(peptide: str,
                                                                                                            "S": peptide_atoms[4],
                                                                                                            "P": peptide_atoms[5]})
 
-    if label == 1 or label == 2:
+    if label == "D2O":
         # Subtract the number of labeling sites from hydrogen, extend the atom count list with accessible deuterium count
         atom_count_list[1] = atom_count_list[1] - num_labeling_sites
         atom_count_list.extend([num_labeling_sites])
@@ -90,13 +94,13 @@ def get_peptide_distribution(peptide: str,
             isotope_probability_list.extend([(1-deuterium_enrichment_level, deuterium_enrichment_level)])
             # TODO: include the background deuterium level here too?
 
-    elif label == 3:
+    elif label == "O18":
         # ¹⁸O metabolic labeling (H₂¹⁸O): move ``num_labeling_sites`` oxygens into
         # an enriched-O pseudo-element. Unlike the D₂O 2-isotope H/D swap, labeled
         # O is a 3-isotope element (¹⁶O/¹⁷O/¹⁸O) — the enrichment dilutes the
         # natural pool and lifts ¹⁸O by the labeling fraction (the +2 Da shift).
-        # ``deuterium_enrichment_level`` carries the o18 RIA here (a generic
-        # "enrichment level"; renamed in the post-o18 label-taxonomy cleanup).
+        # ``deuterium_enrichment_level`` carries the o18 RIA here (it is the
+        # generic labeling-enrichment level, despite the D₂O-flavoured name).
         # Matches the NB90c reverse model + tests/benchmark/_helpers/o18_forward_model.
         if num_labeling_sites > 0 and deuterium_enrichment_level is not None:
             atom_count_list[2] = atom_count_list[2] - num_labeling_sites
@@ -186,7 +190,7 @@ def _get_init_env(sequence: str, pep_mass: float,
     """Natural-abundance envelope, cached by (sequence, mods, n)."""
     key = ('init', sequence, mods, n)
     if key not in _envelope_cache:
-        dist = get_peptide_distribution(sequence, label=1, mods=mods)
+        dist = get_peptide_distribution(sequence, label="D2O", mods=mods)
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
     return _envelope_cache[key]
@@ -244,7 +248,7 @@ def _get_final_env(sequence: str, pep_mass: float, spep: int,
         dist = get_peptide_distribution(
             sequence,
             deuterium_enrichment_level=ria_max,
-            label=1,
+            label="D2O",
             num_labeling_sites=spep,
             mods=mods,
         )
@@ -542,7 +546,7 @@ def adaptive_channel_masses(
 
     n = int(iso_max) + 1
     spep = _spep_upper_bound(sequence)
-    init = get_peptide_distribution(sequence, label=1, mods=tuple(mods))
+    init = get_peptide_distribution(sequence, label="D2O", mods=tuple(mods))
     # Consistency guard: the envelope is built from sequence + parsed mod atoms,
     # but ``pep_mass`` (the binning anchor) comes from the record. If a mod is in
     # the mass but not the atoms — legacy ``[mass]`` Percolator brackets, which
@@ -560,7 +564,7 @@ def adaptive_channel_masses(
             f"(mods={tuple(mods)}); use the fixed channel set."
         )
     final = get_peptide_distribution(
-        sequence, deuterium_enrichment_level=ria_max, label=1,
+        sequence, deuterium_enrichment_level=ria_max, label="D2O",
         num_labeling_sites=spep, mods=tuple(mods),
     )
     init_m, init_p = _binned_envelope(init, pep_mass, n)
@@ -613,7 +617,7 @@ def init_channel_masses(
     cached = _envelope_cache.get(key)
     if cached is not None:
         return cached
-    dist = get_peptide_distribution(sequence, label=1, mods=tuple(mods))
+    dist = get_peptide_distribution(sequence, label="D2O", mods=tuple(mods))
     init_m, _init_p = _binned_envelope(dist, pep_mass, int(n))
     out = tuple(
         m if not math.isnan(m) else pep_mass + iso * 1.003354835
@@ -625,18 +629,18 @@ def init_channel_masses(
 
 def _spacing_components(
     sequence: str, pep_mass: float, spep: int, ria_max: float, n: int,
-    mods: tuple[int, ...], label_int: int,
+    mods: tuple[int, ...], label: str,
 ):
     """Cached per-channel (mass, prob) of the init and final envelopes — the pieces
     the mixture-spacing curve is built from. NaN-bin masses fall back to the analytic
     neutron comb. Returns ``(init_m, init_p, final_m, final_p)`` as np arrays."""
     key = ('spacing_comp', sequence, tuple(mods), int(spep),
-           round(float(ria_max), 6), int(n), int(label_int))
+           round(float(ria_max), 6), int(n), label)
     cached = _envelope_cache.get(key)
     if cached is None:
-        init = get_peptide_distribution(sequence, label=1, mods=tuple(mods))
+        init = get_peptide_distribution(sequence, label="D2O", mods=tuple(mods))
         final = get_peptide_distribution(
-            sequence, deuterium_enrichment_level=ria_max, label=label_int,
+            sequence, deuterium_enrichment_level=ria_max, label=label,
             num_labeling_sites=spep, mods=tuple(mods),
         )
         im, ip = _binned_envelope(init, pep_mass, int(n))
@@ -674,7 +678,7 @@ def solve_fs_d2o_ds(
     ria_max: float = 0.06,
     n_iso: int = _DEFAULT_N_ISO,
     mods: tuple[int, ...] = (),
-    label_int: int = 1,
+    label: str = "D2O",
 ) -> float:
     """Mass-defect fraction-new from the **per-channel Δspacing** — the spacing
     analog of :func:`solve_fs_d2o` (v1.1.0 item 1b).
@@ -686,8 +690,8 @@ def solve_fs_d2o_ds(
     report 2026-06-25). ``obs_dspacing`` is the **t0/f0-anchored** observed
     M0-internal Δspacing per channel (m/z mDa), keyed by isotopomer index (iso0 is
     ≡0 and excluded by the caller). Needs ≥ 2 channels → else NaN. Bounds match
-    :data:`FS_BOUNDS`. ``label_int`` selects the labeled-envelope chemistry
-    (1 = D₂O); the ¹⁸O entry point is :func:`solve_fs_o18_ds` (``label_int=3``).
+    :data:`FS_BOUNDS`. ``label`` selects the labeled-envelope chemistry
+    (``"D2O"``); the ¹⁸O entry point is :func:`solve_fs_o18_ds` (``label="O18"``).
     """
     from scipy.optimize import minimize_scalar  # local import keeps cold path fast
 
@@ -695,7 +699,7 @@ def solve_fs_d2o_ds(
     if len(ks) < 2:
         return float("nan")
     im, ip, fm, fp = _spacing_components(
-        sequence, pep_mass, spep, ria_max, int(n_iso), tuple(mods), int(label_int))
+        sequence, pep_mass, spep, ria_max, int(n_iso), tuple(mods), label)
 
     def sse(f: float) -> float:
         return float(sum(
@@ -789,7 +793,7 @@ def _get_o18_final_env(sequence: str, pep_mass: float, spep: int,
         dist = get_peptide_distribution(
             sequence,
             deuterium_enrichment_level=ria_max,
-            label=3,
+            label="O18",
             num_labeling_sites=spep,
             mods=mods,
         )
@@ -872,9 +876,9 @@ def solve_fs_o18_ds(
     """¹⁸O mass-defect fraction-new from the per-channel Δspacing — the ¹⁸O analog
     of :func:`solve_fs_d2o_ds`. Mechanically identical (the same nonlinear
     init↔final mixture-spacing inversion over the t0/f0-anchored ``obs_dspacing``),
-    but with the **3-isotope enriched-O reverse model** (``label=3``: the
+    but with the **3-isotope enriched-O reverse model** (``label="O18"``: the
     weighted-average mass shift under ¹⁸O masses at ``ria_max`` with ``spep`` labile
-    O sites). Thin delegation to :func:`solve_fs_d2o_ds` with ``label_int=3`` so the
+    O sites). Thin delegation to :func:`solve_fs_d2o_ds` with ``label="O18"`` so the
     heavily-tested spacing core is shared.
 
     **Channels.** ¹⁸O is a +2 Da label, so only **iso1** is free of any ¹⁸O-bearing
@@ -892,5 +896,5 @@ def solve_fs_o18_ds(
     """
     return solve_fs_d2o_ds(
         sequence, pep_mass, obs_dspacing, spep, charge,
-        ria_max=ria_max, n_iso=n_iso, mods=mods, label_int=3,
+        ria_max=ria_max, n_iso=n_iso, mods=mods, label="O18",
     )

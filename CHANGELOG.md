@@ -7,9 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.1.0] — Unreleased
 
-The experimental science line, opened after the 1.0.0 N_ISO finish: o18 rewrite
-(NB90b frozen coefficients), Δmass-over-time QC in the GUI, and mass-defect → θ
-fitting. See `PROJECT_REVIEW.md` §3.
+The experimental-science line, opened after the 1.0.0 N_ISO finish. Three big-ticket
+items landed — the ¹⁸O (H₂¹⁸O) rewrite (reverse-model coefficients, production fit,
+and kinetic validation), the mass-defect → θ second turnover estimate with Δmass/Δspacing
+QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-site tables (a
+new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
+end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
+
+### Internal label taxonomy → string labels (`"D2O"` / `"O18"`) — 2026-06-27
+
+#### Changed
+
+- **The internal labeling-chemistry selector is now a string.** `get_peptide_distribution`,
+  the Δspacing solver `solve_fs_d2o_ds`, the fit's `_fs_ds_points`, and `core/fsynthesis`
+  take `label="D2O"` / `"O18"` (and the legacy `"AA"`) in place of the opaque integers
+  `{1 = ²H in-vivo, 2 = ²H in-vitro, 3 = ¹⁸O, 4 = AA}`. The old in-vivo/in-vitro 1-vs-2
+  split is **retired** — D₂O cell-specificity lives in the fit's coefficient table, not the
+  label. The user-facing CLI flag (`--label hw|o18`) is unchanged; `hw` maps to `"D2O"` and
+  `o18` to `"O18"` at the fit boundary.
+
+### ¹⁸O kinetic fit + RIA-from-manifest + coefficient unification — 2026-06-26
+
+#### Added
+
+- **`solve_fs_o18_ds` — the ¹⁸O Δspacing `fs_ds`.** The ¹⁸O analog of the D₂O mass-defect
+  estimate, delegating to the shared nonlinear spacing core (`label="O18"`). Because ¹⁸O is
+  a +2 Da label, only iso1 is flat; it scores iso2–4 (iso3 = ¹⁸O + ¹³C carries signal). This
+  is a **completeness/symmetry estimate, not a reliable second estimate** — the ¹⁸O-vs-¹³C
+  mass-defect difference (~2.5 mDa) is ≈½ of D₂O's per-mass-unit, so per-peptide IQR spans
+  the bounds. The intensity `solve_fs_o18` stays primary. The GUI `fs_ds` overlay now uses
+  the correct ¹⁸O model on ¹⁸O fits.
+
+#### Fixed
+
+- **Per-curve RIA is resolved from the manifest.** `fit_project` now reads each curve's
+  `precursor_enrichment` from `riana_manifest.tsv` instead of falling back to the 0.06
+  default, so series at a different enrichment (e.g. the iPSC ¹⁸O series at RIA 0.0897) fit
+  at the right precursor RIA.
+
+#### Changed
+
+- **¹⁸O kinetic fit validated on AC16 + iPSC D₂O-vs-¹⁸O time series — no reverse-model change
+  required.** ¹⁸O ≈ D₂O on the curated set (iPSC Spearman(k) 0.66 at peptide and protein
+  level; within-protein robust geomCV ~0.15, identical between labels) and out-curates D₂O at
+  iPSC. Recommended curation: R² ≥ 0.8, Spep ≥ 5, depth 6. `--fs auto` is **wrong for ¹⁸O**
+  (it drops iso4) — use the default full envelope. (Report `reports/2026-06-26_o18_kinetic_fit.md`.)
+- **D₂O and ¹⁸O coefficient tables unified on a bootstrap-OOB freeze.** Both table families
+  now report coefficient = bootstrap mean and R² = out-of-bag (CSV gains `oob_r2, ci_lo,
+  ci_hi, boot_frac_nonzero`); the ¹⁸O table moved off the single 80/20 split (numbers move
+  negligibly — OOB R² 0.892). The in-vitro D₂O table was retrained on the current default
+  integration.
+- **¹⁸O coefficient presets renamed for provenance:** `o18_ac16` → `juber_2026_o18_ac16`
+  (in-vitro), `o18_previs` → `rachdaoui_2009_o18` (in-vivo mouse).
+
+### D₂O labelling-site coefficient tables — 2026-06-25
+
+#### Added
+
+- **Two modern LC-MS-derived per-AA D₂O tables.** `ilchenko_2019` (Ilchenko/Sadygov 2019,
+  Table 2 N_aa) and `deberneh_2025_rss` (Deberneh 2025, Table S1 RSS — the authors'
+  recommended method). Both tighten within-protein k agreement ~18–21% vs the 1983 tritium
+  values (median robust geometric k-CV 0.199 → 0.158 / 0.162 on the LVE manifest) — strong
+  evidence the 1983 values are suboptimal for LC-MS D₂O. (Report
+  `reports/2026-06-25_d2o_coefficient_tables.md`.)
+
+#### Changed
+
+- **`deberneh_2025_rss` is the new default coefficient table** (was the 1983 tritium values).
+  The per-cell-line presets are renamed `ac16`/`ipsc`/`cm` → `alamillo_2025_ac16` /
+  `alamillo_2025_ipsc` / `alamillo_2025_cm`, and the legacy `commerford` → `commerford_1983`,
+  for provenance clarity. The new tables do **not** move the fs↔fs_ds residual — that residual
+  is not the coefficient table.
+
+### Mass-defect θ / Δspacing QC + calibration model — 2026-06-25
+
+#### Added
+
+- **`fs_ds` — a drift-robust second turnover estimate from the mass-defect (Δspacing).** Each
+  neutromer's accurate-mass shift (the DeuteRater signal, Naylor/Price 2017) is inverted back
+  to fraction-new by the **nonlinear init↔final mixture-spacing curve** (`solve_fs_d2o_ds`),
+  replacing the linear `ΔSₓ/ΔSₓmax` ratio that over-read mid-range. Per-timepoint, M0-internal
+  (global m/z drift cancels), empirically t0/f0-anchored, weighted median + MAD over iso0–3.
+  It is a **cross-check, never a replacement** for the intensity FS (it is ~2.4× noisier per
+  point); its *disagreement* with the intensity FS is the useful product. New `fs_ds` column.
+  (Report `reports/2026-06-25_mass_defect_theta.md`.)
+- **GUI Δmass / Δspacing QC.** The Model tab gains a **Fit / Δspacing / Δmass** toggle and an
+  anchor checkbox, overlaying `fs_ds` on the Fit graph with agreement statistics.
+- **A `calibration` fit model.** A through-origin FS-vs-mixing-proportion recovery line
+  (slope → k_deg, R² = recovery quality) for mixing-series calibration runs, auto-dispatched
+  in `fit_project` when the SDRF declares `characteristics[mixing proportion]`; GUI 1:1 plot.
+
+### ¹⁸O (H₂¹⁸O) reverse model + production fit — 2026-06-24
+
+#### Added
+
+- **`riana fit --label o18` works end-to-end.** The ¹⁸O envelope is a 3-isotope-O shift
+  (¹⁶O/¹⁷O/¹⁸O; the enrichment dilutes the natural pool and lifts ¹⁸O by the labeling
+  fraction), matching the NB90c reverse-model oracle to 5e-5. The D₂O path is untouched.
+- **A length-model ¹⁸O coefficient structure** — `Spep = b·(L−1) + c_D·D + c_E·E + c_N·N +
+  c_Q·Q + c_S·S` (6-param). Serine added to NB90c's DENQ (+3.4 pt held-out R², 21σ; T/Y null);
+  backbone `L−1` confirmed by the data and by Previs (MCP 2009 — one ¹⁸O per peptide bond, the
+  terminal residue's O back-exchanges in tryptic digest). Trained on AC16 (2083 peptides).
+  Two presets bundled: the in-vitro AC16 table and the in-vivo mouse reference (reproduces
+  Previs' worked example LGEYGFQNAILVR = 16). (Report `reports/2026-06-24_o18_reverse_model.md`.)
+
+### Pyteomics 5.x upgrade — 2026-06-24
+
+#### Changed
+
+- **Pyteomics unpinned to `>=5,<6`** (the 1.0.0 release pinned `<5`), with explicit `psims`
+  and `lxml` dependencies. Verified 233-test parity vs 4.7.5 (sample1 golden to 1e-3). 5.0's
+  `map()` multithreading was evaluated and not adopted — it is a full-sweep primitive that
+  doesn't fit integrate's targeted random access, and file-level `-W` already covers the
+  GIL-bound work.
 
 ## [1.0.0] — 2026-06-24
 

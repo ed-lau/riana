@@ -292,7 +292,7 @@ def _peptide_mass(seq: str) -> float:
 
 def test_get_envelope_returns_n_bins_summing_to_distribution_prob():
     pep_mass = _peptide_mass(_TEST_SEQ)
-    dist = iso.get_peptide_distribution(_TEST_SEQ, label=1)
+    dist = iso.get_peptide_distribution(_TEST_SEQ, label="D2O")
     env = iso.get_envelope(dist, pep_mass, n=4)
     assert len(env) == 4
     # Natural-abundance envelope is monotone-decreasing past iso0.

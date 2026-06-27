@@ -41,16 +41,16 @@ def delta_s_max(seq: str, charge: int, coeffs: dict, ria: float, n: int = 4) -> 
     """Theoretical ΔSₓmax(k) in m/z mDa — init→final averaged-spacing change."""
     pm = calculate_ion_mz(seq)
     spep = max(1, int(round(spep_from_coefficients(seq, coeffs))))
-    init = get_peptide_distribution(seq, label=1)
+    init = get_peptide_distribution(seq, label="D2O")
     final = get_peptide_distribution(
-        seq, deuterium_enrichment_level=ria, label=1, num_labeling_sites=spep)
+        seq, deuterium_enrichment_level=ria, label="D2O", num_labeling_sites=spep)
     im, _ = _binned_envelope(init, pm, n + 1)
     fm, _ = _binned_envelope(final, pm, n + 1)
     return {k: ((fm[k] - fm[0]) - (im[k] - im[0])) / charge * 1e3
             for k in range(1, n + 1)}
 
 
-def delta_s_curve(seq, charge, coeffs, ria, label_int, n=6, grid=None):
+def delta_s_curve(seq, charge, coeffs, ria, label, n=6, grid=None):
     """Theoretical **ΔSₓ(f, k)** over f∈grid (m/z mDa) — the nonlinear mixture
     curve, the spacing analog of solve_fs_d2o's intensity mixture. Per channel:
     centroid_k(f) = intensity-weighted mean of the init & final channel-k
@@ -60,9 +60,9 @@ def delta_s_curve(seq, charge, coeffs, ria, label_int, n=6, grid=None):
         grid = np.linspace(0.0, 1.2, 241)
     pm = calculate_ion_mz(seq)
     spep = max(1, int(round(spep_from_coefficients(seq, coeffs))))
-    init = get_peptide_distribution(seq, label=1)
+    init = get_peptide_distribution(seq, label="D2O")
     final = get_peptide_distribution(seq, deuterium_enrichment_level=ria,
-                                     label=label_int, num_labeling_sites=spep)
+                                     label=label, num_labeling_sites=spep)
     im, ip = _binned_envelope(init, pm, n)
     fm, fp = _binned_envelope(final, pm, n)
     im, fm = np.array(im), np.array(fm)
@@ -127,7 +127,7 @@ def main() -> None:
     a = ap.parse_args()
 
     coeffs = load_aa_coefficients(a.coefficients)
-    label_int = 3 if a.coefficients.startswith("o18") else 1
+    label = "O18" if a.coefficients.startswith("o18") else "D2O"
     d = pd.read_table(a.fractions, comment="#")
     f0 = d["labeling_time"].min()
     # Average the unlabeled anchor per concat (replicate t0/f0 rows — bioreps —
@@ -144,7 +144,7 @@ def main() -> None:
             if a.method == "ratio":
                 dsmax[c] = delta_s_max(seq, z, coeffs, a.ria)
             else:
-                curves[c] = delta_s_curve(seq, z, coeffs, a.ria, label_int)
+                curves[c] = delta_s_curve(seq, z, coeffs, a.ria, label)
         except Exception:
             dsmax[c] = curves[c] = None
 

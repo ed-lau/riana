@@ -4,10 +4,11 @@
 
 Lifted from ``riana.fsynthesis`` in the M3 (1.0.0) restructure. One science-layer
 fix is applied during the lift: ``calculate_a0`` previously tested
-``label == 'aa'`` (a string), but callers dispatch with an integer label, so the
+``label == 'aa'`` (a string), but callers dispatched with an integer label, so the
 amino-acid ``a_0`` branch was unreachable and AA experiments silently used the
-natural-abundance baseline (PROJECT_REVIEW.md §2b). The test is corrected to
-``label == 4``.
+natural-abundance baseline (PROJECT_REVIEW.md §2b). With the v1.1.0 label-taxonomy
+cleanup the labels are now the strings ``"D2O"`` / ``"O18"`` / ``"AA"``, and the
+test is ``label == "AA"``.
 
 This is a stopgap: M3 Week 4 replaces the ``calculate_fs_m0`` /
 ``calculate_label_n`` fixed site-count model entirely with the IsoSpec
@@ -25,20 +26,22 @@ import numpy as np
 
 
 def calculate_a0(sequence: str,
-                 label: int,
+                 label: str,
                  ) -> float:
     """
     Calculates the initial isotope enrichment of a peptide prior to heavy water labeling
 
     :param sequence:    str: concat sequences
-    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
+    :param label:       str: the labeling chemistry — ``"D2O"`` (heavy water) or
+                        ``"O18"`` (¹⁸O); the legacy ``"AA"`` (amino-acid labeling)
+                        returns 1, assuming no heavy prior to labeling
     :return:            float: mi at time 0
     """
 
     # M3 fix (PROJECT_REVIEW.md §2b): was ``label == 'aa'`` — a string test that
-    # never matched the integer label callers pass, so AA experiments silently
-    # fell through to the natural-abundance branch below.
-    if label == 4:
+    # never matched the integer label callers passed at the time, so AA
+    # experiments silently fell through to the natural-abundance branch below.
+    if label == "AA":
         return 1
 
     else:
@@ -50,7 +53,7 @@ def calculate_a0(sequence: str,
 
 
 def calculate_label_n(sequence: str,
-                      label: int,
+                      label: str,
                       aa_res: str = 'K',
                       ) -> int:
     """
@@ -58,8 +61,9 @@ def calculate_label_n(sequence: str,
     or amino acid labeling
 
     :param sequence:    the peptide sequence
-    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
-    :param aa_res:      the amino acid being labeled (for label=4 only)
+    :param label:       str: the labeling chemistry — ``"D2O"`` (heavy water),
+                        ``"O18"`` (¹⁸O), or the legacy ``"AA"`` (amino-acid labeling)
+    :param aa_res:      the amino acid being labeled (for ``"AA"`` only)
     :return:
     """
 
@@ -67,25 +71,23 @@ def calculate_label_n(sequence: str,
     sequence = strip_concat(sequence)
 
     # if amino acid labeling, return number of labeled residues
-    if label == 4:
+    if label == "AA":
         # return the sum of each residue in the aa_res
         return sum([sequence.count(i) for i in aa_res])
 
-    # if heavy water (in vivo), return the number of labeling site in heavy water labeling in vivo
-    elif label == 1:
+    # if heavy water, return the number of labeling sites. The old in-vivo/in-vitro
+    # split (commerford vs. differential-evolution tables) is retired — D₂O
+    # cell-specificity now lives in the fit's coefficient table, not the label.
+    elif label == "D2O":
         return int(sum([constants.label_deuterium_commerford.get(char) for char in sequence]))
 
-    # if heavy water cell, return the differential evolution best fit values
-    elif label == 2:
-        return int(sum([constants.label_deuterium_de.get(char) for char in sequence]))
-
     # else if o18, return the number of labeling sites for o18
-    elif label == 3:
+    elif label == "O18":
         return int(sum([constants.label_oxygens.get(char) for char in sequence]) - 1)
 
 def calculate_fs_m0(a: np.ndarray,
                     seq: str,
-                    label: int,
+                    label: str,
                     ria_max: float,
                     num_labeling_sites: int,
                     ) -> float:
@@ -94,7 +96,7 @@ def calculate_fs_m0(a: np.ndarray,
 
     :param a:       m_i at a particular time
     :param seq:     the peptide sequence
-    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
+    :param label:       str: the labeling chemistry — "D2O" (heavy water), "O18" (¹⁸O), or the legacy "AA" (amino-acid labeling)
     :param ria_max: the precursor RIA
     :param num_labeling_sites: the number of labeling sites
 
@@ -116,7 +118,7 @@ def calculate_fs_m0(a: np.ndarray,
 
 def calculate_fs_fine_structure(a: np.ndarray,
                                 seq: str,
-                                label: int,
+                                label: str,
                                 ria_max: float,
                                 formula: str = 'm0_m1',
                                 ) -> float:
@@ -127,7 +129,7 @@ def calculate_fs_fine_structure(a: np.ndarray,
     accurate method of calculating fractional synthesis rates than the calculate_fs_m0 method.
     :param a:                   m_i at a particular time
     :param seq:                 the peptide sequence
-    :param label:       int: 1=2H_in_vivo, 2=2H_in_vitro, 3=18O, 4=AA, if AA, return 1 assuming no heavy prior to labeling
+    :param label:       str: the labeling chemistry — "D2O" (heavy water), "O18" (¹⁸O), or the legacy "AA" (amino-acid labeling)
     :param ria_max:             the precursor RIA
     :param formula:             the formula to calculate the fractional synthesis rate
     :return:                    the fractional synthesis rate

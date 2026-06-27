@@ -508,7 +508,7 @@ def test_solve_fs_d2o_ds_recovers_known_fraction():
     clear_envelope_cache()
     seq, z, spep, n = "VAPEPTIDEK", 2, 8, 6
     pm = calculate_ion_mz(seq)
-    im, ip, fm, fp = _spacing_components(seq, pm, spep, 0.06, n, (), 1)
+    im, ip, fm, fp = _spacing_components(seq, pm, spep, 0.06, n, (), "D2O")
     for f_true in (0.2, 0.5, 0.8):
         obs = {k: _mixture_dspacing(f_true, im, ip, fm, fp, z, k) for k in (1, 2, 3)}
         f_hat = solve_fs_d2o_ds(seq, pm, obs, spep, z, ria_max=0.06, n_iso=n)
@@ -527,12 +527,12 @@ def test_fs_ds_anchoring_removes_per_peptide_offset():
     clear_envelope_cache()
     seq, z, spep, n = "VAPEPTIDEK", 2, 8, 6
     pm = calculate_ion_mz(seq)
-    im, ip, fm, fp = _spacing_components(seq, pm, spep, 0.06, n, (), 1)
+    im, ip, fm, fp = _spacing_components(seq, pm, spep, 0.06, n, (), "D2O")
     t = np.array([0.0, 0.4, 0.8])
     rows = [[0.0] + [_mixture_dspacing(f, im, ip, fm, fp, z, k) for k in range(1, n)]
             for f in (0.0, 0.4, 0.8)]
     kw = dict(seq=seq, pep_mass=pm, spep=spep, charge=z, ria_max=0.06, n_iso=n,
-              mods=(), label_int=1)
+              mods=(), label="D2O")
     clean = _fs_ds_points(rows, t, **kw)
     np.testing.assert_allclose(clean, [0.0, 0.4, 0.8], atol=3e-3)
     # Add a constant +0.5 mDa offset to every channel & timepoint → anchoring cancels.

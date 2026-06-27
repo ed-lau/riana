@@ -67,7 +67,7 @@ LINE_RECOVERY = {
 def _init_last_idx(seq: str, pep_mass: float, n: int = 16) -> int:
     """Last isotopomer index >1% in the natural-abundance (θ=0) envelope — the
     RIA-/θ-invariant compositional width. Channels 0..init_w are natural-populated."""
-    init = get_peptide_distribution(seq, label=1)
+    init = get_peptide_distribution(seq, label="D2O")
     _im, ip = _binned_envelope(init, pep_mass, n)
     tot = sum(ip) or 1.0
     last = 0

@@ -24,8 +24,9 @@ For each peptide:
 
 PROJECT_REVIEW.md §2b fixes landing here:
 
-  - ``label == 4`` dispatch (the legacy string-check ``label == 'aa'``
-    never fired because ``label`` is an int)
+  - amino-acid ``a_0`` dispatch (the legacy string-check ``label == 'aa'``
+    never fired because ``label`` was an int at the time; the v1.1.0
+    taxonomy cleanup makes the labels the strings ``"D2O"``/``"O18"``/``"AA"``)
   - FS-denominator drift: gone — IsoSpec forward FS uses the full
     envelope shape, not ``iso0 / colsums``
   - Bootstrap CI replaces ``sqrt(diag(pcov))[0]``
@@ -179,7 +180,7 @@ def _fs_ds_points(
     ria_max: float,
     n_iso: int,
     mods: tuple[int, ...],
-    label_int: int,
+    label: str,
 ) -> list[float]:
     """Per-timepoint mass-defect fs_ds by **nonlinear spacing inversion**
     (:func:`solve_fs_d2o_ds`) — the spacing analog of the intensity FS solve.
@@ -197,7 +198,7 @@ def _fs_ds_points(
     zero_idx = next((i for i, tt in enumerate(t_fit) if tt == 0.0), None)
     anchor = dspacing_rows[zero_idx] if zero_idx is not None else None
     # ¹⁸O (+2 Da) scores iso2–4 (iso1 is flat); D₂O scores iso1–3.
-    is_o18 = label_int == 3
+    is_o18 = label == "O18"
     channels = THETA_DS_CHANNELS_O18 if is_o18 else THETA_DS_CHANNELS
     out: list[float] = []
     for row in dspacing_rows:
@@ -218,7 +219,7 @@ def _fs_ds_points(
         else:
             out.append(solve_fs_d2o_ds(
                 seq, pep_mass, obs_ds, spep, charge,
-                ria_max=ria_max, n_iso=n_iso, mods=mods, label_int=label_int))
+                ria_max=ria_max, n_iso=n_iso, mods=mods, label=label))
     return out
 
 
@@ -832,7 +833,7 @@ def _fit_one_concat(
                     dspacing_fit, t_fit, seq=seq, pep_mass=pep_mass0,
                     spep=spep_int, charge=z0, ria_max=float(config.ria_max),
                     n_iso=len(iso_cols), mods=mods0,
-                    label_int=(3 if is_o18 else 1),
+                    label=("O18" if is_o18 else "D2O"),
                 )
             except (KeyError, ValueError):
                 fs_ds_fit = []

@@ -6,7 +6,7 @@ Both methods receive the same per-peptide Spep (computed via
 ``legacy`` and ``new`` is the FS-extraction step:
 
 - ``legacy``:  ``fs = (mi - a_0) / (a_max - a_0)``
-  where ``mi = iso0/Σ iso``, ``a_0 = calculate_a0(seq, label=1)`` (natural
+  where ``mi = iso0/Σ iso``, ``a_0 = calculate_a0(seq, label="D2O")`` (natural
   abundance iso0 fraction), and ``a_max = a_0 * (1 - ria_max)**Spep``.
   Uses iso0 alone — the §2b "FS-denominator drift" path.
 
@@ -50,7 +50,7 @@ def _per_peptide_fs(
     pep_mass: float,
     proportions: np.ndarray,
     ria_max: float,
-    label: int = 1,
+    label: str = "D2O",
     score_channels: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute legacy and new FS for one peptide across all proportions.
@@ -103,7 +103,7 @@ def main() -> None:
                         help="d2o_aa_coefficients_<line>.csv")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--q-value", type=float, default=0.01)
-    parser.add_argument("--label", type=int, default=1)
+    parser.add_argument("--label", type=str, default="D2O")
     parser.add_argument("--ria", type=float, default=0.06,
                         help="precursor enrichment (default: 0.06 for 6%% v/v D2O)")
     parser.add_argument("--drop-proportion", type=float, nargs="+", default=[])
