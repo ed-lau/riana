@@ -32,6 +32,7 @@ from concurrent import futures
 from pathlib import Path
 from typing import Mapping
 
+import numpy as np
 import pandas as pd
 
 from riana.config import FitConfig, IntegrationConfig
@@ -343,15 +344,17 @@ def identity_to_extra(identity: RunIdentity) -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 def recombine_for_fit(
     integrate_rows: list[ManifestRow],
+    *,
+    fraction_collapse: str = "sum",
 ) -> dict[tuple[str, str], pd.DataFrame]:
     """Assemble per-curve fit frames from ``integrate`` manifest rows.
 
     Groups runs into one curve per ``(experiment, condition)``; within a curve,
-    merges fractions of the same ``(biological_replicate, labeling_time)`` at
-    peptide level (summing the ``isoN`` channels), keeping different biological
-    replicates as independent rows. Each returned frame carries a numeric
-    ``labeling_time`` column (the fit x-axis) and is ready for
-    :func:`riana.core.fitting.fit_run` with ``time_column="labeling_time"``.
+    collapses fractions of the same ``(biological_replicate, labeling_time)`` at
+    peptide level (``fraction_collapse`` policy — see :func:`_merge_fractions`),
+    keeping different biological replicates as independent rows. Each returned
+    frame carries a numeric ``labeling_time`` column (the fit x-axis) and is ready
+    for :func:`riana.core.fitting.fit_run` with ``time_column="labeling_time"``.
 
     Returns ``{(experiment, condition): frame}``.
     """
@@ -374,7 +377,8 @@ def recombine_for_fit(
         )
         curves.setdefault(ident.group_key, []).append(df)
 
-    return {key: _merge_fractions(frames) for key, frames in curves.items()}
+    return {key: _merge_fractions(frames, policy=fraction_collapse)
+            for key, frames in curves.items()}
 
 
 def fit_project(
@@ -399,7 +403,8 @@ def fit_project(
     integrate_rows = read_manifest(manifest_path, stage="integrate")
     if not integrate_rows:
         raise DataError(f"no integrate rows in manifest {manifest_path}")
-    curves = recombine_for_fit(integrate_rows)
+    curves = recombine_for_fit(
+        integrate_rows, fraction_collapse=config.fraction_collapse)
 
     # Experiment-type → model dispatch (the decided behavior): a mixing-proportion
     # run is fit with the calibration recovery line, a labeling-time run with the
@@ -579,31 +584,110 @@ def fit_outputs_from_manifest(
 # --------------------------------------------------------------------------- #
 # internals
 # --------------------------------------------------------------------------- #
-def _merge_fractions(frames: list[pd.DataFrame]) -> pd.DataFrame:
-    """Sum ``isoN`` channels across fractions of the same point.
+#: The point that fractions collapse onto. ``concat`` carries the charge, so this
+#: is one ``(peptidoform, charge, biological replicate, labeling time)``.
+_FRACTION_POINT_KEYS = ["concat", "biological_replicate", "labeling_time"]
 
-    A "point" is one ``(concat, biological_replicate, labeling_time)``: fractions
-    of the same sample at the same timepoint are summed (more signal, one
-    envelope to solve), while different biological replicates stay separate. When
-    every run is single-fraction (the common case) this is a structural no-op.
+
+def _merge_fractions(
+    frames: list[pd.DataFrame], policy: str = "sum"
+) -> pd.DataFrame:
+    """Collapse LC fractions / technical replicates of the same point into one row.
+
+    A "point" is one ``(concat, biological_replicate, labeling_time)`` (``concat``
+    carries the charge); fractions of the same sample at the same timepoint are one
+    kinetic observation, while different biological replicates stay separate. The
+    intensities are combined *before* a single FS is solved downstream — fractions
+    are never fit as independent points, and their FS values are never averaged.
+
+    ``policy``:
+
+    - ``"sum"`` (default): sum each ``isoN`` channel across fractions (the
+      high-abundance fraction dominates, so a minor fraction's noise is naturally
+      down-weighted), and **intensity-weight the per-channel mass/QC columns**
+      (``iso{N}_obs_mz`` / ``iso{N}_ppm_error`` by that channel's intensity;
+      ``apex_snr`` by the row's total intensity; ``n_scans`` → max). Without the
+      weighting the summed envelope would carry one arbitrary fraction's masses,
+      which would corrupt the mass-defect (``fs_ds``) estimate.
+    - ``"anchor"``: keep only the single highest-total-intensity fraction's row,
+      discarding the rest (legacy parity).
+
+    When every run is single-fraction (the common case) this is a structural no-op.
     """
     rdf = pd.concat(frames, ignore_index=True)
     iso_cols = sorted(
         (c for c in rdf.columns if _is_iso_col(c)), key=lambda c: int(c[3:])
     )
-    point_keys = ["concat", "biological_replicate", "labeling_time"]
+    point_keys = _FRACTION_POINT_KEYS
     if not iso_cols or rdf.empty:
         return rdf
-    # Nothing to merge if every point already appears once.
+    # Nothing to collapse if every point already appears once.
     if not rdf.duplicated(subset=point_keys).any():
         return rdf
 
+    if policy == "anchor":
+        return _merge_fractions_anchor(rdf, iso_cols, point_keys)
+    return _merge_fractions_sum(rdf, iso_cols, point_keys)
+
+
+def _merge_fractions_anchor(
+    rdf: pd.DataFrame, iso_cols: list[str], point_keys: list[str]
+) -> pd.DataFrame:
+    """Keep only the single highest-total-intensity fraction per point."""
+    work = rdf.copy()
+    work["__rowtot"] = work[iso_cols].to_numpy(dtype=float).sum(axis=1)
+    keep = work.groupby(point_keys, sort=False)["__rowtot"].idxmax()
+    return work.loc[keep, rdf.columns].reset_index(drop=True)
+
+
+def _merge_fractions_sum(
+    rdf: pd.DataFrame, iso_cols: list[str], point_keys: list[str]
+) -> pd.DataFrame:
+    """Sum ``isoN`` across fractions; intensity-weight the mass/QC columns."""
+    work = rdf.copy()
+    # Per-channel mass/error columns are intensity-weighted by their own channel;
+    # build weighted numerators to sum alongside the channel intensities.
+    wnum: dict[str, str] = {}  # source column -> weighted-numerator helper column
+    weight_of: dict[str, str] = {}  # source column -> weight (channel) column
+    for ic in iso_cols:
+        n = ic[3:]
+        for col in (f"iso{n}_obs_mz", f"iso{n}_ppm_error"):
+            if col in work.columns:
+                helper = f"__wnum_{col}"
+                work[helper] = (work[col].to_numpy(dtype=float)
+                                * work[ic].to_numpy(dtype=float))
+                wnum[col] = helper
+                weight_of[col] = ic
+    row_tot = work[iso_cols].to_numpy(dtype=float).sum(axis=1)
+    has_snr = "apex_snr" in work.columns
+    if has_snr:
+        work["__rowtot"] = row_tot
+        work["__wnum_apex_snr"] = work["apex_snr"].to_numpy(dtype=float) * row_tot
+
     agg: dict[str, object] = {c: "sum" for c in iso_cols}
-    for c in rdf.columns:
-        if c in point_keys or c in iso_cols:
+    agg.update({h: "sum" for h in wnum.values()})
+    if has_snr:
+        agg["__rowtot"] = "sum"
+        agg["__wnum_apex_snr"] = "sum"
+    if "n_scans" in work.columns:
+        agg["n_scans"] = "max"
+    for c in work.columns:
+        if c in point_keys or c in agg or c.startswith("__"):
             continue
         agg[c] = "min" if c == "percolator q-value" else "first"
-    merged = rdf.groupby(point_keys, as_index=False, sort=False).agg(agg)
+
+    merged = work.groupby(point_keys, as_index=False, sort=False).agg(agg)
+
+    # Resolve the intensity-weighted means: numerator / channel-intensity sum.
+    for col, helper in wnum.items():
+        denom = merged[weight_of[col]].to_numpy(dtype=float)
+        merged[col] = np.where(
+            denom > 0, merged[helper].to_numpy(dtype=float) / denom, np.nan)
+    if has_snr:
+        denom = merged["__rowtot"].to_numpy(dtype=float)
+        merged["apex_snr"] = np.where(
+            denom > 0,
+            merged["__wnum_apex_snr"].to_numpy(dtype=float) / denom, np.nan)
     return merged[rdf.columns]
 
 

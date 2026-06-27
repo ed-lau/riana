@@ -1139,19 +1139,25 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   residual`), so they capture each peptide's measurement scatter — the quantity
   the protein rollup inverse-variance-weights. **This is the substrate the rollup
   consumes.**
-- **2D-LC / technical-replicate fraction collapse (NEW 2026-06-20, surfaced in the
-  `--depth` spike).** The depth gate now counts **distinct labeling timepoints**, so
-  multi-file multiplicity at one timepoint no longer inflates qualification. But the
-  **fit still treats every PSM row at the same (peptidoform, condition, timepoint) as
-  an independent (t, θ) point** (`_fit_one_concat` / `build_fractions_long`) —
-  pseudo-replication. LVE/ATR has 1 file per (condition, timepoint), but the mzTab/SDRF
-  design explicitly allows **multiple files per condition**: technical replicates and
-  **2D-LC chromatographic fractions** (standard in published deep-proteome D₂O data, run
-  to get greater depth). There a peptide's signal is *split across fractions* and should
-  be **summed/merged per (peptidoform, condition, timepoint, charge) before computing
-  θ**, not weighted as independent draws (which both fakes precision and biases θ when a
-  fraction sees only part of the envelope). **Needs** a fractionated D₂O test dataset (we
-  have none yet) + a collapse policy; memory `track_c_fraction_collapse_gap`.
+- **2D-LC / technical-replicate fraction collapse (NEW 2026-06-20; collapse policy +
+  mass-merge BUILT 2026-06-27).** The depth gate counts **distinct labeling
+  timepoints**, so multi-file multiplicity at one timepoint never inflated
+  qualification. The collapse itself runs on the **manifest fit path**:
+  `recombine_for_fit` → `_merge_fractions` collapses fractions of one `(concat =
+  peptidoform+charge, biological_replicate, labeling_time)` into a single point —
+  combining intensities *before* one FS is solved (never averaging per-fraction FS).
+  Now configurable via **`fit --fraction-collapse sum|anchor`** (sum each `isoN`, the
+  default, vs keep the single highest-total-intensity fraction), and the merge now
+  **intensity-weights the per-channel mass/QC columns** (`iso{N}_obs_mz` /
+  `_ppm_error` / `apex_snr`) instead of taking the first fraction's — a real `fs_ds`
+  bug now fixed. The explicit-files path (no `--manifest`) does **not** collapse and
+  now warns. Validated against the **real fractionated iPSC D₂O SDRF**
+  (`data/timeseries_lauren_9_ipsc_d2o`, 192 files = 12 tp × 2 biorep × 8 fractions)
+  through `read_sdrf`; **end-to-end fit validation awaits the mzML/quantms search**.
+  **Still open:** MBR cross-fraction RT-correlation donor search (today MBR assumes a
+  peptide stays in the same fraction number across timepoints — `mbr.py` groups by
+  `(group_key, fraction)`); DIA-NN multi-fraction intake (no data). Memory
+  `track_c_fraction_collapse_gap`.
 - **Fit-model set + the calibration model.** The kinetic models `{simple, guan,
   fornasiero}` are *all wired end-to-end* already (models math lifted unchanged;
   `_MODELS` dispatch → `curve_fit`; CLI `--model`; `FitConfig.model` validation;

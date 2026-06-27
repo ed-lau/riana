@@ -532,6 +532,15 @@ def fit(
         help="Drop match-between-runs data points (evidence='mbr') before "
         "fitting. MBR points are used by default; this is the with/without-MBR "
         "A/B lever. The n_mbr / n_clean output columns report the split either way."),
+    fraction_collapse: str = typer.Option(
+        "sum", "--fraction-collapse", metavar="sum|anchor",
+        help="How to combine LC fractions / technical replicates of one "
+        "(peptidoform, charge, biorep, timepoint) before fitting (manifest path; "
+        "SDRF comment[fraction identifier] defines the fractions). 'sum' (default): "
+        "sum each isoN channel across fractions and intensity-weight the mass/QC "
+        "columns. 'anchor': keep only the highest-total-intensity fraction (legacy "
+        "parity). Intensities are always combined before a single FS is solved — "
+        "fraction FS values are never averaged."),
 ) -> None:
     """Fit kinetic models to a D2O-labeling integrate time series."""
     import dataclasses
@@ -613,6 +622,7 @@ def fit(
             workers=int(workers),
             out_dir=str(out),
             exclude_mbr=bool(exclude_mbr),
+            fraction_collapse=fraction_collapse,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -653,6 +663,23 @@ def fit(
     else:
         dfs = [pd.read_table(p, comment="#") for p in riana_path]
         logger.info(f"read {len(dfs)} timepoint files; fitting ...")
+        # The explicit-files path does NOT collapse fractions — it has no SDRF
+        # identity, so rows sharing a (peptide, sample) are fit as independent
+        # points (pseudo-replication). Warn if that is the case; the manifest path
+        # is the one that collapses LC fractions / technical replicates.
+        if fraction_collapse != "sum":
+            logger.warning(
+                "--fraction-collapse is ignored on the explicit-files path; it "
+                "only applies to --manifest fits.")
+        _combined = pd.concat(dfs, ignore_index=True)
+        if {"concat", "sample"}.issubset(_combined.columns) and \
+                _combined.duplicated(subset=["concat", "sample"]).any():
+            logger.warning(
+                "multiple rows per (peptide, sample) found across the input files "
+                "— these are fit as independent points (pseudo-replication). For "
+                "LC-fraction / technical-replicate data, fit via the SDRF "
+                "--manifest path so fractions collapse per (peptide, biorep, "
+                "timepoint) first.")
         result_df = fit_run(config, dfs, coeffs)
         id_source = ",".join(str(p) for p in riana_path)
 

@@ -14,6 +14,38 @@ QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-sit
 new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
 end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
 
+### LC-fraction collapse policy + fraction-aware mass merge — 2026-06-27
+
+#### Added
+
+- **`riana fit --fraction-collapse sum|anchor`.** Selects how LC fractions /
+  technical replicates of the same `(peptidoform, charge, biological replicate,
+  labeling time)` — identified by the SDRF `comment[fraction identifier]` — are
+  combined into one kinetic point before fitting (manifest path). `sum` (default)
+  sums each `isoN` channel across fractions; `anchor` keeps only the single
+  highest-total-intensity fraction (legacy parity). In both cases the intensities
+  are combined **before a single FS is solved** — fractions are never fit as
+  independent points and their FS values are never averaged.
+
+#### Fixed
+
+- **The fraction merge now intensity-weights the per-channel mass / QC columns.**
+  `_merge_fractions` previously summed the `isoN` intensities but took the *first*
+  fraction's `iso{N}_obs_mz` / `iso{N}_ppm_error` / `apex_snr`, so the summed
+  envelope carried one arbitrary fraction's masses — which would corrupt the
+  mass-defect (`fs_ds`) estimate on fractionated data. Mass/error columns are now
+  intensity-weighted by their channel, `apex_snr` by the row's total intensity, and
+  `n_scans` takes the max. (Latent since the M6a pre-wiring; only became a real bug
+  once `fs_ds` shipped this line.)
+- **The explicit-files fit path warns on pseudo-replication.** `riana fit a.txt
+  b.txt …` (no `--manifest`) does not collapse fractions; it now warns when rows
+  share a `(peptide, sample)` and points to the SDRF `--manifest` path.
+
+> Validated against the real fractionated iPSC D₂O SDRF (192 files = 12 timepoints
+> × 2 bioreps × 8 fractions); end-to-end fit validation awaits the mzML/quantms
+> search. The MBR cross-fraction RT-correlation refinement and DIA-NN multi-fraction
+> intake remain follow-ups (no data yet).
+
 ### Internal label taxonomy → string labels (`"D2O"` / `"O18"`) — 2026-06-27
 
 #### Changed

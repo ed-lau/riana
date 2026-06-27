@@ -31,6 +31,7 @@ from riana.algorithms.mass_calc import calculate_ion_mz
 from riana.config import FitConfig, IntegrationConfig
 from riana.core.fitting import fit_run
 from riana.core.pipeline import (
+    _merge_fractions,
     fit_project,
     identity_to_extra,
     integrate_project,
@@ -250,6 +251,53 @@ def test_recombine_merges_fractions(tmp_path):
     one = frame[frame["concat"] == "VAPEPTIDEK_2"].iloc[0]
     expected = 2 * df[df["concat"] == "VAPEPTIDEK_2"]["iso0"].iloc[0]
     assert one["iso0"] == pytest.approx(expected)
+
+
+def _frac_frame(*, iso0, obs_mz, snr=None, n_scans=None, fraction=1):
+    """One fraction's worth of an integrate-output row at a fixed point, with the
+    per-channel mass columns the fs_ds estimate reads."""
+    row = {
+        "concat": "PEPTIDEK_2", "biological_replicate": 1, "labeling_time": 6.0,
+        "fraction": fraction, "sample": "s", "file_idx": fraction - 1,
+        "iso0": iso0, "iso1": iso0 * 0.5,
+        "iso0_obs_mz": obs_mz, "iso1_obs_mz": obs_mz + 1.003,
+        "iso0_ppm_error": 0.0, "iso1_ppm_error": 0.0,
+    }
+    if snr is not None:
+        row["apex_snr"] = snr
+    if n_scans is not None:
+        row["n_scans"] = n_scans
+    return pd.DataFrame([row])
+
+
+def test_merge_fractions_sum_intensity_weights_mass_columns():
+    """`sum` sums isoN but intensity-weights the per-channel mass / QC columns
+    (taking the first fraction's masses would corrupt the fs_ds estimate)."""
+    a = _frac_frame(iso0=1000.0, obs_mz=500.000, snr=10.0, n_scans=8, fraction=1)
+    b = _frac_frame(iso0=3000.0, obs_mz=500.020, snr=30.0, n_scans=5, fraction=2)
+    merged = _merge_fractions([a, b], policy="sum")
+    assert len(merged) == 1
+    r = merged.iloc[0]
+    assert r["iso0"] == pytest.approx(4000.0)                      # summed
+    # obs_mz is intensity-weighted by iso0, NOT "first" (which would be 500.000).
+    assert r["iso0_obs_mz"] == pytest.approx(
+        (1000 * 500.000 + 3000 * 500.020) / 4000)
+    # apex_snr is weighted by the row's total intensity (iso0 + iso1 = 1.5*iso0).
+    assert r["apex_snr"] == pytest.approx(
+        (1500 * 10.0 + 4500 * 30.0) / (1500 + 4500))
+    assert r["n_scans"] == 8                                       # max across frac
+
+
+def test_merge_fractions_anchor_keeps_highest_intensity_fraction():
+    """`anchor` keeps only the single highest-total-intensity fraction's row."""
+    a = _frac_frame(iso0=1000.0, obs_mz=500.0, fraction=1)
+    b = _frac_frame(iso0=3000.0, obs_mz=510.0, fraction=2)
+    merged = _merge_fractions([a, b], policy="anchor")
+    assert len(merged) == 1
+    r = merged.iloc[0]
+    assert r["iso0"] == pytest.approx(3000.0)             # winner, not summed
+    assert r["iso0_obs_mz"] == pytest.approx(510.0)       # winner's mass untouched
+    assert int(r["fraction"]) == 2
 
 
 def test_bioreps_stay_independent_points(tmp_path):

@@ -383,6 +383,18 @@ class FitConfig:
     #: construction — see ``core.fitting.FS_AUTO_*`` for the policy + the empirical
     #: derivation. Mutually exclusive with an explicit ``score_channels``.
     fs_auto: bool = False
+    #: --fraction-collapse. How to combine LC fractions / technical replicates of
+    #: the **same** ``(peptidoform, charge, biological replicate, labeling time)``
+    #: into one kinetic point before fitting (manifest path only; the SDRF
+    #: ``comment[fraction identifier]`` defines the fractions). The intensities are
+    #: always combined *before* a single FS is solved — fractions are never fit as
+    #: independent points and their FS values are never averaged (a low-abundance
+    #: fraction's noisy FS would contaminate the result). ``"sum"`` (default) sums
+    #: each ``isoN`` channel across fractions (the high-abundance fraction dominates,
+    #: so minor fractions are down-weighted) and intensity-weights the per-channel
+    #: mass/QC columns. ``"anchor"`` keeps only the single highest-total-intensity
+    #: fraction (legacy parity), discarding the rest.
+    fraction_collapse: str = "sum"
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded
@@ -412,5 +424,9 @@ class FitConfig:
             raise ValueError(
                 "--fs auto (fs_auto) and an explicit --fs channel list "
                 "(score_channels) are mutually exclusive; set one.")
+        if self.fraction_collapse not in ("sum", "anchor"):
+            raise ValueError(
+                "fraction_collapse must be 'sum' or 'anchor', got "
+                f"{self.fraction_collapse!r}")
         if self.workers < 1:
             raise ValueError(f"workers must be >= 1, got {self.workers}")
