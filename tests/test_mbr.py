@@ -9,10 +9,11 @@ from riana.core.mbr import augment_with_mbr
 from riana.records import PSMRecord, RunIdentity
 
 
-def _ident(condition: str, data_file: str, experiment: str = "exp") -> RunIdentity:
+def _ident(condition: str, data_file: str, experiment: str = "exp",
+           fraction: int = 1) -> RunIdentity:
     return RunIdentity(
         experiment=experiment, sample=data_file, data_file=data_file,
-        condition=condition,
+        condition=condition, fraction=fraction,
     )
 
 
@@ -57,6 +58,30 @@ def test_transfers_only_to_missing_runs():
     rec = t[0]
     assert rec.concat == "PEPB_2"
     assert rec.file_idx == 2
+
+
+def test_mbr_restricted_to_winner_fraction():
+    """A precursor split across fractions is matched only in the fraction with the
+    most IDs (the winner); holes in its minor fraction are left untouched."""
+    f5 = {r: _ident("ctrl", f"f5_r{r}", fraction=5) for r in range(4)}
+    f6 = {r: _ident("ctrl", f"f6_r{r}", fraction=6) for r in range(4)}
+    psms = []
+    # PEPA anchors every run of both fractions, so all runs exist (no PEPA holes).
+    for r in range(4):
+        psms.append(_psm("PEPA", 2, 0.0, 100.0, r, f5[r]))
+        psms.append(_psm("PEPA", 2, 0.0, 100.0, 10 + r, f6[r]))
+    # PEPB: located in 3 runs of fraction 5 (hole at r3) and 2 of fraction 6
+    # (holes at r2, r3). Unrestricted MBR would fill all three holes; the winner
+    # policy (fraction 5 has more IDs) restricts it to fraction 5's single hole.
+    for r in range(3):
+        psms.append(_psm("PEPB", 2, 0.0, 200.0, r, f5[r]))
+    for r in range(2):
+        psms.append(_psm("PEPB", 2, 0.0, 200.0, 10 + r, f6[r]))
+    b = [p for p in _transfers(augment_with_mbr(psms, _CFG))
+         if p.concat == "PEPB_2"]
+    assert len(b) == 1
+    assert b[0].identity.fraction == 5
+    assert b[0].file_idx == 3
 
 
 def test_no_transfer_for_singleton_donor():

@@ -49,29 +49,47 @@ def augment_with_mbr(
 ) -> list[PSMRecord]:
     """Return ``psms`` plus match-between-runs transfer records.
 
-    PSMs are grouped by ``(identity.group_key, identity.fraction)`` — one turnover
-    curve, one fraction (transfers never cross fractions, which carry different
-    peptides). Records without an SDRF identity (the demoted Percolator path) are
-    passed through untouched: MBR needs the run-identity grouping. The input order
-    is preserved and the synthetic records are appended.
+    Records are grouped into curves by ``identity.group_key`` (``(experiment,
+    condition)``). Within a curve, each precursor is matched in a **single winner
+    fraction** — the LC fraction in which it has the most identifications (ties
+    broken by best q-value, then fraction number — :func:`_winner_fractions`).
+    Transfers are emitted only among *that* fraction's runs; the precursor's
+    incidental appearances in other fractions are left alone. This is the
+    conservative minimal policy: it fills holes where a peptide reliably elutes and
+    deliberately does **not** model cross-fraction drift (no RT-correlation matching
+    across fractions). For single-fraction data every winner is the lone fraction,
+    so this is a structural no-op.
+
+    Records without an SDRF identity (the demoted Percolator path) pass through
+    untouched: MBR needs the run-identity grouping. The input order is preserved and
+    the synthetic records are appended.
     """
-    groups: dict[tuple, list[PSMRecord]] = defaultdict(list)
+    by_group: dict[tuple, list[PSMRecord]] = defaultdict(list)
     n_no_identity = 0
     for p in psms:
         if p.identity is None:
             n_no_identity += 1
             continue
-        groups[(p.identity.group_key, p.identity.fraction)].append(p)
+        by_group[p.identity.group_key].append(p)
 
     transfers: list[PSMRecord] = []
-    for group_psms in groups.values():
-        transfers.extend(_transfer_within_group(group_psms, config))
+    for group_psms in by_group.values():
+        winner = _winner_fractions(group_psms, config.q_value)
+        by_fraction: dict[int, list[PSMRecord]] = defaultdict(list)
+        for p in group_psms:
+            by_fraction[p.identity.fraction].append(p)
+        for frac, frac_psms in by_fraction.items():
+            eligible = {c for c, wf in winner.items() if wf == frac}
+            if not eligible:
+                continue
+            transfers.extend(
+                _transfer_within_group(frac_psms, config, eligible))
 
     if transfers:
         _LOGGER.info(
             "MBR: %d transfer records added across %d curve group(s) "
-            "(donor q<=%.3g in >=%d runs).",
-            len(transfers), len(groups), config.mbr_donor_q,
+            "(donor q<=%.3g in >=%d runs; per-precursor winner fraction).",
+            len(transfers), len(by_group), config.mbr_donor_q,
             config.mbr_min_donor_runs,
         )
     elif n_no_identity == 0:
@@ -79,10 +97,42 @@ def augment_with_mbr(
     return list(psms) + transfers
 
 
+def _winner_fractions(
+    group_psms: Sequence[PSMRecord], q_value: float
+) -> dict[str, int]:
+    """Map each precursor to its **winner fraction** within one curve group.
+
+    The winner is the fraction with the most distinct runs carrying a located
+    (``q <= q_value``) ID — where the peptide most reliably elutes — with ties
+    broken by best (lowest) q-value, then lowest fraction number (deterministic).
+    Precursors with no located ID are absent (they cannot seed MBR).
+    """
+    runs_by: dict[str, dict[int, set[int]]] = defaultdict(lambda: defaultdict(set))
+    best_q: dict[str, dict[int, float]] = defaultdict(dict)
+    for p in group_psms:
+        if p.percolator_q_value > q_value:
+            continue
+        frac = p.identity.fraction
+        runs_by[p.concat][frac].add(p.file_idx)
+        prev = best_q[p.concat].get(frac)
+        if prev is None or p.percolator_q_value < prev:
+            best_q[p.concat][frac] = p.percolator_q_value
+    winner: dict[str, int] = {}
+    for concat, by_frac in runs_by.items():
+        winner[concat] = min(
+            by_frac,
+            key=lambda f: (-len(by_frac[f]), best_q[concat][f], f),
+        )
+    return winner
+
+
 def _transfer_within_group(
-    group_psms: Sequence[PSMRecord], config: IntegrationConfig
+    group_psms: Sequence[PSMRecord],
+    config: IntegrationConfig,
+    eligible_concats: set[str],
 ) -> list[PSMRecord]:
-    """Emit MBR records for one ``(group_key, fraction)`` curve group."""
+    """Emit MBR records for one ``(group_key, fraction)`` curve group, restricted to
+    the precursors whose winner fraction is this one (``eligible_concats``)."""
     # "Located" = confidently extracted (q <= q_value): defines where a precursor
     # already has a real peak (so it is NOT an acceptor there) and supplies the
     # RT anchors. The donor gate is the stricter-or-equal mbr_donor_q.
@@ -128,6 +178,8 @@ def _transfer_within_group(
 
     out: list[PSMRecord] = []
     for concat, runs_seen in donor_runs.items():
+        if concat not in eligible_concats:
+            continue  # this precursor's winner fraction is a different one
         if len(runs_seen) < config.mbr_min_donor_runs:
             continue
         acceptors = all_runs - present[concat]  # runs with no located ID for this precursor

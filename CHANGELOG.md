@@ -41,10 +41,21 @@ end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that pr
   b.txt …` (no `--manifest`) does not collapse fractions; it now warns when rows
   share a `(peptide, sample)` and points to the SDRF `--manifest` path.
 
+#### Changed
+
+- **MBR is restricted to each precursor's winner fraction.** Across the runs of a
+  curve, match-between-runs now fills a peptide's holes only in the **single LC
+  fraction where it has the most identifications** (ties broken by best q-value,
+  then fraction number), instead of independently in every fraction it touches.
+  This is the conservative minimal policy — recover few bona-fide signals where a
+  peptide reliably elutes, rather than maximise transfers — and it deliberately does
+  not model cross-fraction RT drift (a deferred refinement). A structural no-op for
+  single-fraction data.
+
 > Validated against the real fractionated iPSC D₂O SDRF (192 files = 12 timepoints
 > × 2 bioreps × 8 fractions); end-to-end fit validation awaits the mzML/quantms
-> search. The MBR cross-fraction RT-correlation refinement and DIA-NN multi-fraction
-> intake remain follow-ups (no data yet).
+> search. Cross-fraction RT-correlation MBR and DIA-NN multi-fraction intake remain
+> follow-ups (no data yet).
 
 ### Internal label taxonomy → string labels (`"D2O"` / `"O18"`) — 2026-06-27
 

@@ -1154,10 +1154,12 @@ Gated by both the mixing-series benchmarks and the new animal benchmark
   now warns. Validated against the **real fractionated iPSC D₂O SDRF**
   (`data/timeseries_lauren_9_ipsc_d2o`, 192 files = 12 tp × 2 biorep × 8 fractions)
   through `read_sdrf`; **end-to-end fit validation awaits the mzML/quantms search**.
-  **Still open:** MBR cross-fraction RT-correlation donor search (today MBR assumes a
-  peptide stays in the same fraction number across timepoints — `mbr.py` groups by
-  `(group_key, fraction)`); DIA-NN multi-fraction intake (no data). Memory
-  `track_c_fraction_collapse_gap`.
+  MBR is now **winner-fraction-restricted**: a peptide's holes are filled only in the
+  single LC fraction where it has the most IDs (ties → best q, then fraction number;
+  `mbr._winner_fractions`), the conservative minimal policy. **Still open:**
+  cross-fraction RT-correlation MBR (following a peptide that drifts fractions —
+  deferred by the maintainer as non-minimal); DIA-NN multi-fraction intake (no data).
+  Memory `track_c_fraction_collapse_gap`.
 - **Fit-model set + the calibration model.** The kinetic models `{simple, guan,
   fornasiero}` are *all wired end-to-end* already (models math lifted unchanged;
   `_MODELS` dispatch → `curve_fit`; CLI `--model`; `FitConfig.model` validation;
