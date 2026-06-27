@@ -118,3 +118,7 @@ tests/data/timeseries_lve/
 
 # Local integration/experiment outputs (not tracked)
 runs/
+
+# Technical-note write-up + figure notebooks — a paper artifact, not part of the
+# shippable package. Maintained separately (see notes/technical_note/00_overview.md).
+notes/

@@ -8,6 +8,11 @@ reasoning survives even when the code or roadmap moves on.
 Convention: `YYYY-MM-DD_short_topic.md`. Inputs often live under the gitignored
 `runs/` (regenerable); reports quote the numbers so they stand alone.
 
+**External-facing synthesis:** the ¹⁸O reports below are distilled into a paper-style
+technical note (Methods sections + reproducible figure notebooks). That note is a separate
+paper artifact — gitignored here (`notes/`), maintained in its own repository — and depends
+on this package via `import riana` (+ `RIANA_REPO` for the regenerable data).
+
 | date | report | outcome |
 |------|--------|---------|
 | 2026-06-26 | [¹⁸O kinetic fit — time-series validation + D₂O head-to-head](2026-06-26_o18_kinetic_fit.md) | **Kinetic `fit --label o18` validated; no reverse-model change needed.** iPSC ¹⁸O (0.0897 RIA, 24 h) recovers turnover cleanly (36% R²≥0.8, FS→0.67, t½≈14 h). AC16's weakness is the **8 h regime, not the label** — D₂O struggles identically (4.1% vs 3.0%). ¹⁸O **≈ D₂O**: Spearman(k)=0.66 at **both peptide and protein level** (depth-6, linear-φ rollup), within-protein robust geomCV ~0.15 (≈D₂O); ¹⁸O **out-curates** D₂O at iPSC (43% vs 33%). ~1.5× absolute-scale offset (AC16 table on iPSC). R-script's 0.29 vs riana 0.22 = selection (R²-kept subset) + ~1.3× **too-hot reference** (calibration Spep incl. serine). Knobs: **clamp[0,1] is neutral** (don't blanket-apply; the real t0 lever is anchoring); **curate Spep≥5** (from the Spep distribution; [0,3) is dead); channels = bias/variance tradeoff (iso0-2 higher FS/lower yield ↔ full higher yield/deflated). |
