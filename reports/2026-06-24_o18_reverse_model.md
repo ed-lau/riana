@@ -6,6 +6,18 @@
 - **Harness:** [`tests/benchmark/bench_o18_coefficients.py`](../tests/benchmark/bench_o18_coefficients.py) + [`tests/benchmark/_helpers/o18_forward_model.py`](../tests/benchmark/_helpers/o18_forward_model.py) (port of NB90c); guards in [`tests/test_o18.py`](../tests/test_o18.py).
 - **Roadmap:** `PROJECT_REVIEW.md` → §3 handoff item #3 (o18 rewrite).
 
+> **⚠ Update (2026-06-27) — coefficient estimator changed to a bootstrap-OOB freeze.**
+> To compute the ¹⁸O table's uncertainty and R² the *same way* as the D₂O per-AA tables
+> (`build_frozen_tables.py`), the shipped `juber_2026_o18_ac16` (renamed from `o18_ac16`)
+> was re-frozen by **bootstrap** — coefficient = bootstrap mean, R² = **out-of-bag** — in
+> place of the single 80/20 split described below (`bench_o18_coefficients.py:bootstrap_length_model`).
+> The numbers move negligibly: shipped coefficients are now
+> `Sₚₑₚ = 0.157·(L−1) + 1.539·D + 1.230·E + 0.407·N + 0.030·Q + 0.537·S` (largest change
+> N +0.03), and the model R² is reported as **OOB 0.892** (95 % CI [0.869, 0.912]) rather
+> than the single-split **test R² 0.899** quoted below. The CSV schema gained
+> `oob_r2, ci_lo, ci_hi, boot_frac_nonzero`. The labeling-site structure decisions (DENQ+S,
+> L−1), the Spep ≥ 5 / recovery curation, and every conclusion below are **unchanged**.
+
 ## Question
 
 `riana fit --label o18` errored ("reimplemented post-M4"). Turning it on needed (a) the ¹⁸O **labeling-site model** — how many oxygens per peptide exchange into the H₂¹⁸O pool (the "Spep") — trained from calibration data via the reverse model, and (b) the production envelope + FS solver. Two science questions fell out:

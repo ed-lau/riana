@@ -6,6 +6,13 @@
 - **Inputs:** new AC16 + iPSC D₂O-vs-¹⁸O time series (`runs/{juber_ac16,boomi_ipsc}_{o18,d2o}`, gitignored); the legacy R analysis `data/timeseries_juber_ac16_o18/00_Riana_RMD_18` (RIANA v0.8.3 + Percolator); comparison driver `runs/compare_kinetics.py`.
 - **Roadmap:** v1.1.0 item #3 — the deferred **kinetic** o18 fit (the reverse model shipped 2026-06-24; this is the time-series turn). See [[o18_reverse_model_design]].
 
+> **Update (2026-06-27) — re-verified after the bootstrap-OOB coefficient refit.** The
+> `juber_2026_o18_ac16` table was re-frozen by bootstrap (see the 2026-06-24 report's update)
+> and the iPSC/AC16 fits below were re-run. The numbers are **stable**: iPSC FS(24 h) 0.66,
+> Spearman(k) 0.66 (peptide & protein), within-protein geomCV 0.149 / 0.146, yield 43 / 33 %;
+> AC16 essentially unchanged (ρ 0.65, yield 3.0 / 4.6 %). All curation decisions (R² ≥ 0.8,
+> Sₚₑₚ ≥ 5, depth 6) and conclusions stand.
+
 ## Question
 
 The reverse model + mixing-calibration fit shipped 2026-06-24, but the **kinetic** `fit --label o18` had never run (no time series). With AC16 + iPSC D₂O-vs-¹⁸O series in hand: does it recover turnover? A first AC16 pass looked alarming (median FS(8h) ≈0.07, 3% R²≥0.8), while the user's legacy R script — on the same AC16 data and a *known-wrong* FS calc — recovered a clean accumulation to ~0.29. Is the ¹⁸O reverse model missing something?

@@ -15,13 +15,24 @@ Pipeline (matches data/notebook/90c_O18_LengthModel_IsoSpec_AC16.ipynb):
      [0.5, n_O_atoms], using the first --n-iso isotopomers (NB90c default 6 —
      the +2 Da ¹⁸O label spreads signal into m2/m4/m6, so iso0:5 all inform).
   4. **Length-model regression** (NB90c, NOT D2O's 20-per-AA — that has a K/R
-     non-identifiability): Spep = b·(L-1) + c_D·D + c_E·E + c_N·N + c_Q·Q,
-     intercept fixed 0, bounded lsq_linear (bvls), 80/20 split.
+     non-identifiability): Spep = b·(L-1) + c_D·D + c_E·E + c_N·N + c_Q·Q + c_S·S,
+     intercept fixed 0, bounded lsq_linear (bvls). The shipped table is a
+     **bootstrap freeze** (coefficient = bootstrap mean, R² = out-of-bag) that
+     MIRRORS the D2O ``build_frozen_tables.py`` so the two labels' uncertainty
+     and R² are computed the same way and are directly comparable — the only
+     difference is the design matrix (length features + chemistry bounds vs the
+     D2O 20-per-AA). The previous single 80/20 split is kept as a diagnostic.
 
 Outputs (under --output-dir):
-  - o18_length_coefficients.csv  (feature, coefficient, std_error + metadata)
+  - o18_length_coefficients.csv  (feature, coefficient, std_error [bootstrap SE],
+                                  oob_r2, ci_lo, ci_hi, boot_frac_nonzero —
+                                  schema matches alamillo_2025_*.csv)
   - spep_per_peptide.csv         (concat, sequence, charge, pep_mass, spep_*)
-  - summary.json                 (n_peptides, train_r2, test_r2, coef, args)
+  - summary.json                 (n_peptides, oob_r2 + CI, n_boot, diagnostic
+                                  single-split train/test, coef, args)
+
+Pass ``--spep spep_per_peptide.csv`` to re-freeze the regression from an existing
+per-peptide Spep table (skips stage-1; mirrors build_frozen_tables.py ``--spep``).
 
 NB: validation is data-blocked — point --inputs at the o18 calibration series
 once it is re-searched through the mzTab path (the harness is ready now).
@@ -204,53 +215,142 @@ def fit_length_model(spep_df: pd.DataFrame, random_state: int) -> dict:
     }
 
 
+def bootstrap_length_model(spep_df: pd.DataFrame, n_boot: int,
+                           random_state: int) -> dict:
+    """Bootstrap freeze of the bounded length model — the shipped estimator.
+
+    Mirrors the D2O ``build_frozen_tables.py`` freeze: resample peptides with
+    replacement ``n_boot`` times, refit the SAME bounded non-negative LS each
+    time (``lsq_linear`` bvls with the o18 chemistry bounds), take the
+    coefficient as the **bootstrap mean** and the R² as the **out-of-bag**
+    (peptides not drawn in a given resample) median. Identical procedure to the
+    D2O per-AA tables — only the design matrix differs — so the two labels'
+    ``std_error`` / ``oob_r2`` / CI are computed the same way and are directly
+    comparable. Coefficient columns match ``alamillo_2025_*.csv``.
+    """
+    df = _build_design_matrix(spep_df)
+    X = df[o18.FEATURE_COLS].values.astype(float)
+    y = df['spep_continuous'].values
+    rng = np.random.default_rng(random_state)
+    n, n_feat = len(y), X.shape[1]
+    coefs = np.zeros((n_boot, n_feat))
+    oob_r2 = np.full(n_boot, np.nan)
+    all_idx = np.arange(n)
+
+    t0 = time.time()
+    for b in range(n_boot):
+        idx = rng.integers(0, n, n)
+        coefs[b] = lsq_linear(
+            X[idx], y[idx],
+            bounds=(o18.FEATURE_BOUNDS_LOW, o18.FEATURE_BOUNDS_HIGH),
+            method='bvls').x
+        oob = np.setdiff1d(all_idx, idx, assume_unique=False)
+        if len(oob) > 1:
+            oob_r2[b] = r2_score(y[oob], X[oob] @ coefs[b])
+        if (b + 1) % 500 == 0:
+            print(f'  bootstrap {b + 1}/{n_boot} in {time.time() - t0:.1f}s',
+                  flush=True)
+    print(f'  bootstrap {n_boot}/{n_boot} in {time.time() - t0:.1f}s', flush=True)
+
+    mean = coefs.mean(axis=0)
+    oob_med = float(np.nanmedian(oob_r2))
+    coeff_df = pd.DataFrame({
+        'feature': o18.FEATURE_COLS,
+        'coefficient': mean,
+        'std_error': coefs.std(axis=0, ddof=1),
+        'oob_r2': oob_med,
+        'ci_lo': np.percentile(coefs, 2.5, axis=0),
+        'ci_hi': np.percentile(coefs, 97.5, axis=0),
+        'boot_frac_nonzero': (coefs > 0).mean(axis=0),
+    })
+    return {
+        'coeff_df': coeff_df,
+        'coef': mean.tolist(),
+        'oob_r2_median': oob_med,
+        'oob_r2_lo': float(np.nanpercentile(oob_r2, 2.5)),
+        'oob_r2_hi': float(np.nanpercentile(oob_r2, 97.5)),
+        'n_boot': int(n_boot),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--inputs', type=Path, required=True,
-                        help='Directory of o18 calibration *_riana.txt files')
-    parser.add_argument('--ground-truth', type=Path, required=True,
-                        help='ground_truth.csv with riana_filename, nominal_proportion')
+    parser.add_argument('--inputs', type=Path,
+                        help='Directory of o18 calibration *_riana.txt files '
+                             '(stage-1; omit when --spep is given)')
+    parser.add_argument('--ground-truth', type=Path,
+                        help='ground_truth.csv with riana_filename, nominal_proportion '
+                             '(omit when --spep is given)')
+    parser.add_argument('--spep', type=Path,
+                        help='precomputed spep_per_peptide.csv to re-freeze the '
+                             'regression from (skips stage-1; mirrors '
+                             'build_frozen_tables.py --spep)')
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--n-iso', type=int, default=o18.N_ISO,
                         help=f'isotopomers used in the fit (NB90c default {o18.N_ISO})')
+    parser.add_argument('--n-boot', type=int, default=2000,
+                        help='bootstrap resamples for the shipped freeze (default 2000)')
     parser.add_argument('--random-state', type=int, default=12345)
     parser.add_argument('--r2-min', type=float, default=0.95)
     parser.add_argument('--drop-proportion', type=float, nargs='+', default=[], metavar='PCT')
     args = parser.parse_args()
+    if not args.spep and not (args.inputs and args.ground_truth):
+        parser.error('provide either --spep, or both --inputs and --ground-truth')
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    print(f'[load] inputs={args.inputs}  ground_truth={args.ground_truth}')
-    ground_truth = pd.read_csv(args.ground_truth)
-    riana_df = load_and_curate(args.inputs, ground_truth, r2_min=args.r2_min,
-                               drop_proportions=tuple(args.drop_proportion))
-    print(f'[curate] {riana_df["concat"].nunique()} peptides, {len(riana_df)} rows '
-          f'after R² > {args.r2_min}')
 
-    print(f'[spep] per-peptide Spep via o18 forward model, N_ISO={args.n_iso}')
-    spep_df = fit_spep_per_peptide(riana_df, n_iso=args.n_iso)
-    spep_df.to_csv(args.output_dir / 'spep_per_peptide.csv', index=False)
+    # Stage 1 — per-peptide Spep (method-independent). Reuse a precomputed table
+    # with --spep, or compute it from the calibration *_riana.txt files.
+    if args.spep:
+        print(f'[load] spep={args.spep} (re-freeze; skipping stage-1)')
+        spep_df = pd.read_csv(args.spep)
+    else:
+        print(f'[load] inputs={args.inputs}  ground_truth={args.ground_truth}')
+        ground_truth = pd.read_csv(args.ground_truth)
+        riana_df = load_and_curate(args.inputs, ground_truth, r2_min=args.r2_min,
+                                   drop_proportions=tuple(args.drop_proportion))
+        print(f'[curate] {riana_df["concat"].nunique()} peptides, {len(riana_df)} rows '
+              f'after R² > {args.r2_min}')
+        print(f'[spep] per-peptide Spep via o18 forward model, N_ISO={args.n_iso}')
+        spep_df = fit_spep_per_peptide(riana_df, n_iso=args.n_iso)
+        spep_df.to_csv(args.output_dir / 'spep_per_peptide.csv', index=False)
 
-    print('[regress] 5-param bounded length model (NB90c)')
-    result = fit_length_model(spep_df, random_state=args.random_state)
-    result['coeff_df'].to_csv(args.output_dir / 'o18_length_coefficients.csv', index=False)
+    # Stage 2 (shipped) — bootstrap freeze, mirroring the D2O build_frozen_tables.py
+    print(f'[regress] bootstrap freeze of the bounded length model '
+          f'(n_boot={args.n_boot}, mirrors D2O build_frozen_tables.py)')
+    boot = bootstrap_length_model(spep_df, n_boot=args.n_boot,
+                                  random_state=args.random_state)
+    boot['coeff_df'].to_csv(args.output_dir / 'o18_length_coefficients.csv', index=False)
 
-    coef_by_feature = dict(zip(o18.FEATURE_COLS, result['coef']))
+    # Diagnostic — the single 80/20 split (previous method), kept for reference only.
+    diag = fit_length_model(spep_df, random_state=args.random_state)
+
+    coef_by_feature = dict(zip(o18.FEATURE_COLS, boot['coef']))
     summary = {
         'n_peptides': int(len(spep_df)),
-        'n_train': result['n_train'], 'n_test': result['n_test'],
-        'train_r2': result['train_r2'], 'test_r2': result['test_r2'],
+        'method': 'bootstrap_oob',
+        'n_boot': boot['n_boot'],
+        'oob_r2_median': boot['oob_r2_median'],
+        'oob_r2_ci': [boot['oob_r2_lo'], boot['oob_r2_hi']],
+        'diagnostic_single_split': {
+            'train_r2': diag['train_r2'], 'test_r2': diag['test_r2'],
+            'n_train': diag['n_train'], 'n_test': diag['n_test'],
+        },
         'coef': coef_by_feature,
         'RIA_O18': o18.RIA_O18,
         'args': {'inputs': str(args.inputs), 'ground_truth': str(args.ground_truth),
-                 'n_iso': args.n_iso, 'random_state': args.random_state, 'r2_min': args.r2_min},
+                 'spep': str(args.spep), 'n_iso': args.n_iso, 'n_boot': args.n_boot,
+                 'random_state': args.random_state, 'r2_min': args.r2_min},
     }
     with (args.output_dir / 'summary.json').open('w') as f:
         json.dump(summary, f, indent=2)
 
-    terms = ' + '.join(f'{c:.4f}·{f}' for f, c in zip(o18.FEATURE_COLS, result['coef']))
+    terms = ' + '.join(f'{c:.4f}·{f}' for f, c in zip(o18.FEATURE_COLS, boot['coef']))
     print(f'\n[done] n_peptides={summary["n_peptides"]}  '
-          f'train_r2={summary["train_r2"]:.4f}  test_r2={summary["test_r2"]:.4f}')
+          f'OOB R²={boot["oob_r2_median"]:.4f} '
+          f'[{boot["oob_r2_lo"]:.4f}, {boot["oob_r2_hi"]:.4f}]  '
+          f'(diagnostic single-split test R²={diag["test_r2"]:.4f})')
     print(f'       Spep = {terms}')
     print(f'       outputs -> {args.output_dir}')
 

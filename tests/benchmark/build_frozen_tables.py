@@ -133,10 +133,14 @@ def main() -> None:
           f'over {len(y)} peptides')
     boot = bootstrap_coefficients(X, y, args.n_boot, args.random_state)
 
+    # Shippable schema — matches riana/data/coefficients/alamillo_2025_*.csv and the
+    # o18 juber table: coefficient (bootstrap mean), std_error (bootstrap SE), oob_r2
+    # (out-of-bag median, repeated per row), + the bootstrap CI / nonzero-fraction.
     coeff_df = pd.DataFrame({
         'amino_acid': fm.AA_LIST,
         'coefficient': boot['mean'],
-        'boot_std': boot['std'],
+        'std_error': boot['std'],
+        'oob_r2': boot['oob_r2_median'],
         'ci_lo': boot['ci_lo'],
         'ci_hi': boot['ci_hi'],
         'boot_frac_nonzero': boot['frac_nonzero'],
