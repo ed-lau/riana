@@ -77,3 +77,63 @@ class ChromatogramView(QWidget):
 
     def _on_save(self) -> None:
         save_plot(self.plot, self, default_name=f"{self._concat}_chromatogram")
+
+
+class IsotopomerBarView(QWidget):
+    """Bar chart of one peptide's **relative** isotopomer (m0..mN) abundances.
+
+    Reads the integrated ``isoN`` areas straight off the selected results row (no
+    mzML round-trip), so it updates instantly — the abundance-domain companion to
+    the RT-domain chromatogram. Bars are palette-matched to the chromatogram's
+    traces so m{i} is the same colour in both views.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._plot_widget = pg.PlotWidget()
+        self.plot = self._plot_widget.getPlotItem()
+        self.plot.setLabel("bottom", "Isotopomer")
+        self.plot.setLabel("left", "Relative abundance")
+        self.plot.showGrid(y=True, alpha=0.2)
+        self.plot.setMouseEnabled(x=False)
+        layout.addWidget(self._plot_widget)
+
+        controls = QHBoxLayout()
+        controls.addStretch(1)
+        self.save_button = QPushButton("Save graph…")
+        self.save_button.clicked.connect(self._on_save)
+        controls.addWidget(self.save_button)
+        layout.addLayout(controls)
+
+        self._concat = "isotopomers"
+        self.show_placeholder("Select a peptide to view its isotopomer envelope.")
+
+    def show_placeholder(self, message: str) -> None:
+        self.plot.clear()
+        self.plot.setTitle(message)
+        self.save_button.setEnabled(False)
+
+    def plot_isotopomers(self, concat: str, values: list[float]) -> None:
+        """Draw the relative-abundance bars from a peptide's ``isoN`` areas.
+
+        ``values`` are the raw ``iso0..isoN`` integrated areas (NaNs/negatives are
+        treated as 0); they are normalised to sum 1 so envelopes are comparable
+        across peptides of different intensity.
+        """
+        self.plot.clear()
+        clean = [float(v) if v == v and v > 0 else 0.0 for v in values]
+        total = sum(clean) or 1.0
+        rel = [v / total for v in clean]
+        x = list(range(len(rel)))
+        brushes = [pg.mkBrush(_PALETTE[i % len(_PALETTE)]) for i in x]
+        self.plot.addItem(pg.BarGraphItem(x=x, height=rel, width=0.6, brushes=brushes))
+        self.plot.getAxis("bottom").setTicks([[(i, f"m{i}") for i in x]])
+        self.plot.setYRange(0.0, max(rel + [0.0]) * 1.1 or 1.0)
+        self.plot.setTitle(concat)
+        self._concat = concat
+        self.save_button.setEnabled(True)
+
+    def _on_save(self) -> None:
+        save_plot(self.plot, self, default_name=f"{self._concat}_isotopomers")

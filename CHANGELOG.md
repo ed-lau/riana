@@ -14,6 +14,17 @@ QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-sit
 new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
 end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
 
+### GUI integrate — isotopomer abundance bar chart — 2026-06-28
+
+#### Added
+
+- **The Integrate tab shows a relative isotopomer (m0..mN) bar chart** beside the
+  chromatogram. Selecting a peptide row now renders both the RT-domain trace and
+  the abundance-domain envelope (the integrated `isoN` areas, normalised to sum 1,
+  palette-matched so m{i} is the same colour in both views). It reads straight off
+  the results row — no mzML round-trip — so it updates instantly, and has its own
+  PNG export.
+
 ### Progress bars for `fit` / `rollup` — 2026-06-28
 
 #### Added

@@ -54,7 +54,7 @@ from qasync import asyncSlot
 
 from riana.config import IntegrationConfig
 from riana.core.pipeline import finalize_run
-from riana.gui.chromatogram import ChromatogramView
+from riana.gui.chromatogram import ChromatogramView, IsotopomerBarView
 from riana.gui.models import DataFrameTableModel
 from riana.gui.tasks import (
     extract_trace,
@@ -405,8 +405,15 @@ class IntegrateTab(QWidget):
         self.table.selectionModel().currentRowChanged.connect(self._on_row_changed)
         results_split.addWidget(self.table)
 
+        # Two synced views of the selected peptide: the RT-domain chromatogram and
+        # the abundance-domain isotopomer (m0..mN) bar chart, side by side.
+        plots = QSplitter(Qt.Orientation.Horizontal)
         self.chromatogram = ChromatogramView()
-        results_split.addWidget(self.chromatogram)
+        self.isobars = IsotopomerBarView()
+        plots.addWidget(self.chromatogram)
+        plots.addWidget(self.isobars)
+        plots.setSizes([460, 280])
+        results_split.addWidget(plots)
         results_split.setSizes([320, 300])
 
         layout.addWidget(results_split, stretch=1)
@@ -536,6 +543,7 @@ class IntegrateTab(QWidget):
         self.log.clear()
         self.model.set_dataframe(pd.DataFrame())
         self.chromatogram.show_placeholder("Running…")
+        self.isobars.show_placeholder("Running…")
         self._fraction_mzml.clear()
         self._cancelled = False
 
@@ -645,6 +653,9 @@ class IntegrateTab(QWidget):
         self.chromatogram.show_placeholder(
             "Select a peptide row to view its chromatogram."
         )
+        self.isobars.show_placeholder(
+            "Select a peptide row to view its isotopomer envelope."
+        )
         self._last_config = config
         self._info(
             f"done — {len(self.model.dataframe)} rows across {len(frames)} run(s)."
@@ -658,7 +669,24 @@ class IntegrateTab(QWidget):
     # --- chromatogram on selection ----------------------------------------- #
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if current.isValid() and not self._running:
+            # The isotopomer bars come straight off the row (no mzML), so update
+            # them instantly; the chromatogram needs an async extraction.
+            self._show_isotopomers(current.row())
             asyncio.ensure_future(self._show_chromatogram(current.row()))
+
+    def _show_isotopomers(self, row: int) -> None:
+        df = self.model.dataframe
+        if row < 0 or row >= len(df):
+            return
+        record = df.iloc[row]
+        iso_cols = sorted(
+            (c for c in df.columns if c.startswith("iso") and c[3:].isdigit()),
+            key=lambda c: int(c[3:]))
+        if not iso_cols:
+            self.isobars.show_placeholder("No isotopomer columns in this result.")
+            return
+        concat = str(record.get("concat", f"row {row}"))
+        self.isobars.plot_isotopomers(concat, [record[c] for c in iso_cols])
 
     async def _show_chromatogram(self, row: int) -> None:
         df = self.model.dataframe

@@ -803,6 +803,30 @@ def test_curve_view_export_writes_png(main_window, tmp_path):
     assert Path(png).stat().st_size > 0
 
 
+def test_isotopomer_bar_view_plots_relative_envelope(main_window, tmp_path):
+    from riana.gui.export import export_plot
+
+    view = main_window.integrate_tab.isobars
+    assert not view.save_button.isEnabled()           # placeholder state
+    # raw integrated areas (NaN/zero tolerated) → normalised relative bars
+    view.plot_isotopomers("PEPTIDEK_2", [100.0, 50.0, 25.0, float("nan"), 0.0, 10.0])
+    assert view.save_button.isEnabled()
+    out = export_plot(view.plot, str(tmp_path / "iso.png"))
+    assert Path(out).stat().st_size > 0
+
+
+def test_integrate_row_select_fills_isotopomer_bars(main_window):
+    tab = main_window.integrate_tab
+    tab.model.set_dataframe(pd.DataFrame({
+        "concat": ["PEPK_2"],
+        "iso0": [100.0], "iso1": [50.0], "iso2": [25.0],
+        "iso3": [12.0], "iso4": [6.0], "iso5": [3.0],
+    }))
+    tab.isobars.show_placeholder("…")
+    tab._show_isotopomers(0)                           # the sync wiring on row-select
+    assert tab.isobars.save_button.isEnabled()
+
+
 def test_chromatogram_view_export_writes_png(main_window, tmp_path):
     from riana.gui.export import export_plot
 
