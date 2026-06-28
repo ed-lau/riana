@@ -72,135 +72,32 @@ small and scientific software is allowed to evolve.
 
 ## 2. Critical findings (post-evaluation)
 
-### 2a. Correctness defects fixed in 0.9.0
-
-See `CHANGELOG.md` for the full enumerated list (B1–B13 plus the
-mass-tolerance semantic change). Highlights:
-
-- Mass tolerance was applied at half the requested ppm (`/2` in the
-  `delta_mass` computation). Now `-m N` means `±N` ppm.
-- `riana fit --plotcurves` crashed because `plot_model()` was being called
-  with the wrong keyword argument.
-- The `flanking aa` column in standalone-Percolator output stored the same
-  scalar for every row.
-- `except ValueError or IndexError:` only ever caught `ValueError`.
-- Logger was keyed by name alone, so subsequent runs wrote to the first
-  run's output directory.
-
 ### 2b. Scientific defects deferred to 1.0.0
 
-- **Amino-acid-labelling `a_max` path is unreachable.** `fsynthesis.py`
-  checks `label == 'aa'` (string), but `riana_fit.py` dispatches with
-  `label = int`, so AA experiments silently fall into the natural-abundance
-  branch.
-- **Fractional-synthesis denominator drift.** `iso0 / colsums` silently
-  changes meaning depending on the `-i` choice passed upstream to
-  `integrate`. Same data + different `-i` ⇒ different `mi`.
-- **Kinetic-fit uncertainty.** Reported `sd` is `sqrt(diag(pcov))` of
-  `k_deg` only; the plotted confidence band uses a heuristic
-  (`k_deg ** 2 / (k_deg + sd)` as "lower bound") that is not a defined
-  statistical CI. Use proper bootstrap CIs in 1.0.
-- **Fixed labelling-site model biases fractional synthesis.** `riana fit`
-  derives FS from the monoisotopic peak alone — `calculate_fs_m0` takes
-  `mi = iso0/colsums`, then inverts the analytic relation
-  `a_max = a_0·(1−ria_max)^n` with a site count `n` from `calculate_label_n`,
-  a fixed per-peptide model. The M3 Week 0 `bench_fit_recovery.py` baseline
-  (2026-05-20) shows this yields FS ≈ 0.6·f on the calibration mixing
-  series: pseudo-time `k` recovery is biased low by ≈ −0.5 (median fitted
-  `k` 0.24 AC16 / 0.28 iPSC vs target `k_deg₀` 0.5; stable across both cell
-  lines and the R²≥0.9 subset). M2's `bench_fs_recovery` confirms FS ≈ f is
-  recoverable (bias −0.017) once the per-peptide Spep is fitted with the
-  IsoSpec forward model — so the gap is the fixed site-count model, not
-  integration. Fix in M3 Week 4 (below).
+All **fixed in 1.0.0** (see `CHANGELOG.md [1.0.0]`): the unreachable amino-acid
+`a_0`/`label` dispatch (`core/fsynthesis`), the `iso0/colsums` FS-denominator
+drift, the heuristic kinetic-CI (now a residual bootstrap), and the fixed
+site-count FS bias — FS now comes from the IsoSpec per-peptide-Spep forward/solve
+model, closing the ≈ −0.5 pseudo-time `k_deg` bias.
 
-These are deferred to 1.0.0 because each interacts with the planned
-data-model rewrite (typed records, dataclass-based config) and is cleaner
-to fix there than to patch in place.
+### 2c. Algorithmic feature gaps — addressed in 1.0.0 (peak detection, baseline, mass-domain)
 
-### 2c. Algorithmic feature gaps — not bugs, but quantifiable shortcomings
-
-These are not defects in what the algorithm does; they are limits in how
-sophisticated the algorithm is. Whether they actually matter for Riana's
-outputs is what the calibration dataset (Milestone 2) is designed to
-measure.
-
-1. **No chromatographic peak detection.** Integration is over a fixed RT
-   window: every MS1 scan within `±r_time` of the PSM span is summed, then
-   `np.trapezoid` over RT. There is no boundary detection. Outcome:
-   integrated value includes anything in window — co-eluting peptides,
-   baseline, tail of neighboring isotopologue.
-2. **No background / baseline subtraction.** Same root cause: by integrating
-   a rectangle, baseline is included proportionally to RT width.
-3. **`polyorder=1` Savitzky-Golay smoothing** is mathematically equivalent
-   to a moving average and distorts peak heights. The smoothed trace then
-   directly feeds the area integral, so toggling `-S` changes the integrated
-   value.
-4. **No mass-domain refinement.** Centroid-summing in window with no
-   observed-mass tracking throws away mass-accuracy information that would
-   diagnose calibration drift and confirm correct peak assignment.
-
-#### Recommended approach to (2c)
-
-The reference target is Skyline ([peak picking documentation](https://skyline.ms/wiki/home/software/Skyline/page.view?name=tip_peak_calc)).
-For 1.0.0, an `algorithms/peaks.py` module will implement:
-
-- **Peak detection:** `scipy.signal.find_peaks` with prominence threshold
-  on each isotopomer's XIC; the PSM scan provides a strong RT prior.
-- **Co-elution grouping:** isotopomers of the same peptide should co-elute;
-  if iso0's apex is more than e.g. 2× MS1 cycle time away from iso1's apex,
-  flag the peptide and fall back to fixed-window integration.
-- **Boundary determination:** `scipy.signal.peak_widths` at `rel_height=0.05`
-  (95% of apex below peak).
-- **Baseline:** local linear between detected boundaries (Skyline default),
-  with SNIP and AsLS as benchmark alternatives via `pybaselines`.
-- **Quality scoring:** S/N from baseline residual + peak symmetry.
-
-Whether each of these improvements actually wins is decided by the
-calibration dataset, not by intuition.
-
-**Spike outcome (2026-06-05) — these were tested; the calibration data
-decided** (full record in the `m3-peak-detection-spike` memory; pending the
-full-mixing confirm):
-
-- **Width is the primary lever.** A narrow integration window
-  (`integration_half_width` ≈ 0.1–0.2 min) beats the wide 0.9.0 ±0.33
-  rectangle — on the model-free mixing-linearity metric and on 0%-envelope
-  RMSE vs IsoSpec, across all three lines (ac16/ipsc/cm). It removes
-  background by *exclusion* rather than subtraction.
-- **Apex-centring (`peak_rt="apex"`) is a real but second-order win** — it
-  only matters once the window is narrow (a tight window must sit on the apex
-  or it clips); at the wide width it's a wash. The apex finder uses a prominence
-  gate within a search window around the MS2 RT (`apex_search_half_width`), then
-  picks the **tallest** in-window candidate (`apex_selection="tallest"`). The
-  cross-proportion mixing A/B chose `tallest` over `nearest` (a mild surprise — at
-  high D₂O iso0 is often *not* the tallest channel, so a nearest-by-RT pick can
-  latch onto a noise bump; tallest-in-window is more robust). `consensus` (median
-  apex over m0..m3) is the close high-D₂O alternative.
-- **FWHM (`width_rel_height=0.5`) beats 5%** for detected boundaries, but a
-  well-chosen fixed narrow width beats FWHM-auto (which over-clips long
-  peptides). The optimum is mildly line-dependent (0.1–0.2) → length-adaptive
-  width is the open refinement (M8).
-- **`linear` (Skyline local-linear between boundaries) is discarded.** It is
-  the correct Skyline algorithm but assumes boundaries at the chromatographic
-  *floor*; our narrow on-peak boundaries make it over-subtract real signal,
-  catastrophically with tight windows (worst row on every line). Removed from
-  `algorithms/baseline.py` 2026-06-05. `none` is the default; `noise_floor`
-  is competitive-but-no-op at low labelling, kept for future tuning (its
-  quality leaks the extraction width — off-peak-estimate TODO in baseline.py).
-- The config field `r_time` was renamed `extraction_half_width` (it conflated
-  extraction with integration; those are distinct knobs now).
+The 1.0.0 integration rewrite addressed these (see `CHANGELOG.md` + the
+`m3-peak-detection-spike` memory): chromatographic apex/consensus peak detection
+(the apex-narrow window is now the default), in-window baseline options, and
+per-isotopomer observed-mass / drift tracking. SG smoothing is opt-in (it distorts
+areas → off by default). **Still open / not fully resolved:** robust in-window
+**baseline subtraction** (the `linear` baseline was discarded; `none` is the
+default) and a **cross-proportion-stable peak picker** — both live
+integration-fidelity items under Track B / Known Limitations.
 
 ### 2d. Architecture findings (addressed in 1.0.0 rewrite)
 
-- CLI (`main.py`) and GUI (`riana_ui/`) duplicate validation/config logic
-  with non-identical types — the surfaces drift.
-- `integrate_all(args)` is 230 lines doing six things; the GUI calls it
-  directly and blocks the Tk main loop. The async dispatch with `rx` does
-  not actually move work off the main thread.
-- The Tkinter GUI references a `console` module that is not in the tree,
-  so the GUI is broken on a fresh clone. Replaced by PySide6 in 1.0.
-- `logger.py` global dict + `__init__.py` glob-import + `params.py`
-  module-level globals together prevent isolated test runs.
+All addressed by the 1.0.0 rewrite (see `CHANGELOG.md`): CLI/GUI no longer
+duplicate validation (one frozen `IntegrationConfig`/`FitConfig`), the monolithic
+`integrate_all` is gone (typed `core/` modules + async GUI off the main thread),
+the broken Tkinter GUI is replaced by PySide6, and the global-state modules that
+blocked isolated test runs are restructured.
 
 ## 3. Roadmap
 
@@ -230,262 +127,29 @@ coefficient-stability approach + the M2→M3 metric findings are recorded there 
 
 ### M3 — Aggressive restructure → 1.0.0 — DONE
 
-Delivered over Weeks 0–4 plus a pre-M4 peak-detection spike (2026-06). The
-itemized record is in `CHANGELOG.md` (`[1.0.0]`); the high-level outcome:
+Delivered Weeks 0–4 + a pre-M4 peak-detection spike; itemized record in
+`CHANGELOG.md [1.0.0]`. Outcome: the new `core/` + `algorithms/` + `io/` package
+layout with typed records and frozen configs (**layout is documented in the
+README**), streaming mzML + dual Percolator/mzTab intake, the integration rewrite
+with apex/consensus peak detection (the **apex-narrow window is now the default**,
+benchmark-gated on the calibration series; 0.9.0 reproducible via `--peak-rt ms2
+--integration-half-width 1.0`), and the fitting rewrite (IsoSpec forward/solve FS +
+bootstrap CIs — the §2b fixes). Peak-detection rationale incl. the discarded
+`linear` baseline is in §2c; full record in the `m3-peak-detection-spike` memory.
+**Open refinements** carried into the tracks below: a cross-proportion-stable peak
+picker (Track B) and robust baseline subtraction (§2c / Known Limitations).
 
-- **New package layout + typed records.** `core/` (integration, fitting,
-  models, fsynthesis), `algorithms/` (mass_calc, isotope_dist, peaks, baseline,
-  calibration), `io/` (mzml, percolator, mztab, writers); frozen
-  `IntegrationConfig`/`FitConfig` + `PSMRecord` etc.; science modules lifted
-  unchanged.
-- **Streaming I/O + dual ID intake.** Indexed/streaming mzML (one fraction in
-  memory), typed Percolator parser, and quantms **mzTab** intake; provenance
-  headers on every output.
-- **Integration rewrite + peak detection** (then behind `riana integrate
-  --engine new`, now the default and only engine): apex/consensus detection,
-  baseline options, per-isotopomer mass-accuracy + drift. The typer/click CLI
-  rewrite was deferred to M4 and shipped in M4 Phase 1 (`--engine` removed).
-- **Fitting rewrite + §2b fixes** (`riana fit --engine new`): FS via the IsoSpec
-  forward/solve model (per-peptide Spep + full-envelope least-squares), closing
-  the ≈ −0.5 pseudo-time `k_deg` recovery bias; AA `a_max` dispatch,
-  FS-denominator, and bootstrap CIs fixed.
-- **Peak-detection spike → default integration changed.** Benchmark-gated on the
-  D₂O calibration series (ac16/ipsc/cm, 0–100%) + an in-vivo mouse set: an
-  **apex-centred narrow window** (`peak_rt="apex"`, `integration_half_width=0.15`,
-  `apex_selection="tallest"`, `baseline="none"`) robustly beats the 0.9.0 fixed
-  rectangle and generalizes across cell line, organism, and ID pipeline. Now the
-  **default**; 0.9.0 reproducible via `--peak-rt ms2 --integration-half-width
-  1.0`. `consensus` (median apex over m0..m3) is the high-D₂O alternative; all
-  window/apex knobs are tunable. Rationale (incl. discarded `linear` baseline)
-  in §2c; full record in the `m3-peak-detection-spike` memory.
+### M4 — Qt + CLI rewrite, legacy removal — DONE
 
-**Regression gates met:** explicit-`ms2` `sample1` integration within 1e-3 of
-0.9.0; `bench_fit_recovery` `k_deg₀` recovery; Percolator/mzTab agreement;
-one-fraction memory ceiling. **Open refinements (deferred):** tight
-`apex_search_half_width` (one untested lever); typer/click CLI (M4); adaptive
-width / N_ISO (M8); Phase C v2 cross-proportion-stable picker.
-
-<details><summary>Original M3 Week 0–4 plan, target layout, and verification
-(as-planned; superseded by the summary above and CHANGELOG)</summary>
-
-0. **Week 0 — benchmark infrastructure (no rewrite code).** M2 finding 3:
-   bootstrap one frozen per-cell-line coefficient table from the best v0.9.0
-   integration, freeze + version it as
-   `d2o_aa_coefficients_<line>.csv`, and add `bench_m0_ma_recovery.py`
-   scoring observed-vs-predicted m0/mA RMSE on **both the curated and the
-   uncurated** (pre-R²>0.95-gate) peptide populations — M2 finding 2. Also
-   land `bench_peak_boundary.py` and `bench_baseline.py` as *runnable
-   stubs against v0.9.0* (fixed-window only for now) so Week 3 has a
-   regression gate the moment peak detection is added; both report curated
-   and uncurated metrics. Build `pseudotime_map.csv` + `bench_fit_recovery.py`
-   here too (M2 deferred them, but Week 4 now needs them — see below). None
-   of this depends on the rewrite, so it lands first.
-1. **Week 1 — skeleton + lifts.** New layout (below). Lift `accmass`,
-   `models`, `fsynthesis`, `constants`, `utils.get_peptide_distribution`
-   into their new homes. Apply two science-layer bug fixes:
-   - `plot_model` `model_to_use=` kwarg (already done in 0.9.0).
-   - `fsynthesis` `label == 'aa'` → `label == 4`.
-   Define typed records: `PSMRecord`, `Chromatogram`, `IsotopomerPeak`,
-   `IntegrationConfig`, `FitConfig`.
-2. **Week 2 — I/O layer (both ID paths).** `io/percolator.py` as a typed
-   parser (no exception-as-control-flow; M2 already produces both formats
-   so the mzTab adapter lands here too). `io/mztab.py` via
-   `pyteomics.mztab`. `io/mzml.py` with indexed/streaming read via
-   `pyteomics.mzml` — never hold more than one fraction in memory.
-3. **Week 3 — core integration pipeline.** Rewrite `core/integration.py`
-   against the new types. Add peak detection, baseline subtraction,
-   mass-accuracy outputs inline. Validate each addition against the Week 0
-   benchmarks before committing — judge by the *sensitive* metrics (M2
-   finding 1: FS-recovery spread, per-AA R²/std errors, R²>0.95 gate count,
-   N_ISO-sweep shape), not median FS bias. Re-run `bench_n_iso_sweep.py`
-   after peak detection: if it cleans iso5/iso6, the post-N_ISO=4 R²
-   degradation should flatten.
-4. **Week 4 — fitting rewrite + §2b science fixes** *(re-scoped 2026-06-04
-   after Week 3 shipped)*. Original spec also included a typer/click CLI
-   rewrite; that is **deferred to M4** so it lands alongside the GUI's
-   shared config-driven API surface, and so Week 4 stays focused on the
-   load-bearing science change (closing the ≈ −0.5 k-recovery bias the
-   Week 0 baseline documented). `--engine new` keeps the existing
-   argparse surface through Week 4; the CLI rewrite happens once. The
-   peak-detection engine revisit (Phase C v2 — cross-proportion-stable
-   boundaries; the M3 boundary-stability finding) is its own
-   planning effort post-fit-rewrite.
-
-   Rewrite `core/fitting.py` to consume `IntegrationResult` records,
-   **and apply the §2b scientific fixes**:
-   - AA `a_max` dispatch (`label == 4`), FS-denominator drift, bootstrap
-     kinetic-fit CIs.
-   - **Replace the m0/mA-analytic FS calculation with the IsoSpec
-     forward/solve model.** Drop `calculate_fs_m0` + `calculate_label_n`'s
-     fixed site-count model (§2b) in favour of the per-peptide Spep fit +
-     full-envelope `solve_fs` validated in M2 — the approach in
-     `tests/benchmark/_helpers/forward_model.py` used by
-     `bench_fs_recovery.py` (IsoSpec forward envelope at natural vs. Spep-
-     labelled enrichment, FS by least-squares against the observed
-     envelope rather than from `iso0` alone). The M2 forward model lifts
-     into `algorithms/isotope_dist.py`; IsoSpecPy becomes a runtime
-     dependency of `riana fit`, not just a benchmark one. This is what
-     closes the ≈ −0.5 k-recovery bias the Week 0 `bench_fit_recovery.py`
-     baseline records.
-   Regression-gated by `bench_fit_recovery.py` (`k_deg₀` recovery). Output
-   provenance header (git SHA, riana version, config hash) via
-   `io/writers.py`. Concrete target: close the Week 0 baseline's median
-   k_rel_err of −0.51 (ac16) / −0.44 (ipsc) toward 0 by replacing the
-   fixed-site-count analytic FS with the per-peptide Spep + IsoSpec
-   forward FS.
-
-   Note: the fit fixes deliberately change fit output, so the
-   `tests/data/sample1/` smoke test (below) can no longer demand bit-near
-   identity for the fit stage — it gates *integration* m0/m6 only; fitting
-   is gated by `bench_fit_recovery.py` recovering `k_deg₀`.
-
-**Target layout:**
-
-```
-riana/
-├── __init__.py
-├── __main__.py
-├── cli.py                   # typer/click dispatcher
-├── exceptions.py            # already exists in 0.9.0
-├── config.py                # frozen dataclasses for both CLI + GUI
-├── records.py               # PSMRecord, Chromatogram, IsotopomerPeak, ...
-├── pipeline.py              # async stage composition
-├── core/
-│   ├── integration.py       # NEW
-│   ├── fitting.py           # NEW
-│   ├── models.py            # LIFTED
-│   └── fsynthesis.py        # LIFTED (fix label==int bug)
-├── algorithms/
-│   ├── mass_calc.py         # LIFTED from accmass.py
-│   ├── isotope_dist.py      # LIFTED from utils.get_peptide_distribution
-│   ├── peaks.py             # NEW: detection, boundaries, SNR, symmetry
-│   ├── smoothing.py         # NEW: SG polyorder ≥ 2, AsLS, SNIP
-│   └── calibration.py       # NEW: per-peak ppm error, drift summary
-├── io/
-│   ├── mzml.py              # NEW: indexed/streaming
-│   ├── percolator.py        # NEW: typed parser
-│   ├── mztab.py             # NEW: quantms intake
-│   └── writers.py           # NEW: TSV/JSON with provenance
-├── constants.py             # LIFTED
-└── gui/                     # NEW (Milestone 4): PySide6
-```
-
-Deleted: `riana_ui/`, `riana/spectra.py` (replaced by `io/mzml.py`),
-`riana/peptides.py` (replaced by `io/percolator.py`),
-`riana/riana_integrate.py` (replaced by `core/integration.py` +
-`pipeline.py`), `riana/riana_fit.py` (replaced by `core/fitting.py`),
-`riana/project.py`.
-
-**Mass-accuracy output (folded into M3, was a separate spec doc):**
-
-Per-isotopomer columns: `iso{N}_obs_mz`, `iso{N}_ppm_error`,
-`iso{N}_snr`, `iso{N}_quality`. Per-sample summary footer: median ppm,
-MAD ppm, suggested calibration shift. CLI flag `--ppm-alert <ppm>`
-(default 20) emits warnings via the logger when systematic drift exceeds
-threshold. Optional `--json-out` for downstream tooling.
-
-Skip: real-time monitoring class, calibration dashboard, automated
-correction. Keep it simple.
-
-**Verification (regression-gated by the Week 0 benchmarks):**
-
-- Calibration benchmark holds or improves vs the committed v0.9.0 baseline.
-  Judge by the *sensitive* metrics, not median FS bias (see M2 findings):
-  FS-recovery spread, per-AA coefficient R²/std errors, peptide count through
-  the R²>0.95 gate, N_ISO-sweep shape, and observed-vs-predicted m0/mA RMSE
-  (via `bench_m0_ma_recovery.py` against the Week 0 frozen tables) on **both
-  the curated and uncurated** peptide populations.
-- M3 integration benchmarks must be run with the same `-m 15` mass window as
-  the committed v0.9.0 baseline, or the comparison is invalid (the baseline
-  is *not* mass-window-matched to the snakemake-era reference — see M2 notes).
-- `bench_fit_recovery.py` recovers `k_deg₀` per peptide within tolerance on
-  the pseudo-time-mapped series — this is the gate for the Week 4 fit rewrite
-  and its §2b fixes.
-- Percolator-ID and mzTab-ID paths produce m0/mA values that agree within
-  tolerance (cross-format A/B is itself a validation of the mzTab adapter).
-- `tests/data/sample1/` end-to-end smoke test produces a `_riana.txt` whose
-  per-peptide *integration* m0/m6 agree with 0.9.0 within 1e-3 relative
-  tolerance (near-identical — same numerical core). The fit stage is exempt:
-  the §2b fixes change fit output by design (see Week 4 note).
-- Memory peak on a 2 GB mzML drops from "all of it" to "one fraction
-  worth."
-- Bonus diagnostic (M2 finding 3, now three lines): if the better M3
-  integration makes the ac16 / ipsc / cm frozen tables *converge* — and cm's
-  residual low-labeling-residue inflation collapses — the cross-line divergence
-  was an integration artifact, not biology. The M2 addendum already shows a
-  large part of cm's divergence was small-N noise; M3 peak detection is the
-  test of the rest. Score cm against `d2o_aa_coefficients_cm_drop50.csv`.
-
-</details>
-
-### M4 — Qt + CLI rewrite, legacy removal
-
-**Phase 1 — Typer CLI + `--engine legacy` removal — DONE (2026-06-06).** The
-typer/click CLI rewrite deferred from M3 Week 4 landed as `riana/cli.py` (Typer);
-the argparse `main.py` and the whole legacy pipeline
-(`riana_integrate`/`riana_fit` + the `accmass`/`fsynthesis`/`models` shims +
-`spectra`/`peptides`/`project`) are deleted, along with the broken Tkinter
-`riana_ui/`. The typed pipeline is the only engine — `--engine` is gone;
-0.9.0 integration is reproduced with `--peak-rt ms2 --integration-half-width
-1.0` (pinned to a committed golden within 1e-3). `riana fit` now **requires
-`--coefficients`** (bundled presets `commerford`/`ac16`/`ipsc`/`cm` under
-`riana/data/coefficients/`, or a path); `--label` collapsed to `{hw, o18}`
-(cell specificity is the coefficient table, not the label), amino-acid/SILAC
-fitting dropped (the SILAC `-X/-F` extraction knobs were later retired in M7
-Stage A3), and `o18` is recognized
-but errors pending its post-M4 rewrite. The A/B-against-legacy tests were
-converted to committed-golden comparisons. See CHANGELOG `[1.0.0]` M4 Phase 1.
-
-**Phase 2 — PySide6 + async GUI — DONE (2026-06-07).** PySide6 (LGPL) + `qasync`
-(bridges asyncio with the Qt event loop) under `riana/gui/`. Long-running CPU
-work via `ProcessPoolExecutor` driven from async tasks. `pyqtgraph` for fast
-embedded chromatogram / fitted-curve inspection; matplotlib only for static
-export. Entry point: a lazy `riana gui` subcommand in `cli.py`
-(PySide6/qasync/pyqtgraph are imported only inside it, so they never load on the
-core CLI path). GUI deps ship as a `[gui]` extra so the core CLI stays
-lightweight. Both tabs share the Qt-free worker layer (`riana/gui/tasks.py`,
-unit-tested without a display) and a `DataFrameTableModel` (`riana/gui/models.py`).
-
-*Shipped (the vertical slice that proves the architecture):* the **Integrate**
-tab runs end-to-end. Its form builds the *same* frozen `IntegrationConfig` from
-widget values, so `__post_init__` is the single shared validator (CLI and GUI
-cannot drift). Integration is awaited on the process pool one fraction at a time
-(responsive UI, honest per-fraction progress) through the Qt-free workers in
-`riana/gui/tasks.py` (which call the identical `core.integration.integrate_run`
-→ numerics provably match the CLI; gated in `tests/test_gui.py` against the
-`sample1` golden within 1e-3). Calibration is **folded into Integrate**: the
-per-fraction `DriftSummary` (median/MAD ppm, suggested shift, `--ppm-alert`
-flag) shows inline in the results panel — no separate Calibration tab.
-Peptide-row selection draws the isotopomer XICs in a pyqtgraph
-`ChromatogramView` with the integrated window shaded, backed by the new
-`core.integration.extract_peptide_trace` / `PeptideTrace` (which also gives the
-orphaned `records.Chromatogram` its first producer). The per-fraction
-orchestration is *mirrored* from `cli.integrate` (not refactored) to keep the
-tested CLI path untouched; a shared `core/pipeline.py` extraction is a noted
-future cleanup.
-
-The **Model** tab is the fit counterpart: its form builds the same frozen
-`FitConfig`, and the fit runs as a single batched job on the pool via
-`tasks.run_fit` (reads the per-timepoint `_riana.txt` files, loads the
-`--coefficients` table, calls the shared `core.fitting.fit_run`), so output
-matches `riana fit`. Selecting a result row plots that peptide's
-`(t, fraction-new)` points + the fitted kinetic curve in a pyqtgraph `CurveView`
-(`core.models` functions evaluated on the GUI thread — pure math, no worker
-round-trip). `plot_curves` / `fs_formula` are not surfaced (no-ops in the new
-fit engine; the interactive curve replaces the legacy `-p` static plots).
-(`rx`, `sv_ttk`, `pandastable`, the missing `console` shim, and Tkinter are
-already gone after Phase 1.)
-
-*Fit/integrate consistency fix (2026-06-07, from the Phase 2 review):* the
-`riana integrate --iso` default changed from the legacy `0 6` pair to the
-contiguous **m0-m5** envelope, because `solve_fs_d2o` matches the observed
-envelope against the IsoSpec forward model over contiguous channels from m0 — the
-`0 6` pair silently misaligned (observed m6 vs predicted m1) → garbage `k_deg`.
-`fit_run` now **guards** on the canonical set (`_REQUIRED_D2O_ISOTOPOMERS =
-0..5`) and errors clearly if absent. `--plotcurves` (a no-op) was removed;
-`--fs` is kept but ignored, reserved for a post-M4 *channel-subset* envelope SSE
-(use fewer high isotopomers to dodge co-eluting contaminants — literature-backed;
-deferred alongside the M8 adaptive-N_ISO work).
+Both phases shipped (see `CHANGELOG.md [1.0.0]`). **Phase 1 (2026-06-06):** the
+Typer `riana/cli.py` replaced argparse; the entire legacy pipeline
+(`riana_integrate`/`riana_fit` + shims, `spectra`/`peptides`/`project`) and the
+broken Tkinter `riana_ui/` were deleted — the typed pipeline is the only engine
+(`--engine` gone; 0.9.0 reproduced via `--peak-rt ms2 --integration-half-width 1.0`).
+`riana fit` requires `--coefficients`; `--label` collapsed to `{hw, o18}`; AA/SILAC
+fitting dropped. **Phase 2 (2026-06-07):** the PySide6 + `qasync` GUI (`riana/gui/`,
+`[gui]` extra) on a process pool, with a Qt-free worker layer that provably matches
+the CLI numerics. The GUI now has Integrate / Model / Protein tabs.
 
 ### Post-M4 roadmap (planning round, 2026-06-07)
 
@@ -1359,28 +1023,12 @@ scripts, GUI users won't need that as most features require SDRF path) (2026-06-
 
 ## 4. Cross-cutting recommendations
 
-These apply during and after the rewrite:
-
-1. **Reproducibility.** Stamp output files with git SHA, riana version,
-   and a hash of input CLI args. Goes in the first line of `*_riana.txt`
-   as a comment.
-2. **Configuration.** Frozen `dataclass` `IntegrationConfig` consumed by
-   both CLI and GUI. Single source of truth, type-checked.
-3. **Type safety.** `from __future__ import annotations` everywhere; add
-   `py.typed` marker; run `mypy --strict` on `riana/algorithms/` first
-   (smallest blast radius).
-4. **Snakemake — superseded by the post-M4 round: retire the bundled
-   `workflow/Snakefile`.** With Percolator demoted and quantms / DIA-NN owning
-   search + ID end-to-end, Riana's own pipeline is a linear `integrate → fit →
-   protein` chain glued by the manifest; ship the three CLI subcommands
-   (optionally a thin `riana run` wrapper) and stay orchestration-agnostic. See
-   §3 "Post-M4 roadmap" → cross-cutting chores.
-5. **Repo hygiene — audited clean 2026-06-21 (was largely already done).**
-   `data/` is fully gitignored (27 GB local-only — a personal-disk cleanup, the
-   maintainer's, not a git concern); no stray *tracked* root outputs; `docs/` has
-   no committed Quarto HTML; `riana_website/` is legitimate Quarto **source** at
-   normal `0755` perms (keep it — the "mode 0700" note was stale). Only gitignored
-   junk remains locally (`.DS_Store`, `.coverage`, `logfile.log`).
+Mostly shipped in 1.0.0 (see `CHANGELOG.md`): provenance-header reproducibility,
+the frozen `IntegrationConfig`/`FitConfig` single source of truth, `from __future__
+import annotations` throughout, and the 2026-06-21 repo-hygiene audit. **Open:**
+retire the bundled `workflow/Snakefile` — with quantms/DIA-NN owning search + ID,
+Riana's pipeline is a linear `integrate → fit → rollup` chain glued by the manifest,
+so ship the CLI subcommands and stay orchestration-agnostic.
 
 ## 5. What this plan deliberately does not include
 
