@@ -29,9 +29,12 @@ model.
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 import numpy as np
 import pandas as pd
+
+from riana.progress import iter_progress
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +97,7 @@ def fit_linear_deltak(
     min_points: int = 3,
     min_points_per_condition: int = 2,
     reference_condition: str | None = None,
+    progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """Per-protein linearized k per condition + a cross-condition Δk test.
 
@@ -133,7 +137,8 @@ def fit_linear_deltak(
         raise DataError(f"linear-model points missing columns {sorted(missing)}.")
 
     rows: list[dict] = []
-    for (exp, prot), grp in points.groupby(["experiment", "protein"], sort=False):
+    grouped = points.groupby(["experiment", "protein"], sort=False)
+    for (exp, prot), grp in iter_progress(grouped, grouped.ngroups, progress_callback):
         # φ-transform and per-condition plateau truncation.
         per_cond: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for cond, cg in grp.groupby("condition", sort=True):

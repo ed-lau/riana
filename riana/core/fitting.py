@@ -62,6 +62,7 @@ from riana.algorithms.isotope_dist import (
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
 from riana.config import FitConfig
 from riana.core import models
+from riana.progress import iter_progress
 from riana.utils import strip_concat
 
 _LOGGER = logging.getLogger(__name__)
@@ -369,6 +370,7 @@ def fit_run(
     n_boot: int = _DEFAULT_N_BOOT,
     boot_ci_pct: tuple[float, float] = _DEFAULT_BOOT_CI_PCT,
     random_state: int = 1337,
+    progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """Fit kinetic constants across a D₂O time series.
 
@@ -534,11 +536,15 @@ def fit_run(
             initializer=_init_fit_worker,
             initargs=init_args,
         ) as ex:
-            results = list(ex.map(_fit_one_concat_worker, concat_list, chunksize=chunk))
+            results = list(iter_progress(
+                ex.map(_fit_one_concat_worker, concat_list, chunksize=chunk),
+                len(concat_list), progress_callback))
     else:
         # Serial: the per-peptide IsoSpec FS + residual bootstrap is GIL-bound, so
         # threading it gave no speedup; `workers` (processes) is the only lever.
-        results = [fit_partial(c) for c in concat_list]
+        results = list(iter_progress(
+            (fit_partial(c) for c in concat_list),
+            len(concat_list), progress_callback))
 
     _LOGGER.info(
         "fit_run: %d peptides processed, %d converged",

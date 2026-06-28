@@ -656,6 +656,9 @@ def fit(
     if coeffs:
         logger.info(f"loaded {len(coeffs)} {label} coefficients from {coefficients}")
 
+    from riana.progress import ProgressReporter
+    progress = ProgressReporter(0, "fit", logger)
+
     if manifest is not None:
         from riana.core.pipeline import fit_project
 
@@ -670,7 +673,8 @@ def fit(
         out = proj_dir
         logger.info(f"fitting from manifest {manifest}")
         result_df = fit_project(config, manifest, coeffs, logger=logger,
-                                ria_override=ria)
+                                ria_override=ria, progress_callback=progress)
+        progress.close()
         id_source = str(manifest)
     else:
         dfs = [pd.read_table(p, comment="#") for p in riana_path]
@@ -692,7 +696,8 @@ def fit(
                 "LC-fraction / technical-replicate data, fit via the SDRF "
                 "--manifest path so fractions collapse per (peptide, biorep, "
                 "timepoint) first.")
-        result_df = fit_run(config, dfs, coeffs)
+        result_df = fit_run(config, dfs, coeffs, progress_callback=progress)
+        progress.close()
         id_source = ",".join(str(p) for p in riana_path)
 
     os.makedirs(out, exist_ok=True)
@@ -887,6 +892,8 @@ def rollup(
 
     peptides = pd.read_table(pep_path, comment="#")
     fractions = pd.read_table(frac_path, comment="#")
+    from riana.progress import ProgressReporter
+    progress = ProgressReporter(0, "rollup", logger)
     try:
         result = rollup_proteins(
             peptides, fractions, model=model, method=method,
@@ -895,8 +902,9 @@ def rollup(
             min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
             alt_k=float(alt_k), alt_se=float(alt_se), workers=int(workers),
             phi_limit=float(phi_limit), reference_condition=reference_condition,
-            exclude_mbr=bool(exclude_mbr),
+            exclude_mbr=bool(exclude_mbr), progress_callback=progress,
         )
+        progress.close()
     except (DataError, NotImplementedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 

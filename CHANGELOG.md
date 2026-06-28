@@ -14,7 +14,19 @@ QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-sit
 new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
 end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
 
-### GUI is SDRF/manifest-only (legacy Percolator path removed) — 2026-06-28
+### Progress bars for `fit` / `rollup` — 2026-06-28
+
+#### Added
+
+- **Live progress for the long CLI loops.** `riana fit` and `riana rollup` now show a
+  progress bar over peptidoforms / protein groups (previously they ran silent for
+  minutes with only a start/end line). A dependency-free renderer
+  (`riana.progress.ProgressReporter`): a single in-place carriage-return bar on a
+  TTY, or a clean log line every 10 % when piped / redirected (so logfiles and CI
+  output stay readable). Covers both fit paths (manifest curves and explicit files)
+  and both rollup models (weighted/ODE refit and `linear simple` Δk). The core
+  functions take an optional `progress_callback(done, total)`; `0`-cost when unset.
+  (`integrate` already reports per-run; the GUI Integrate tab already has a bar.)
 
 #### Changed
 

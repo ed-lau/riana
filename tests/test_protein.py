@@ -220,6 +220,17 @@ def test_rollup_min_spep_gate_drops_low_site_peptides():
     assert open_.loc["P0", "n_peptides"] == 3     # off by default
 
 
+def test_rollup_progress_callback_ticks_to_total():
+    """rollup_proteins drives the progress callback once per protein group."""
+    pep, frac = _make_frames({"sp|P0|X": 0.5, "sp|P1|Y": 0.8}, n_pep=3)
+    seen: list[tuple[int, int]] = []
+    rollup_proteins(pep, frac, n_boot=0,
+                    progress_callback=lambda d, t: seen.append((d, t)))
+    assert seen, "callback never fired"
+    done, total = seen[-1]
+    assert done == total == len(seen)          # one tick per group, ends at total
+
+
 def test_pooled_method_uses_all_points():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=3)  # 3 peptides x 5 t
     out = rollup_proteins(pep, frac, method="pooled", n_boot=50).set_index("protein")

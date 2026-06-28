@@ -66,7 +66,7 @@ import logging
 import re
 from concurrent import futures
 from functools import partial
-from typing import Mapping
+from typing import Callable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -74,6 +74,7 @@ from scipy.optimize import curve_fit
 
 from riana.core import models
 from riana.exceptions import DataError
+from riana.progress import iter_progress
 from riana.records import GROUP_KEY_COLUMNS, PROTEIN_KEY_COLUMNS
 
 _LOGGER = logging.getLogger(__name__)
@@ -159,6 +160,7 @@ def rollup_proteins(
     phi_limit: float = -4.0,
     reference_condition: str | None = None,
     exclude_mbr: bool = False,
+    progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """Roll per-peptide fits up to one ``k_deg`` per ``(experiment, condition,
     protein)`` via the median and the biorep-aware weighted refit.
@@ -271,14 +273,15 @@ def rollup_proteins(
         return _rollup_linear(
             stats, fractions, method=method, min_peptides=min_peptides,
             min_points=min_points, phi_limit=phi_limit,
-            reference_condition=reference_condition)
+            reference_condition=reference_condition,
+            progress_callback=progress_callback)
 
     model_fn = _MODELS[model]
     refit, points = _refit_table(
         fractions, model_fn=model_fn, kinetic_kwargs=kk, method=method,
         min_peptides=min_peptides, min_points=min_points,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, random_state=random_state,
-        workers=workers,
+        workers=workers, progress_callback=progress_callback,
     )
 
     out = pd.merge(stats, refit, on=_GROUP_KEYS, how="outer")
@@ -306,6 +309,7 @@ def _rollup_linear(
     min_points: int,
     phi_limit: float,
     reference_condition: str | None,
+    progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """The ``model="linear simple"`` path — φ-space OLS + cross-condition Δk.
 
@@ -320,7 +324,8 @@ def _rollup_linear(
     long = _collapse_long(fractions, method=method, min_peptides=min_peptides)
     lin = fit_linear_deltak(
         long, phi_limit=phi_limit, min_points=min_points,
-        reference_condition=reference_condition)
+        reference_condition=reference_condition,
+        progress_callback=progress_callback)
 
     out = pd.merge(stats, lin, on=_GROUP_KEYS, how="right")
     out["method"] = LINEAR_MODEL
@@ -587,6 +592,7 @@ def _refit_table(
     boot_ci_pct: tuple[float, float],
     random_state: int,
     workers: int = 1,
+    progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Returns ``(refit table, points)`` where ``points`` maps
     ``(experiment, condition, protein)`` → the ``(t_list, fs_list)`` the refit
@@ -630,12 +636,14 @@ def _refit_table(
             initializer=_init_refit_worker,
             initargs=init_args,
         ) as ex:
-            computed = list(ex.map(
-                _refit_one_group_worker, range(len(groups)), chunksize=chunk))
+            computed = list(iter_progress(
+                ex.map(_refit_one_group_worker, range(len(groups)), chunksize=chunk),
+                len(groups), progress_callback))
     else:
         # Serial: the per-protein curve_fit + bootstrap is GIL-bound, so threading
         # gave no speedup; `workers` (processes) is the only parallelism lever.
-        computed = [refit_one(g) for g in groups]
+        computed = list(iter_progress(
+            (refit_one(g) for g in groups), len(groups), progress_callback))
 
     rows = []
     points: dict = {}

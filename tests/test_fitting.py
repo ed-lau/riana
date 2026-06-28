@@ -176,6 +176,22 @@ def test_fit_run_min_spep_gate_drops_low_site_peptidoforms():
         run(11)
 
 
+def test_fit_run_progress_callback_ticks_to_total():
+    """fit_run drives the progress callback once per peptidoform, ending at total."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    seen: list[tuple[int, int]] = []
+    fit_run(
+        FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                  ria_max=0.06, min_spep=0),                # keep all peptides
+        dfs, coeffs, n_boot=0, random_state=42,
+        progress_callback=lambda d, t: seen.append((d, t)))
+    n = len(_TEST_PEPTIDES)
+    assert [d for d, _ in seen] == list(range(1, n + 1))
+    assert seen[-1] == (n, n)
+
+
 def test_fit_run_fs_score_channels_runs_and_guards_missing_channels():
     """--fs limited-isotopomer scoring: fit_run accepts score_channels and still
     recovers k; and Guard 1 errors if the integrate output lacks a requested
