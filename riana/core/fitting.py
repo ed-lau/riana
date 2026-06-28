@@ -118,6 +118,18 @@ def _fit_key(concat: str) -> str:
         seq_with_mods = seq_with_mods.replace(f"[UNIMOD:{unimod_id}]", "")
     return f"{seq_with_mods}_{charge}"
 
+
+def _spep_int(concat: str, aa_coefficients: Mapping[str, float], *,
+              is_o18: bool) -> int:
+    """The integer labelling-site count (Spep) for a peptidoform — the value the
+    fit reports and the ``--min-spep`` gate screens on. ``o18`` uses the length
+    model, ``hw`` the per-AA labile-H table; both round to ≥ 1 (one solver site)."""
+    seq = strip_concat(concat)
+    val = (spep_from_length_coefficients(seq, aa_coefficients) if is_o18
+           else spep_from_coefficients(seq, aa_coefficients))
+    return max(1, int(round(val)))
+
+
 #: Isotopomer channels the D2O envelope solver currently needs in the integrate
 #: output. :func:`algorithms.isotope_dist.solve_fs_d2o` matches the observed
 #: envelope against the IsoSpec forward model over the contiguous m0-m5 channels,
@@ -474,6 +486,28 @@ def fit_run(
         )
 
     concat_list = sorted(rdf["fit_key"].unique())
+
+    # Spep curation gate (report 2026-06-28_spep_curation_gate): drop peptidoforms
+    # whose labelling-site count is below the floor *before* fitting, so
+    # under-powered curves never reach the results / metrics / rollup (the R² gate
+    # can't catch a noise-driven high-R² low-site fit). 0 disables it.
+    min_spep = int(config.min_spep or 0)
+    if min_spep > 0:
+        is_o18 = config.label == "o18"
+        kept = [c for c in concat_list
+                if _spep_int(c, aa_coefficients, is_o18=is_o18) >= min_spep]
+        if len(kept) < len(concat_list):
+            _LOGGER.info(
+                "Spep gate (--min-spep %d, %s): dropped %d of %d peptidoforms "
+                "below the labelling-site floor.",
+                min_spep, config.label, len(concat_list) - len(kept),
+                len(concat_list))
+        concat_list = kept
+        if not concat_list:
+            raise ValueError(
+                f"No peptidoforms survive --min-spep {min_spep}. Lower it "
+                "(0 disables) or check the coefficient table.")
+
     fit_partial = partial(
         _fit_one_concat,
         rdf=rdf,
@@ -631,7 +665,8 @@ def _fit_one_concat(
     # and solve_fs_d2o's residue iteration; it requires pure AA letters.
     seq = strip_concat(concat)
     # Label dispatch: o18 uses the length-model Spep (b·(L-1) + carboxyl/amide/
-    # hydroxyl side chains); hw (D₂O) uses the per-AA labile-H table.
+    # hydroxyl side chains); hw (D₂O) uses the per-AA labile-H table. The raw float
+    # is reported; ``_spep_int`` rounds the same value for the solver + the gate.
     is_o18 = config.label == "o18"
     spep_float = (spep_from_length_coefficients(seq, aa_coefficients) if is_o18
                   else spep_from_coefficients(seq, aa_coefficients))

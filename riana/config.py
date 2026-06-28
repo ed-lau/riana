@@ -311,6 +311,15 @@ class IntegrationConfig:
             raise ValueError(f"mbr_min_scans must be >= 0, got {self.mbr_min_scans}")
 
 
+#: Label-aware Spep curation floor (report 2026-06-28_spep_curation_gate). A
+#: peptidoform with too few labelling sites can't shift its isotopomer envelope
+#: enough to be measured, so its fit is unreliable regardless of R² — the gate
+#: keeps those curves out of the fit results / metrics / rollup. D₂O needs more
+#: sites (small per-site mass shift); ¹⁸O fewer (+2 Da per site, so the envelope
+#: moves more per site, and the label is the more experimental one).
+_MIN_SPEP_DEFAULT = {"hw": 8, "o18": 6}
+
+
 @dataclass(frozen=True, slots=True)
 class FitConfig:
     """Configuration for ``riana fit``.
@@ -395,6 +404,16 @@ class FitConfig:
     #: mass/QC columns. ``"anchor"`` keeps only the single highest-total-intensity
     #: fraction (legacy parity), discarding the rest.
     fraction_collapse: str = "sum"
+    #: --min-spep. Curation floor on a peptidoform's labelling-site count (Spep):
+    #: peptidoforms below it are **dropped before fitting**, so under-powered
+    #: curves — too few sites for the envelope to shift measurably as FS goes
+    #: 0 → 1 — never reach the fit results, metrics, or rollup (a complement to
+    #: the R² gate, which can't catch a noise-driven high-R² low-site fit). ``0``
+    #: disables it. ``None`` (default) resolves to the **label-aware default**
+    #: (:data:`_MIN_SPEP_DEFAULT` — 8 for ``hw``/D₂O, 6 for ``o18``); set an
+    #: explicit value to tune per sample (the floor rises with shorter time
+    #: series and slower turnover — report 2026-06-28_spep_curation_gate).
+    min_spep: int | None = None
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded
@@ -412,6 +431,11 @@ class FitConfig:
                 f"got {self.model!r}")
         if self.label not in ("hw", "o18"):
             raise ValueError(f"label must be 'hw' or 'o18', got {self.label!r}")
+        if self.min_spep is None:
+            object.__setattr__(self, "min_spep", _MIN_SPEP_DEFAULT[self.label])
+        elif self.min_spep < 0:
+            raise ValueError(
+                f"min_spep must be >= 0 (0 disables the gate), got {self.min_spep}")
         if not 0.0 <= self.q_value <= 1.0:
             raise ValueError(f"q_value must be in [0, 1], got {self.q_value}")
         if self.depth < 1:

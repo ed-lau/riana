@@ -1484,6 +1484,12 @@ isotopomer) → (rt[], intensity[])`), never in the `.txt`; default off for batc
 feature — the protein refit consumes per-(peptide, t) θ (the M5 intermediate),
 not the raw XIC, so the two are decoupled.
 
+*2026-06-28 spiked:* GUI should display results (from fit/rollup and optionally
+integrate when manifest is present)
+
+Remove legacy Percolator path from GUI (keep in CLI for testing/dev and bench 
+scripts, GUI users won't need that as most features require SDRF path)
+
 #### Suggested sequence
 
 1. **Pre-1.0.0 chores** — repo hygiene + cut a real `1.0.0` tag (below). A clean

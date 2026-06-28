@@ -53,8 +53,10 @@ _TIMES = -np.log(1.0 - _PROPORTIONS) / _K_DEG_TRUE
 
 
 def _coeffs():
-    avg_len = sum(len(s) for s, _ in _TEST_PEPTIDES) / len(_TEST_PEPTIDES)
-    per_aa = 8 / avg_len
+    # Scale by the shortest peptide so every synthetic peptide's Spep clears the
+    # label-aware --min-spep floor (8 for hw) — otherwise the default gate would
+    # drop the shortest one and perturb these fit-mechanics tests.
+    per_aa = 8 / min(len(s) for s, _ in _TEST_PEPTIDES)
     return {aa: per_aa for aa in "ACDEFGHIKLMNPQRSTVWY"}
 
 

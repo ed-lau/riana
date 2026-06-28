@@ -209,6 +209,17 @@ def test_weighted_refit_recovers_planted_k():
     assert out.loc["P0", "n_points"] == 5         # collapsed (biorep, t) cells
 
 
+def test_rollup_min_spep_gate_drops_low_site_peptides():
+    """--min-spep at rollup drops peptides below the floor before the refit
+    (defense-in-depth for explicit-file inputs that weren't gated at fit)."""
+    pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=3)
+    pep = pep.assign(spep=[10.0, 10.0, 4.0])      # PEP0_2_2 is under the floor
+    gated = rollup_proteins(pep, frac, min_spep=6, n_boot=20).set_index("protein")
+    open_ = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
+    assert gated.loc["P0", "n_peptides"] == 2     # the Spep-4 peptide dropped
+    assert open_.loc["P0", "n_peptides"] == 3     # off by default
+
+
 def test_pooled_method_uses_all_points():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=3)  # 3 peptides x 5 t
     out = rollup_proteins(pep, frac, method="pooled", n_boot=50).set_index("protein")

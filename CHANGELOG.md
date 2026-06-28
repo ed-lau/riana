@@ -14,6 +14,30 @@ QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-sit
 new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
 end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
 
+### Spep curation gate (`--min-spep`, label-aware default) — 2026-06-28
+
+#### Added
+
+- **`fit --min-spep N` / `rollup --min-spep N`** — a curation floor on a
+  peptidoform's labelling-site count (Spep). Peptidoforms below it are dropped
+  **before fitting**, so under-powered curves — too few sites for the isotopomer
+  envelope to shift measurably as FS goes 0 → 1 — never reach the fit results,
+  metrics, or rollup. It complements the R² gate, which can't catch a noise-driven
+  high-R² low-site fit. Exposed on the GUI Model tab (`Min Spep`, "auto" = label
+  default). `0` disables it.
+
+#### Changed
+
+- **A default Spep floor is now applied** (it was off): **8 for `hw`/D₂O, 6 for
+  `o18`** (`FitConfig.min_spep` resolves `None` → the label-aware default). The
+  ¹⁸O floor is lower because its +2 Da-per-site shift makes fewer sites
+  measurable. This is **results-affecting** — a fit with the default now omits
+  the lowest-Spep peptidoforms (typically a small tail; the gate is a weak lever
+  once `--fs`/R² curation is applied). Pass `--min-spep 0` for the prior
+  unfiltered behaviour, or tune per sample (the floor rises with shorter time
+  series and slower turnover). Defaults derived in
+  `reports/2026-06-28_spep_curation_gate.md`.
+
 ### LC-fraction collapse policy + fraction-aware mass merge — 2026-06-27
 
 #### Added

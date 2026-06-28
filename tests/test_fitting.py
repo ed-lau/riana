@@ -50,13 +50,14 @@ def _coefficients_for_target_spep(peptides, spep_target: int) -> dict[str, float
     coefficient[c]`` rounds to ``spep_target`` exactly.
 
     This is the production "Spep from sequence + table" path; the test
-    just makes the table cooperate. For each unique AA across the test
-    peptides, the coefficient is ``spep_target / mean_peptide_length`` so
-    the sums end up near ``spep_target``.
+    just makes the table cooperate. The coefficient is ``spep_target /
+    min_peptide_length`` so the *shortest* peptide reaches ``spep_target`` and
+    every peptide therefore clears it — keeping the synthetic set above the
+    label-aware ``--min-spep`` curation floor (which would otherwise drop the
+    shortest one and perturb fit-mechanics tests).
     """
     lens = [len(seq) for seq, _ in peptides]
-    avg_len = sum(lens) / len(lens)
-    per_aa = spep_target / avg_len
+    per_aa = spep_target / min(lens)
     # Cover all 20 standard AAs so any peptide gets a defined coefficient.
     return {aa: per_aa for aa in "ACDEFGHIKLMNPQRSTVWY"}
 
@@ -149,6 +150,30 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     spep_arr = result["spep"].dropna().to_numpy()
     expected = [sum(coeffs.get(c, 0.0) for c in seq) for seq, _ in _TEST_PEPTIDES]
     np.testing.assert_allclose(np.sort(spep_arr), np.sort(expected), atol=1e-9)
+
+
+def test_fit_run_min_spep_gate_drops_low_site_peptidoforms():
+    """--min-spep drops under-site peptidoforms *before* fitting, so they never
+    reach the results. A flat per-AA coefficient of 1.0 makes each peptide's Spep
+    equal its length (10/8/8/8/6), so a floor of 7 drops only HVELFK (6)."""
+    coeffs = {aa: 1.0 for aa in "ACDEFGHIKLMNPQRSTVWY"}  # Spep == peptide length
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+
+    def run(ms):
+        return fit_run(
+            FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                      ria_max=0.06, min_spep=ms),
+            dfs, coeffs, n_boot=0, random_state=42)
+
+    assert len(run(0)) == len(_TEST_PEPTIDES)            # 0 disables → all 5
+    out = run(7)                                         # drops HVELFK (Spep 6)
+    assert len(out) == len(_TEST_PEPTIDES) - 1
+    ids = list(out.index.astype(str)) + (
+        list(out["concat"].astype(str)) if "concat" in out.columns else [])
+    assert not any("HVELFK" in s for s in ids)
+    with pytest.raises(ValueError, match="min-spep"):    # floor above every Spep
+        run(11)
 
 
 def test_fit_run_fs_score_channels_runs_and_guards_missing_channels():

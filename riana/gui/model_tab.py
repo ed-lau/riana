@@ -178,6 +178,16 @@ class ModelTab(QWidget):
         self.depth_spin.setValue(3)
         form.addRow("Depth", self.depth_spin)
 
+        self.min_spep_spin = QSpinBox()
+        self.min_spep_spin.setRange(-1, 100)
+        self.min_spep_spin.setValue(-1)
+        self.min_spep_spin.setSpecialValueText("auto (label default)")
+        self.min_spep_spin.setToolTip(
+            "Spep curation floor: drop peptidoforms with fewer labelling sites "
+            "before fitting, so under-powered curves never reach the results or "
+            "rollup. 'auto' = label default (8 for hw/D2O, 6 for o18); 0 disables.")
+        form.addRow("Min Spep", self.min_spep_spin)
+
         self.qvalue_spin = QDoubleSpinBox()
         self.qvalue_spin.setDecimals(4)
         self.qvalue_spin.setRange(0.0, 1.0)
@@ -388,6 +398,8 @@ class ModelTab(QWidget):
             r_p=float(self.rp_spin.value()),
             q_value=float(self.qvalue_spin.value()),
             depth=int(self.depth_spin.value()),
+            min_spep=(None if self.min_spep_spin.value() < 0
+                      else int(self.min_spep_spin.value())),
             ria_max=float(self.ria_spin.value()),
             score_channels=score_channels,
             fs_auto=fs_auto,

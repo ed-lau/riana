@@ -532,6 +532,13 @@ def fit(
         help="Drop match-between-runs data points (evidence='mbr') before "
         "fitting. MBR points are used by default; this is the with/without-MBR "
         "A/B lever. The n_mbr / n_clean output columns report the split either way."),
+    min_spep: Optional[int] = typer.Option(
+        None, "--min-spep", metavar="N",
+        help="Curation floor on a peptidoform's labelling-site count (Spep): drop "
+        "those below N before fitting, so under-powered curves (too few sites for "
+        "the envelope to shift measurably) never reach the results or rollup. "
+        "Default is label-aware (8 for hw/D2O, 6 for o18 — o18's +2 Da/site shifts "
+        "more per site); 0 disables. Tune up for short time series / slow turnover."),
     fraction_collapse: str = typer.Option(
         "sum", "--fraction-collapse", metavar="sum|anchor",
         help="How to combine LC fractions / technical replicates of one "
@@ -623,6 +630,7 @@ def fit(
             out_dir=str(out),
             exclude_mbr=bool(exclude_mbr),
             fraction_collapse=fraction_collapse,
+            min_spep=min_spep,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -630,6 +638,10 @@ def fit(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("fit (typed pipeline)")
+    logger.info(
+        "Spep gate: --min-spep %d%s",
+        config.min_spep,
+        " (label default)" if min_spep is None else "")
     if fs_auto:
         logger.info("limited-isotopomer scoring: --fs auto (per-peptide "
                     "init-width-keyed widening)")
@@ -780,6 +792,12 @@ def rollup(
     min_points: int = typer.Option(
         3, "--min-points",
         help="Min collapsed (t, theta) points for the refit [default: 3]."),
+    min_spep: Optional[int] = typer.Option(
+        None, "--min-spep", metavar="N",
+        help="Optional Spep (labelling-site) admission gate before rollup — drop "
+        "peptides below N. Off by default (the primary gate is at `fit`, so a "
+        "manifest rollup already inherits it); set this for explicit-file inputs "
+        "or belt-and-braces."),
     min_r2: Optional[float] = typer.Option(
         None, "--min-r2", metavar="R2",
         help="Optional peptide R² admission gate before rollup (off by default — "
@@ -874,7 +892,7 @@ def rollup(
             peptides, fractions, model=model, method=method,
             kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
-            min_points=int(min_points), min_r2=min_r2,
+            min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
             alt_k=float(alt_k), alt_se=float(alt_se), workers=int(workers),
             phi_limit=float(phi_limit), reference_condition=reference_condition,
             exclude_mbr=bool(exclude_mbr),

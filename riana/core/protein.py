@@ -147,6 +147,7 @@ def rollup_proteins(
     method: str = "weighted",
     min_peptides: int = 2,
     min_points: int = 3,
+    min_spep: int | None = None,
     min_r2: float | None = None,
     alt_k: float = 0.025,
     alt_se: float = 0.05,
@@ -176,6 +177,10 @@ def rollup_proteins(
             be reported.
         min_points: the refit needs at least this many collapsed ``(t, θ)``
             points.
+        min_spep: optional Spep (labelling-site) admission gate applied *before*
+            rollup — drop peptides below it (defense-in-depth; the primary gate is
+            at fit, so a manifest rollup already inherits it). Off (``None``) by
+            default. See report 2026-06-28_spep_curation_gate.
         min_r2: optional peptide R² admission gate applied *before* rollup. When
             ``None`` (default) no gate is applied — the inverse-variance weighting
             already down-weights noisy peptides; pass a value (e.g. 0.8) to also
@@ -235,6 +240,17 @@ def rollup_proteins(
     # (MBR points are used by default). No-op when the column is absent.
     if exclude_mbr and "evidence" in fractions.columns:
         fractions = fractions[fractions["evidence"] != "mbr"].copy()
+
+    # Optional Spep admission gate (off by default; the primary gate runs at fit
+    # so a manifest-driven rollup inherits it — this is the explicit-input /
+    # belt-and-braces lever). Spep is sequence-derived, so a concat's value is the
+    # same across conditions; filter on it.
+    if min_spep is not None and min_spep > 0:
+        if "spep" not in peptides.columns:
+            raise DataError("peptides input is missing 'spep' (needed for --min-spep).")
+        keep = peptides.loc[peptides["spep"] >= min_spep, "concat"].unique()
+        peptides = peptides[peptides["concat"].isin(keep)].copy()
+        fractions = fractions[fractions["concat"].isin(keep)].copy()
 
     # Optional peptide R² admission gate (off by default).
     if min_r2 is not None:
