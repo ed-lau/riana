@@ -14,6 +14,21 @@ QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-sit
 new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
 end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
 
+### GUI is SDRF/manifest-only (legacy Percolator path removed) — 2026-06-28
+
+#### Changed
+
+- **The GUI now runs the SDRF / manifest path only.** The Integrate tab requires an
+  SDRF (the search-ID file is the quantms mzTab / DIA-NN parquet) and the Model tab
+  requires a `riana_manifest.tsv` — the bare-Percolator integrate (psms.txt + sample
+  name) and the explicit-timepoint-file fit are removed from the UI. Those paths
+  reach all of Riana's current features (per-run identity, manifest chaining,
+  fraction collapse, per-experiment RIA) only via the SDRF, and the explicit-file
+  fit pseudo-replicates fractions; GUI users are all on the SDRF path. Both legacy
+  intakes remain **CLI-only** (`riana integrate <mzml> <psms>`, `riana fit a.txt …`)
+  for dev/testing and bench scripts. Removed the Integrate tab's *Sample* field and
+  the Model tab's *Timepoint files* list.
+
 ### Spep curation gate (`--min-spep`, label-aware default) — 2026-06-28
 
 #### Added

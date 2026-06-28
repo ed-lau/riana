@@ -7,7 +7,7 @@ kinetic curve.
 Mirrors the Integrate tab's pattern: the form builds the *same* frozen
 :class:`~riana.config.FitConfig` the CLI builds (shared ``__post_init__``
 validation), and the (single, batched) fit runs on the shared
-``ProcessPoolExecutor`` via the Qt-free :func:`riana.gui.tasks.run_fit` worker so
+``ProcessPoolExecutor`` via the Qt-free :func:`riana.gui.tasks.run_fit_manifest` worker so
 the UI stays responsive. The fitted curve is drawn directly from the result
 row's ``t`` / ``fs`` / ``k_deg`` (pure math — no worker round-trip).
 """
@@ -24,7 +24,6 @@ from typing import Callable
 import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -35,7 +34,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -53,7 +51,7 @@ from riana.core.fitting import available_coefficient_presets
 from riana.core.fitting import peptide_summary
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
-from riana.gui.tasks import run_fit, run_fit_manifest
+from riana.gui.tasks import run_fit_manifest
 from riana.io.writers import (
     ESTIMATE_FLOAT_FORMAT,
     make_provenance,
@@ -109,28 +107,15 @@ class ModelTab(QWidget):
         box = QGroupBox("Fit")
         form = QFormLayout(box)
 
-        # Input timepoint files (one _riana.txt per timepoint).
-        self.files_list = QListWidget()
-        self.files_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        self.files_list.setFixedHeight(96)
-        form.addRow("Timepoint files", self.files_list)
-        file_buttons = QHBoxLayout()
-        add_btn = QPushButton("Add…")
-        add_btn.clicked.connect(self._add_files)
-        clear_btn = QPushButton("Clear")
-        clear_btn.clicked.connect(self.files_list.clear)
-        file_buttons.addWidget(add_btn)
-        file_buttons.addWidget(clear_btn)
-        form.addRow("", _row(file_buttons))
-
-        # SDRF/manifest path: when set, fit from the manifest's integrate rows
-        # (curves grouped by (experiment, condition) with the timepoint from the
-        # SDRF identity) instead of the timepoint file list above.
+        # Manifest (the SDRF path): fit from the manifest's integrate rows, curves
+        # grouped by (experiment, condition) with the timepoint from the SDRF
+        # identity. This is the GUI's only fit input — the legacy explicit
+        # timepoint-file path (sample-string-encoded time) stays CLI-only
+        # (`riana fit a.txt b.txt …`), where it carries a pseudo-replication
+        # warning; GUI users are all on the SDRF/manifest path.
         self.manifest_edit = QLineEdit()
         self.manifest_edit.setPlaceholderText(
-            "Optional: riana_manifest.tsv — overrides the file list above")
+            "riana_manifest.tsv from `integrate` (the SDRF path)")
         man_row = QHBoxLayout()
         man_row.addWidget(self.manifest_edit, stretch=1)
         man_browse = QPushButton("Browse…")
@@ -343,17 +328,6 @@ class ModelTab(QWidget):
         return panel
 
     # --- file / path pickers ----------------------------------------------- #
-    def _add_files(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select integrate output files",
-            filter="riana output (*_riana.txt *.txt);;All files (*)",
-        )
-        existing = {self.files_list.item(i).text()
-                    for i in range(self.files_list.count())}
-        for p in paths:
-            if p not in existing:
-                self.files_list.addItem(p)
-
     def _pick_coefficients(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Select coefficient CSV", filter="CSV (*.csv);;All files (*)"
@@ -373,10 +347,6 @@ class ModelTab(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
         if path:
             self.out_edit.setText(path)
-
-    def _selected_files(self) -> list[str]:
-        return [self.files_list.item(i).text()
-                for i in range(self.files_list.count())]
 
     # --- config marshalling (shared-validation contract) -------------------- #
     def build_config(self) -> FitConfig:
@@ -428,14 +398,12 @@ class ModelTab(QWidget):
             return
 
         manifest = self.manifest_edit.text().strip()
-        files = self._selected_files()
-        if manifest:
-            if not Path(manifest).is_file():
-                self._fail("The manifest path is set but is not a file.")
-                return
-        elif not files:
-            self._fail(
-                "Add timepoint _riana.txt files, or set a manifest (SDRF path).")
+        if not manifest:
+            self._fail("Select a riana_manifest.tsv (from `integrate` on the SDRF "
+                       "path). The legacy timepoint-file fit is CLI-only.")
+            return
+        if not Path(manifest).is_file():
+            self._fail("The manifest path is set but is not a file.")
             return
 
         coefficients = self.coeff_combo.currentText().strip() or None
@@ -458,16 +426,10 @@ class ModelTab(QWidget):
         # worker (which breaks: BrokenProcessPool).
         executor = None if config.workers > 1 else self.pool
         try:
-            if manifest:
-                self._info(f"fitting from manifest {manifest} …")
-                self._future = loop.run_in_executor(
-                    executor, run_fit_manifest, config, manifest, coefficients)
-                id_source = manifest
-            else:
-                self._info(f"fitting {len(files)} timepoint file(s) …")
-                self._future = loop.run_in_executor(
-                    executor, run_fit, config, files, coefficients)
-                id_source = ",".join(files)
+            self._info(f"fitting from manifest {manifest} …")
+            self._future = loop.run_in_executor(
+                executor, run_fit_manifest, config, manifest, coefficients)
+            id_source = manifest
             result_df = await self._future
 
             if self._cancelled:
