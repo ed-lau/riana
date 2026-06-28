@@ -100,3 +100,70 @@ python tests/benchmark/run_integrate_v1_0_0.py --line ac16 --out-label v1.0.0   
 python tests/benchmark/run_integrate_v1_0_0.py --line ac16 --adaptive --out-label adaptive
 python runs/_sweep_all.py     # the full {fix,adapt}×{all,iso0-1,iso0-3} recovery sweep
 ```
+
+---
+
+## Datasets & refreshed current state (merged from PROJECT_REVIEW M2, 2026-06-28)
+
+The calibration datasets and their current-defaults numbers, consolidated here
+(was PROJECT_REVIEW §3 M2). These are the per-cell-line **D₂O mixing series** —
+lysate from fully-labelled cells (≥10 doublings in 6 % D₂O) mixed with unlabelled
+lysate at nine nominal heavy fractions `0, 12.5, 25, 37.5, 50, 62.5, 75, 87.5,
+100 %` — plus the AC16 **¹⁸O** mixing series. Per peptide × fraction the expected
+isotopomer envelope is computable from sequence + enrichment
+(`get_peptide_distribution`), so the headline metric is observed-vs-predicted
+recovery, gated by the NB87a curation rule (seen at every proportion, per-peptide
+m0/mA-vs-proportion R² > 0.95).
+
+### The lines
+
+| line | cell model | label | JPOST | note |
+|---|---|---|---|---|
+| **ac16** | AC16 human cardiomyocyte (proliferative) | D₂O 6 % | `JPST002443` | |
+| **ipsc** | human iPSC (proliferative) | D₂O 6 % | `JPST003556` | |
+| **cm** | iPSC-derived cardiomyocyte (**post-mitotic**) | D₂O 6 % | `JPST003582` | drop50 (below) |
+| **ac16 ¹⁸O** | AC16 | H₂¹⁸O ~9 % | — | trains `juber_2026_o18_ac16`; see the ¹⁸O reports |
+
+ac16 and ipsc are proliferative (division dilutes label independently of
+turnover); the post-mitotic **cm** line isolates turnover from division — the
+biology axis for the cross-line coefficient comparison.
+
+### cm drops its 50 % proportion (`cm_drop50`)
+
+cm's `time50` is a weak acquisition (~16 k vs ~20 k target PSMs; ~5.7 k integrated
+peptides). Because curation requires a peptide seen at **every** proportion, that
+one bad *run* — not a bad peptide set — bottlenecks 9/9 cm to a third of its
+peptides and inflates near-zero-labelling coefficients. The "seen at all" rule is
+a *coverage* requirement separate from the R² quality gate, so cm is curated on
+the **8 surviving proportions** (`--drop-proportion 50`): this recovers ~3× the
+peptides, cuts coefficient bootstrap noise ~36 %, and collapses the unphysical
+low-labelling coefficients. `d2o_aa_coefficients_cm_drop50.csv` (→ the shipped
+`alamillo_2025_cm`) is the cm reference; the 9/9 table is kept as the A/B record.
+
+### Current numbers (calib_v1 — riana 1.1.0 defaults: ±10 ppm from SDRF, apex / 0.15 min, iso0-5)
+
+Refreshed from `runs/calib_{ac16,cm,ipsc}_v1` + `runs/calib_o18` (replaces the
+v0.9.0 baseline table). **OOB R²** = out-of-bag R² of the bootstrap per-AA Spep
+fit on the curated set (`build_frozen_tables.py`); **m0 RMSE** = observed-vs-
+predicted m0/mA recovery RMSE (`m0_ma_recovery_summary.json`), split by the
+R² > 0.95 curation gate.
+
+| line | props (gate) | seen → curated (yield) | OOB R² (95 % CI) | m0 RMSE cur / uncur |
+|---|---|---|---|---|
+| ac16 D₂O | 9 | 3,165 → 1,676 (53 %) | **0.883** [.853, .911] | 0.017 / 0.065 |
+| ipsc D₂O | 9 | 4,840 → 3,129 (65 %) | **0.867** [.842, .891] | 0.023 / 0.080 |
+| cm D₂O | 8 (−50 %) | 3,673 → 1,886 (51 %) | **0.856** [.824, .882] | 0.024 / 0.073 |
+| ac16 ¹⁸O | 9 | 7,900 → 2,083 (26 %) | **0.892** [.869, .912] | ¹ |
+
+¹ The ¹⁸O line's recovery is validated in `2026-06-24_o18_reverse_model.md` /
+`2026-06-26_o18_kinetic_fit.md` (curated tracks the proportions, \|bias\| ~0.03–0.07
+mid-range); it has no `m0_ma_recovery` artifact in this harness. Its low curated
+yield (26 %) is the 8 h-window AC16 regime, not a label/pipeline defect — see
+`2026-06-28_ac16_curation_diagnosis.md`.
+
+**Reading the table:** OOB R² (coefficient-fit generalization) is healthy and
+similar across lines (0.86–0.89); the in-vitro **ipsc** line curates best (65 %),
+cm next (51 % at 8/9), and the ¹⁸O AC16 line lowest (window-limited). Curated m0
+recovery RMSE is tight (≤ 0.024) and ~3× lower than uncurated everywhere — the
+R² gate is doing its job. These are the standing baseline any integration-knob /
+MBR A/B is scored against (workflow above).

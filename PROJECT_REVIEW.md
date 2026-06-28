@@ -220,223 +220,13 @@ documented mass-tolerance semantic correction. See `CHANGELOG.md`.
 
 ### M2 — Calibration test dataset (acquisition + dual-ID processing) — DONE
 
-**What shipped (2026-05-17).** Benchmark scaffolding lives in
-`tests/benchmark/`; calibration artifacts in
-`tests/data/calibration_d2o_mixing/{ac16,ipsc,cm}/` (`cm/` was added during M3
-— see the M2 addendum below). The approach diverged from
-the original plan below — there is no external ground truth for per-peptide
-isotope envelopes (no animal calibration curve), so "predicted vs observed
-m0/mA" is not directly scorable. Instead the benchmark ports NB87a
-(`data/notebook/87a_…IsoSpec_AC16.ipynb`): integrate output → per-peptide
-Spep via an IsoSpec forward model → per-AA non-negative regression →
-fractional-synthesis recovery vs the nominal mixing proportion. The escape
-from circularity is coefficient *stability* across N_ISO, smoothing, and cell
-line.
-
-Scripts: `build_ground_truth.py`, `bench_aa_coefficients.py`,
-`bench_fs_recovery.py`, `bench_n_iso_sweep.py`, `bench_smoothing.py`,
-`run_integrate_v0_9_0.py`, plus `_helpers/forward_model.py`. The
-aa-coefficient and N_ISO-sweep ports reproduce NB87a bit-exact (Δ ≤ 6e-7).
-
-v0.9.0 baseline (committed under `benchmark_results/v0.9.0/`):
-
-- AC16: 1512 peptides, coeff train/test R² 0.86/0.82, FS bias −0.017.
-- iPSC: 2964 peptides, coeff train/test R² 0.77/0.76, FS bias −0.018.
-- N_ISO sweep: test-R² peaks at N_ISO=4 for both lines.
-- Smoothing sweep: per-AA coefficients shift with window size (≤0.12 AC16,
-  ≤0.22 iPSC at S=9) but FS-recovery bias is insensitive to smoothing
-  (±0.002) — confirms §2c point 3 (SG distorts areas) while showing the
-  calibration verdict is robust.
-- Cross-line: AC16 vs iPSC coefficients differ by up to 0.54 (Met) — *not*
-  cleanly transferable; revisit before adopting a single frozen table.
-
-Deferred from M2: the mzTab→RIANA adapter (M3); a Zenodo deposit (raw `.raw`
-files are already citable on JPOST — `JPST002443` AC16, `JPST003556` iPSC —
-so no separate deposit is needed); `pseudotime_map.csv` and the fit-module
-benchmark (`riana fit` correctness work interacts with the M3 rewrite and is
-deferred to post-M3/M4). `integrate_outputs/` (~450 MB of `_riana.txt`) is
-gitignored — regenerable via `run_integrate_v0_9_0.py`.
-
-Other notes from the baseline run: v0.9.0 was run with `-m 15` (±15 ppm under
-the 0.9.0 semantic); the snakemake-era reference effectively used ±7.5 ppm due
-to the pre-0.9.0 `/2` bug, so the two are not strictly mass-window-matched.
-The bundled `config_template.yaml` passes `-D D` (a label) which no longer
-parses — the current CLI takes a float isotopomer mass-step; `run_integrate`
-omits `-D` and uses the default 1.003354835.
-
-**M2 findings → M3 implications.**
-
-1. *Median FS bias is a blunt metric for peak-detection work.* It moved only
-   ±0.002 across the entire smoothing sweep. An M3 benchmark that judges peak
-   detection by median FS bias will see almost nothing. The metrics that
-   actually move with integration quality are: the **spread** of FS recovery
-   around each nominal proportion (RMSE/IQR, not the median — `fs_recovery.csv`
-   already carries every per-(peptide, fraction) row); per-AA coefficient
-   std errors and R²; the count of peptides passing the R²>0.95 curation gate;
-   and the *shape* of the N_ISO sweep (if peak detection cleans iso5/iso6, the
-   post-N_ISO=4 R² degradation should flatten).
-2. *The curation filter hides peak-detection's main win.* The R²>0.95 gate
-   discards exactly the co-eluting / low-SNR peptides where peak detection
-   helps most. M3 benchmarks (`bench_peak_boundary.py`, `bench_baseline.py`)
-   **must also report metrics on the uncurated population**, or they will
-   systematically understate the improvement.
-3. *Per-cell-line frozen coefficient tables are viable* — the original
-   "predicted vs observed m0/mA" target is recoverable, just per-line not
-   universal. Within-line coefficient drift is small (≤0.09 AC16 across
-   integrate versions, ≤0.12 across the smoothing sweep). A frozen table is a
-   **constant**, so its bias cancels in any method-vs-method comparison: scoring
-   integration A and B against the same frozen predicted m0/mA preserves the
-   relative ranking, which is what regression-gating needs. Plan: bootstrap one
-   table per cell line from the best available integration, freeze + version it
-   (`d2o_aa_coefficients_<line>.csv`), and add `bench_m0_ma_recovery.py` scoring
-   observed-vs-predicted m0/mA RMSE — the sensitive per-peptide metric (1) calls
-   for. Caveats: the iPSC table is noisier (R² 0.77 vs 0.86), so its absolute
-   numbers are less trustworthy though still usable as a constant reference; a
-   new cell type needs its own re-derived table. Bonus diagnostic: if M3's
-   better integration makes the AC16 and iPSC tables *converge*, that is
-   evidence the 0.54 cross-line divergence was an integration artifact rather
-   than real biology.
-
-**M2 addendum — third calibration line (2026-05-22).** A third D₂O mixing
-series was acquired and wired in under `data/calibration_cm/` and
-`tests/data/calibration_d2o_mixing/cm/`: contractile human iPSC-derived
-cardiomyocytes (iPSC-CM), 9 proportions, JPOST `JPST003582`. It is processed
-identically to ac16 and ipsc — same Crux+Percolator IDs, same pinned `-m 15`
-integrate config — and re-uses every benchmark script via `--line cm`.
-
-Rationale: ac16 and ipsc are both **proliferative**, and a dividing cell
-dilutes isotopic label through division independently of protein turnover;
-iPSC-CM is **post-mitotic**, isolating turnover from division, and is the more
-physiologically relevant model. The third line turns M2 finding 3's two-point
-cross-line comparison into a three-point one with a biology axis.
-
-*v0.9.0 baseline, all 9 proportions:*
-
-| line | curated n | OOB R² | m0_rmse curated | m0_rmse uncurated |
-|------|-----------|--------|-----------------|-------------------|
-| ac16 | 1512      | 0.848  | 0.018           | 0.062             |
-| ipsc | 2964      | 0.766  | 0.024           | 0.072             |
-| cm   |  564      | 0.754  | 0.025           | 0.074             |
-
-cm came back the noisiest line: its `time50` fraction is a weak acquisition
-(16,090 vs ~20k target PSMs; 5,671 vs ~13–16k integrated peptides at `-q 0.01`).
-Because NB87a curation requires a peptide observed at all 9 proportions,
-`time50` alone bottlenecks cm to 564 curated peptides — a third of ipsc's — and
-its frozen table inflates near-zero-labeling residues (Lys 0.235, Tyr 0.258,
-Phe 0.40) where a starved 20-parameter fit absorbs integration noise.
-
-*Relaxed-coverage A/B (drop `time50`).* The "observed at all 9" rule is a
-**coverage** requirement, separate from the R²>0.95 quality gate; `time50` is a
-bad *run*, not a bad set of peptides. Re-curating cm on the 8 surviving
-proportions (`--drop-proportion 50`, new flag on `bench_aa_coefficients.py` /
-`bench_m0_ma_recovery.py`) gives:
-
-| cm variant | curated n | OOB R² | mean coef boot-std | mean \|Δ\| vs ac16 / ipsc |
-|------------|-----------|--------|--------------------|---------------------------|
-| 9/9        |  564      | 0.754  | 0.147              | 0.172 / 0.194             |
-| 8/9 (−t50) | 1817      | 0.782  | 0.094              | 0.165 / 0.157             |
-
-Dropping one weak fraction recovers 3.2× the peptides, cuts coefficient
-bootstrap noise by 36% (0.147→0.094, toward ipsc's 0.064), and collapses the
-unphysical low-labeling coefficients (Lys 0.235→0.022, Tyr 0.258→0.065). The
-table also moves *toward* both proliferative lines — most toward ipsc, cm's
-parental line. The cm self-shift 9/9→8/9 is 0.11 mean (0.26 max), comparable to
-the cross-line deltas themselves: **a large part of cm-9/9's apparent
-cross-line divergence was small-N noise, not biology.** Both tables are kept
-(`d2o_aa_coefficients_cm.csv` = 9/9; `d2o_aa_coefficients_cm_drop50.csv` = 8/9,
-the recommended cm reference); the A/B is the record.
-
-Implications: (a) M2 finding 3's "do the frozen tables converge under better
-integration" diagnostic now has three legs, and cm-8/9 already sits closest to
-ipsc; (b) this is concrete input for the M3 curation-gate revisit — the
-coverage rule should tolerate a known-bad fraction rather than discard every
-peptide missing from it; (c) cm remains the noisiest line even at 8/9 (boot-std
-still ~1.5× ipsc), so it is the sharpest stress test for whether M3 peak
-detection tightens the per-AA fit.
-
-The original M2 plan is retained below for reference.
-
-
-Goal: a ground-truth benchmark dataset that survives every later
-milestone. MS data already exists (parallel project); the outstanding
-work is re-searching with two ID pipelines and building benchmark
-scaffolding.
-
-**Experimental design (already acquired).** Cells cultured in 6% D₂O for
-≥10 doublings → effectively complete proteome labelling. Lysate from
-labelled cells mixed with lysate from unlabelled cells at 9 nominal
-heavy fractions: `0%, 12.5%, 25%, 37.5%, 50%, 62.5%, 75%, 87.5%, 100%`.
-Multiple technical replicates per level.
-
-**Why it's a uniquely good Riana benchmark:**
-
-1. **Tests `integrate` directly.** For every peptide and every mixing
-   fraction `f`, the expected isotopomer envelope is computable from the
-   peptide sequence + 6% D₂O enrichment via `get_peptide_distribution()`.
-   RMSE between observed and predicted m0/mA across the curve is the
-   headline metric.
-2. **Tests `fit` independently of biology.** Pseudo-time trick: choose
-   `k_deg₀`, compute `t_i = -ln(1-fᵢ)/k_deg₀` per level, relabel samples
-   `time<t_i>`, run `riana fit`. A correct fit module recovers `k_deg₀`
-   for every peptide. One source of variability (integration) instead of
-   the usual biological/kinetic cocktail.
-3. **Edge cases come for free.** `0%` ⇒ false-positive m1+ floor.
-   `100%` ⇒ direct check on `a_max = a_0·(1-ria_max)^n`.
-
-**Outstanding tasks:**
-
-1. Re-search the raw mzMLs through two pipelines, same FASTA and FDR:
-   - Percolator path → `*.target.psms.txt` (matches 0.9.x).
-   - mzTab path via quantms → `*.mzTab` (matches 1.0).
-2. Build `ground_truth.csv` from the sample-prep spreadsheet.
-3. Compute `predicted_distributions.csv` offline using the existing
-   `get_peptide_distribution()` machinery.
-4. Build benchmark scripts in `tests/benchmark/` (see below).
-
-**Dataset layout:**
-
-```
-tests/data/calibration_d2o_mixing/
-├── README.md                       # protocol, instrument, FASTA, search params
-├── mzml/                           # raw mzML (.gz), HOSTED ON ZENODO
-├── ids/
-│   ├── percolator/                 # *.target.psms.txt
-│   └── mztab/                      # *.mzTab from quantms
-├── ground_truth.csv                # nominal heavy fraction per (peptide, replicate)
-├── predicted_distributions.csv     # theoretical m0/mA per (peptide, fraction)
-├── pseudotime_map.csv              # f → t for fit-module test
-└── benchmark_results/
-    └── <git_sha>/                  # frozen diffs across releases
-```
-
-Raw mzMLs are deposited to Zenodo under a dataset DOI separate from the
-code DOI; repo carries CSVs + scripts + a `make calibration-data` target.
-
-**Benchmark scripts:**
-
-- `bench_integrate_recovery.py` — runs `riana integrate` on the series,
-  compares observed vs. predicted m0/mA, reports RMSE, bias, R²
-  per peptide and aggregated by length/labelling-sites/intensity bin.
-- `bench_fit_recovery.py` — applies pseudo-time mapping, runs
-  `riana fit`, reports `(k_deg - k_deg₀) / k_deg₀` per peptide. Repeat
-  for Guan/Fornasiero by inserting synthetic precursor lag into the
-  pseudo-time map.
-- `bench_smoothing.py` — sweeps `--smoothing ∈ {None,3,5,7,9,11}`,
-  reports RMSE shift. Quantifies whether SG is helping or hurting.
-- `bench_peak_boundary.py` (post-M3) — fixed-window vs. detected-boundary
-  vs. Skyline-style.
-- `bench_baseline.py` (post-M3) — no baseline / linear / SNIP / AsLS.
-- `bench_id_path.py` (post-M3) — Percolator-ID vs. mzTab-ID on identical
-  raw data; per-peptide agreement.
-
-**M2 deliverables:**
-
-- Re-searched ID files (Percolator + mzTab) archived in
-  `tests/data/calibration_d2o_mixing/ids/`.
-- Zenodo-deposited raw data with DOI.
-- `ground_truth.csv`, `predicted_distributions.csv`, `pseudotime_map.csv`.
-- `bench_integrate_recovery.py` + `bench_fit_recovery.py` running on 0.9.0,
-  baseline numbers committed to `benchmark_results/v0.9.0/`.
+The per-cell-line D₂O + ¹⁸O calibration **datasets, the cm-drop50 decision, and the
+current-defaults numbers** (OOB R², curation yields, m0 recovery RMSE for ac16 / ipsc /
+cm / ac16-¹⁸O on `runs/calib_*_v1`) now live in
+`reports/2026-06-23_calibration_benchmark_harness.md` (§ "Datasets & refreshed current
+state"). The standing harness (`run_calibration_benchmark.py`) shipped; the NB87a
+coefficient-stability approach + the M2→M3 metric findings are recorded there and in
+`CHANGELOG.md`. **Open:** none (the curation-gate revisit it fed is tracked under Track C).
 
 ### M3 — Aggressive restructure → 1.0.0 — DONE
 
@@ -1486,9 +1276,10 @@ not the raw XIC, so the two are decoupled.
 
 *2026-06-28 spiked:* GUI should display results (from fit/rollup and optionally
 integrate when manifest is present)
+- Remove legacy Percolator path from GUI (keep in CLI for testing/dev and bench 
+scripts, GUI users won't need that as most features require SDRF path) (2026-06-28 shipped)
+- GUI integrate view should display sample/fraction information when SDRF is present
 
-Remove legacy Percolator path from GUI (keep in CLI for testing/dev and bench 
-scripts, GUI users won't need that as most features require SDRF path)
 
 #### Suggested sequence
 
