@@ -111,14 +111,20 @@ class IntegrateTab(QWidget):
         form = QFormLayout(box)
 
         self.mzml_edit = QLineEdit()
+        self.mzml_edit.setToolTip(
+            "Folder of mzML files to integrate (one per run/timepoint).")
         self.mzml_edit.setPlaceholderText("Folder containing mzML file(s)")
         form.addRow("mzML folder", self._path_row(self.mzml_edit, self._pick_mzml))
 
         self.id_edit = QLineEdit()
+        self.id_edit.setToolTip(
+            "Search-ID file: quantms mzTab (DDA) or DIA-NN report.parquet covering every run in the SDRF.")
         self.id_edit.setPlaceholderText("quantms mzTab (DDA) or DIA-NN report.parquet")
         form.addRow("Search ID", self._path_row(self.id_edit, self._pick_id))
 
         self.sdrf_edit = QLineEdit()
+        self.sdrf_edit.setToolTip(
+            "SDRF samplesheet — drives the identity/manifest path (timepoints, conditions, RIA, mass tolerance all come from it).")
         self.sdrf_edit.setPlaceholderText("SDRF .tsv — drives the identity / manifest path")
         # Reflect the SDRF's precursor mass tolerance in the spinbox on entry
         # (the spinbox is built below; the slot reads it at call time).
@@ -145,6 +151,8 @@ class IntegrateTab(QWidget):
         form.addRow("Precursor enrichment", self.ria_spin)
 
         self.qvalue_spin = QDoubleSpinBox()
+        self.qvalue_spin.setToolTip(
+            "Integrate only PSMs with q-value below this (FDR threshold).")
         self.qvalue_spin.setDecimals(4)
         self.qvalue_spin.setRange(0.0, 1.0)
         self.qvalue_spin.setSingleStep(0.001)
@@ -162,10 +170,14 @@ class IntegrateTab(QWidget):
         form.addRow("Mass tolerance", self.mass_tol_spin)
 
         self.peak_rt_combo = QComboBox()
+        self.peak_rt_combo.setToolTip(
+            "Integration-window anchor: apex (spike winner), ms2 (0.9.0 parity), or consensus (median apex over m0–m3; prefer at high D2O).")
         self.peak_rt_combo.addItems(["apex", "ms2", "consensus"])
         form.addRow("Window anchor", self.peak_rt_combo)
 
         self.ihw_edit = QLineEdit("0.15")
+        self.ihw_edit.setToolTip(
+            "Integration half-width in RT minutes (dial to your peak width), or 'auto' to detect boundaries.")
         self.ihw_edit.setPlaceholderText("RT min, or 'auto'")
         form.addRow("Integration ½-width", self.ihw_edit)
 
@@ -178,6 +190,8 @@ class IntegrateTab(QWidget):
         form.addRow("Workers (files)", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
+        self.out_edit.setToolTip(
+            "Output directory for the _riana.txt files and the manifest.")
         form.addRow("Output dir", self._path_row(self.out_edit, self._pick_out))
 
         # The power-user tuning dials — collapsed by default so the everyday
@@ -225,6 +239,8 @@ class IntegrateTab(QWidget):
 
         # --- peak / baseline dials (moved out of the everyday form) ----------
         self.baseline_combo = QComboBox()
+        self.baseline_combo.setToolTip(
+            "In-window baseline subtraction: none, noise_floor, snip, or asls.")
         self.baseline_combo.addItems(["none", "noise_floor", "snip", "asls"])
         form.addRow("Baseline", self.baseline_combo)
 
@@ -277,6 +293,8 @@ class IntegrateTab(QWidget):
         ext_layout.setContentsMargins(0, 0, 0, 0)
         self.ext_override_check = QCheckBox("override")
         self.ext_spin = QDoubleSpinBox()
+        self.ext_spin.setToolTip(
+            "Extraction half-width (RT min): how much XIC to pull. Only used when 'override' is checked.")
         self.ext_spin.setRange(0.01, 20.0)
         self.ext_spin.setDecimals(2)
         self.ext_spin.setSingleStep(0.05)
@@ -330,6 +348,8 @@ class IntegrateTab(QWidget):
         form.addRow("Scan↔RT guard", self.rt_check)
 
         self.scan_rt_tol_spin = QDoubleSpinBox()
+        self.scan_rt_tol_spin.setToolTip(
+            "Intake guard: median scan↔RT offset (min) above which the run errors (catches a wrong mzML↔mzTab pairing).")
         self.scan_rt_tol_spin.setRange(0.1, 60.0)
         self.scan_rt_tol_spin.setDecimals(2)
         self.scan_rt_tol_spin.setSingleStep(0.5)
@@ -349,11 +369,15 @@ class IntegrateTab(QWidget):
         mbr_form = QFormLayout(self.mbr_box)
 
         self.mbr_donor_runs_spin = QSpinBox()
+        self.mbr_donor_runs_spin.setToolTip(
+            "MBR: a precursor must be confidently identified in at least this many runs to seed a transfer.")
         self.mbr_donor_runs_spin.setRange(2, 100)
         self.mbr_donor_runs_spin.setValue(2)
         mbr_form.addRow("Min donor runs", self.mbr_donor_runs_spin)
 
         self.mbr_donor_q_spin = QDoubleSpinBox()
+        self.mbr_donor_q_spin.setToolTip(
+            "MBR: donor q-value threshold — only IDs at/below this seed transfers.")
         self.mbr_donor_q_spin.setRange(0.0, 1.0)
         self.mbr_donor_q_spin.setDecimals(4)
         self.mbr_donor_q_spin.setSingleStep(0.001)

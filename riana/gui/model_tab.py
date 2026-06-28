@@ -114,6 +114,8 @@ class ModelTab(QWidget):
         # (`riana fit a.txt b.txt …`), where it carries a pseudo-replication
         # warning; GUI users are all on the SDRF/manifest path.
         self.manifest_edit = QLineEdit()
+        self.manifest_edit.setToolTip(
+            "riana_manifest.tsv from `integrate` — curves are grouped by (experiment, condition) with the timepoint from the SDRF identity.")
         self.manifest_edit.setPlaceholderText(
             "riana_manifest.tsv from `integrate` (the SDRF path)")
         man_row = QHBoxLayout()
@@ -125,6 +127,8 @@ class ModelTab(QWidget):
 
         # Coefficients: editable combo of bundled presets, or a CSV path.
         self.coeff_combo = QComboBox()
+        self.coeff_combo.setToolTip(
+            "Labelling-site coefficient table: a bundled preset name or a CSV path. Required for hw/D2O.")
         self.coeff_combo.setEditable(True)
         presets = available_coefficient_presets()
         self.coeff_combo.addItems(presets)
@@ -148,10 +152,14 @@ class ModelTab(QWidget):
         form.addRow("Model", self.model_combo)
 
         self.label_combo = QComboBox()
+        self.label_combo.setToolTip(
+            "Labelling chemistry: hw (heavy water / D2O) or o18 (metabolic H2-18O).")
         self.label_combo.addItems(["hw", "o18"])
         form.addRow("Label", self.label_combo)
 
         self.ria_spin = QDoubleSpinBox()
+        self.ria_spin.setToolTip(
+            "Precursor enrichment (RIA max): the asymptotic labelled fraction (e.g. 0.06 for 6% D2O). Overrides the manifest value.")
         self.ria_spin.setDecimals(3)
         self.ria_spin.setRange(0.0, 1.0)
         self.ria_spin.setSingleStep(0.005)
@@ -159,6 +167,8 @@ class ModelTab(QWidget):
         form.addRow("RIA max", self.ria_spin)
 
         self.depth_spin = QSpinBox()
+        self.depth_spin.setToolTip(
+            "Fit only peptidoforms seen at this many distinct labelling timepoints (kinetic identifiability) — not raw PSM rows.")
         self.depth_spin.setRange(1, 100)
         self.depth_spin.setValue(3)
         form.addRow("Depth", self.depth_spin)
@@ -174,6 +184,8 @@ class ModelTab(QWidget):
         form.addRow("Min Spep", self.min_spep_spin)
 
         self.qvalue_spin = QDoubleSpinBox()
+        self.qvalue_spin.setToolTip(
+            "Fit only data points with q-value below this (FDR threshold).")
         self.qvalue_spin.setDecimals(4)
         self.qvalue_spin.setRange(0.0, 1.0)
         self.qvalue_spin.setSingleStep(0.001)
@@ -216,6 +228,8 @@ class ModelTab(QWidget):
         form.addRow("Workers", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
+        self.out_edit.setToolTip(
+            "Output directory (ignored on the manifest path — outputs go next to the manifest).")
         out_row = QHBoxLayout()
         out_row.addWidget(self.out_edit, stretch=1)
         out_browse = QPushButton("Browse…")

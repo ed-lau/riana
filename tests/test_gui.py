@@ -273,6 +273,28 @@ def test_window_has_integrate_model_and_protein_tabs(main_window):
     assert titles == ["Integrate", "Model", "Protein"]
 
 
+def test_hint_bar_mirrors_widget_tooltip(main_window):
+    """The fixed hint area shows a control's tooltip on Enter/FocusIn — no hover-hold."""
+    from PySide6.QtCore import QEvent
+
+    w = main_window.integrate_tab.iso_edit
+    assert w.toolTip()                                   # has a tooltip to mirror
+    main_window._hint_filter.eventFilter(w, QEvent(QEvent.Type.Enter))
+    assert main_window.hint_label.text() == " ".join(w.toolTip().split())
+
+
+def test_key_form_fields_have_tooltips(main_window):
+    """Coverage guard: the main-path inputs all carry help (feeds the hint bar)."""
+    it, mt, pt = (main_window.integrate_tab, main_window.model_tab,
+                  main_window.protein_tab)
+    for w in (it.mzml_edit, it.id_edit, it.sdrf_edit, it.out_edit, it.qvalue_spin,
+              it.peak_rt_combo, it.ihw_edit,
+              mt.manifest_edit, mt.coeff_combo, mt.label_combo, mt.depth_spin,
+              mt.ria_spin, mt.qvalue_spin,
+              pt.fit_dir_edit, pt.parsimony_combo, pt.min_peptides_spin):
+        assert w.toolTip(), f"{type(w).__name__} is missing a tooltip"
+
+
 def test_protein_tab_build_params_defaults(main_window):
     params = main_window.protein_tab.build_params()
     assert params["parsimony"] == "unique"

@@ -14,6 +14,21 @@ QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-sit
 new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
 end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
 
+### GUI — fixed hint area + tooltip audit — 2026-06-28
+
+#### Added
+
+- **A fixed hint area in the status bar** mirrors the tooltip of whatever control
+  the mouse or keyboard focus is on, so help is visible immediately instead of only
+  after a hover-hold. An app-wide event filter reads each widget's existing
+  `toolTip()` (walking to the nearest ancestor that has one), so there is nothing to
+  keep in sync.
+- **Tooltip coverage audit** — added help text to 24 previously-bare form controls
+  across the Integrate / Model / Protein tabs (mzML & search-ID & SDRF & output
+  paths, q-value, window anchor, integration ½-width, manifest, coefficients, label,
+  depth, RIA, parsimony, min-peptides/points, and the MBR / intake-guard dials), so
+  the main path and the common knobs all explain themselves in the hint area.
+
 ### GUI integrate — isotopomer abundance bar chart — 2026-06-28
 
 #### Added

@@ -95,6 +95,8 @@ class ProteinTab(QWidget):
         self._form = form
 
         self.fit_dir_edit = QLineEdit("")
+        self.fit_dir_edit.setToolTip(
+            "Folder with riana_fit_peptides.txt + riana_fit_fractions.txt from `riana fit`.")
         self.fit_dir_edit.setPlaceholderText("folder with riana_fit_*.txt")
         dir_row = QHBoxLayout()
         dir_row.addWidget(self.fit_dir_edit, stretch=1)
@@ -112,6 +114,8 @@ class ProteinTab(QWidget):
         form.addRow("Method", self.method_combo)
 
         self.parsimony_combo = QComboBox()
+        self.parsimony_combo.setToolTip(
+            "Protein attribution: unique (single-accession peptides only) or isoform (fold isoform-shared peptides into the canonical entry).")
         self.parsimony_combo.addItems(["unique", "isoform"])
         form.addRow("Parsimony", self.parsimony_combo)
 
@@ -149,11 +153,15 @@ class ProteinTab(QWidget):
         form.addRow("Reference cond. (linear)", self.reference_edit)
 
         self.min_peptides_spin = QSpinBox()
+        self.min_peptides_spin.setToolTip(
+            "Minimum attributed peptides for a protein to be reported.")
         self.min_peptides_spin.setRange(1, 1000)
         self.min_peptides_spin.setValue(2)
         form.addRow("Min peptides", self.min_peptides_spin)
 
         self.min_points_spin = QSpinBox()
+        self.min_points_spin.setToolTip(
+            "Minimum collapsed (t, θ) points for the protein refit.")
         self.min_points_spin.setRange(2, 1000)
         self.min_points_spin.setValue(3)
         form.addRow("Min refit points", self.min_points_spin)
@@ -180,6 +188,8 @@ class ProteinTab(QWidget):
         form.addRow("Workers", self.workers_spin)
 
         self.out_edit = QLineEdit(".")
+        self.out_edit.setToolTip(
+            "Output directory for riana_rollup_proteins.txt (ignored on the manifest path).")
         out_row = QHBoxLayout()
         out_row.addWidget(self.out_edit, stretch=1)
         out_browse = QPushButton("Browse…")

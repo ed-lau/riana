@@ -14,13 +14,46 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QMainWindow,
+    QTabWidget,
+    QWidget,
+)
 
 from riana import __version__
 from riana.gui.integrate_tab import IntegrateTab
 from riana.gui.model_tab import ModelTab
 from riana.gui.protein_tab import ProteinTab
 from riana.gui.resources import app_icon
+
+
+class _HintEventFilter(QObject):
+    """Mirror the hovered/focused widget's tooltip into a fixed hint label.
+
+    The help text is then visible the moment the mouse (or keyboard focus) lands on
+    a control, instead of only after a hover-hold reveals the native tooltip. Reads
+    the existing ``toolTip()`` (walking up to the nearest ancestor that has one), so
+    there is nothing to keep in sync — every widget that already has a tooltip is
+    covered for free. Installed application-wide; it only acts on Enter / FocusIn.
+    """
+
+    _TRIGGERS = (QEvent.Type.Enter, QEvent.Type.FocusIn)
+
+    def __init__(self, hint_label: QLabel) -> None:
+        super().__init__()
+        self._hint = hint_label
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() in self._TRIGGERS and isinstance(obj, QWidget):
+            tip, w = "", obj
+            while w is not None and not tip:
+                tip = w.toolTip()
+                w = w.parentWidget()
+            self._hint.setText(" ".join(tip.split()) if tip else "")
+        return False  # never consume — purely observational
 
 
 class MainWindow(QMainWindow):
@@ -49,6 +82,18 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.protein_tab, "Protein")
         self.tabs = tabs
         self.setCentralWidget(tabs)
+
+        # A fixed hint area (right of the transient status message): it shows the
+        # help of whatever control the mouse/focus is on, so users see hints without
+        # hover-holding. Fed by an app-wide event filter that reads each widget's
+        # existing tooltip.
+        self.hint_label = QLabel("")
+        self.hint_label.setStyleSheet("color: palette(mid);")
+        self.statusBar().addPermanentWidget(self.hint_label, 1)
+        self._hint_filter = _HintEventFilter(self.hint_label)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._hint_filter)
 
         self.statusBar().showMessage("Ready.")
 
