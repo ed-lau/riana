@@ -7,12 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.1.0] — Unreleased
 
-The experimental-science line, opened after the 1.0.0 N_ISO finish. Three big-ticket
-items landed — the ¹⁸O (H₂¹⁸O) rewrite (reverse-model coefficients, production fit,
-and kinetic validation), the mass-defect → θ second turnover estimate with Δmass/Δspacing
-QC in the GUI, and the pyteomics 5.x upgrade — plus modern D₂O labelling-site tables (a
-new default) and an internal label-taxonomy cleanup. The D₂O fit path is unchanged
-end-to-end. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that produced them.
+The experimental-science line, opened after the 1.0.0 N_ISO finish, plus a
+quality-of-life / curation pass. The science: the ¹⁸O (H₂¹⁸O) rewrite (reverse-model
+coefficients, production fit, kinetic validation), the mass-defect → θ second turnover
+estimate with Δmass/Δspacing QC, modern D₂O labelling-site tables, and the pyteomics 5.x
+upgrade. The curation + correctness: a label-aware **Spep gate**, LC-fraction collapse with
+winner-fraction MBR and a fraction-aware mass merge, and an internal label-taxonomy
+cleanup. The UX: CLI progress bars for `fit`/`rollup`, an isotopomer bar chart and a fixed
+hint area in the GUI, and the GUI narrowed to the SDRF/manifest path. See `PROJECT_REVIEW.md`
+§3. Entries are grouped by the work that produced them.
+
+> **Results-affecting defaults (read before upgrading a pipeline):** the default D₂O
+> coefficient table changed to `deberneh_2025_rss` (was the 1983 tritium values), and a
+> Spep curation floor is now applied by default (8 for `hw`/D₂O, 6 for `o18`). Pass the
+> prior table explicitly and `--min-spep 0` to reproduce 1.0.0 numbers.
 
 ### GUI — fixed hint area + tooltip audit — 2026-06-28
 
