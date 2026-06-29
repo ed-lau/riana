@@ -168,16 +168,25 @@ with the winner-fraction policy. **Open:** DIA-NN multi-fraction intake (no data
 #### Track B — integration fidelity (research cluster)
 
 **Shipped** (see CHANGELOG): adaptive N_ISO at integrate (opt-in `--iso auto`), the
-H4′ mix-then-truncate FS solve, and limited-isotopomer scoring (`--fs`, `--fs auto`).
-**Open:**
+H4′ mix-then-truncate FS solve, and limited-isotopomer scoring — flat `--fs` plus
+**`--fs auto`**, which *already* widens per peptidoform: it keys on the θ=0
+natural-abundance envelope width (`init_envelope_width`) and scores iso0-3 below the
+threshold, the full captured envelope (e.g. iso0-5) at width ≥ 6 (`FS_AUTO_BASE` /
+`FS_AUTO_INIT_W_THRESHOLD` in `core/fitting`). **Open:**
 - **Cross-proportion-stable peak picker** (Phase C v2) — the `apex_search_half_width`
   / `consensus` levers for label-invariant boundary stability are untested in
   production (the §2c / M3 carry-over).
 - **Robust observed-vs-IsoSpec matcher** — soft-trim / per-channel-SNR / Huber
   weighting for high-channel contamination; the research-grade endgame, deferred.
-- **Per-peptide `--fs` widening** (parked, designed) — widen `score_channels` to
-  iso0-N for genuinely long envelopes (N_ISO ≥ 12); gated on the Track D animal
-  benchmark. Flat `--fs iso0-3` is the shipped default.
+- **A genuine per-peptide channel optimizer** — `--fs auto` is a binary init-width
+  threshold; the open work is an outlier-aware per-peptide channel choice that
+  *balances the bias/variance tradeoff* (more channels = more signal but more
+  isobaric-contamination risk), rather than the all-or-iso0-3 switch. Gated on the
+  Track D animal benchmark.
+- **`noise_floor` baseline subtraction** — implemented (`algorithms/baseline.noise_floor`,
+  a flat low-quantile floor) but **off by default** (`--baseline none`): it was
+  detrimental in every test so far. Needs more exhaustive testing to decide keep vs
+  remove (alongside the still-open robust in-window baseline — §2c).
 
 #### Track C — fitting / modeling science
 
