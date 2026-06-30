@@ -217,8 +217,16 @@ def integrate_project(
     # manifest row AS IT COMPLETES so an interruption keeps finished runs.
     new_rows: dict[int, ManifestRow] = {}
     for task, df in _integrate_results(config, to_run, max_workers, log):
-        row = finalize_run(config, task, df, out_dir, mztab_path)
-        append_manifest(manifest_path, [row])
+        # A failure here escapes the generator and re-triggers the pool's
+        # ``shutdown(wait=True)`` freeze (see :func:`_integrate_results`); keep
+        # writing the rest of the batch if one run's output can't be finalized.
+        try:
+            row = finalize_run(config, task, df, out_dir, mztab_path)
+            append_manifest(manifest_path, [row])
+        except Exception as exc:  # noqa: BLE001 — isolate one run
+            log.error("integrate: writing run %s FAILED, skipped (%s: %s)",
+                      task.stem, type(exc).__name__, exc)
+            continue
         new_rows[task.file_idx] = row
         n_mbr = int((df["evidence"] == "mbr").sum()) if "evidence" in df.columns else 0
         dropped = int(df.attrs.get("n_mbr_dropped", 0))
@@ -287,13 +295,31 @@ def _integrate_results(
             }
             for fut in futures.as_completed(future_to_task):
                 task = future_to_task[fut]
-                yield task, fut.result()
+                # Isolate per-run failures. Letting ``fut.result()`` raise here
+                # escapes the ``with pool:`` block, whose ``__exit__`` calls
+                # ``shutdown(wait=True)`` — which then blocks on *every* other
+                # submitted task before the exception can surface. On a 384-run
+                # job that is an indefinite freeze (no output) from a single bad
+                # file. Log + skip instead so one run can't sink the batch.
+                try:
+                    df = fut.result()
+                except Exception as exc:  # noqa: BLE001 — isolate one run
+                    log.error("integrate: run %s FAILED, skipped (%s: %s)",
+                              task.stem, type(exc).__name__, exc)
+                    continue
+                yield task, df
     else:
         for task in tasks:
             log.info("integrating run %s (%s)",
                      task.stem, _identity_brief(task.identity))
-            yield task, _integrate_one_run(
-                config, task.mzml_path, task.psms, task.stem)
+            try:
+                df = _integrate_one_run(
+                    config, task.mzml_path, task.psms, task.stem)
+            except Exception as exc:  # noqa: BLE001 — isolate one run
+                log.error("integrate: run %s FAILED, skipped (%s: %s)",
+                          task.stem, type(exc).__name__, exc)
+                continue
+            yield task, df
 
 
 def _integrate_one_run(

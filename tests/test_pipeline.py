@@ -430,15 +430,15 @@ def test_fit_project_two_conditions_concat(tmp_path):
 
 # --- integrate_project end-to-end on the real BSA mzML -----------------------
 
-# retention_time values (541.1 s @ scan 4408, 732.6 s @ scan 6838) are the BSA
-# mzML's real MS1 RTs at those scans, so the intake scan↔RT guard reconciles.
+# exp_mass_to_charge (480.6112 @ scan 4408, 630.3159 @ scan 6838) are the BSA
+# mzML's real precursor m/z at those scans, so the scan↔precursor guard reconciles.
 _BSA_MZTAB = textwrap.dedent("""\
     MTD\tmzTab-version\t1.0.0
     MTD\tms_run[1]-location\tfile://20180216_BSA.mzML
 
     PSH\tsequence\tPSM_ID\taccession\tunique\tdatabase\tdatabase_version\tsearch_engine\tsearch_engine_score[1]\tmodifications\tretention_time\tcharge\texp_mass_to_charge\tcalc_mass_to_charge\tspectra_ref\tpre\tpost\tstart\tend\topt_global_Posterior_Error_Probability_score\topt_global_q-value\topt_global_cv_MS:1002217_decoy_peptide\topt_global_cv_MS:1000889_peptidoform_sequence
-    PSM\tRHPEYAVSVLLR\t0\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t541.1\t3\t470.6\t470.6\tms_run[1]:controllerType=0 controllerNumber=1 scan=4408\tK\tR\t1\t12\t0.01\t0.001\t0\tRHPEYAVSVLLR
-    PSM\tHPYFYAPELLYYANK\t1\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t732.6\t3\t620.3\t620.3\tms_run[1]:controllerType=0 controllerNumber=1 scan=6838\tK\tR\t1\t15\t0.01\t0.001\t0\tHPYFYAPELLYYANK
+    PSM\tRHPEYAVSVLLR\t0\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t541.1\t3\t480.6112\t480.6112\tms_run[1]:controllerType=0 controllerNumber=1 scan=4408\tK\tR\t1\t12\t0.01\t0.001\t0\tRHPEYAVSVLLR
+    PSM\tHPYFYAPELLYYANK\t1\tsp|P02769|ALBU_BOVIN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\tnull\t732.6\t3\t630.3159\t630.3159\tms_run[1]:controllerType=0 controllerNumber=1 scan=6838\tK\tR\t1\t15\t0.01\t0.001\t0\tHPYFYAPELLYYANK
     """)
 
 _BSA_SDRF = textwrap.dedent("""\

@@ -62,69 +62,81 @@ _PSM_COLUMNS = [
 
 
 @dataclass(frozen=True, slots=True)
-class ScanRtCheck:
-    """Result of reconciling a run's PSM ``spectra_ref`` scans against mzML RT.
+class ScanPrecursorCheck:
+    """Result of reconciling a run's PSM scans against THIS mzML's precursors.
 
-    Produced by :func:`check_scan_rt_consistency`. ``n_checked`` counts the PSMs
-    that carried a usable mzTab ``retention_time`` (> 0); the Percolator path
-    supplies none, so the guard no-ops there (``n_checked == 0`` ⇒ :attr:`ok`).
+    Produced by :func:`check_scan_precursor_consistency`. A real file/search
+    mismatch shows up as :attr:`frac_matched` near 0 (the scans are absent or
+    point at different precursors); RT alignment leaves it ~1.0.
     """
 
-    #: PSMs with a usable reported RT that were reconciled.
+    #: Sampled PSMs with a usable scan + reported precursor m/z.
     n_checked: int
-    #: Median |mzML scan-RT − reported RT| over the checked PSMs, in RT minutes.
-    median_offset_min: float
-    #: Fraction of checked PSMs within :attr:`tol_min` of their reported RT.
-    frac_within_tol: float
-    #: The tolerance the median was gated against (RT minutes).
-    tol_min: float
+    #: Median |reported − mzML selected-ion m/z| over matched scans, in ppm.
+    median_ppm: float
+    #: Fraction of sampled scans whose mzML precursor m/z matches the report.
+    frac_matched: float
+    #: Minimum acceptable :attr:`frac_matched` (below ⇒ mismatch).
+    min_frac: float
 
     @property
     def ok(self) -> bool:
-        """True when there was nothing to check or the median is within tol."""
-        return self.n_checked == 0 or self.median_offset_min <= self.tol_min
+        """True when there was nothing to check or enough scans matched."""
+        return self.n_checked == 0 or self.frac_matched >= self.min_frac
 
 
-def check_scan_rt_consistency(
+# Scan↔precursor guard knobs. A legitimate file matches ~100% within a few ppm
+# (the mzTab ``exp_mass_to_charge`` IS the mzML selected-ion m/z); a wrong file /
+# scan-scramble matches ~0%, so the 0.5 floor separates them with a wide margin.
+# 20 ppm absorbs any precursor-refinement rounding. Sampling ~300 PSMs keeps the
+# guard at ~0.1 s/run (vs. iterating every MS2).
+_PRECURSOR_SAMPLE_N = 300
+_PRECURSOR_TOL_PPM = 10.0  # default; overridable via config.scan_precursor_tol_ppm
+_PRECURSOR_MIN_FRAC = 0.5
+
+
+def check_scan_precursor_consistency(
     psms: Sequence[PSMRecord],
     mzml: IndexedMzML,
-    tol_min: float,
-) -> ScanRtCheck:
-    """Reconcile each PSM's ``spectra_ref`` scan → mzML MS1 RT vs its mzTab RT.
+    *,
+    sample_n: int = _PRECURSOR_SAMPLE_N,
+    tol_ppm: float = _PRECURSOR_TOL_PPM,
+    min_frac: float = _PRECURSOR_MIN_FRAC,
+) -> ScanPrecursorCheck:
+    """Verify the mzTab ``spectra_ref`` scans index THIS mzML, by precursor m/z.
 
-    On the quantms mzTab path every PSM carries the ``retention_time`` the
-    search/quant pipeline reported (seconds). Looking the PSM's ``scan`` up in
-    *this* mzML's MS1 index must land near that RT; a large per-run **median**
-    offset means the ``spectra_ref`` scans do not belong to this mzML — the
-    quantms filename-prefix scan-scramble (mzML basenames that are prefixes of
-    one another) or a wrong mzML↔mzTab pairing (PROJECT_REVIEW Track A intake
-    guard). The failure was previously silent.
-
-    The **median** is the gate (not per-PSM): it is robust to the ~10% of PSMs
-    that legitimately mismatch and to the run-dependent ProteomicsLFQ alignment
-    offset (≤~0.9 min measured on real output), while a scrambled run sits tens
-    of minutes off — a ~25× separation, so the exact tolerance barely matters.
-
-    PSMs without a usable ``retention_time`` (≤ 0 — the Percolator path) are
-    skipped; with none, the guard no-ops (``n_checked == 0``, :attr:`ScanRtCheck.ok`).
-    The caller decides policy (error vs. log).
+    For a sample of PSMs, each one's MS2 scan in this mzML must carry a precursor
+    (selected-ion) m/z matching the PSM's reported ``precursor_mz``. Matching is
+    by **mass** (ppm), so — unlike the scan↔RT guard it replaces — it is immune
+    to OpenMS RT alignment, while still catching a real file/search mismatch
+    (wrong file → scans absent or pointing at different precursors → low
+    :attr:`~ScanPrecursorCheck.frac_matched`). PSMs without a usable scan or
+    reported precursor m/z (the Percolator path) are skipped; with none, the
+    guard no-ops (``n_checked == 0``).
     """
-    if not psms:
-        return ScanRtCheck(0, float("nan"), float("nan"), tol_min)
-    scans = np.array([p.scan for p in psms], dtype=np.int64)
-    rep_rt_min = np.array(
-        [p.retention_time / 60.0 for p in psms], dtype=np.float64
-    )  # mzTab RT is seconds; mzML rt_idx is minutes.
-    valid = rep_rt_min > 0
-    n = int(valid.sum())
-    if n == 0:
-        return ScanRtCheck(0, float("nan"), float("nan"), tol_min)
-    offset = np.abs(mzml.rt_for_scans(scans[valid]) - rep_rt_min[valid])
-    return ScanRtCheck(
-        n_checked=n,
-        median_offset_min=float(np.median(offset)),
-        frac_within_tol=float(np.mean(offset <= tol_min)),
-        tol_min=tol_min,
+    cand = [p for p in psms if p.scan > 0 and p.precursor_mz > 0]
+    if not cand:
+        return ScanPrecursorCheck(0, float("nan"), float("nan"), min_frac)
+    if len(cand) > sample_n:
+        sample = [cand[i]
+                  for i in np.linspace(0, len(cand) - 1, sample_n).astype(int)]
+    else:
+        sample = cand
+    dppm: list[float] = []
+    matched = 0
+    for p in sample:
+        obs = mzml.precursor_mz(p.scan)
+        if obs is not None and obs > 0:
+            d = abs(p.precursor_mz - obs) / obs * 1e6
+            dppm.append(d)
+            if d <= tol_ppm:
+                matched += 1
+        # obs is None ⇒ scan absent from this mzML ⇒ checked-but-unmatched
+    return ScanPrecursorCheck(
+        n_checked=len(sample),
+        median_ppm=float(np.median(dppm)) if dppm else float("nan"),
+        frac_matched=matched / len(sample),
+        min_frac=min_frac,
     )
 
 
@@ -241,38 +253,39 @@ def integrate_run(
     if not all(directly_scanned):
         psms = resolve_rt_anchored_scans(psms, mzml, file_label=file_label)
 
-    # Intake scan↔RT guard (Track A): verify the mzTab spectra_ref scans actually
-    # index THIS mzML. Runs ONLY on the originally directly-scanned PSMs (real MS2
-    # IDs); RT-anchored rows (DIA, MBR) are excluded — their scan was *derived*
-    # from the RT, so the check is circular (resolve_rt_anchored_scans does the
-    # RT-in-bounds check for them instead). Pure-DIA → empty subset → natural
-    # no-op; also no-ops on the Percolator path (no retention_time).
-    if config.check_scan_rt:
+    # Intake scan↔precursor guard (Track A): verify the mzTab spectra_ref scans
+    # actually index THIS mzML, by precursor m/z — mass-based, so immune to the
+    # OpenMS RT alignment that made the old scan↔RT guard misfire on legitimate
+    # aligned data (median offsets a few min, while the scans were correct). Runs
+    # ONLY on the originally directly-scanned PSMs (real MS2 IDs); RT-anchored
+    # rows (DIA, MBR) are excluded — their scan was *derived* from the RT
+    # (resolve_rt_anchored_scans does the RT-in-bounds check for them instead).
+    # Pure-DIA → empty subset → no-op; also no-ops on the Percolator path (no
+    # reported precursor m/z).
+    if config.check_scan_id:
         direct_psms = [p for p, d in zip(psms, directly_scanned) if d]
         if direct_psms:
             label = file_label or _mzml_basename(mzml)
-            check = check_scan_rt_consistency(direct_psms, mzml, config.scan_rt_tol_min)
+            check = check_scan_precursor_consistency(
+                direct_psms, mzml, tol_ppm=config.scan_precursor_tol_ppm)
             if check.n_checked > 0 and not check.ok:
                 raise DataError(
-                    f"{label}: scan↔RT reconciliation FAILED — median offset "
-                    f"{check.median_offset_min:.2f} min over {check.n_checked} PSMs "
-                    f"exceeds tol {check.tol_min:.1f} min "
-                    f"({check.frac_within_tol:.0%} within tol). The mzTab spectra_ref "
-                    "scans do not line up with this mzML's retention times. Usually an "
-                    "underlying file mismatch — likely causes: (1) the search/quant ran "
-                    "on different source files than these mzML (e.g. the .raw with its "
-                    "own OpenMS-aligned RT vs the local .mzML) — for real runs, search "
-                    "the same mzML you integrate; (2) the quantms filename-prefix "
-                    "scan-scramble (zero-pad / de-prefix the mzML basenames before the "
-                    "quantms run); (3) a wrong mzML↔mzTab pairing. Override with "
-                    "--no-rt-check only if this run is knowingly correct."
+                    f"{label}: scan↔precursor reconciliation FAILED — only "
+                    f"{check.frac_matched:.0%} of {check.n_checked} sampled PSMs match a "
+                    f"precursor m/z in this mzML (median |Δ| {check.median_ppm:.1f} ppm). "
+                    "The mzTab spectra_ref scans do not point at the matching precursors "
+                    "in this mzML — a real file/search mismatch: (1) the search ran on "
+                    "different source files than these mzML; (2) the quantms filename-"
+                    "prefix scan-scramble (zero-pad / de-prefix the basenames before the "
+                    "quantms run); (3) a wrong mzML↔mzTab pairing. (Mass-based — immune "
+                    "to RT alignment.) Override with --no-id-check only if this run is "
+                    "knowingly correct."
                 )
             if check.n_checked > 0:
                 _LOGGER.info(
-                    "%s: scan↔RT reconciled — median %.2f min, %.0f%% within "
-                    "%.1f min (n=%d).",
-                    label, check.median_offset_min, 100 * check.frac_within_tol,
-                    check.tol_min, check.n_checked,
+                    "%s: scan↔precursor reconciled — %.0f%% of %d sampled PSMs match "
+                    "(median |Δ| %.1f ppm).",
+                    label, 100 * check.frac_matched, check.n_checked, check.median_ppm,
                 )
 
     # Integrate ALL peptides, shared included — protein attribution (unique /
@@ -321,6 +334,15 @@ def integrate_run(
     else:
         concat_channels = None
         isos = tuple(config.isotopomers)
+
+    # Decode every MS1 once up front. Overlapping per-PSM RT windows otherwise
+    # re-fetch+re-decode the same spectra hundreds of times in `peaks()` — the
+    # dominant cost on dense runs (~90% of wall time; the redundant-decode
+    # blow-up scaled the integrate to ~2 h/run on 7.8k-PSM fractions). The cache
+    # is numerically transparent (identical arrays) and small for centroided MS1
+    # (~0.4 GB for a 15k-scan run). After this the extraction's `peaks()` calls
+    # are RAM lookups; the bottleneck reverts to the inherent per-centroid math.
+    mzml.preload_peaks()
 
     # Per-PSM extraction → list of per-PSM (DataFrame, mass_accuracy_dict).
     # Serial: the hot path (pyteomics mzML parse + IsoSpec) is GIL-bound, so
@@ -666,14 +688,19 @@ def _extract_per_psm(
         min_scan, max_scan = concat_scans[psm.concat]
         rt_lo = mzml.rt_idx[np.searchsorted(mzml.scan_idx, min_scan, side="left") - 1]
         rt_hi = mzml.rt_idx[np.searchsorted(mzml.scan_idx, max_scan, side="left") - 1]
-        nearby = mzml.scan_idx[
+        _win = (
             (mzml.rt_idx - rt_lo > -config.extraction_half_width)
             & (mzml.rt_idx - rt_hi < config.extraction_half_width)
-        ]
+        )
     else:
         center_scan = anchor_scan if anchor_scan is not None else psm.scan
         rt_center = mzml.rt_idx[np.searchsorted(mzml.scan_idx, center_scan, side="left") - 1]
-        nearby = mzml.scan_idx[np.abs(mzml.rt_idx - rt_center) <= config.extraction_half_width]
+        _win = np.abs(mzml.rt_idx - rt_center) <= config.extraction_half_width
+    # Carry each window scan's RT straight from the index (``rt_idx[_win]``)
+    # instead of re-finding it per scan with ``scan_idx == scan`` (an O(n_MS1)
+    # linear scan that dominated once the decode was cached). Same values.
+    nearby = mzml.scan_idx[_win]
+    nearby_rt = mzml.rt_idx[_win]
 
     # Lazy peak fetch + centroid sum per (mod, iso) per MS1. As a Phase D
     # addition we also accumulate intensity-weighted observed m/z per
@@ -697,10 +724,9 @@ def _extract_per_psm(
     mz_weighted: dict[str, float] = {c: 0.0 for c in iso_cols_local}
     intens_total: dict[str, float] = {c: 0.0 for c in iso_cols_local}
     ppm_tol = float(config.mass_tol_ppm) * 1e-6
-    for scan in nearby:
+    for scan, rt in zip(nearby.tolist(), nearby_rt.tolist()):
         scan_int = int(scan)
         mz_arr, intens_arr = mzml.peaks(scan_int)
-        rt = float(mzml.rt_idx[mzml.scan_idx == scan_int].item())
         for iso in isos:
             col = f"iso{iso}"
             target = iso_target_mz[iso]

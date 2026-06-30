@@ -14,6 +14,7 @@ output is provenance-stamped from day one.
 from __future__ import annotations
 
 import csv
+import functools
 import hashlib
 import json
 import os
@@ -95,8 +96,18 @@ def _canonicalise(obj: object) -> object:
     return obj
 
 
+@functools.lru_cache(maxsize=1)
 def _git_sha() -> str:
-    """Return the current commit SHA (12 chars), or ``"unknown"`` if unavailable."""
+    """Return the current commit SHA (12 chars), or ``"unknown"`` if unavailable.
+
+    Cached for the process lifetime: the SHA is constant for a run, and the
+    ``subprocess`` call ``fork``s. ``make_provenance`` runs once per output file,
+    so without the cache a many-file ``integrate`` would fork ``git`` hundreds of
+    times from the (multi-threaded, post-``ProcessPoolExecutor``) main process —
+    on macOS that intermittently **deadlocks** in the child's ``pthread_atfork``
+    handlers and freezes the run. Warm it once up front (single-threaded, before
+    the pool) via :func:`warm_git_sha` so even the single remaining fork is safe.
+    """
     try:
         out = subprocess.check_output(
             ["git", "rev-parse", "--short=12", "HEAD"],
@@ -107,6 +118,15 @@ def _git_sha() -> str:
         return out.strip() or "unknown"
     except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         return "unknown"
+
+
+def warm_git_sha() -> str:
+    """Prime the :func:`_git_sha` cache while the process is still single-threaded.
+
+    Call this before spawning the integrate/fit worker pool so the one ``git``
+    ``fork`` happens in a clean process, not concurrently with pool threads.
+    """
+    return _git_sha()
 
 
 def write_tsv(

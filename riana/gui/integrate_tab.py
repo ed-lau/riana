@@ -338,25 +338,27 @@ class IntegrateTab(QWidget):
         self.write_intensities_check = QCheckBox("write pre-integration trace")
         form.addRow("Intensities", self.write_intensities_check)
 
-        # --- intake scan↔RT guard -------------------------------------------
-        self.rt_check = QCheckBox("enabled")
-        self.rt_check.setChecked(True)
-        self.rt_check.setToolTip(
-            "Per-run check that mzTab spectra_ref scans reconcile with this "
-            "mzML's RTs (catches the quantms filename-prefix scramble). "
-            "Uncheck only for a run you know is correctly paired.")
-        form.addRow("Scan↔RT guard", self.rt_check)
+        # --- intake scan↔precursor guard ------------------------------------
+        self.id_check = QCheckBox("enabled")
+        self.id_check.setChecked(True)
+        self.id_check.setToolTip(
+            "Per-run check that mzTab spectra_ref scans point at the matching "
+            "precursor m/z in this mzML (catches a wrong mzML↔mzTab pairing / "
+            "quantms filename-prefix scramble; mass-based, immune to RT "
+            "alignment). Uncheck only for a run you know is correctly paired.")
+        form.addRow("Scan↔precursor guard", self.id_check)
 
-        self.scan_rt_tol_spin = QDoubleSpinBox()
-        self.scan_rt_tol_spin.setToolTip(
-            "Intake guard: median scan↔RT offset (min) above which the run errors (catches a wrong mzML↔mzTab pairing).")
-        self.scan_rt_tol_spin.setRange(0.1, 60.0)
-        self.scan_rt_tol_spin.setDecimals(2)
-        self.scan_rt_tol_spin.setSingleStep(0.5)
-        self.scan_rt_tol_spin.setValue(3.0)
-        self.scan_rt_tol_spin.setSuffix(" min")
-        self.rt_check.toggled.connect(self.scan_rt_tol_spin.setEnabled)
-        form.addRow("Scan↔RT tolerance", self.scan_rt_tol_spin)
+        self.precursor_tol_spin = QDoubleSpinBox()
+        self.precursor_tol_spin.setToolTip(
+            "Intake guard: per-scan precursor-m/z match tolerance (ppm). Lenient "
+            "to drift; a wrong file lands hundreds of ppm off.")
+        self.precursor_tol_spin.setRange(1.0, 1000.0)
+        self.precursor_tol_spin.setDecimals(1)
+        self.precursor_tol_spin.setSingleStep(1.0)
+        self.precursor_tol_spin.setValue(10.0)
+        self.precursor_tol_spin.setSuffix(" ppm")
+        self.id_check.toggled.connect(self.precursor_tol_spin.setEnabled)
+        form.addRow("Precursor m/z tolerance", self.precursor_tol_spin)
 
         # --- MBR sub-group (the checkable box state IS the mbr flag) ----------
         self.mbr_box = QGroupBox("Match-between-runs (MBR)")
@@ -548,8 +550,8 @@ class IntegrateTab(QWidget):
             smoothing_polyorder=int(self.smoothing_poly_spin.value()),
             mass_difference=float(self.mass_diff_spin.value()),
             ppm_alert=float(self.ppm_alert_spin.value()),
-            check_scan_rt=bool(self.rt_check.isChecked()),
-            scan_rt_tol_min=float(self.scan_rt_tol_spin.value()),
+            check_scan_id=bool(self.id_check.isChecked()),
+            scan_precursor_tol_ppm=float(self.precursor_tol_spin.value()),
             mbr=bool(self.mbr_box.isChecked()),
             mbr_min_donor_runs=int(self.mbr_donor_runs_spin.value()),
             mbr_donor_q=float(self.mbr_donor_q_spin.value()),

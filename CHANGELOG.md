@@ -22,6 +22,38 @@ hint area in the GUI, and the GUI narrowed to the SDRF/manifest path. See `PROJE
 > Spep curation floor is now applied by default (8 for `hw`/D₂O, 6 for `o18`). Pass the
 > prior table explicitly and `--min-spep 0` to reproduce 1.0.0 numbers.
 
+### Integrate — mass-based intake guard + large-run robustness/throughput — 2026-06-30
+
+#### Changed
+
+- **The intake guard is now mass-based (scan↔precursor), replacing the scan↔RT
+  guard.** Each run verifies that a sample of mzTab `spectra_ref` scans point at the
+  matching **precursor m/z** in this mzML, instead of reconciling the mzTab-reported
+  retention time. The RT guard false-positived on legitimately **OpenMS-aligned**
+  runs (median offsets of a few minutes while the scans were correct), blocking real
+  data; the precursor check is immune to RT alignment (it compares mass) and still
+  catches a wrong mzML↔mzTab pairing / quantms filename-prefix scramble. Config
+  `check_scan_rt` → `check_scan_id`, `scan_rt_tol_min` (min) → `scan_precursor_tol_ppm`
+  (default **10 ppm**); CLI `--no-rt-check`/`--scan-rt-tol` → `--no-id-check`/`--precursor-tol-ppm`.
+
+#### Fixed
+
+- **One bad run no longer freezes the whole batch.** A per-run exception used to
+  escape the `ProcessPoolExecutor` `with` block, whose `shutdown(wait=True)` then
+  blocked on *every* other submitted task before surfacing — an indefinite hang (no
+  output) on a many-file run from a single failing file. Failures are now logged and
+  skipped, so the rest of the batch completes.
+- **Provenance git-SHA computed once, not per output file.** `make_provenance` forked
+  `git` for every file's header; on macOS, forking from the multi-threaded pool main
+  process intermittently deadlocked in the child's `pthread_atfork` handlers and froze
+  the run. Now cached and warmed single-threaded before the pool spawns.
+
+#### Performance
+
+- **Per-run MS1 peak precache** — each MS1 spectrum is decoded once per run rather than
+  re-decoded for every overlapping per-PSM RT window (~8× faster `integrate` on dense
+  runs; output is numerically identical).
+
 ### GUI — fixed hint area + tooltip audit — 2026-06-28
 
 #### Added

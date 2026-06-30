@@ -84,6 +84,11 @@ class IndexedMzML:
         scans: list[int] = []
         rts_min: list[float] = []
         spec_ids: list[str] = []
+        #: ``{scan: spectrum id}`` for *every* spectrum (MS1 + MS2), so the
+        #: scan↔precursor intake guard can fetch an MS2 scan's precursor m/z by
+        #: scan number. Recorded in the same single index-building pass (one
+        #: regex per spectrum — no extra decode), ~2 MB for a 30k-spectrum run.
+        all_spec_ids: dict[int, str] = {}
         #: Whether MS1 is centroid (``True``)/profile (``False``)/unmarked
         #: (``None``), from the first MS1 spectrum's cvParam. The integration
         #: mass tolerance assumes centroid (one line per isotopomer); a profile
@@ -91,6 +96,10 @@ class IndexedMzML:
         self.ms1_centroid: bool | None = None
         with mzml.MzML(str(self._reader_path), use_index=True) as reader:
             for spec in reader:
+                try:
+                    all_spec_ids[_scan_from_id(spec["id"])] = spec["id"]
+                except DataError:
+                    pass  # odd/non-Thermo id — just absent from the precursor index
                 if spec.get("ms level") != 1:
                     continue
                 if not scans:  # first MS1: record its spectrum representation
@@ -105,6 +114,7 @@ class IndexedMzML:
         self.scan_idx = np.asarray(scans, dtype=np.int64)
         self.rt_idx = np.asarray(rts_min, dtype=np.float64)
         self._scan_to_spec_id: dict[int, str] = dict(zip(scans, spec_ids))
+        self._scan_to_spec_id_all: dict[int, str] = all_spec_ids
 
         # Random-access readers are per-thread. The pyteomics MzML +
         # lxml parser carry per-instance state during ``get_by_id``; sharing
@@ -117,6 +127,10 @@ class IndexedMzML:
         # Track per-thread readers so ``close()`` can drain them in tests.
         self._readers: list[mzml.MzML] = []
         self._readers_lock = threading.Lock()
+        # Optional in-memory MS1 peak cache (``preload_peaks``). ``None`` = lazy
+        # per-call decode (the memory-light default); a dict = every MS1 decoded
+        # once up front so overlapping per-PSM windows hit RAM, not the decoder.
+        self._peak_cache: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
 
     def _materialize_seekable(self, path: Path) -> Path:
         """Return a path to a seekable mzML; decompress .gz to a temp file."""
@@ -131,8 +145,14 @@ class IndexedMzML:
     def peaks(self, scan: int) -> tuple[np.ndarray, np.ndarray]:
         """Return (m/z, intensity) arrays for the MS1 scan number *scan*.
 
-        Thread-safe: each calling thread gets its own pyteomics reader.
+        Thread-safe: each calling thread gets its own pyteomics reader. When
+        :meth:`preload_peaks` has been called, served from the in-memory cache
+        (a read-only dict lookup — identical arrays, no re-decode).
         """
+        if self._peak_cache is not None:
+            cached = self._peak_cache.get(scan)
+            if cached is not None:
+                return cached
         try:
             spec_id = self._scan_to_spec_id[scan]
         except KeyError as e:
@@ -143,6 +163,27 @@ class IndexedMzML:
         spec = reader.get_by_id(spec_id)
         return spec["m/z array"], spec["intensity array"]
 
+    def precursor_mz(self, scan: int) -> float | None:
+        """Precursor (selected-ion) m/z recorded for the (MS2) *scan*, or ``None``.
+
+        ``None`` when the scan isn't in this mzML or carries no precursor. Used
+        by the scan↔precursor intake guard
+        (:func:`riana.core.integration.check_scan_precursor_consistency`) to
+        verify the mzTab ``spectra_ref`` scans point at the matching precursors
+        in THIS mzML — a mass-based file/search-mismatch check that, unlike the
+        old scan↔RT guard, is immune to OpenMS RT alignment.
+        """
+        spec_id = self._scan_to_spec_id_all.get(scan)
+        if spec_id is None:
+            return None
+        spec = self._thread_reader().get_by_id(spec_id)
+        try:
+            ion = spec["precursorList"]["precursor"][0]["selectedIonList"][
+                "selectedIon"][0]
+            return float(ion["selected ion m/z"])
+        except (KeyError, IndexError, ValueError, TypeError):
+            return None
+
     def rt_for_scans(self, scans: "np.ndarray | Sequence[int]") -> np.ndarray:
         """RT (minutes) of the MS1 at-or-before each scan number in *scans*.
 
@@ -150,8 +191,9 @@ class IndexedMzML:
         precursor-cycle lookup — the MS1 preceding a (possibly MS2) PSM scan —
         vectorized over an array of scans. The index is clamped to
         ``[0, len-1]`` so a scan before the first MS1 maps to the first MS1
-        instead of wrapping to the last (the bare ``- 1`` would). Used by the
-        intake scan↔RT guard (:func:`riana.core.integration.check_scan_rt_consistency`).
+        instead of wrapping to the last (the bare ``- 1`` would). A general
+        scan→RT helper (the RT-based intake guard it once backed has been
+        replaced by the mass-based :func:`precursor_mz` scan↔precursor check).
         """
         s = np.asarray(scans, dtype=np.int64)
         idx = np.clip(
@@ -185,6 +227,35 @@ class IndexedMzML:
                     spec["m/z array"],
                     spec["intensity array"],
                 )
+
+    def preload_peaks(self) -> None:
+        """Decode every MS1 spectrum's peak arrays once into an in-memory cache.
+
+        The per-PSM extractor calls :meth:`peaks` for every MS1 in each PSM's RT
+        window; neighbouring PSMs' windows overlap heavily, so the *same*
+        spectrum is otherwise re-fetched and re-decoded (XML re-find + zlib +
+        base64) hundreds of times — the dominant integrate cost on dense runs
+        (profiled at ~90% of wall time; ~500x redundant decodes over a run).
+        One sequential :meth:`ms1_iter` pass populates the cache so subsequent
+        ``peaks`` calls are dict lookups. The cached arrays are the *same*
+        pyteomics decode ``peaks`` returns, so this is numerically transparent —
+        a speed cache only. Memory is bounded by the MS1 peak data (centroided
+        MS1 is small: ~0.4 GB for a 15k-scan Orbitrap run). Idempotent; built
+        serially before the (serial, GIL-bound) extraction, then read-only.
+        """
+        if self._peak_cache is not None:
+            return
+        # Random-access the known MS1 scans only (``scan_idx``); a sequential
+        # ``ms1_iter`` pass would also decode every MS2 spectrum just to skip it.
+        # Use a *local* reader closed at block exit — NOT ``_thread_reader``,
+        # whose persistent reader + lock state deadlocks a forked ``integrate
+        # --workers`` child in its pthread_atfork handler.
+        cache: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        with mzml.MzML(str(self._reader_path), use_index=True) as reader:
+            for scan in self.scan_idx.tolist():
+                spec = reader.get_by_id(self._scan_to_spec_id[scan])
+                cache[scan] = (spec["m/z array"], spec["intensity array"])
+        self._peak_cache = cache
 
     def close(self) -> None:
         with self._readers_lock:

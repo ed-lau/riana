@@ -160,7 +160,7 @@ A–E are the open research/engineering clusters.
 
 **Shipped** (see CHANGELOG): the `RunIdentity` model + SDRF/manifest intake (M6a),
 DIA-NN parquet intake (M6b), per-run concurrency + `--resume`, the manifest project
-chain (`integrate → fit → rollup`), the scan↔RT intake guard, and MBR (mzTab/DDA)
+chain (`integrate → fit → rollup`), the scan↔precursor intake guard, and MBR (mzTab/DDA)
 with the winner-fraction policy. **Open:** DIA-NN multi-fraction intake (no data yet
 — guard + document). The `RunIdentity` model itself is documented authoritatively in
 `riana/records.py`'s docstring.
@@ -187,6 +187,15 @@ threshold, the full captured envelope (e.g. iso0-5) at width ≥ 6 (`FS_AUTO_BAS
   a flat low-quantile floor) but **off by default** (`--baseline none`): it was
   detrimental in every test so far. Needs more exhaustive testing to decide keep vs
   remove (alongside the still-open robust in-window baseline — §2c).
+- **Integrate performance — masking vectorization** (follow-up to the shipped MS1
+  cache). The per-run **MS1 peak precache shipped** (2026-06-30; CHANGELOG): each MS1
+  is decoded once instead of re-decoded for every overlapping per-PSM RT window — ~8×
+  faster `integrate` on dense fractionated runs, byte-identical. The residual per-PSM
+  cost is the **masking** (`np.abs(mz−target)≤δ` per scan × iso), which is large
+  because `use_range=True` windows span the peptide's whole concat scan range. **Open:**
+  vectorize it via `np.searchsorted` on the m/z-sorted centroids (O(log n) per channel,
+  byte-identical), and/or revisit whether the apex path needs the full-concat window vs
+  the narrower `anchor ± extraction_half_width` (a science decision — changes results).
 
 #### Track C — fitting / modeling science
 

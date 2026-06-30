@@ -6,7 +6,7 @@ proportion and apex_selection nearest = tallest, because the real cause is an
 mzTab↔mzML **RT-axis mismatch** (the calibration mzTab is .raw-searched → 2–4 min off
 the local .mzML; MBR is RT-anchored, direct is scan-based hence immune), NOT an apex
 mis-pick. Re-run only AFTER the maintainer re-searches quantms on the exact .mzML (then
-drop --no-rt-check). Kept as the auditable negative result + it exposed the consensus+MBR
+drop --no-id-check). Kept as the auditable negative result + it exposed the consensus+MBR
 gate bug (consensus arms returned n_mbr=0: consensus_apex emits a spread, not an SNR).
 
 MBR mis-quantifies θ on the calibration (a high-label D₂O *mixing* series) but not on
@@ -79,14 +79,15 @@ def _integrate(armdir: str, flags: list[str], force: bool) -> None:
     if os.path.exists(manifest) and not force:
         print(f"  [cached] {armdir}")
         return
-    # --no-rt-check: the calibration mzTab was searched on the .raw (OpenMS-aligned
-    # RT), so the scan↔RT guard trips (up to ~3.9 min) even though the scans truly
-    # correspond — confirmed benign earlier by 1.36 ppm median mass accuracy.
+    # --no-id-check: kept as a harmless no-op. The old scan↔RT guard tripped here
+    # (up to ~3.9 min, .raw OpenMS-aligned RT vs .mzML) even though the scans truly
+    # correspond — confirmed benign by 1.36 ppm median mass accuracy, exactly what
+    # the current mass-based scan↔precursor guard now verifies (it would pass).
     # Gate OFF (--mbr-min-snr/scans 0): isolate the apex *method* effect on θ from
     # the quality gate — and the gate's SNR floor would otherwise drop EVERY
     # consensus row (consensus_apex yields a spread, not an SNR → apex_snr NaN).
     cmd = [sys.executable, "-m", "riana.cli", "integrate", _MZML, _MZTAB,
-           "--sdrf", _SDRF, "--mbr", "--no-rt-check",
+           "--sdrf", _SDRF, "--mbr", "--no-id-check",
            "--mbr-min-snr", "0", "--mbr-min-scans", "0", "-o", armdir] + flags
     print(f"  integrating → {armdir} ...", flush=True)
     r = subprocess.run(cmd, cwd=_REPO, capture_output=True, text=True)

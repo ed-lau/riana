@@ -204,16 +204,18 @@ def integrate(
         help="Runs to integrate concurrently on the --sdrf path (one mzML in "
         "memory per worker; 2-4 suits a many-timepoint time series) [default: "
         "1]. The parallelism lever — per-run extraction is GIL-bound serial."),
-    no_rt_check: bool = typer.Option(
-        False, "--no-rt-check", rich_help_panel=_ADV,
-        help="Disable the intake scan↔RT guard — the per-run check that the "
-        "mzTab spectra_ref scans reconcile with this mzML's retention times "
-        "(catches the quantms filename-prefix scan-scramble / wrong mzML↔mzTab "
-        "pairing). Only disable for a run you know is correctly paired."),
-    scan_rt_tol: float = typer.Option(
-        3.0, "--scan-rt-tol", metavar="MIN", rich_help_panel=_ADV,
-        help="Median scan↔RT offset (RT min) above which the intake guard errors "
-        "[default: 3.0]. Ignored with --no-rt-check."),
+    no_id_check: bool = typer.Option(
+        False, "--no-id-check", rich_help_panel=_ADV,
+        help="Disable the intake scan↔precursor guard — the per-run check that "
+        "the mzTab spectra_ref scans point at the matching precursor m/z in this "
+        "mzML (catches a wrong mzML↔mzTab pairing / quantms filename-prefix "
+        "scan-scramble; mass-based, so immune to OpenMS RT alignment). Only "
+        "disable for a run you know is correctly paired."),
+    precursor_tol_ppm: float = typer.Option(
+        10.0, "--precursor-tol-ppm", metavar="PPM", rich_help_panel=_ADV,
+        help="Per-scan precursor-m/z match tolerance (ppm) for the intake "
+        "scan↔precursor guard [default: 10.0]. Lenient to precursor-refinement "
+        "drift; a wrong file lands hundreds of ppm off. Ignored with --no-id-check."),
     resume: bool = typer.Option(
         False, "--resume",
         help="On the --sdrf path, skip runs already integrated in the output's "
@@ -369,8 +371,8 @@ def integrate(
             mass_difference=float(mass_difference),
             ppm_alert=float(ppm_alert),
             out_dir=str(out),
-            check_scan_rt=not no_rt_check,
-            scan_rt_tol_min=float(scan_rt_tol),
+            check_scan_id=not no_id_check,
+            scan_precursor_tol_ppm=float(precursor_tol_ppm),
             mbr=bool(mbr),
             mbr_min_donor_runs=int(mbr_min_donor_runs),
             mbr_donor_q=float(mbr_donor_q),
@@ -390,6 +392,14 @@ def integrate(
             f"abundance, RIA max {ria_max:g} from {ria_src})")
     else:
         logger.info(f"isotopomers: {list(isotopomers)} (fixed)")
+
+    # Prime the provenance git-SHA cache now, while this process is still
+    # single-threaded — before the integrate worker pool spawns. ``_git_sha``
+    # ``fork``s ``git``, and forking from the multi-threaded pool main process
+    # deadlocks on macOS (``pthread_atfork``); per-file ``make_provenance`` then
+    # reuses the cached value instead of forking once per output file.
+    from riana.io.writers import warm_git_sha
+    warm_git_sha()
 
     # --- SDRF path (primary): identity-keyed mzTab intake via the shared
     # pipeline — one <stem>_riana.txt per run + a manifest. ---------------------

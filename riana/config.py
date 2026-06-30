@@ -190,25 +190,25 @@ class IntegrationConfig:
     #: ``peak_rt="consensus"`` median-apex pools over (co-elution consensus).
     apex_n_consensus: int = 4
 
-    # --- Intake scan↔RT guard (Track A). -------------------------------------
+    # --- Intake scan↔precursor guard (Track A). ------------------------------
     #: When true (default), :func:`riana.core.integration.integrate_run` verifies
-    #: per run that each PSM's ``spectra_ref`` scan → this mzML's MS1 RT
-    #: reconciles with the mzTab-reported ``retention_time``, and **errors** if
-    #: the per-run *median* offset exceeds :attr:`scan_rt_tol_min`. This catches
-    #: the quantms filename-prefix scan-scramble (mzML basenames that are
-    #: prefixes of one another) and wrong mzML↔mzTab pairings — a class of bug
-    #: that was previously silent (PROJECT_REVIEW Track A). No-ops on the
-    #: Percolator path (no ``retention_time``). Disable with ``--no-rt-check``
-    #: only for a run you know is correctly paired.
-    check_scan_rt: bool = True
-    #: Median scan↔RT offset (RT minutes) above which :attr:`check_scan_rt`
-    #: errors. **Default 3.0** — clears the run-dependent ProteomicsLFQ alignment
-    #: offset (≤~0.9 min measured on real output) and the larger residuals seen on
-    #: multi-day / cross-source acquisitions (calibration tripped at 2.16) with
-    #: margin, while a scan-scrambled run sits tens of minutes off (~10× the
-    #: threshold). Above ~3 the guard stops distinguishing a real misalignment
-    #: from a scramble, so it is the practical ceiling.
-    scan_rt_tol_min: float = 3.0
+    #: per run that each PSM's ``spectra_ref`` scan points at the **matching
+    #: precursor m/z** in this mzML (sampled ~300 PSMs, mass-based) and **errors**
+    #: when too few match within :attr:`scan_precursor_tol_ppm`. This catches the
+    #: quantms filename-prefix scan-scramble (mzML basenames that are prefixes of
+    #: one another) and wrong mzML↔mzTab pairings — previously silent
+    #: (PROJECT_REVIEW Track A) — while being **immune to OpenMS RT alignment**
+    #: (it compares mass, not retention time; the earlier RT-based guard
+    #: false-positived on legitimately aligned runs). No-ops on the Percolator
+    #: path (no reported precursor m/z). Disable with ``--no-id-check`` only for a
+    #: run you know is correctly paired.
+    check_scan_id: bool = True
+    #: Per-scan precursor-m/z match tolerance (ppm) for :attr:`check_scan_id`.
+    #: **Default 10.0** — far above the ~1 ppm a correctly-paired file shows (the
+    #: mzTab ``exp_mass_to_charge`` *is* the mzML selected-ion m/z), so it is
+    #: lenient to any precursor-refinement rounding, yet a wrong file / scramble
+    #: lands hundreds of ppm off and fails decisively.
+    scan_precursor_tol_ppm: float = 10.0
     #: --mbr. Enable match-between-runs (mzTab/DDA path): transfer a confidently
     #: identified precursor's identity + retention time into the runs of its
     #: ``(experiment, condition)`` turnover curve that missed it, so curve points
@@ -296,9 +296,10 @@ class IntegrationConfig:
             )
         if self.ppm_alert <= 0:
             raise ValueError(f"ppm_alert must be > 0, got {self.ppm_alert}")
-        if self.scan_rt_tol_min <= 0:
+        if self.scan_precursor_tol_ppm <= 0:
             raise ValueError(
-                f"scan_rt_tol_min must be > 0, got {self.scan_rt_tol_min}")
+                "scan_precursor_tol_ppm must be > 0, got "
+                f"{self.scan_precursor_tol_ppm}")
         if self.mbr_min_donor_runs < 2:
             raise ValueError(
                 f"mbr_min_donor_runs must be >= 2 (need a corroborating run), "

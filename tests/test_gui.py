@@ -429,7 +429,7 @@ def test_build_config_defaults_round_trip(main_window):
     for field in ("prominence_k", "width_rel_height", "apex_n_consensus",
                   "smoothing", "smoothing_polyorder", "mass_difference",
                   "ppm_alert", "apex_search_half_width", "write_intensities",
-                  "check_scan_rt", "scan_rt_tol_min", "mbr",
+                  "check_scan_id", "scan_precursor_tol_ppm", "mbr",
                   "mbr_min_donor_runs", "mbr_donor_q", "mbr_min_snr",
                   "mbr_min_scans"):
         assert getattr(cfg, field) == getattr(default, field), field
@@ -449,8 +449,8 @@ def test_build_config_advanced_widgets_flow_through(main_window):
     tab.mass_diff_spin.setValue(1.5)
     tab.ppm_alert_spin.setValue(12.0)
     tab.write_intensities_check.setChecked(True)
-    tab.rt_check.setChecked(False)            # guard off
-    tab.scan_rt_tol_spin.setValue(1.5)
+    tab.id_check.setChecked(False)            # guard off
+    tab.precursor_tol_spin.setValue(5.0)
     tab.ext_override_check.setChecked(True)
     tab.ext_spin.setValue(0.9)
     tab.mbr_box.setChecked(True)
@@ -468,7 +468,7 @@ def test_build_config_advanced_widgets_flow_through(main_window):
     assert cfg.mass_difference == 1.5
     assert cfg.ppm_alert == 12.0
     assert cfg.write_intensities is True
-    assert cfg.check_scan_rt is False and cfg.scan_rt_tol_min == 1.5
+    assert cfg.check_scan_id is False and cfg.scan_precursor_tol_ppm == 5.0
     assert cfg.extraction_half_width == 0.9   # explicit override wins over derive
     assert cfg.mbr is True
     assert cfg.mbr_min_donor_runs == 3 and cfg.mbr_donor_q == 0.005
