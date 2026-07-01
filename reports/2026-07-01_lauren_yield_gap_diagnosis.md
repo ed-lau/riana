@@ -7,6 +7,9 @@
   the quantitative-fit gate.
 - **Parent report:** [`2026-07-01_lauren_o18_d2o_headtohead.md`](2026-07-01_lauren_o18_d2o_headtohead.md)
   (the head-to-head that flagged yield as the open item).
+- **Data source:** ¹⁸O run = `runs/timeseries_lauren5_7_ipsc_mesoderm_o18` (Sage-free quantms
+  re-search; mzML symlinked from network drive) — numbers unchanged vs the prior integration to
+  within rounding.
 - **Reproduce:** `python runs/lauren_yield_diagnostics.py`
 
 ## TL;DR
@@ -17,7 +20,7 @@ gate, not an identification one. Four candidates tested; verdict for each:
 
 | candidate | verdict | evidence |
 |---|---|---|
-| **Slower turnover / less proliferation** | **NOT the driver** | k distributions comparable: lauren ¹⁸O med k 0.038 vs boomi 0.045; lauren D₂O 0.039 *faster* than boomi 0.032 |
+| **Slower turnover / less proliferation** | **NOT the driver** | k distributions comparable: lauren ¹⁸O med k 0.037 vs boomi 0.045; lauren D₂O 0.039 *faster* than boomi 0.032 |
 | **Poor MS run / lost IDs / low depth** | **NOT the driver** | lauren has *more* PSMs, *more* proteins, and *more* timepoints (median n_points 18 vs 15). Yield doesn't rise with depth in lauren (R²>0.8 ~3–5 % at every depth bin) |
 | **Sampling design (front-loaded grid) × R² metric** | **DOMINANT** | lauren puts **11 of 12 timepoints in 0→7 h** where FS only reaches 0.23 (signal ≈ noise), then a lone 24 h point. R² is pathologically low when dynamic range ≈ scatter |
 | **Higher per-point noise (data quality)** | **SECONDARY (~1.5×)** | t0 FS scatter (pure noise; true FS=0) is **0.13–0.14 in lauren vs 0.09 in boomi** |
@@ -28,7 +31,7 @@ Physically-valid fits (rail-hits dropped), median k_deg [IQR]:
 
 | arm | med k | note |
 |---|---|---|
-| lauren ¹⁸O | 0.038 [0.021, 0.078] | slightly below boomi ¹⁸O |
+| lauren ¹⁸O | 0.037 [0.021, 0.076] | slightly below boomi ¹⁸O |
 | lauren D₂O | 0.039 [0.025, 0.071] | **above** boomi D₂O |
 | boomi ¹⁸O | 0.045 [0.031, 0.065] | — |
 | boomi D₂O | 0.032 [0.021, 0.047] | — |
@@ -42,7 +45,7 @@ Spep-gated, no R²/k filter — median R² [IQR] and pass rates:
 
 | arm | med R² | >0.5 | >0.8 | >0.9 |
 |---|---|---|---|---|
-| lauren ¹⁸O | **0.24** [−0.10, 0.60] | 33 % | 10 % | 3 % |
+| lauren ¹⁸O | **0.26** [−0.09, 0.61] | 33 % | 10 % | 3 % |
 | boomi ¹⁸O | **0.77** [0.46, 0.91] | 73 % | 46 % | 27 % |
 | lauren D₂O | 0.36 | 40 % | 15 % | 6 % |
 | boomi D₂O | 0.69 | 67 % | 36 % | 18 % |
@@ -107,9 +110,9 @@ Tested a secondary CI gate `rel_unc = (ci_hi−ci_lo)/(2k)` with a within-protei
 
 | rule | lauren ¹⁸O yield | within-prot geomCV | boomi ¹⁸O yield |
 |---|---|---|---|
-| R²>0.8 (current) | 9.1 % | 0.159 | 29.5 % |
-| OR(R²>0.6, relunc<0.20) | 13.9 % | 0.194 | 32.3 % |
-| OR(R²>0.5, relunc<0.25) | 20.1 % | 0.221 | 37.3 % |
+| R²>0.8 (current) | 9.3 % | 0.159 | 29.5 % |
+| OR(R²>0.6, relunc<0.20) | 14.1 % | 0.195 | 32.3 % |
+| OR(R²>0.5, relunc<0.25) | 20.6 % | 0.218 | 37.3 % |
 | relunc<1.0 (naive, no floor) | 66 % | **0.64** ✗ | 58 % |
 
 - A **naive** CI gate over-rescues (within-protein CV blows to 0.64 — 4× worse); it pulls in
