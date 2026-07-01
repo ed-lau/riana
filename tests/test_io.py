@@ -108,6 +108,21 @@ def test_indexed_mzml_ms1_iter_yields_full_set():
     assert sorted(scans) == scans  # MS1 emitted in file order
 
 
+def test_spec_peaks_handles_zero_peak_spectrum():
+    """A zero-peak spectrum (pyteomics omits ``m/z array``) → empty arrays, not KeyError.
+
+    Empty MS1/MS2 scans (``defaultArrayLength=0``) are rare but real (crash-recovered /
+    some ProteomeXchange files); the per-run MS1 precache decodes every MS1, so one
+    empty scan must not crash the run.
+    """
+    mz, intens = iomzml._spec_peaks({})  # both binary arrays absent
+    assert len(mz) == 0 and len(intens) == 0
+    m2, i2 = iomzml._spec_peaks(
+        {"m/z array": np.array([100.0, 200.0]),
+         "intensity array": np.array([5.0, 7.0])})
+    assert list(m2) == [100.0, 200.0] and list(i2) == [5.0, 7.0]
+
+
 # --- mztab -------------------------------------------------------------------
 
 

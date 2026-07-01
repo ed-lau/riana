@@ -40,6 +40,23 @@ _MZML_FILE_RE = re.compile(r"^.*\.mz[Mm][Ll](\.gz)?$")
 # The trailing extension, for stripping a basename to its stem.
 _MZML_EXT_RE = re.compile(r"\.mz[Mm][Ll](\.gz)?$")
 
+_EMPTY_PEAKS = (np.array([], dtype=np.float64), np.array([], dtype=np.float64))
+
+
+def _spec_peaks(spec) -> "tuple[np.ndarray, np.ndarray]":
+    """(m/z, intensity) arrays for a pyteomics spectrum; empty for a zero-peak scan.
+
+    pyteomics omits the ``m/z array`` / ``intensity array`` keys for a spectrum with
+    no peaks (``defaultArrayLength=0``). Empty MS1/MS2 scans are rare but real (e.g.
+    crash-recovered or ProteomeXchange files), so return empty arrays — an empty scan
+    contributes zero signal — instead of crashing the run with ``KeyError: 'm/z array'``.
+    """
+    mz = spec.get("m/z array")
+    intens = spec.get("intensity array")
+    if mz is None or intens is None:
+        return _EMPTY_PEAKS
+    return mz, intens
+
 
 def list_mzml_files(directory: str | os.PathLike[str]) -> list[str]:
     """Sorted basenames of the mzML files (``.mzML`` / ``.mzML.gz``) in *directory*.
@@ -161,7 +178,7 @@ class IndexedMzML:
             ) from e
         reader = self._thread_reader()
         spec = reader.get_by_id(spec_id)
-        return spec["m/z array"], spec["intensity array"]
+        return _spec_peaks(spec)
 
     def precursor_mz(self, scan: int) -> float | None:
         """Precursor (selected-ion) m/z recorded for the (MS2) *scan*, or ``None``.
@@ -221,12 +238,8 @@ class IndexedMzML:
             for spec in reader:
                 if spec.get("ms level") != 1:
                     continue
-                yield (
-                    _scan_from_id(spec["id"]),
-                    _rt_minutes(spec),
-                    spec["m/z array"],
-                    spec["intensity array"],
-                )
+                mz, intens = _spec_peaks(spec)
+                yield (_scan_from_id(spec["id"]), _rt_minutes(spec), mz, intens)
 
     def preload_peaks(self) -> None:
         """Decode every MS1 spectrum's peak arrays once into an in-memory cache.
@@ -254,7 +267,7 @@ class IndexedMzML:
         with mzml.MzML(str(self._reader_path), use_index=True) as reader:
             for scan in self.scan_idx.tolist():
                 spec = reader.get_by_id(self._scan_to_spec_id[scan])
-                cache[scan] = (spec["m/z array"], spec["intensity array"])
+                cache[scan] = _spec_peaks(spec)
         self._peak_cache = cache
 
     def close(self) -> None:

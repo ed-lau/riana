@@ -47,6 +47,10 @@ hint area in the GUI, and the GUI narrowed to the SDRF/manifest path. See `PROJE
   `git` for every file's header; on macOS, forking from the multi-threaded pool main
   process intermittently deadlocked in the child's `pthread_atfork` handlers and froze
   the run. Now cached and warmed single-threaded before the pool spawns.
+- **Empty scans no longer crash a run.** A zero-peak spectrum (`defaultArrayLength=0`
+  — rare but real in crash-recovered / some ProteomeXchange files) made peak access
+  raise `KeyError: 'm/z array'` (surfaced by the precache, which decodes every MS1);
+  empty scans now yield empty arrays — zero signal — instead.
 
 #### Performance
 
