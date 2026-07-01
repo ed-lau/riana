@@ -314,22 +314,44 @@ def test_isoform_rollup_runs_end_to_end():
     assert out.iloc[0]["n_peptides"] == 3  # the shared peptide still counts
 
 
-def test_r2_admit_gate_excludes_noisy_but_keeps_slow_turnover():
+def test_r2_admit_gate_rescues_tight_ci_and_floors_railed_fits():
+    # The k_cv rescue: keep a low-R² peptide only if its rate constant is tightly
+    # determined (k_cv < max) AND R² clears the rescue floor. k_cv = (hi-lo)/(2|k|):
+    #   good  R²≥0.8 (primary)                      -> keep
+    #   noisy k_cv=(.80-.20)/(2·.5)=0.60 too wide   -> drop
+    #   slow  R²=0.65≥floor, k_cv=.002/.02=0.10<0.2 -> keep (flat but well-measured)
+    #   railed R²=-0.5 below floor (degenerate k≈0, spuriously tight k_cv=0.10)
+    #          -> drop; the floor is what excludes it.
     pep = pd.DataFrame({
-        "concat": ["good_2", "noisy_2", "slow_2"],
-        "R_squared": [0.95, 0.40, 0.30],   # noisy + slow both below 0.8
-        "k_deg": [0.50, 0.50, 0.010],      # slow_2 turns over very slowly
-        "sd": [0.02, 0.30, 0.020],         # slow_2 is well-determined (low SE)
+        "concat": ["good_2", "noisy_2", "slow_2", "railed_2"],
+        "R_squared": [0.95, 0.40, 0.65, -0.50],
+        "k_deg": [0.50, 0.50, 0.010, 0.001],
+        "ci_lo": [0.48, 0.20, 0.009, 0.0009],
+        "ci_hi": [0.52, 0.80, 0.011, 0.0011],
     })
-    admitted = _r2_admitted(pep, min_r2=0.8, alt_k=0.025, alt_se=0.05, alt_r2=0.0)
-    assert admitted == {"good_2", "slow_2"}   # noisy excluded; slow admitted via alt
+    admitted = _r2_admitted(pep, min_r2=0.8, k_cv_max=0.2, rescue_r2=0.6)
+    assert admitted == {"good_2", "slow_2"}
+
+
+def test_r2_admit_gate_disables_rescue_when_k_cv_max_not_positive():
+    # k_cv_max <= 0 turns the rescue off -> only the primary R² ≥ min_r2 survives
+    # (and the CI columns aren't even required).
+    pep = pd.DataFrame({
+        "concat": ["good_2", "slow_2"],
+        "R_squared": [0.95, 0.65],
+        "k_deg": [0.50, 0.010],
+    })
+    assert _r2_admitted(pep, min_r2=0.8, k_cv_max=0.0, rescue_r2=0.6) == {"good_2"}
 
 
 def test_r2_gate_off_by_default_keeps_everything():
     # A deliberately low-R² peptide stays in when min_r2 is None (default).
     pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=3)
     pep["R_squared"] = [0.2, 0.95, 0.95]
-    pep["sd"] = 0.3
+    # Tight CI on every peptide (k_cv = 0.05): the default rescue is ON, yet the
+    # R²=0.2 peptide is still gated out because it sits below the rescue R² floor.
+    pep["ci_lo"] = pep["k_deg"] * 0.95
+    pep["ci_hi"] = pep["k_deg"] * 1.05
     out_off = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
     assert out_off.loc["P0", "n_peptides"] == 3
     out_on = rollup_proteins(pep, frac, min_r2=0.8, n_boot=20).set_index("protein")

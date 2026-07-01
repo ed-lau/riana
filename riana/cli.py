@@ -817,17 +817,22 @@ def rollup(
         None, "--min-r2", metavar="R2",
         help="Optional peptide R² admission gate before rollup (off by default — "
         "the inverse-variance weighting already down-weights noisy peptides). "
-        "When set, keep a peptide if R² ≥ this, OR (slow-turnover admit) "
-        "k ≤ --alt-k and SE ≤ --alt-se. Pass e.g. 0.8 to A/B against the "
+        "When set, keep a peptide if R² ≥ this, OR (flat-curve rescue) "
+        "R² ≥ --rescue-r2 and k_cv < --k-cv. Pass e.g. 0.8 to A/B against the "
         "unfiltered result."),
-    alt_k: float = typer.Option(
-        0.025, "--alt-k",
-        help="Slow-turnover admit: max k_deg for a low-R² peptide to still be "
-        "kept (only with --min-r2)."),
-    alt_se: float = typer.Option(
-        0.05, "--alt-se",
-        help="Slow-turnover admit: max k_deg bootstrap SE (the 'sd' column) for "
-        "a low-R² peptide to still be kept (only with --min-r2)."),
+    k_cv: float = typer.Option(
+        0.2, "--k-cv",
+        help="Flat-curve rescue: max relative uncertainty of k̂ — "
+        "k_cv = (ci_hi−ci_lo)/(2·|k|), a scale-free CV of the rate constant — for "
+        "a low-R² peptide to still be admitted (only with --min-r2). Being "
+        "scale-free it needs no retuning across time-series ranges or k units "
+        "(/day vs /h), unlike an absolute SE. Set ≤ 0 to disable (R²-only gate)."),
+    rescue_r2: float = typer.Option(
+        0.6, "--rescue-r2",
+        help="Flat-curve rescue: min R² floor for the --k-cv rescue (only with "
+        "--min-r2). Guards against degenerate k≈0 fits whose CI collapses to a "
+        "spuriously tight k_cv; the exact value barely matters (any floor above "
+        "the negative-R² band works), 0.6 is validated."),
     workers: int = typer.Option(
         1, "-W", "--workers", metavar="N",
         help="Worker *processes* for the per-protein refit [default: 1]. The "
@@ -910,7 +915,7 @@ def rollup(
             kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
-            alt_k=float(alt_k), alt_se=float(alt_se), workers=int(workers),
+            k_cv_max=float(k_cv), rescue_r2=float(rescue_r2), workers=int(workers),
             phi_limit=float(phi_limit), reference_condition=reference_condition,
             exclude_mbr=bool(exclude_mbr), progress_callback=progress,
         )
@@ -922,7 +927,7 @@ def rollup(
     provenance = make_provenance(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
-         "min_r2": min_r2, "alt_k": alt_k, "alt_se": alt_se, "method": method,
+         "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
          "phi_limit": phi_limit, "reference_condition": reference_condition},
         id_source=id_source,
         extra={"method": method, "parsimony": parsimony, "model": model},

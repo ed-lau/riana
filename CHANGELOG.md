@@ -22,6 +22,42 @@ hint area in the GUI, and the GUI narrowed to the SDRF/manifest path. See `PROJE
 > Spep curation floor is now applied by default (8 for `hw`/D₂O, 6 for `o18`). Pass the
 > prior table explicitly and `--min-spep 0` to reproduce 1.0.0 numbers.
 
+### Rollup — scale-free relative-uncertainty curation gate — 2026-07-01
+
+#### Changed
+
+- **The rollup curation admit is now a scale-free relative-uncertainty rescue,
+  replacing the absolute `--alt-k` / `--alt-se` thresholds.** The `--min-r2` gate
+  admits a peptide if `R² ≥ min_r2` OR (flat-curve rescue) `R² ≥ --rescue-r2 AND
+  k_cv < --k-cv`, where `k_cv = (ci_hi − ci_lo) / (2·|k|)` is the rate constant's
+  **relative uncertainty** — a scale-free coefficient of variation of k̂. This
+  rescues well-measured but *flat*-curve peptides (slow turnover / low dynamic
+  range) whose R² is pathologically low even for a good fit — the issue Lau
+  *Nat Commun* 2018 (and Sadygov's d2ome) address by gating on the rate
+  constant's confidence interval. Unlike the old absolute `k`/SE thresholds,
+  `k_cv` needs **no retuning** across time-series ranges or k units (/day vs /h),
+  which is why `--alt-k` / `--alt-se` were confusing to set. Defaults: `--k-cv 0.2`
+  (set ≤ 0 to disable the rescue → R²-only gate), `--rescue-r2 0.6`.
+  - The `--rescue-r2` floor is **load-bearing, not cosmetic**: without it the
+    relative-uncertainty gate admits degenerate k≈0 rail-hits whose bootstrap CI
+    collapses to a spuriously tight `k_cv ≈ 0` (with deeply negative R²). On
+    noisier / short-window data that population is large and it *wrecks*
+    protein-level ranking (ac16 D₂O↔¹⁸O ρ 0.61→0.43, lauren 0.61→0.53); any floor
+    above the negative-R² band restores it, and 0.6 preserves ranking best while
+    keeping within-protein geom-CV clean (reports 2026-06-26 / 2026-07-01).
+  - **API change** (removes two options added in 1.0.0). The gate is niche — it
+    only fires under `--min-r2`, which is **off by default** — so the default
+    pipeline output is unchanged; only runs that set `--min-r2` *and* relied on
+    `--alt-k` / `--alt-se` are affected, and there only the rescued subset shifts.
+
+#### Added
+
+- **`k_cv` reference column in `riana_fit_peptides.txt`** — the per-peptide
+  relative uncertainty of k̂, emitted alongside `ci_lo` / `ci_hi` so it can be
+  curated on directly (it is what the rollup `--k-cv` gate computes internally).
+- **GUI Protein tab: `Max k_cv` and `Rescue R² floor` spinboxes** surface the new
+  rescue next to `Min R²` (the misleading "k ≤ 0.025 & SE ≤ 0.05" hint is gone).
+
 ### Integrate — mass-based intake guard + large-run robustness/throughput — 2026-06-30
 
 #### Changed

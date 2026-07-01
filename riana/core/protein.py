@@ -150,9 +150,8 @@ def rollup_proteins(
     min_points: int = 3,
     min_spep: int | None = None,
     min_r2: float | None = None,
-    alt_k: float = 0.025,
-    alt_se: float = 0.05,
-    alt_r2: float = 0.0,
+    k_cv_max: float = 0.2,
+    rescue_r2: float = 0.6,
     workers: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
@@ -188,12 +187,14 @@ def rollup_proteins(
             already down-weights noisy peptides; pass a value (e.g. 0.8) to also
             hard-exclude peptides whose kinetic fit doesn't follow the model, for
             an A/B against the unfiltered result. A peptide is kept if
-            ``R² ≥ min_r2`` OR — the JCI slow-turnover admit, so legitimately
-            slow peptides (low R² only because θ barely moves) survive — if
-            ``k ≤ alt_k and SE ≤ alt_se and R² ≥ alt_r2``.
-        alt_k / alt_se / alt_r2: the slow-turnover admit thresholds (only used
-            when ``min_r2`` is set). ``SE`` is the fit's ``sd`` (bootstrap k_deg
-            std).
+            ``R² ≥ min_r2`` OR — the flat-curve rescue, so well-measured but
+            slow / low-dynamic-range peptides (low R² only because θ barely moves)
+            survive — if ``R² ≥ rescue_r2 and k_cv < k_cv_max``.
+        k_cv_max / rescue_r2: the relative-uncertainty rescue thresholds (only
+            used when ``min_r2`` is set). ``k_cv`` = ``(ci_hi − ci_lo)/(2·|k|)``,
+            the rate constant's scale-free CV. ``k_cv_max ≤ 0`` disables the
+            rescue; the ``rescue_r2`` floor guards against degenerate k≈0 rail-hits
+            (see :func:`_r2_admitted`).
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
             collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
             pseudoreplication-naive).
@@ -256,7 +257,7 @@ def rollup_proteins(
 
     # Optional peptide R² admission gate (off by default).
     if min_r2 is not None:
-        admitted = _r2_admitted(peptides, min_r2, alt_k, alt_se, alt_r2)
+        admitted = _r2_admitted(peptides, min_r2, k_cv_max, rescue_r2)
         peptides = peptides[peptides["concat"].isin(admitted)].copy()
         fractions = fractions[fractions["concat"].isin(admitted)].copy()
 
@@ -485,27 +486,40 @@ def _ensure_group_cols(df: pd.DataFrame) -> pd.DataFrame:
 def _r2_admitted(
     peptides: pd.DataFrame,
     min_r2: float,
-    alt_k: float,
-    alt_se: float,
-    alt_r2: float,
+    k_cv_max: float,
+    rescue_r2: float,
 ) -> set:
-    """Concats passing the R² admission gate (with a JCI slow-turnover admit).
+    """Concats passing the R² admission gate (with a relative-uncertainty rescue).
 
-    Keep a peptide if ``R² ≥ min_r2``, OR — to retain legitimately slow-turnover
-    peptides whose R² is low only because θ barely moves — if
-    ``k ≤ alt_k and SE ≤ alt_se and R² ≥ alt_r2`` (``SE`` = the fit ``sd``
-    column). Non-converged peptides (``NaN`` k/R²/sd) fail every comparison and
-    are excluded, which is the intent.
+    Keep a peptide if ``R² ≥ min_r2`` (the primary goodness-of-fit gate), OR — to
+    rescue well-measured peptides whose R² is low only because the curve is flat
+    (slow turnover / low dynamic range: the pathology Lau *Nat Commun* 2018 flags)
+    — if ``R² ≥ rescue_r2 AND k_cv < k_cv_max``, where ``k_cv`` is the rate
+    constant's relative uncertainty ``(ci_hi − ci_lo) / (2·|k|)`` (a scale-free CV
+    of k̂; see :func:`riana.core.fitting._k_cv`). The ``rescue_r2`` floor is
+    load-bearing: without it the rescue admits degenerate k≈0 rail-hits whose
+    bootstrap CI collapses to a spuriously tight ``k_cv≈0`` (R² deeply negative),
+    which on noisier data wrecks protein-level ranking (reports 2026-06-26 /
+    2026-07-01 — any floor > the negative-R² band suffices; 0.6 is the validated
+    default). ``k_cv_max ≤ 0`` disables the rescue (R²-only gate). Non-converged
+    peptides (``NaN`` k/R²/CI) fail every comparison and are excluded, as intended.
     """
-    need = {"concat", "R_squared", "k_deg", "sd"}
+    rescue = k_cv_max is not None and k_cv_max > 0.0
+    need = {"concat", "R_squared"} | (
+        {"k_deg", "ci_lo", "ci_hi"} if rescue else set())
     missing = need - set(peptides.columns)
     if missing:
         raise DataError(
             f"--min-r2 needs columns {sorted(missing)} in the peptides input.")
     r2 = peptides["R_squared"].to_numpy(dtype=float)
-    k = peptides["k_deg"].to_numpy(dtype=float)
-    se = peptides["sd"].to_numpy(dtype=float)
-    keep = (r2 >= min_r2) | ((k <= alt_k) & (se <= alt_se) & (r2 >= alt_r2))
+    keep = r2 >= min_r2
+    if rescue:
+        k = peptides["k_deg"].to_numpy(dtype=float)
+        lo = peptides["ci_lo"].to_numpy(dtype=float)
+        hi = peptides["ci_hi"].to_numpy(dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            k_cv = (hi - lo) / (2.0 * np.abs(k))   # matches fitting._k_cv; NaN/inf at k≈0 fail <
+        keep = keep | ((r2 >= rescue_r2) & (k_cv < k_cv_max))
     return set(peptides.loc[keep, "concat"])
 
 

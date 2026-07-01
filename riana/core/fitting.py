@@ -922,13 +922,27 @@ def _null_result(concat: str, protein_id: str, mod_sites: str = "") -> FitResult
 # ---------------------------------------------------------------------------
 
 
+def _k_cv(ci_lo: float, ci_hi: float, k: float) -> float:
+    """Relative uncertainty of k̂ — the 90% bootstrap CI half-width over |k|
+    (``(ci_hi − ci_lo) / (2·|k|)``), a scale-free coefficient of variation of the
+    rate constant. Independent of the time-series range and of the k unit
+    (/day vs /h), unlike an absolute SE. Emitted as a reference column and used as
+    the rollup curation gate's flat-curve rescue metric (``--k-cv``). ``NaN`` when
+    k or either CI bound is undefined, so a non-converged fit fails the rescue.
+    """
+    if not (np.isfinite(ci_lo) and np.isfinite(ci_hi) and np.isfinite(k)) or k == 0.0:
+        return float("nan")
+    return (ci_hi - ci_lo) / (2.0 * abs(k))
+
+
 def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
     """DataFrame in the legacy riana_fit_peptides.txt schema + Phase F2 adds.
 
     ``fs_lower`` / ``fs_upper`` are the M5 per-timepoint prediction-interval
     bounds, carried here as list-cells aligned to ``t`` / ``fs`` so the wide
     file stays self-contained for the GUI curve view; the tidy one-row-per-point
-    form is :func:`build_fractions_long`.
+    form is :func:`build_fractions_long`. ``k_cv`` is a reference readout derived
+    from ``ci_lo`` / ``ci_hi`` / ``k_deg`` (see :func:`_k_cv`).
     """
     rows = [
         {
@@ -948,6 +962,7 @@ def _build_output_df(results: list[FitResult | None]) -> pd.DataFrame:
             "spep": r.spep,
             "ci_lo": r.ci_lo,
             "ci_hi": r.ci_hi,
+            "k_cv": _k_cv(r.ci_lo, r.ci_hi, r.k_deg),
             "protein id": r.protein_id,
             "mod sites": r.mod_sites,
             "n_points": r.n_points,

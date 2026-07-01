@@ -174,9 +174,35 @@ class ProteinTab(QWidget):
         self.min_r2_spin.setValue(0.0)
         self.min_r2_spin.setToolTip(
             "Peptide R² gate before rollup. 0 = off (the inverse-variance "
-            "weighting already down-weights noisy peptides). Slow-turnover "
-            "peptides are still admitted via k ≤ 0.025 & SE ≤ 0.05.")
+            "weighting already down-weights noisy peptides). Well-measured "
+            "flat-curve peptides are still rescued via the Max k_cv gate below.")
         form.addRow("Min R² (0 = off)", self.min_r2_spin)
+
+        # Flat-curve rescue (only with Min R² > 0): admit a low-R² peptide whose
+        # rate constant is nonetheless tightly determined — k_cv = relative
+        # uncertainty of k̂ = (ci_hi−ci_lo)/(2·|k|), a scale-free CV.
+        self.k_cv_spin = QDoubleSpinBox()
+        self.k_cv_spin.setDecimals(2)
+        self.k_cv_spin.setRange(0.0, 10.0)
+        self.k_cv_spin.setSingleStep(0.05)
+        self.k_cv_spin.setValue(0.2)
+        self.k_cv_spin.setToolTip(
+            "Flat-curve rescue (with Min R² > 0): admit a low-R² peptide if its "
+            "relative uncertainty k_cv = (ci_hi−ci_lo)/(2·|k|) is below this. "
+            "Scale-free CV of k̂ — no retuning across time ranges or k units. "
+            "0 = rescue off (R²-only gate).")
+        form.addRow("Max k_cv (0 = off)", self.k_cv_spin)
+
+        self.rescue_r2_spin = QDoubleSpinBox()
+        self.rescue_r2_spin.setDecimals(2)
+        self.rescue_r2_spin.setRange(0.0, 1.0)
+        self.rescue_r2_spin.setSingleStep(0.05)
+        self.rescue_r2_spin.setValue(0.6)
+        self.rescue_r2_spin.setToolTip(
+            "R² floor for the Max k_cv rescue — guards against degenerate k≈0 "
+            "fits whose CI collapses to a spuriously tight k_cv. 0.6 is "
+            "validated; the exact value barely matters above the negative-R² band.")
+        form.addRow("Rescue R² floor", self.rescue_r2_spin)
 
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
@@ -291,6 +317,8 @@ class ProteinTab(QWidget):
             "min_peptides": int(self.min_peptides_spin.value()),
             "min_points": int(self.min_points_spin.value()),
             "min_r2": (r2 if r2 > 0.0 else None),   # 0 = off
+            "k_cv_max": float(self.k_cv_spin.value()),
+            "rescue_r2": float(self.rescue_r2_spin.value()),
             "workers": int(self.workers_spin.value()),
             "phi_limit": float(self.phi_limit_spin.value()),
             "reference_condition": self.reference_edit.text().strip() or None,
@@ -335,7 +363,7 @@ class ProteinTab(QWidget):
                 executor, run_rollup, str(fit_dir), p["model"],
                 p["kp"], p["kr"], p["rp"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_r2"],
-                0.025, 0.05, p["method"],
+                p["k_cv_max"], p["rescue_r2"], p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
             )
             result, points = await self._future
@@ -376,7 +404,7 @@ class ProteinTab(QWidget):
         provenance = make_provenance(
             {k: params[k] for k in (
                 "model", "method", "parsimony", "kp", "kr", "rp",
-                "min_peptides", "min_points", "min_r2",
+                "min_peptides", "min_points", "min_r2", "k_cv_max", "rescue_r2",
                 "phi_limit", "reference_condition")},
             id_source=params["fit_dir"],
             extra={"method": params["method"], "parsimony": params["parsimony"],

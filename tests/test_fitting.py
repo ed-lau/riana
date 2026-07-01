@@ -130,9 +130,13 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     result = fit_run(config, dfs, coeffs, n_boot=50, random_state=42)
 
     # Output schema: legacy + Phase F2 additions.
-    for col in ("k_deg", "R_squared", "sd", "spep", "ci_lo", "ci_hi",
+    for col in ("k_deg", "R_squared", "sd", "spep", "ci_lo", "ci_hi", "k_cv",
                 "t", "fs", "protein id"):
         assert col in result.columns, f"missing {col}"
+    # k_cv (relative uncertainty of k̂) = (ci_hi-ci_lo)/(2|k|), a finite CV on
+    # this clean synthetic data.
+    kcv = result["k_cv"].dropna().to_numpy()
+    assert len(kcv) and (kcv >= 0).all()
 
     assert len(result) == len(_TEST_PEPTIDES)
 
