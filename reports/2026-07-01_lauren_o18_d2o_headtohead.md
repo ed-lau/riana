@@ -11,16 +11,18 @@
 ## TL;DR
 
 - **The method reproduces across iPSC lines.** SCVI480 (lauren) D₂O-vs-¹⁸O ranking
-  ρ = **0.67** peptide / **0.63** protein and within-protein geom CV **≈ 0.14** land on
-  top of the boomi AICS52 head-to-head (ρ 0.68/0.66, CV 0.14). These are the readouts
-  §5.2 relies on — both hold on independent cells.
+  ρ = **0.67** peptide and within-protein geom CV **≈ 0.14** land on top of the boomi AICS52
+  head-to-head (peptide ρ 0.68, CV 0.14) — the readouts §5.2 relies on hold on independent
+  cells. Protein-level (linear-φ rollup) ρ is lower for lauren (**0.56** vs boomi 0.66) —
+  the sparse-data rollup effect (yield section).
 - **D₂O absolute scale is reproducible, ¹⁸O is not** — as §5.2 argued. Cross-line
-  per-protein: D₂O ρ = 0.60, log₂(boomi/lauren) = −0.08 (parity); ¹⁸O ρ = 0.52,
-  log₂ = +0.55 (1.5× shift). The ¹⁸O table is the transferred AC16 one; D₂O uses the
+  per-protein (rollup): D₂O ρ = 0.56, log₂(boomi/lauren) = −0.08 (parity); ¹⁸O ρ = 0.44,
+  log₂ = +0.70 (~1.6× shift). The ¹⁸O table is the transferred AC16 one; D₂O uses the
   iPSC-matched `alamillo_2025_ipsc`.
-- **Open: yield.** lauren R²>0.8 yield is **¹⁸O 9.4% / D₂O 14.1%** vs boomi 42.9 / 33.2%,
-  despite identical CV and ρ. Likely data-quality / regime (lower ¹⁸O RIA, crash-recovered
-  raw, multi-fraction), not the estimator. Chased next session.
+- **Yield — diagnosed.** lauren R²>0.8 yield is **¹⁸O 9.4% / D₂O 14.1%** vs boomi 42.9 / 33.2%,
+  at identical CV/ρ — a sampling-design × R²-metric effect (front-loaded 0→7 h grid + flat-curve
+  pathology + ~1.5× noise floor), not the estimator and not lost IDs. Full work-up:
+  [`2026-07-01_lauren_yield_gap_diagnosis.md`](2026-07-01_lauren_yield_gap_diagnosis.md).
 - **This run was only possible after this cycle's integrate fixes** (mass-based
   scan↔precursor guard, per-run failure isolation, git-SHA cache, ~8× MS1 precache,
   empty-scan handling — CHANGELOG 2026-06-30/07-01). The 384-file multi-fraction set
@@ -58,23 +60,26 @@ same value boomi and the §5.2 juber/iPSC sets show. Yield is the outlier (below
 | metric | lauren SCVI480 | boomi AICS52 (§5.2) |
 |---|---|---|
 | Spearman(k) — peptide | **0.670** (n=742) | 0.68 (n=3002) |
-| Spearman(k) — protein (median-k) | **0.625** (n=661) | 0.66 (n=1267) |
+| Spearman(k) — protein (linear-φ rollup) | **0.56** (n=810) | 0.66 (n=1067) |
 | within-prot geom CV: ¹⁸O / D₂O | 0.159 / 0.137 | 0.140 / 0.139 |
 | median log₂(k_D₂O / k_¹⁸O) | **+0.17** (≈ parity) | −0.46 (¹⁸O ≈ 1.4× faster) |
 
-Ranking and within-protein CV **reproduce**; the absolute D₂O/¹⁸O scale does not
-(+0.17 vs −0.46) — expected, since ¹⁸O uses the transferred AC16 table and the scale is
-line-dependent (§5.2). n is smaller here because of the lower yield, not selection.
+Peptide ranking and within-protein CV **reproduce**; protein-rollup ρ softens for lauren
+(0.56 vs boomi 0.66) as the rollup pools a broader, noisier protein set on the low-yield data.
+The absolute D₂O/¹⁸O scale does not reproduce (+0.17 vs −0.46) — expected, since ¹⁸O uses the
+transferred AC16 table and the scale is line-dependent (§5.2). n is smaller here because of the
+lower yield, not selection. **Protein-level throughout this report = linear-φ rollup k
+(`riana rollup`, R²≥0.8) merged on accession, matching the §5.2 note.**
 
 ## Cross-dataset reproducibility (per-protein, same label, SCVI480 vs AICS52)
 
-| pair | peptide ρ | protein ρ | median log₂(boomi/lauren) |
+| pair | peptide ρ | protein ρ (rollup) | median log₂(boomi/lauren), rollup |
 |---|---|---|---|
-| lauren ¹⁸O vs boomi ¹⁸O | 0.416 (n=350) | 0.517 (n=605) | **+0.55** (1.5× scale shift) |
-| lauren D₂O vs boomi D₂O | 0.584 (n=890) | **0.604** (n=1081) | −0.08 (parity) |
+| lauren ¹⁸O vs boomi ¹⁸O | 0.416 (n=350) | 0.44 (n=745) | **+0.70** (~1.6× scale shift) |
+| lauren D₂O vs boomi D₂O | 0.584 (n=890) | **0.56** (n=932) | −0.08 (parity) |
 
 The D₂O per-protein rates agree across two independent iPSC lines in both **ranking and
-scale**; ¹⁸O agrees on ranking but carries a 1.5× scale offset from the transferred table.
+scale**; ¹⁸O agrees on ranking but carries a ~1.6× scale offset from the transferred table.
 This is the cleanest statement yet of "D₂O matched-table = quantitative; ¹⁸O transferred =
 rank-only" — and it holds between lines, not just within one.
 

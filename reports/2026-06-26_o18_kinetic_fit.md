@@ -74,19 +74,31 @@ analytical `dk` (SE of k from dA/dk); Riana already emits the bootstrap analogue
 half-width over k, a coefficient of variation of k̂). Effect on the head-to-head
 (`runs/gate_comparison.py`; strict → rescue):
 
-| dataset | yield ¹⁸O / D₂O | within-prot geomCV ¹⁸O / D₂O | peptide ρ | protein ρ |
+| dataset | yield ¹⁸O / D₂O | within-prot geomCV ¹⁸O / D₂O | peptide ρ | protein-rollup ρ[^rsvroll] |
 |---|---|---|---|---|
-| iPSC (boomi) | 28.5→35.5 / 30.9→42.5 % | 0.140→0.180 / 0.139→0.184 | 0.679→0.656 | 0.661→0.607 |
-| AC16 (juber) | 5.0→6.4 / 6.0→7.8 % | 0.130→0.175 / 0.136→0.164 | 0.673→0.661 | 0.606→0.620 |
+| iPSC (boomi) | 28.5→35.5 / 30.9→42.5 % | 0.140→0.180 / 0.139→0.184 | 0.679→0.656 | 0.73→0.71 |
+| AC16 (juber) | 5.0→6.4 / 6.0→7.8 % | 0.130→0.175 / 0.136→0.164 | 0.673→0.661 | 0.68→0.71 |
 
 The rescue lifts yield everywhere (~1.2–1.4× iPSC, and ~2× on the sampling-starved lauren SCVI480
 set — [2026-07-01](2026-07-01_lauren_yield_gap_diagnosis.md)) while the within-protein CV stays
-clean (< 0.25) and the ¹⁸O↔D₂O ranking + scale conclusions are unchanged (peptide ρ drops ≤ 0.03;
-AC16 protein ρ even ticks up as more curated peptides stabilize the rollup). A *naive* CI gate
-(relunc < 1, no R² floor) over-rescues (geomCV → 0.6). This confirms the ¹⁸O curation is
+clean (< 0.25), the ¹⁸O↔D₂O peptide ranking is unchanged (ρ drops ≤ 0.03), and — applying the CI
+gate at the peptide level and then **re-running the linear-φ rollup** — the protein-level ranking
+also survives (boomi 0.73→0.71, AC16 0.68→0.71, *improved* on the sparse AC16 set). A *naive* CI
+gate (relunc < 1, no R² floor) over-rescues (geomCV → 0.6). This confirms the ¹⁸O curation is
 R²-metric-limited, not estimator-limited; productionizing the CI rescue (calibrated threshold +
 CV guardrail) is a scoped curation upgrade that benefits every dataset. All headline numbers
 keep the conservative strict R² > 0.8 as primary.
+
+[^rsvroll]: **Protein-rollup ρ under the rescue** is built exactly as suggested — admit peptides
+    by the CI gate (strict = R²>0.8; rescue = R²>0.8 OR (R²>0.6 AND relunc<0.25)), then re-run the
+    linear-φ rollup (`rollup_proteins(..., model="linear simple", min_r2=None)`) on the admitted set
+    and Spearman the per-protein k across labels (R²>0.8 protein gate). Both columns use the same
+    machinery, so the strict→rescue delta isolates the admission rule. The strict value here (boomi
+    0.73) is higher than the §-head-to-head shipped rollup (0.66) because the shipped rollup also
+    applies riana's *absolute* JCI slow-turnover admit (`k≤0.025 & SE≤0.05`), pulling in more,
+    noisier proteins (n 1067 vs 693); this recompute is R²>0.8-only for a clean baseline. Riana's
+    built-in admit (`--alt-k/--alt-se`) is the shipped absolute-threshold cousin of this relative
+    `relunc` gate. Reproduce: `runs/gate_comparison.py`.
 
 ## R-script reconciliation
 
