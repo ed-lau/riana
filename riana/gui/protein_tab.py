@@ -9,11 +9,13 @@ worker (the *same* :func:`riana.core.protein.rollup_proteins` the CLI calls, so
 the surfaces cannot diverge), and the per-protein table lands in a view and on
 disk as ``riana_rollup_proteins.txt`` (+ ``riana_rollup_fractions.txt``).
 
-Reads a *fit output directory* (the ``riana_fit_peptides.txt`` +
-``riana_fit_fractions.txt`` a `riana fit` run wrote). The per-protein refit
-curve view is a follow-up — the collapsed ``(t, θ)`` points would have to be
-returned explicitly from the worker (``DataFrame.attrs`` does not reliably
-survive the pickle back from the pool).
+Reads a *manifest* (``riana_manifest.tsv`` — the SDRF/project path, the GUI's
+only input, matching the Integrate SDRF and Model manifest fields): the fit
+outputs are located from its ``stage="fit"`` rows via
+:func:`riana.core.pipeline.fit_outputs_from_manifest`, and the rollup is written
+next to the manifest with ``stage="rollup"`` rows recorded — so one manifest
+drives the whole ``integrate → fit → rollup`` chain, exactly as the CLI's
+``rollup --manifest`` does.
 """
 
 from __future__ import annotations
@@ -55,10 +57,6 @@ from riana.io.writers import (
     write_dataframe_tsv,
 )
 
-_PEPTIDES_FILE = "riana_fit_peptides.txt"
-_FRACTIONS_FILE = "riana_fit_fractions.txt"
-
-
 class ProteinTab(QWidget):
     """Form + async rollup runner + per-protein results table."""
 
@@ -94,16 +92,19 @@ class ProteinTab(QWidget):
         form = QFormLayout(box)
         self._form = form
 
-        self.fit_dir_edit = QLineEdit("")
-        self.fit_dir_edit.setToolTip(
-            "Folder with riana_fit_peptides.txt + riana_fit_fractions.txt from `riana fit`.")
-        self.fit_dir_edit.setPlaceholderText("folder with riana_fit_*.txt")
-        dir_row = QHBoxLayout()
-        dir_row.addWidget(self.fit_dir_edit, stretch=1)
+        self.manifest_edit = QLineEdit("")
+        self.manifest_edit.setToolTip(
+            "riana_manifest.tsv from `integrate`/`fit` (the SDRF/project path). "
+            "The fit outputs are located from its stage='fit' rows, and the "
+            "rollup is written next to the manifest.")
+        self.manifest_edit.setPlaceholderText(
+            "riana_manifest.tsv (the SDRF path)")
+        man_row = QHBoxLayout()
+        man_row.addWidget(self.manifest_edit, stretch=1)
         browse = QPushButton("Browse…")
-        browse.clicked.connect(self._pick_fit_dir)
-        dir_row.addWidget(browse)
-        form.addRow("Fit output dir", _row(dir_row))
+        browse.clicked.connect(self._pick_manifest)
+        man_row.addWidget(browse)
+        form.addRow("Manifest", _row(man_row))
 
         self.method_combo = QComboBox()
         self.method_combo.addItems(["weighted", "pooled"])
@@ -292,10 +293,12 @@ class ProteinTab(QWidget):
         return panel
 
     # --- file / path pickers ----------------------------------------------- #
-    def _pick_fit_dir(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Select fit output folder")
+    def _pick_manifest(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select riana_manifest.tsv",
+            filter="Manifest (*.tsv);;All files (*)")
         if path:
-            self.fit_dir_edit.setText(path)
+            self.manifest_edit.setText(path)
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
@@ -307,7 +310,7 @@ class ProteinTab(QWidget):
         """Gather the rollup parameters from the form (testable, Qt-free dict)."""
         r2 = float(self.min_r2_spin.value())
         return {
-            "fit_dir": self.fit_dir_edit.text().strip(),
+            "manifest": self.manifest_edit.text().strip(),
             "method": self.method_combo.currentText(),
             "parsimony": self.parsimony_combo.currentText(),
             "model": self.model_combo.currentText(),
@@ -339,21 +342,30 @@ class ProteinTab(QWidget):
         self._cancelled = False
 
         p = self.build_params()
-        fit_dir = Path(p["fit_dir"]) if p["fit_dir"] else None
-        if fit_dir is None or not fit_dir.is_dir():
-            self._fail("Pick a fit output directory.")
+        manifest = Path(p["manifest"]) if p["manifest"] else None
+        if manifest is None or not manifest.is_file():
+            self._fail("Pick a riana_manifest.tsv (from `integrate`/`fit` on the "
+                       "SDRF path). The legacy fit-directory rollup is CLI-only.")
             return
-        for name in (_PEPTIDES_FILE, _FRACTIONS_FILE):
-            if not (fit_dir / name).exists():
-                self._fail(f"{name} not found in {fit_dir}. Run a fit there first.")
-                return
+        # Locate the fit outputs from the manifest's stage='fit' rows — the same
+        # resolver `rollup --manifest` uses. Raises DataError (no fit rows yet /
+        # missing outputs) which we surface inline. The manifest read is tiny, so
+        # it stays on the UI thread; the heavy rollup goes to the pool below.
+        from riana.core.pipeline import fit_outputs_from_manifest
+        from riana.exceptions import DataError
+        try:
+            pep_path, _frac_path = fit_outputs_from_manifest(str(manifest))
+        except DataError as exc:
+            self._fail(str(exc))
+            return
+        fit_dir = Path(pep_path).parent
 
-        os.makedirs(p["out_dir"], exist_ok=True)
+        os.makedirs(manifest.resolve().parent, exist_ok=True)
         self._set_running(True)
         self.progress.setRange(0, 0)  # busy
         loop = asyncio.get_running_loop()
         try:
-            self._info(f"rolling up {fit_dir} (model={p['model']}, "
+            self._info(f"rolling up from manifest {manifest} (model={p['model']}, "
                        f"parsimony={p['parsimony']}) …")
             # workers>1 spawns a ProcessPool inside rollup_proteins; run it on a
             # main-process thread (executor=None) so that pool is NOT nested
@@ -393,20 +405,24 @@ class ProteinTab(QWidget):
             self._set_running(False)
 
     def _write_output(self, result: pd.DataFrame, params: dict) -> None:
-        # When the fit dir is a project (carries a manifest), write the rollup
-        # outputs there and record stage='rollup' rows (the project chain);
-        # otherwise honor the Output dir.
+        # The manifest's folder is the project: write the rollup outputs next to
+        # it and record stage='rollup' rows (the integrate→fit→rollup chain), the
+        # same rooting `rollup --manifest` uses. The Output dir is ignored here.
+        from riana.core.pipeline import record_stage_rows
         from riana.core.protein import build_rollup_fractions
 
-        fit_dir = Path(params["fit_dir"])
-        manifest = fit_dir / "riana_manifest.tsv"
-        out_dir = fit_dir if manifest.exists() else Path(params["out_dir"])
+        manifest = Path(params["manifest"])
+        out_dir = manifest.resolve().parent
+        if (Path(params["out_dir"]).resolve() != out_dir
+                and params["out_dir"] != "."):
+            self._info(f"manifest path: writing next to the manifest ({out_dir}); "
+                       f"ignoring Output dir {params['out_dir']}")
         provenance = make_provenance(
             {k: params[k] for k in (
                 "model", "method", "parsimony", "kp", "kr", "rp",
                 "min_peptides", "min_points", "min_r2", "k_cv_max", "rescue_r2",
                 "phi_limit", "reference_condition")},
-            id_source=params["fit_dir"],
+            id_source=params["manifest"],
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},
         )
@@ -425,10 +441,8 @@ class ProteinTab(QWidget):
             self._info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
             written.append(frac_path)
 
-        if manifest.exists():
-            from riana.core.pipeline import record_stage_rows
-            record_stage_rows(manifest, "rollup", written, result, provenance)
-            self._info(f"recorded {len(written)} rollup rows in {manifest}")
+        record_stage_rows(str(manifest), "rollup", written, result, provenance)
+        self._info(f"recorded {len(written)} rollup rows in {manifest}")
 
     def _on_cancel(self) -> None:
         self._cancelled = True

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Callable
 
 import pandas as pd
-from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtCore import QModelIndex, Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -64,6 +64,15 @@ from riana.gui.tasks import (
 from riana.io.manifest import MANIFEST_FILENAME, append_manifest
 from riana.records import PSMRecord
 
+# A multi-file integrate concat is 10⁵–10⁶ rows (a 384-file fractionated series is
+# millions). Handing all of them to the QTableView makes sort / selection / memory
+# the bottleneck even with a fast model, and nobody scrolls millions of rows to
+# find a peptide. So the view shows at most this many rows and the user narrows
+# with the filter box; the full result is on disk in the per-run ``_riana.txt``.
+_MAX_DISPLAY_ROWS = 5000
+# Text columns the filter box matches against (case-insensitive substring).
+_FILTER_COLUMNS = ("sequence", "protein id", "concat")
+
 
 class IntegrateTab(QWidget):
     """Form + async runner + results/chromatogram for ``riana integrate``."""
@@ -80,6 +89,16 @@ class IntegrateTab(QWidget):
         self._running = False
         # file_idx -> mzML path, for on-demand chromatogram extraction.
         self._fraction_mzml: dict[int, str] = {}
+        # concat -> (min_scan, max_scan), precomputed once per result so the
+        # chromatogram extraction on a row click is an O(1) lookup, not a
+        # full-frame scan of a 10^5-10^6-row concat.
+        self._scan_spans: dict[str, tuple[int, int]] = {}
+        # The full result stays here; the table model only ever holds a
+        # filtered + capped *view* of it (see ``_apply_filter``). ``_search_key``
+        # is a lowercased ``sequence\x00protein\x00concat`` column built once so a
+        # filter is a single ``str.contains`` rather than three per keystroke.
+        self._full_df: pd.DataFrame | None = None
+        self._search_key: pd.Series | None = None
 
         self._build_ui()
 
@@ -423,13 +442,45 @@ class IntegrateTab(QWidget):
 
         results_split = QSplitter(Qt.Orientation.Vertical)
 
+        # The table, with a filter box + row-count note above it. The model holds
+        # only a capped/filtered view (see class note), so the box is how the user
+        # reaches a peptide the cap left off-screen.
+        table_panel = QWidget()
+        table_layout = QVBoxLayout(table_panel)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter:"))
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setClearButtonEnabled(True)
+        self.filter_edit.setPlaceholderText("sequence / protein / concat contains…")
+        self.filter_edit.setToolTip(
+            "Show only rows whose sequence, protein id, or concat contains this "
+            "text (case-insensitive). The table shows at most "
+            f"{_MAX_DISPLAY_ROWS:,} rows at a time — filter to find a peptide in a "
+            "large run. The full result is on disk in each run's _riana.txt.")
+        self.filter_edit.textChanged.connect(self._on_filter_text)
+        filter_row.addWidget(self.filter_edit, stretch=1)
+        self.rows_label = QLabel("")
+        self.rows_label.setStyleSheet("color: palette(mid);")
+        filter_row.addWidget(self.rows_label)
+        table_layout.addLayout(filter_row)
+
+        # Debounce: filtering a millions-row frame is ~1 s, so re-filter only once
+        # the user pauses typing, not on every keystroke.
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(250)
+        self._filter_timer.timeout.connect(self._apply_filter)
+
         self.table = QTableView()
         self.model = DataFrameTableModel()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSortingEnabled(True)
         self.table.selectionModel().currentRowChanged.connect(self._on_row_changed)
-        results_split.addWidget(self.table)
+        table_layout.addWidget(self.table)
+        results_split.addWidget(table_panel)
 
         # Two synced views of the selected peptide: the RT-domain chromatogram and
         # the abundance-domain isotopomer (m0..mN) bar chart, side by side.
@@ -571,6 +622,13 @@ class IntegrateTab(QWidget):
         self.chromatogram.show_placeholder("Running…")
         self.isobars.show_placeholder("Running…")
         self._fraction_mzml.clear()
+        self._scan_spans = {}
+        self._full_df = None
+        self._search_key = None
+        self.filter_edit.blockSignals(True)  # clear without arming the debounce
+        self.filter_edit.clear()
+        self.filter_edit.blockSignals(False)
+        self.rows_label.setText("")
         self._cancelled = False
 
         try:
@@ -672,10 +730,40 @@ class IntegrateTab(QWidget):
                 self._info(f"integrated run {key}")
         return results
 
+    @staticmethod
+    def _build_scan_spans(df: pd.DataFrame) -> dict[str, tuple[int, int]]:
+        """Map each ``concat`` to its ``(min_scan, max_scan)`` in one vectorised
+        groupby.
+
+        This replaces the old per-selection ``df[df["concat"] == x]["scan"]``
+        full-frame scan (~160 ms per click on a millions-row multi-file concat)
+        with an O(1) dict lookup; the (min, max) is identical to what that scan
+        produced. Empty / column-less frames give an empty map (the extractor
+        then uses its default window). ``scan`` is coerced to numeric to match the
+        old ``.astype(int)`` before min/max.
+        """
+        if df.empty or "concat" not in df.columns or "scan" not in df.columns:
+            return {}
+        scans = pd.to_numeric(df["scan"], errors="coerce")
+        grouped = scans.groupby(df["concat"], sort=False).agg(["min", "max"])
+        return {
+            str(concat): (int(mn), int(mx))
+            for concat, mn, mx in zip(grouped.index, grouped["min"], grouped["max"])
+            if pd.notna(mn) and pd.notna(mx)
+        }
+
     def _finish_table(self, frames, config) -> None:
         if not frames:
             return
-        self.model.set_dataframe(pd.concat(frames, ignore_index=True))
+        df = pd.concat(frames, ignore_index=True)
+        self._full_df = df
+        # Precompute each peptide's scan span once, so a row click is an O(1)
+        # lookup instead of a `df[df.concat == x]` scan of the whole frame.
+        self._scan_spans = self._build_scan_spans(df)
+        # Build the filter key once, then push the capped/filtered view into the
+        # model (never the full 10⁵–10⁶-row frame).
+        self._search_key = self._build_search_key(df)
+        self._apply_filter()
         self.chromatogram.show_placeholder(
             "Select a peptide row to view its chromatogram."
         )
@@ -683,9 +771,59 @@ class IntegrateTab(QWidget):
             "Select a peptide row to view its isotopomer envelope."
         )
         self._last_config = config
-        self._info(
-            f"done — {len(self.model.dataframe)} rows across {len(frames)} run(s)."
-        )
+        self._info(f"done — {len(df)} rows across {len(frames)} run(s).")
+
+    # --- results filter (view = filtered + capped) -------------------------- #
+    @staticmethod
+    def _build_search_key(df: pd.DataFrame):
+        """A lowercased ``sequence\\x00protein\\x00concat`` column for the filter.
+
+        Concatenating the searchable columns once (NUL-joined so a match can't
+        span a boundary) turns each filter into a single ``str.contains`` on this
+        key instead of one per column per keystroke — ~3× cheaper on a big frame.
+        Returns ``None`` when the frame has none of the filterable columns.
+        """
+        cols = [c for c in _FILTER_COLUMNS if c in df.columns]
+        if df.empty or not cols:
+            return None
+        key = df[cols[0]].astype(str)
+        for c in cols[1:]:
+            key = key + "\x00" + df[c].astype(str)
+        return key.str.lower()
+
+    def _on_filter_text(self, _text: str) -> None:
+        # Debounced: arm the timer; _apply_filter runs when typing pauses.
+        self._filter_timer.start()
+
+    def _apply_filter(self) -> None:
+        """Push a filtered + row-capped view of the full result into the model."""
+        if self._full_df is None:
+            return
+        full = self._full_df
+        query = self.filter_edit.text().strip()
+        if query and self._search_key is not None:
+            filtered = full[self._search_key.str.contains(
+                query.lower(), regex=False, na=False)]
+        else:
+            filtered = full
+        view = filtered.iloc[:_MAX_DISPLAY_ROWS]
+        self.model.set_dataframe(view)
+        self._update_rows_label(len(full), len(filtered), len(view), bool(query))
+
+    def _update_rows_label(self, total: int, matched: int, shown: int,
+                           filtered: bool) -> None:
+        if filtered:
+            if shown < matched:
+                self.rows_label.setText(
+                    f"showing {shown:,} of {matched:,} matches "
+                    f"({total:,} total) — narrow the filter")
+            else:
+                self.rows_label.setText(f"{matched:,} of {total:,} rows match")
+        elif shown < total:
+            self.rows_label.setText(
+                f"showing first {shown:,} of {total:,} rows — filter to find a peptide")
+        else:
+            self.rows_label.setText(f"{total:,} rows")
 
     def _on_cancel(self) -> None:
         self._cancelled = True
@@ -733,9 +871,11 @@ class IntegrateTab(QWidget):
             pep_id=int(record["pep_id"]),
         )
         # The integrator spans all kept scans of this peptide-charge; the kept
-        # set IS the displayed frame, so derive the span from it.
-        same = df[df["concat"] == psm.concat]["scan"].astype(int)
-        scan_span = (int(same.min()), int(same.max()))
+        # set IS the displayed frame, so the span is derived from it — but
+        # precomputed once per result (``_build_scan_spans``) rather than scanned
+        # per click. ``None`` (peptide absent, e.g. a stale selection) lets the
+        # extractor fall back to its own default window.
+        scan_span = self._scan_spans.get(psm.concat)
 
         self.chromatogram.show_placeholder(f"Extracting {psm.concat} …")
         loop = asyncio.get_running_loop()

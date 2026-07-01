@@ -291,7 +291,7 @@ def test_key_form_fields_have_tooltips(main_window):
               it.peak_rt_combo, it.ihw_edit,
               mt.manifest_edit, mt.coeff_combo, mt.label_combo, mt.depth_spin,
               mt.ria_spin, mt.qvalue_spin,
-              pt.fit_dir_edit, pt.parsimony_combo, pt.min_peptides_spin):
+              pt.manifest_edit, pt.parsimony_combo, pt.min_peptides_spin):
         assert w.toolTip(), f"{type(w).__name__} is missing a tooltip"
 
 
@@ -302,6 +302,23 @@ def test_protein_tab_build_params_defaults(main_window):
     assert params["min_peptides"] == 2
     assert params["min_points"] == 3
     assert params["min_r2"] is None  # 0 on the spin -> gate off
+
+
+def test_protein_tab_is_on_the_manifest_path(main_window):
+    """The rollup tab takes a manifest, like Integrate (SDRF) and Model (manifest).
+
+    The GUI runs the SDRF/manifest project path only; the fit-output-directory
+    input is retired (CLI-only). `build_params` must surface the manifest, and the
+    old ``fit_dir`` key/field must be gone so a stale reference can't creep back.
+    """
+    tab = main_window.protein_tab
+    assert hasattr(tab, "manifest_edit")
+    assert not hasattr(tab, "fit_dir_edit")
+
+    tab.manifest_edit.setText("/proj/riana_manifest.tsv")
+    params = tab.build_params()
+    assert params["manifest"] == "/proj/riana_manifest.tsv"
+    assert "fit_dir" not in params
 
 
 def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
@@ -774,6 +791,109 @@ def test_dataframe_model_sorts_numeric_by_value():
 
     model.sort(0, Qt.SortOrder.DescendingOrder)
     assert list(model.dataframe["k"]) == [100.0, 10.0, 9.0]
+
+
+def test_dataframe_model_data_matches_iat_display():
+    """The ndarray-cached ``data()`` renders byte-identically to a ``.iat`` read.
+
+    ``data()`` reads a per-column numpy cache rather than ``DataFrame.iat`` for
+    speed on the per-cell-per-repaint hot path; this pins that the cache does not
+    change any *rendered* value across the dtypes the result tables carry (float
+    with NaN, int, object strings, bool) — before and after a sort reorders the
+    backing frame.
+    """
+    from riana.gui.models import DataFrameTableModel
+    from PySide6.QtCore import Qt
+
+    def ref(df, r, c):  # the old iat-based data() body, verbatim
+        v = df.iat[r, c]
+        return f"{v:.4g}" if isinstance(v, float) else str(v)
+
+    df = pd.DataFrame({
+        "k_deg": [0.123456, 1234.5, float("nan"), 9.0],
+        "n_points": [3, 12, 7, 100],
+        "protein": ["sp|P1|A", "sp|P2|B", "", "sp|P3|C"],
+        "converged": [True, False, True, False],
+    })
+    model = DataFrameTableModel()
+    model.set_dataframe(df)
+
+    def assert_all_cells_match():
+        for r in range(model.rowCount()):
+            for c in range(model.columnCount()):
+                got = model.data(model.index(r, c), Qt.ItemDataRole.DisplayRole)
+                assert got == ref(model.dataframe, r, c), (r, c, got)
+
+    assert_all_cells_match()
+    model.sort(0, Qt.SortOrder.DescendingOrder)  # rebuilds the cache
+    assert_all_cells_match()
+
+
+def test_integrate_scan_spans_match_old_full_scan():
+    """The precomputed ``concat -> (min,max)`` map equals the old per-click scan.
+
+    ``_show_chromatogram`` used to derive the scan span with
+    ``df[df["concat"] == x]["scan"].astype(int)`` min/max on every selection;
+    ``_build_scan_spans`` precomputes the same values once. This pins the
+    replacement is behaviour-preserving (incl. duplicate concats and an MBR
+    ``scan == -1`` row) and that missing/empty frames degrade to an empty map.
+    """
+    from riana.gui.integrate_tab import IntegrateTab
+
+    df = pd.DataFrame({
+        "concat": ["A_2", "A_2", "B_3", "A_2", "B_3"],
+        "scan": [10, -1, 7, 20, 7],  # A_2 carries an MBR -1, as the real frame can
+    })
+    spans = IntegrateTab._build_scan_spans(df)
+    for c in df["concat"].unique():  # reference = the old full-frame scan
+        same = df[df["concat"] == c]["scan"].astype(int)
+        assert spans[c] == (int(same.min()), int(same.max()))
+    assert spans == {"A_2": (-1, 20), "B_3": (7, 7)}
+
+    assert IntegrateTab._build_scan_spans(pd.DataFrame()) == {}
+    assert IntegrateTab._build_scan_spans(pd.DataFrame({"concat": ["X"]})) == {}
+
+
+def test_integrate_tab_filters_and_caps_rows(main_window):
+    """The Integrate view is capped to `_MAX_DISPLAY_ROWS` and narrowed by the
+    filter box, while the full result is retained off-model.
+
+    A multi-file concat is 10⁵–10⁶ rows; the model must only ever hold a
+    filtered + capped view (so sort/selection/memory stay bounded), and the
+    filter must reach a peptide the cap left off-screen — matching sequence,
+    protein id, or concat, case-insensitively.
+    """
+    from riana.gui.integrate_tab import IntegrateTab, _MAX_DISPLAY_ROWS
+
+    tab = main_window.integrate_tab
+    n = _MAX_DISPLAY_ROWS + 50  # more than the cap for the common sequence
+    df = pd.DataFrame({
+        "file_idx": [0] * (n + 3),
+        "scan": list(range(n)) + [1, 2, 3],
+        "sequence": ["PEPTIDEK"] * n + ["RARESEQK"] * 3,
+        "protein id": ["sp|P1|COMMON"] * n + ["sp|P2|RARE"] * 3,
+        "concat": [f"PEPTIDEK_{i % 4 + 1}" for i in range(n)] + ["RARESEQK_2"] * 3,
+    })
+    tab._full_df = df
+    tab._search_key = tab._build_search_key(df)
+
+    # No filter → capped to the display max, but the label reports the full total.
+    tab.filter_edit.setText("")
+    tab._apply_filter()
+    assert len(tab.model.dataframe) == _MAX_DISPLAY_ROWS
+    assert f"{n + 3:,}" in tab.rows_label.text()          # full total, not the cap
+
+    # Filter to the rare protein → 3 matches, all shown, none of the common rows.
+    tab.filter_edit.setText("P2")
+    tab._apply_filter()
+    assert len(tab.model.dataframe) == 3
+    assert set(tab.model.dataframe["protein id"]) == {"sp|P2|RARE"}
+
+    # Case-insensitive, and matches the sequence column too.
+    tab.filter_edit.setText("rareseq")
+    tab._apply_filter()
+    assert len(tab.model.dataframe) == 3
+    assert set(tab.model.dataframe["sequence"]) == {"RARESEQK"}
 
 
 def test_all_result_tables_have_sorting_enabled(main_window):

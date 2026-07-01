@@ -14,13 +14,79 @@ estimate with Δmass/Δspacing QC, modern D₂O labelling-site tables, and the p
 upgrade. The curation + correctness: a label-aware **Spep gate**, LC-fraction collapse with
 winner-fraction MBR and a fraction-aware mass merge, and an internal label-taxonomy
 cleanup. The UX: CLI progress bars for `fit`/`rollup`, an isotopomer bar chart and a fixed
-hint area in the GUI, and the GUI narrowed to the SDRF/manifest path. See `PROJECT_REVIEW.md`
-§3. Entries are grouped by the work that produced them.
+hint area in the GUI, the GUI narrowed to the SDRF/manifest path, and a results-display
+performance pass so the GUI stays responsive on the large result frames the recent
+multi-file series produce. See `PROJECT_REVIEW.md` §3. Entries are grouped by the work that
+produced them.
 
 > **Results-affecting defaults (read before upgrading a pipeline):** the default D₂O
 > coefficient table changed to `deberneh_2025_rss` (was the 1983 tritium values), and a
 > Spep curation floor is now applied by default (8 for `hw`/D₂O, 6 for `o18`). Pass the
 > prior table explicitly and `--min-spep 0` to reproduce 1.0.0 numbers.
+
+### GUI — results responsiveness on large frames — 2026-07-01
+
+GUI results-display items promoted from the 1.1.1 plan into 1.1.0 (worked one at
+a time): make the results tables and the chromatogram view usable on the large
+frames the multi-file iPSC/cardiac series now produce.
+
+#### Performance
+
+- **The Integrate chromatogram no longer stutters per row-click on a large
+  frame.** Selecting a peptide derived its scan span with a
+  `df[df["concat"] == x]["scan"]` scan of the *whole* results frame — ~8 ms per
+  click at 248k rows, ~160 ms on a millions-row fractionated concat, on the UI
+  thread. The `concat → (min_scan, max_scan)` map is now computed **once** per
+  result (one vectorised groupby, ~75 ms at 248k rows, off the interactive path)
+  and the click is an **O(1) dict lookup**. The span is identical to the old
+  scan (a test pins parity, incl. an MBR `scan == -1` row); a peptide absent from
+  the map falls back to the extractor's default window.
+- **The results tables (Integrate / Model / Protein) no longer lag on large
+  frames.** `DataFrameTableModel.data()` — Qt's per-cell, per-repaint hot path —
+  read every cell through `DataFrame.iat`, whose pandas scalar-lookup overhead
+  (~7 µs/cell) cost **4–13 ms per repaint** for a screenful, so scrolling,
+  hovering, and row-selection were visibly janky once the frame was large (a
+  multi-file `integrate` concat is 10⁵–10⁶ rows — the 24-file LVE/ATR set alone
+  is ~248k rows × 40 cols, and a fractionated series is millions). The model now
+  caches each column as a **native-dtype numpy array** once per (re)assignment
+  and indexes those in `data()`: **~12× faster repaints** (measured 12.4 → 1.0 ms
+  on a 247k-row × 40-col frame; the residual is unavoidable Qt marshalling), with
+  the rendered string **byte-identical** to the old path — a test pins this
+  across float / int / str / bool, before and after a header sort. The cache is
+  per-column so dtypes are preserved (floats stay float for the `:.4g` format);
+  there is deliberately **no whole-frame stringify** (that would be ~2.5 s on a
+  247k-row frame, seconds-to-minutes on a fractionated one). Building it is
+  O(columns) — each `to_numpy()` is a cheap view — so it rides the existing model
+  reset for free.
+
+#### Added
+
+- **The Integrate results table has a filter box and a display cap.** A
+  multi-file `integrate` concat is 10⁵–10⁶ rows (the 24-file LVE/ATR set is
+  ~248k; a 384-file fractionated iPSC series is millions), and handing all of
+  them to the view makes sort / selection / memory the bottleneck no matter how
+  fast the model is — and nobody scrolls millions of rows to find a peptide. The
+  table now shows at most **5,000 rows** at once, with a filter box that narrows
+  by **sequence / protein id / concat** (case-insensitive substring) and a
+  "showing N of M" note. Only the *view* is capped: the full result is kept in
+  memory (and on disk in each run's `_riana.txt`), so sorting, selection, and the
+  chromatogram/isotopomer views on the shown rows stay bounded and instant
+  regardless of run count. The filter is debounced (250 ms) and matches a single
+  precomputed `str.contains` key, so it stays responsive on the millions-row
+  frame (~0.6 s/search there, sub-100 ms on the 248k set).
+
+#### Changed
+
+- **The Protein (rollup) tab now takes a `riana_manifest.tsv`, not a fit-output
+  directory.** The GUI runs the SDRF / manifest project path only — matching the
+  Integrate *SDRF* and Model *Manifest* fields — and the rollup tab was the last
+  holdout still asking for a folder. It now locates the fit outputs from the
+  manifest's `stage="fit"` rows (`fit_outputs_from_manifest`, the same resolver
+  `rollup --manifest` uses), writes `riana_rollup_proteins.txt` /
+  `riana_rollup_fractions.txt` next to the manifest, and records the
+  `stage="rollup"` rows — so one manifest drives the whole `integrate → fit →
+  rollup` chain in the GUI exactly as on the CLI. The fit-directory rollup stays
+  CLI-only (`riana rollup <fit_dir>`).
 
 ### Rollup — scale-free relative-uncertainty curation gate — 2026-07-01
 
