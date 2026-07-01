@@ -79,6 +79,28 @@ def make_provenance(
     )
 
 
+def read_provenance_header(path: str | os.PathLike[str]) -> dict[str, str]:
+    """Parse the ``# key value`` provenance header of a Riana output file.
+
+    The inverse of :meth:`Provenance.comment_lines`: returns the leading
+    ``# key value`` comment lines (``riana``, ``git``, ``config_hash``,
+    ``id_source``, and any ``extra`` such as ``model`` / ``label`` / ``method``)
+    as a dict, stopping at the first non-comment line. Used when *displaying* a
+    prior result (GUI "Load results"): the estimates are in the table, but the
+    model that shaped the fitted curve lives only here. Unknown / malformed lines
+    are skipped; a value may contain spaces (only the first token is the key).
+    """
+    header: dict[str, str] = {}
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.startswith("#"):
+                break
+            parts = line[1:].strip().split(None, 1)
+            if len(parts) == 2:
+                header[parts[0]] = parts[1]
+    return header
+
+
 def hash_config(config: Mapping[str, object]) -> str:
     """SHA-256 (16 hex chars) of a canonical JSON dump of *config*."""
     payload = json.dumps(_canonicalise(dict(config)), sort_keys=True, default=str)

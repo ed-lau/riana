@@ -51,7 +51,7 @@ from riana.core.fitting import available_coefficient_presets
 from riana.core.fitting import peptide_summary
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
-from riana.gui.tasks import run_fit_manifest
+from riana.gui.tasks import load_fit_results, run_fit_manifest
 from riana.io.writers import (
     ESTIMATE_FLOAT_FORMAT,
     make_provenance,
@@ -89,6 +89,8 @@ class ModelTab(QWidget):
         #: (concat, result-row) of the table selection, so the Fit/Δ view toggle can
         #: re-render the same peptide without a fresh row-change event.
         self._selected: tuple[str, pd.Series] | None = None
+        #: whether the selected manifest already has saved fit results to display.
+        self._results_available = False
 
         self._build_ui()
 
@@ -118,6 +120,9 @@ class ModelTab(QWidget):
             "riana_manifest.tsv from `integrate` — curves are grouped by (experiment, condition) with the timepoint from the SDRF identity.")
         self.manifest_edit.setPlaceholderText(
             "riana_manifest.tsv from `integrate` (the SDRF path)")
+        # Detect already-computed fit results when a manifest is entered, so the
+        # Load button + hint can offer to display them without re-running.
+        self.manifest_edit.editingFinished.connect(self._check_for_saved_results)
         man_row = QHBoxLayout()
         man_row.addWidget(self.manifest_edit, stretch=1)
         man_browse = QPushButton("Browse…")
@@ -243,9 +248,22 @@ class ModelTab(QWidget):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._on_cancel)
+        self.load_button = QPushButton("Load results")
+        self.load_button.setEnabled(False)
+        self.load_button.setToolTip(
+            "Display the fit results already saved next to this manifest "
+            "(the stage='fit' rows) without re-running. 'Run' recomputes with "
+            "the current form settings instead.")
+        self.load_button.clicked.connect(self._on_load)
         buttons.addWidget(self.run_button)
         buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.load_button)
         form.addRow(_row(buttons))
+
+        self.results_hint = QLabel("")
+        self.results_hint.setStyleSheet("color: palette(mid);")
+        self.results_hint.setWordWrap(True)
+        form.addRow(self.results_hint)
 
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #b00020;")
@@ -356,6 +374,7 @@ class ModelTab(QWidget):
         )
         if path:
             self.manifest_edit.setText(path)
+            self._check_for_saved_results()
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
@@ -601,10 +620,75 @@ class ModelTab(QWidget):
         )
 
     # --- small helpers ------------------------------------------------------ #
+    def _check_for_saved_results(self) -> None:
+        """Enable the Load button + hint when the manifest already has fit results.
+
+        A cheap manifest read (``stage="fit"`` rows) on manifest entry / after a
+        run, so the user can display a prior fit without recomputing it.
+        """
+        manifest = self.manifest_edit.text().strip()
+        found = False
+        if manifest and Path(manifest).is_file():
+            try:
+                from riana.io.manifest import read_manifest
+                found = bool(read_manifest(manifest, stage="fit"))
+            except Exception:
+                found = False
+        self._results_available = found
+        self.load_button.setEnabled(found and not self._running)
+        self.results_hint.setText(
+            "✓ saved fit results found — Load to view, or Run to recompute"
+            if found else "")
+
+    @asyncSlot()
+    async def _on_load(self) -> None:
+        """Display the fit results already saved next to the manifest (no fit)."""
+        if self._running:
+            return
+        manifest = self.manifest_edit.text().strip()
+        if not manifest or not Path(manifest).is_file():
+            self._fail("Pick a riana_manifest.tsv first.")
+            return
+        self.error_label.setText("")
+        self._selected = None
+        self._set_running(True)
+        self.progress.setRange(0, 0)  # busy
+        loop = asyncio.get_running_loop()
+        try:
+            self._info(f"loading saved fit results from {manifest} …")
+            result_df, header = await loop.run_in_executor(
+                self.pool, load_fit_results, manifest)
+            # The fitted curve needs the model that produced the results (only
+            # k_deg is in the table); take model/label from the provenance header
+            # and the rest from the current form.
+            self._last_config = dataclasses.replace(
+                self.build_config(),
+                model=header.get("model", "simple"),
+                label=header.get("label", self.label_combo.currentText()))
+            self._result_df = result_df
+            self._populate_results(result_df)
+            self.curve.show_placeholder("Select a peptide row to view its fit.")
+            n_conv = int(result_df["k_deg"].notna().sum())
+            self.summary_label.setText(
+                f"Loaded {len(result_df)} peptides from saved results "
+                f"(model={header.get('model', '?')}, "
+                f"label={header.get('label', '?')}); {n_conv} converged.")
+            self._info("loaded saved fit results.")
+        except Exception as exc:  # surface loader/IO errors inline
+            self._fail(f"{type(exc).__name__}: {exc}")
+        finally:
+            self.progress.setRange(0, 1)
+            self.progress.setValue(1)
+            self._set_running(False)
+
     def _set_running(self, running: bool) -> None:
         self._running = running
         self.run_button.setEnabled(not running)
         self.cancel_button.setEnabled(running)
+        if running:
+            self.load_button.setEnabled(False)
+        else:  # re-enable Load iff the manifest has saved results (post run/load)
+            self._check_for_saved_results()
 
     def _info(self, message: str) -> None:
         self.log.appendPlainText(message)

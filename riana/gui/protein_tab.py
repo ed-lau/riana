@@ -50,7 +50,7 @@ from PySide6.QtCore import QModelIndex, Qt
 
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
-from riana.gui.tasks import run_rollup
+from riana.gui.tasks import load_rollup_results, run_rollup
 from riana.io.writers import (
     ESTIMATE_FLOAT_FORMAT,
     make_provenance,
@@ -74,6 +74,8 @@ class ProteinTab(QWidget):
         self._result_df: pd.DataFrame | None = None
         self._points: dict = {}
         self._last_params: dict | None = None
+        #: whether the selected manifest already has saved rollup results.
+        self._results_available = False
         self._build_ui()
 
     # --- UI construction ---------------------------------------------------- #
@@ -99,6 +101,9 @@ class ProteinTab(QWidget):
             "rollup is written next to the manifest.")
         self.manifest_edit.setPlaceholderText(
             "riana_manifest.tsv (the SDRF path)")
+        # Detect already-computed rollup results when a manifest is entered, so the
+        # Load button + hint can offer to display them without re-running.
+        self.manifest_edit.editingFinished.connect(self._check_for_saved_results)
         man_row = QHBoxLayout()
         man_row.addWidget(self.manifest_edit, stretch=1)
         browse = QPushButton("Browse…")
@@ -230,9 +235,22 @@ class ProteinTab(QWidget):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._on_cancel)
+        self.load_button = QPushButton("Load results")
+        self.load_button.setEnabled(False)
+        self.load_button.setToolTip(
+            "Display the rollup results already saved next to this manifest "
+            "(the stage='rollup' rows) without re-running. 'Run' recomputes with "
+            "the current form settings instead.")
+        self.load_button.clicked.connect(self._on_load)
         buttons.addWidget(self.run_button)
         buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.load_button)
         form.addRow(_row(buttons))
+
+        self.results_hint = QLabel("")
+        self.results_hint.setStyleSheet("color: palette(mid);")
+        self.results_hint.setWordWrap(True)
+        form.addRow(self.results_hint)
 
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #b00020;")
@@ -299,6 +317,7 @@ class ProteinTab(QWidget):
             filter="Manifest (*.tsv);;All files (*)")
         if path:
             self.manifest_edit.setText(path)
+            self._check_for_saved_results()
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
@@ -502,11 +521,75 @@ class ProteinTab(QWidget):
             delta_k=row.get("delta_k"), delta_k_p_adj=row.get("delta_k_p_adj"),
         )
 
+    # --- load prior results (no recompute) ---------------------------------- #
+    def _check_for_saved_results(self) -> None:
+        """Enable the Load button + hint when the manifest already has a rollup.
+
+        A cheap manifest read (``stage="rollup"`` rows) on manifest entry / after
+        a run, so a prior rollup can be displayed without recomputing it.
+        """
+        manifest = self.manifest_edit.text().strip()
+        found = False
+        if manifest and Path(manifest).is_file():
+            try:
+                from riana.io.manifest import read_manifest
+                found = bool(read_manifest(manifest, stage="rollup"))
+            except Exception:
+                found = False
+        self._results_available = found
+        self.load_button.setEnabled(found and not self._running)
+        self.results_hint.setText(
+            "✓ saved rollup results found — Load to view, or Run to recompute"
+            if found else "")
+
+    @asyncSlot()
+    async def _on_load(self) -> None:
+        """Display the rollup results already saved next to the manifest."""
+        if self._running:
+            return
+        manifest = self.manifest_edit.text().strip()
+        if not manifest or not Path(manifest).is_file():
+            self._fail("Pick a riana_manifest.tsv first.")
+            return
+        self.error_label.setText("")
+        self._set_running(True)
+        self.progress.setRange(0, 0)  # busy
+        loop = asyncio.get_running_loop()
+        try:
+            self._info(f"loading saved rollup results from {manifest} …")
+            proteins, points, header = await loop.run_in_executor(
+                self.pool, load_rollup_results, manifest)
+            # The refit / φ-space curve needs the model that produced the results;
+            # take it from the provenance header, the rest from the form.
+            params = self.build_params()
+            params["model"] = header.get("model", params["model"])
+            self._result_df = proteins
+            self._points = points
+            self._last_params = params
+            self.model.set_dataframe(proteins)
+            self.curve.show_placeholder("Select a protein row to view its refit.")
+            n_fit = int(proteins["k_deg"].notna().sum())
+            self.summary_label.setText(
+                f"Loaded {len(proteins)} proteins from saved results "
+                f"(model={header.get('model', '?')}, "
+                f"method={header.get('method', '?')}); {n_fit} with a fitted k_deg.")
+            self._info("loaded saved rollup results.")
+        except Exception as exc:  # surface loader/IO errors inline
+            self._fail(f"{type(exc).__name__}: {exc}")
+        finally:
+            self.progress.setRange(0, 1)
+            self.progress.setValue(1)
+            self._set_running(False)
+
     # --- small helpers ------------------------------------------------------ #
     def _set_running(self, running: bool) -> None:
         self._running = running
         self.run_button.setEnabled(not running)
         self.cancel_button.setEnabled(running)
+        if running:
+            self.load_button.setEnabled(False)
+        else:  # re-enable Load iff the manifest has saved results (post run/load)
+            self._check_for_saved_results()
 
     def _info(self, message: str) -> None:
         self.log.appendPlainText(message)

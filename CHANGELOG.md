@@ -88,6 +88,27 @@ frames the multi-file iPSC/cardiac series now produce.
   rollup` chain in the GUI exactly as on the CLI. The fit-directory rollup stays
   CLI-only (`riana rollup <fit_dir>`).
 
+### GUI — display saved fit/rollup results from a manifest (no recompute) — 2026-07-01
+
+#### Added
+
+- **A "Load results" button on the Model and Protein tabs** displays the fit /
+  rollup results already saved next to a manifest, without re-running the
+  (minutes-long) fit or rollup. When a manifest carrying `stage="fit"` (Model) /
+  `stage="rollup"` (Protein) rows is entered, a hint appears ("✓ saved results
+  found — Load to view, or Run to recompute") and the button enables. The load is
+  **full-fidelity**: it reconstructs the exact in-memory shape the workers return
+  — the concat-indexed fit frame with its per-timepoint
+  `t`/`fs`/`evidence`/`metox`/`fs_ds`/`dmass`/`dspacing` list-cells, and the
+  rollup table plus the per-protein refit `points` — from the `_peptides` /
+  `_proteins` scalar summary combined with the `_fractions` substrate, so the
+  tables **and** the fitted-curve / Δspacing / φ-space views render identically to
+  a fresh run. The curve's kinetic model is read from the output's provenance
+  header (only `k_deg` is in the table; the curve shape needs the model), via a
+  new `read_provenance_header`. New off-the-Qt-loop workers `load_fit_results` /
+  `load_rollup_results` (`riana.gui.tasks`). The Integrate tab's equivalent — its
+  output folder as the project locator — is a planned follow-up.
+
 ### Rollup — scale-free relative-uncertainty curation gate — 2026-07-01
 
 #### Changed

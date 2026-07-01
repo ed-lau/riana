@@ -197,6 +197,100 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
     assert len(a_t) == len(a_fs) > 0
 
 
+def _build_manifest_project(tmp_path):
+    """Leave a manifest project on disk as integrate→fit→rollup would.
+
+    Writes fit + rollup outputs next to the manifest and records the ``stage="fit"``
+    / ``stage="rollup"`` rows, so the "Load results" path has something to read.
+    Returns the manifest path.
+    """
+    from riana.core.fitting import peptide_summary
+    from riana.core.pipeline import record_stage_rows
+    from riana.core.protein import build_rollup_fractions
+    from riana.io.manifest import append_manifest
+    from riana.io.writers import (
+        ESTIMATE_FLOAT_FORMAT, make_provenance, write_dataframe_tsv)
+    from tests.test_pipeline import (
+        _coeffs, _integrate_rows_from_dfs, _make_timepoint_dfs)
+
+    coeffs = _coeffs()
+    rows = _integrate_rows_from_dfs(
+        tmp_path, _make_timepoint_dfs(coeffs), condition="control")
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    coeff_csv = tmp_path / "coeffs.csv"
+    pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
+                 ).to_csv(coeff_csv, index=False)
+
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06)
+    fit_df = run_fit_manifest(config, str(mf), str(coeff_csv))
+    prov = make_provenance(
+        {"model": "simple"}, id_source=str(mf),
+        extra={"model": "simple", "label": "hw", "coefficients": str(coeff_csv)})
+    pep = tmp_path / "riana_fit_peptides.txt"
+    write_dataframe_tsv(pep, peptide_summary(fit_df), prov, include_index=True,
+                        float_format=ESTIMATE_FLOAT_FORMAT)
+    frac = tmp_path / "riana_fit_fractions.txt"
+    write_dataframe_tsv(frac, fit_df.attrs["fractions_long"], prov,
+                        include_index=False, float_format=ESTIMATE_FLOAT_FORMAT)
+    record_stage_rows(str(mf), "fit", [pep, frac], fit_df, prov)
+
+    result, _points = run_rollup(
+        str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    rprov = make_provenance(
+        {"model": "simple"}, id_source=str(mf),
+        extra={"model": "simple", "method": "weighted", "parsimony": "unique"})
+    rprot = tmp_path / "riana_rollup_proteins.txt"
+    write_dataframe_tsv(rprot, result, rprov, include_index=False,
+                        float_format=ESTIMATE_FLOAT_FORMAT)
+    rfrac = tmp_path / "riana_rollup_fractions.txt"
+    write_dataframe_tsv(rfrac, build_rollup_fractions(result), rprov,
+                        include_index=False, float_format=ESTIMATE_FLOAT_FORMAT)
+    record_stage_rows(str(mf), "rollup", [rprot, rfrac], result, rprov)
+    return mf
+
+
+def test_read_provenance_header_parses_key_values(tmp_path):
+    """`read_provenance_header` returns the `# key value` lines, stopping at data."""
+    from riana.io.writers import read_provenance_header
+
+    p = tmp_path / "out.txt"
+    p.write_text("# riana 1.1.0\n# model simple\n# label hw\n"
+                 "concat\tk_deg\nPEP_2\t0.1\n")
+    h = read_provenance_header(p)
+    assert h["riana"] == "1.1.0" and h["model"] == "simple" and h["label"] == "hw"
+    assert "concat" not in h  # parsing stops at the first non-comment line
+
+
+def test_load_fit_results_reconstructs_curve_substrate(tmp_path):
+    """`load_fit_results` rebuilds the concat-indexed frame with per-timepoint
+    list-cells (the curve substrate) + the provenance header (the model)."""
+    from riana.gui.tasks import load_fit_results
+
+    mf = _build_manifest_project(tmp_path)
+    result, header = load_fit_results(str(mf))
+    assert result.index.name == "concat"
+    assert {"t", "fs", "evidence", "fs_ds", "dmass", "dspacing"} <= set(result.columns)
+    assert header.get("model") == "simple" and header.get("label") == "hw"
+    r = result[result["k_deg"].notna()].iloc[0]
+    assert len(r["t"]) == len(r["fs"]) > 0  # aligned per-timepoint points
+
+
+def test_load_rollup_results_reconstructs_table_and_points(tmp_path):
+    """`load_rollup_results` rebuilds the protein table + the per-protein refit
+    points keyed by (experiment, condition, protein) + the model header."""
+    from riana.gui.tasks import load_rollup_results
+
+    mf = _build_manifest_project(tmp_path)
+    proteins, points, header = load_rollup_results(str(mf))
+    assert {"protein", "k_deg"} <= set(proteins.columns)
+    assert header.get("model") == "simple" and header.get("method") == "weighted"
+    assert len(points) >= 1
+    row = proteins.iloc[0]
+    assert (row["experiment"], row["condition"], row["protein"]) in points
+
+
 @pytest.mark.skipif(not MZML.exists(), reason="sample1 BSA mzML missing")
 def test_plan_sdrf_integration_worker_builds_runtasks(tmp_path):
     """The Integrate-tab SDRF planning worker resolves SDRF+mzTab -> RunTasks."""
@@ -319,6 +413,55 @@ def test_protein_tab_is_on_the_manifest_path(main_window):
     params = tab.build_params()
     assert params["manifest"] == "/proj/riana_manifest.tsv"
     assert "fit_dir" not in params
+
+
+def _bare_integrate_manifest(dir_):
+    """An integrate-only manifest (no fit/rollup rows) — the negative case."""
+    from riana.io.manifest import append_manifest
+    from tests.test_pipeline import (
+        _coeffs, _integrate_rows_from_dfs, _make_timepoint_dfs)
+
+    dir_.mkdir()
+    mf = dir_ / "riana_manifest.tsv"
+    append_manifest(mf, _integrate_rows_from_dfs(
+        dir_, _make_timepoint_dfs(_coeffs()), condition="control"))
+    return mf
+
+
+def test_model_tab_detects_saved_fit_results(main_window, tmp_path):
+    """A manifest with stage='fit' rows enables the Model tab's Load button; an
+    integrate-only manifest does not."""
+    tab = main_window.model_tab
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    tab.manifest_edit.setText(str(_build_manifest_project(proj)))
+    tab._check_for_saved_results()
+    assert tab.load_button.isEnabled()
+    assert "found" in tab.results_hint.text().lower()
+
+    tab.manifest_edit.setText(str(_bare_integrate_manifest(tmp_path / "bare")))
+    tab._check_for_saved_results()
+    assert not tab.load_button.isEnabled()
+    assert tab.results_hint.text() == ""
+
+
+def test_protein_tab_detects_saved_rollup_results(main_window, tmp_path):
+    """A manifest with stage='rollup' rows enables the Protein tab's Load button;
+    an integrate-only manifest does not."""
+    tab = main_window.protein_tab
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    tab.manifest_edit.setText(str(_build_manifest_project(proj)))
+    tab._check_for_saved_results()
+    assert tab.load_button.isEnabled()
+    assert "found" in tab.results_hint.text().lower()
+
+    tab.manifest_edit.setText(str(_bare_integrate_manifest(tmp_path / "bare")))
+    tab._check_for_saved_results()
+    assert not tab.load_button.isEnabled()
+    assert tab.results_hint.text() == ""
 
 
 def test_protein_tab_plots_refit_curve_on_row_selection(main_window):

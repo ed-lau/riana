@@ -210,3 +210,113 @@ def run_rollup(
         reference_condition=reference_condition,
     )
     return result, result.attrs.get("protein_points", {})
+
+
+# --------------------------------------------------------------------------- #
+# Load prior results for display (the GUI "Load results" button) — no recompute.
+# These reconstruct the exact in-memory shapes `run_fit_manifest` / `run_rollup`
+# return, from the on-disk outputs, so the tabs' existing table + curve code
+# renders a loaded result identically to a freshly-run one.
+# --------------------------------------------------------------------------- #
+def load_fit_results(manifest_path: str) -> tuple[pd.DataFrame, dict]:
+    """Load a prior ``riana fit`` result for display (no recompute).
+
+    Reconstructs the frame ``fit_project`` returns — concat-indexed, carrying the
+    per-timepoint ``t`` / ``fs`` / ``evidence`` / ``metox`` / ``fs_ds`` / ``dmass`` /
+    ``dspacing`` list-cells the Model-tab curve needs — from the on-disk
+    ``riana_fit_peptides.txt`` (the scalar summary) + ``riana_fit_fractions.txt``
+    (the per-timepoint substrate), located from the manifest's ``stage="fit"``
+    rows. Also returns the peptides file's provenance header, so the caller can
+    plot the fitted curve with the **model that produced it** (only ``k_deg`` is in
+    the table; the curve shape needs the model).
+    """
+    from riana.core.pipeline import fit_outputs_from_manifest
+    from riana.io.writers import read_provenance_header
+
+    pep_path, frac_path = fit_outputs_from_manifest(manifest_path)
+    peptides = pd.read_table(pep_path, comment="#")
+    fractions = pd.read_table(frac_path, comment="#")
+    return _reconstruct_fit_wide(peptides, fractions), read_provenance_header(pep_path)
+
+
+def _reconstruct_fit_wide(
+    peptides: pd.DataFrame, fractions: pd.DataFrame
+) -> pd.DataFrame:
+    """Attach the per-timepoint list-cells from *fractions* onto *peptides*.
+
+    The written peptides file is a scalar summary; the per-timepoint detail lives
+    in the fractions file. Grouping the fractions by the curve key and collecting
+    each channel back into a list rebuilds the ``t`` / ``fs`` / … list-cells the
+    curve plot reads, indexed by ``concat`` exactly like the fitted frame.
+    """
+    keys = [k for k in ("concat", "experiment", "condition")
+            if k in peptides.columns and k in fractions.columns]
+
+    def _iso_cols(prefix: str) -> list[str]:
+        return sorted((c for c in fractions.columns if c.startswith(prefix)),
+                      key=lambda c: int(c.rsplit("iso", 1)[1]))
+
+    dmass_cols, dspacing_cols = _iso_cols("dmass_iso"), _iso_cols("dspacing_iso")
+    # metox round-trips as a real bool via pandas; coerce defensively if it came
+    # back as text ("False" is truthy, which would mis-colour every point).
+    if "metox" in fractions.columns and fractions["metox"].dtype == object:
+        fractions = fractions.copy()
+        fractions["metox"] = (fractions["metox"].astype(str).str.strip()
+                              .str.lower().isin(("true", "1")))
+
+    ordered = fractions.sort_values("labeling_time", kind="mergesort")
+    per: dict[tuple, dict] = {}
+    for key_vals, grp in ordered.groupby(keys, sort=False):
+        rec = {"t": grp["labeling_time"].tolist(), "fs": grp["fs"].tolist()}
+        for col in ("evidence", "metox", "fs_ds"):
+            if col in grp.columns:
+                rec[col] = grp[col].tolist()
+        if dmass_cols:
+            rec["dmass"] = grp[dmass_cols].to_numpy().tolist()
+        if dspacing_cols:
+            rec["dspacing"] = grp[dspacing_cols].to_numpy().tolist()
+        per[key_vals if isinstance(key_vals, tuple) else (key_vals,)] = rec
+
+    out = peptides.copy()
+    pep_keys = list(zip(*[peptides[k] for k in keys]))  # key tuple per peptides row
+    for col in ("t", "fs", "evidence", "metox", "fs_ds", "dmass", "dspacing"):
+        out[col] = [per.get(kt, {}).get(col, []) for kt in pep_keys]
+    return out.set_index("concat")
+
+
+def load_rollup_results(manifest_path: str) -> tuple[pd.DataFrame, dict, dict]:
+    """Load a prior ``riana rollup`` result for display (no recompute).
+
+    Returns ``(protein_table, points, header)`` — the ``riana_rollup_proteins.txt``
+    table, the ``{(experiment, condition, protein): (t_list, fs_list)}`` collapsed
+    refit points reconstructed from ``riana_rollup_fractions.txt`` (the same
+    ``protein_points`` the worker returns, for the refit / φ-space curve), and the
+    proteins file's provenance header (for the model). Located from the manifest's
+    ``stage="rollup"`` rows.
+    """
+    from pathlib import Path
+
+    from riana.exceptions import DataError
+    from riana.io.manifest import read_manifest
+    from riana.io.writers import read_provenance_header
+
+    rows = read_manifest(manifest_path, stage="rollup")
+    prot = next((r.output_path for r in rows
+                 if r.output_path.endswith("rollup_proteins.txt")), None)
+    frac = next((r.output_path for r in rows
+                 if r.output_path.endswith("rollup_fractions.txt")), None)
+    if prot is None:
+        raise DataError(
+            f"no rollup output in manifest {manifest_path} — run rollup first.")
+    proteins = pd.read_table(prot, comment="#")
+
+    points: dict[tuple, tuple[list, list]] = {}
+    if frac is not None and Path(frac).exists():
+        fr = pd.read_table(frac, comment="#")
+        keys = [k for k in ("experiment", "condition", "protein")
+                if k in fr.columns]
+        for key_vals, grp in fr.sort_values(
+                "labeling_time", kind="mergesort").groupby(keys, sort=False):
+            k = key_vals if isinstance(key_vals, tuple) else (key_vals,)
+            points[k] = (grp["labeling_time"].tolist(), grp["fs"].tolist())
+    return proteins, points, read_provenance_header(prot)
