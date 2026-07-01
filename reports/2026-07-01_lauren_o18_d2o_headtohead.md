@@ -78,22 +78,45 @@ scale**; ¹⁸O agrees on ranking but carries a 1.5× scale offset from the tran
 This is the cleanest statement yet of "D₂O matched-table = quantitative; ¹⁸O transferred =
 rank-only" — and it holds between lines, not just within one.
 
-## The open item — yield
+## Yield — DIAGNOSED (sampling design × R² metric, + ~1.5× noise)
 
-lauren yield (9–15 %) sits ~3–4× below boomi (33–43 %) while CV and ρ are unchanged. Since
-low yield leaves the trustworthy readouts intact (it dropped n, not the numbers), it is a
-data-quality / regime question, not an estimator one. Leading candidates, next session:
+lauren yield (9–15 %) sits ~3–4× below boomi (33–43 %) while CV and ρ are unchanged.
+Full work-up in [`2026-07-01_lauren_yield_gap_diagnosis.md`](2026-07-01_lauren_yield_gap_diagnosis.md)
+(`runs/lauren_yield_diagnostics.py`). Verdict: **it is a sampling-design × metric effect that
+drops n without biasing the surviving numbers — not slower turnover and not a failed MS run.**
 
-1. **Lower ¹⁸O enrichment** (RIA 0.079 vs boomi's 0.090) — a smaller envelope shift per
-   timepoint lowers per-peptide R² (D₂O RIA is identical to boomi, yet D₂O yield is also
-   down, so this is at most partial).
-2. **Crash-recovered raw quality** — the empty scans were one visible symptom; broader
-   per-spectrum noise would depress R² across the board (fits both labels being down).
-3. **Multi-fraction collapse** — summing intensities across 8 fractions could add
-   cross-fraction variance; boomi/juber never exercised this path.
+- **Not turnover** — k distributions comparable (lauren ¹⁸O med 0.038 vs boomi 0.045; lauren
+  D₂O 0.039 *faster* than boomi 0.032).
+- **Not lost IDs** — lauren has *more* PSMs, proteins, and timepoints (median n_points 18 vs 15).
+  Curation is a quantitative-SNR gate, not an identification one — hence 7 k IDs above 3–4× lower
+  curation. The "few shared peptides" (742 vs 3002) is the intersection of two ~10–15 % arms
+  (arithmetic), not disagreement (ρ still 0.67).
+- **Dominant cause** — lauren crams **11 of 12 timepoints into 0→7 h** (FS ≤ 0.23, signal ≈ noise)
+  with no sampling on the 7→24 h rising shoulder, so the pinned-exponential R² is depressed even
+  for good fits (flat-curve pathology; R²-vs-k arch peaks mid-k, collapses low/high-k in *both*
+  sets). Compounded by a **~1.5× higher noise floor** (t0 FS MAD 0.13–0.14 vs boomi 0.09).
 
-First diagnostics: per-timepoint curated-FS accumulation and the R²-distribution shape,
-lauren vs boomi, per label; and a fraction-collapse-off spot check.
+### Curation-gate sensitivity — a CI (dk) rescue (Lau 2018)
+
+R² is the wrong *sole* gate for flat / low-dynamic-range curves; the principled fix gates on the
+**rate-constant's relative uncertainty** `relunc = (ci_hi − ci_lo)/(2k)` (90 % bootstrap CI
+half-width over k — a coefficient of variation of k̂; Lau 2018 / Sadygov d2ome). Second gate =
+**R² > 0.8 OR (R² > 0.6 AND relunc < 0.25)** (`runs/gate_comparison.py`):
+
+| arm | yield (strict → rescue) | within-prot geomCV | D₂O↔¹⁸O pep ρ |
+|---|---|---|---|
+| lauren ¹⁸O | 8.4 → **17.2 %** | 0.159 → 0.216 | — |
+| lauren D₂O | 13.8 → **24.7 %** | 0.137 → 0.193 | — |
+| lauren head-to-head | — | — | 0.670 → **0.642** (n 742 → 1745) |
+| boomi ¹⁸O / D₂O (ref) | 28.5→35.5 / 30.9→42.5 % | 0.140→0.180 / 0.139→0.184 | 0.679 → 0.656 |
+
+The rescue ~**doubles lauren yield**, narrowing the gap to boomi (~2× from ~3.4×), while the
+within-protein CV stays clean (< 0.25), the peptide ranking is preserved (ρ drops ≤ 0.03), and the
+absolute-scale conclusions are unchanged (log₂ +0.17 → +0.20). It lifts boomi too — a genuine
+low-dynamic-range recovery, not a lauren crutch. A *naive* CI gate (relunc < 1, no R² floor)
+over-rescues (geomCV → 0.64). Adopting the rescue as a Riana default is a scoped follow-up
+(calibrate threshold + within-protein-CV guardrail); the strict R² > 0.8 numbers above remain the
+conservative primary.
 
 ## Reproduce
 

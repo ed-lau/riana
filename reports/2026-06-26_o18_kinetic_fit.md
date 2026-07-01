@@ -62,6 +62,32 @@ iPSC is analysis-grade: ¹⁸O *out-curates* D₂O (43% vs 33%), the two **agree
 
 **Depth robustness.** Stable across `--depth` 3/4/6: peptide Spearman ~0.65 (AC16) / 0.66 (iPSC), bias stable, ¹⁸O ≈ D₂O geomCV at every depth. Deeper coverage *raises* yield (iPSC 36→43%, since ≥6-timepoint peptides are the abundant well-measured ones — sparse peptides *dilute* yield, not inflate it) and tightens within-protein geomCV ~10% (sparse 3-point fits carry unreliable k). So **depth 6 is the analytical-grade default** — it sharpens the metrics without changing a single conclusion.
 
+## Curation-gate sensitivity — a CI (dk) rescue
+
+R² is a *goodness-of-fit* statistic that collapses when a curve is flat (low k or low dynamic
+range) even for a well-measured peptide — the issue Lau et al. *Nat Commun* 2018 (and Sadygov's
+d2ome) address by gating on the **rate constant's confidence interval** instead. The legacy RMD
+optimizer this pipeline descends from (`optim_util.R::fitRiana`) computes exactly that — an
+analytical `dk` (SE of k from dA/dk); Riana already emits the bootstrap analogue
+(`sd`/`ci_lo`/`ci_hi`, 5–95th pct). Second gate =
+**R² > 0.8 OR (R² > 0.6 AND `relunc` < 0.25)**, `relunc = (ci_hi − ci_lo)/(2k)` (90 % CI
+half-width over k, a coefficient of variation of k̂). Effect on the head-to-head
+(`runs/gate_comparison.py`; strict → rescue):
+
+| dataset | yield ¹⁸O / D₂O | within-prot geomCV ¹⁸O / D₂O | peptide ρ | protein ρ |
+|---|---|---|---|---|
+| iPSC (boomi) | 28.5→35.5 / 30.9→42.5 % | 0.140→0.180 / 0.139→0.184 | 0.679→0.656 | 0.661→0.607 |
+| AC16 (juber) | 5.0→6.4 / 6.0→7.8 % | 0.130→0.175 / 0.136→0.164 | 0.673→0.661 | 0.606→0.620 |
+
+The rescue lifts yield everywhere (~1.2–1.4× iPSC, and ~2× on the sampling-starved lauren SCVI480
+set — [2026-07-01](2026-07-01_lauren_yield_gap_diagnosis.md)) while the within-protein CV stays
+clean (< 0.25) and the ¹⁸O↔D₂O ranking + scale conclusions are unchanged (peptide ρ drops ≤ 0.03;
+AC16 protein ρ even ticks up as more curated peptides stabilize the rollup). A *naive* CI gate
+(relunc < 1, no R² floor) over-rescues (geomCV → 0.6). This confirms the ¹⁸O curation is
+R²-metric-limited, not estimator-limited; productionizing the CI rescue (calibrated threshold +
+CV guardrail) is a scoped curation upgrade that benefits every dataset. All headline numbers
+keep the conservative strict R² > 0.8 as primary.
+
 ## R-script reconciliation
 
 The R method (`18o_fs_violin.Rmd`): **A_t = iso0/iso2** (the +2 channel single-¹⁸O lands in), mapped onto a linear interpolation between simulated natural and fully-labeled ratios, **clamped [0,1]**, curated to R²≥0.8. The "H4′-wrong" part is interpolating the *ratio* (concavity) rather than mixing intensities then taking the ratio. Reconciliation on riana's current integrate:
