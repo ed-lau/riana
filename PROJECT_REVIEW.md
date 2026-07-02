@@ -1,9 +1,10 @@
 # Riana — Roadmap & TODO
 
-> **Status (2026-06-28):** version `1.1.0` on branch `1.1.0` — the experimental-science
-> + QoL line, **release-ready** (CHANGELOG date-flip → push → tag → GitHub/Zenodo →
-> master merge-back are the only remaining mechanics; 1.0.0 is released with a Zenodo
-> DOI). The shipped record lives in `CHANGELOG.md`; **this document is the
+> **Status (2026-07-02):** version `1.1.0` **fully released** — PyPI (`riana==1.1.0`),
+> GitHub release + Zenodo DOI, and `master` merged back. The experimental-science + QoL
+> line is shipped; active development continues on the `1.1.0` branch, and the next line
+> is **1.2.0** (TMT / multiplexing, deamidation, the adaptive-N_ISO + robust-envelope
+> rework). The shipped record lives in `CHANGELOG.md`; **this document is the
 > forward-looking roadmap** — open work is §3 (the Tracks) and Known Limitations (§6).
 > §2 and M1–M4 are kept as collapsed pointers because code docstrings reference their
 > anchors (§2b/c/d, §3, Tracks A–E).
@@ -111,8 +112,10 @@ the Spep curation gate, CLI progress bars, and the GUI changes (SDRF-only, isoto
 bar chart, fixed hint area). The remaining open work lives in the Tracks below.
 
 **Deferred (named milestones):**
-- **1.1.1:** GUI displays prior results from a manifest (without refitting); GUI
-  determinate fit/rollup progress.
+- **1.1.1 — folded into 1.1.0 (shipped):** its two items — GUI display of prior
+  fit/rollup/integrate results from a manifest without refitting, and determinate
+  fit/rollup progress bars — both shipped inside 1.1.0 (see `CHANGELOG.md`), so the
+  milestone is empty.
 - **1.2.0:** TMT / multiplexing mods; deamidation (own side project); the
   adaptive-N_ISO + robust-envelope rework.
 
@@ -165,7 +168,7 @@ with the winner-fraction policy. **Open:** DIA-NN multi-fraction intake (no data
 — guard + document). The `RunIdentity` model itself is documented authoritatively in
 `riana/records.py`'s docstring.
 
-#### Track B — integration fidelity (research cluster)
+#### Track B — integration and fit fidelity (science research cluster)
 
 **Shipped** (see CHANGELOG): adaptive N_ISO at integrate (opt-in `--iso auto`), the
 H4′ mix-then-truncate FS solve, and limited-isotopomer scoring — flat `--fs` plus
@@ -196,6 +199,12 @@ threshold, the full captured envelope (e.g. iso0-5) at width ≥ 6 (`FS_AUTO_BAS
   vectorize it via `np.searchsorted` on the m/z-sorted centroids (O(log n) per channel,
   byte-identical), and/or revisit whether the apex path needs the full-concat window vs
   the narrower `anchor ± extraction_half_width` (a science decision — changes results).
+- **MS2 level integration for DIA-NN path** Explore the use of MS2 fragment isotopomer
+  information for estimating theta/FS. First check how much the isotopomer envelope is
+  truncated in MS2
+- **Other rollup options** Explore other linear simple model rollup option than the 
+  current inverse-variance weighted average and pooling, e.g., using mixture models to
+  account for peptide-level and biological-level variances.
 
 #### Track C — fitting / modeling science
 
@@ -204,14 +213,23 @@ threshold, the full captured envelope (e.g. iso0-5) at width ≥ 6 (`FS_AUTO_BAS
 `linear simple` cross-condition Δk model, the ¹⁸O rewrite, M7 PTM-aware envelope
 (phospho / N-term-Ac / K-ac / Met-Ox), the 2D-LC fraction collapse + mass-merge, and
 the within-protein-θ animal benchmark. **Open:**
-- **>2-condition pairwise Δk** — `fit_linear_deltak` handles exactly two qualifying
-  conditions; the pairwise/Tukey extension is blocked on a good ≥3-condition dataset.
+- **Selectable condition pair for the linear-simple Δk** — `fit_linear_deltak`
+  computes the fold-change / p-value on exactly two conditions. Rather than wait on
+  the full multi-group comparison (the >2-condition pairwise/Tukey extension, which
+  stays **deferred** — blocked on a good ≥3-condition dataset), let the user **pick
+  any two condition groups** as condition 1 / condition 2 for the current two-group
+  OLS. On the **CLI**, validate the two named conditions exist in the SDRF (clear
+  error otherwise); in the **GUI**, auto-populate two condition dropdowns from the
+  SDRF's condition values once the SDRF is loaded.
 - **Deamidation** (chemical fit-merge) — its own side project: the +0.984 / C13-M+1
   isobaric overlap needs joint envelope + deamidation-proportion modelling.
 - **TMT / multiplexing** (→ 1.2.0) — a third mod-handling type (sample identity): fit
   each channel separately, combine at rollup as different experiments; TMT heavy
   ¹³C/¹⁵N injected as pseudo-elements. Dimethyl/SILAC follow (SDRF channel→sample
   mapping TBD).
+- **Proper demultiplexing** (Beyond initial 1.2.0) - correct the spillover from
+light cluster into heavy cluster (e.g., iso_6 from light cluster overlaps with
+iso_9 of the SILAC heavy D2O cluster)
 - **GG-remnant (UNIMOD:121)** — Tier-2 PTM, the most turnover-relevant, but blocked
   on anti-K-ε-GG enriched D₂O data (none exists).
 - **Cross-fraction RT-correlation MBR** — winner-fraction MBR ships the conservative
@@ -223,18 +241,24 @@ the within-protein-θ animal benchmark. **Open:**
 advanced-knob exposure, the Δmass/Δspacing (`fs_ds`) Model-tab overlay, the
 isotopomer bar chart, the fixed hint area + tooltip audit, CLI progress bars, and
 the SDRF/manifest-only narrowing. **Open:**
-- **Display prior results from a manifest** (→ 1.1.1) — on loading a manifest with
-  `fit`/`rollup` rows, render the existing results before any refit; then the
-  integrate-side question (cache integration-point output vs re-read mzML; smoothing
-  reproducibility) is a separate decision. And in the integrate view, surface the
-  per-run SDRF sample / fraction info.
-- **Determinate fit/rollup progress** — make the GUI bar determinate via a
-  cross-process (Manager-queue) channel (CLI bars shipped; GUI is a busy bar).
+- **Surface per-run SDRF sample / fraction info in the Integrate view** — the
+  "display prior results from a manifest" and "determinate fit/rollup progress" items
+  this list used to carry **both shipped in 1.1.0** (Load-results on all three tabs +
+  the Manager-queue determinate bars — see `CHANGELOG.md`). The residual open piece is
+  showing each Integrate row's SDRF sample / fraction. (The integrate-side
+  cache-vs-re-read-mzML / smoothing-reproducibility question is the separate
+  `--save-traces` item below.)
 - **Faithful-to-smoothing chromatogram trace** — the GUI re-extracts the raw XIC on
   row-click, so the trace doesn't reflect the S-G smoothing integration applies. Fix
   by re-applying at click, or an optional **`--save-traces`**
   `<stem>_riana_traces.parquet` sidecar (`(concat, isotopomer) → (rt[], intensity[])`)
   that also removes the ~10 s re-read.
+- **Package `riana gui` as a standalone app** — a PyInstaller / py2app bundle (a
+  `.app` on macOS, an `.exe` on Windows) so non-Python users can launch the GUI
+  without a pip install, and macOS gets a real Dock icon / `.app` (the 2026-06-21
+  note that an unbundled `python` process can't own the Dock icon). A nearer-term,
+  lower-effort alternative to the Electron rewrite below.
+- **Explore other GUI frameworks** - Replace PyQT with a modern Electron app.
 
 #### Cross-cutting chores
 
