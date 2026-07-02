@@ -5,7 +5,7 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] — Unreleased
+## [1.1.0] — 2026-07-01
 
 The experimental-science line, opened after the 1.0.0 N_ISO finish, plus a
 quality-of-life / curation pass. The science: the ¹⁸O (H₂¹⁸O) rewrite (reverse-model
