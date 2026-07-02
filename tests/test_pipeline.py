@@ -580,6 +580,46 @@ def test_record_stage_rows_and_fit_outputs_roundtrip(tmp_path):
     assert len(read_manifest(mf, stage="fit")) == 2
 
 
+def test_resolve_manifest_write_in_place_vs_fork(tmp_path):
+    """Default / same-folder out_dir updates in place; a different out_dir forks a
+    new manifest seeded with the upstream stages' rows (absolute), original intact."""
+    from riana.core.pipeline import record_stage_rows, resolve_manifest_write
+    from riana.io.writers import make_provenance
+
+    rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(_coeffs()),
+                                    condition="control")
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    result = pd.DataFrame(
+        {"k_deg": [0.5], "experiment": ["syn"], "condition": ["control"]})
+    pep = tmp_path / "riana_fit_peptides.txt"
+    pep.write_text("x")
+    record_stage_rows(mf, "fit", [pep], result, make_provenance({"x": 1}))
+    before = len(read_manifest(mf))
+
+    # In place: default ".", the manifest's own folder, all resolve to (dir, mf).
+    assert resolve_manifest_write(mf, ".", "fit") == (tmp_path.resolve(), mf.resolve())
+    assert resolve_manifest_write(mf, str(tmp_path), "rollup") == (
+        tmp_path.resolve(), mf.resolve())
+
+    # Fork a fit into B: seeds B/manifest with the integrate rows (absolute), no
+    # fit rows yet (upstream only); the source manifest is untouched.
+    b = tmp_path / "B"
+    out_dir, target = resolve_manifest_write(mf, str(b), "fit")
+    assert out_dir == b and target == b / "riana_manifest.tsv"
+    b_int = read_manifest(target, stage="integrate")
+    assert len(b_int) == len(_TIMES)
+    assert all(Path(r.output_path).is_absolute() for r in b_int)
+    assert read_manifest(target, stage="fit") == []      # upstream only
+    assert len(read_manifest(mf)) == before               # source untouched
+
+    # Fork a rollup into C: carries integrate + fit upstream rows.
+    c = tmp_path / "C"
+    _, tc = resolve_manifest_write(mf, str(c), "rollup")
+    assert len(read_manifest(tc, stage="integrate")) == len(_TIMES)
+    assert len(read_manifest(tc, stage="fit")) == 1
+
+
 def test_aggregate_identity_blanks_mixed_groups():
     from riana.core.pipeline import aggregate_identity
     mixed = pd.DataFrame({"experiment": ["a", "b"], "condition": ["x", "x"]})

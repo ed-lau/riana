@@ -670,17 +670,17 @@ def fit(
     progress = ProgressReporter(0, "fit", logger)
 
     if manifest is not None:
-        from riana.core.pipeline import fit_project
+        from riana.core.pipeline import fit_project, resolve_manifest_write
 
-        # The manifest's folder IS the project: write outputs next to it and
-        # update that manifest, so a single --manifest drives integrate→fit→
-        # rollup. -o is ignored on this path (warn if it was set elsewhere).
-        proj_dir = Path(manifest).resolve().parent
-        if Path(out).resolve() != proj_dir and str(out) != ".":
-            logger.warning(
-                "--manifest: outputs go next to the manifest (%s); ignoring -o %s",
-                proj_dir, out)
-        out = proj_dir
+        # Default / same-folder -o updates the project in place; a *different* -o
+        # forks a self-contained derived project there, leaving this manifest
+        # untouched — so pointing -o elsewhere never clobbers the input run.
+        out_dir, target_manifest = resolve_manifest_write(manifest, out, "fit")
+        if out_dir != Path(manifest).resolve().parent:
+            logger.info(
+                "--manifest + -o: forking a derived project into %s "
+                "(input manifest left untouched)", out_dir)
+        out = out_dir
         logger.info(f"fitting from manifest {manifest}")
         result_df = fit_project(config, manifest, coeffs, logger=logger,
                                 ria_override=ria, progress_callback=progress)
@@ -738,11 +738,12 @@ def fit(
 
     # Record stage="fit" rows so `rollup --manifest` can find these outputs and
     # the manifest is the single project index (the integrate→fit→rollup chain).
+    # On a fork this is the derived project's manifest, not the input one.
     if manifest is not None:
         from riana.core.pipeline import record_stage_rows
 
-        record_stage_rows(manifest, "fit", written, result_df, provenance)
-        logger.info(f"recorded {len(written)} fit rows in {manifest}")
+        record_stage_rows(target_manifest, "fit", written, result_df, provenance)
+        logger.info(f"recorded {len(written)} fit rows in {target_manifest}")
 
     n_fitted = int(result_df["k_deg"].notna().sum())
     n_well = int((result_df["R_squared"] >= 0.9).sum())
@@ -857,7 +858,11 @@ def rollup(
     """
     import pandas as pd
 
-    from riana.core.pipeline import fit_outputs_from_manifest, record_stage_rows
+    from riana.core.pipeline import (
+        fit_outputs_from_manifest,
+        record_stage_rows,
+        resolve_manifest_write,
+    )
     from riana.core.protein import build_rollup_fractions, rollup_proteins
     from riana.exceptions import DataError
     from riana.io.writers import (
@@ -873,19 +878,21 @@ def rollup(
         raise typer.BadParameter(
             f"--workers {workers} exceeds CPU count ({os.cpu_count()}).")
 
-    ignored_out = None
+    forked_into = None
     if manifest is not None:
-        # The manifest's folder is the project: locate the fit outputs from its
-        # stage='fit' rows, write next to it, ignore -o.
+        # Locate the fit outputs from the manifest's stage='fit' rows. Default /
+        # same-folder -o writes the rollup next to the manifest (in place); a
+        # *different* -o forks a self-contained derived project there (upstream
+        # integrate+fit rows carried over), leaving this manifest untouched.
         try:
             pep_path, frac_path = (Path(p) for p in
                                    fit_outputs_from_manifest(manifest))
         except DataError as exc:
             raise typer.BadParameter(str(exc)) from exc
-        proj_dir = Path(manifest).resolve().parent
-        if Path(out).resolve() != proj_dir and str(out) != ".":
-            ignored_out = out
-        out = proj_dir
+        out_dir, target_manifest = resolve_manifest_write(manifest, out, "rollup")
+        if out_dir != Path(manifest).resolve().parent:
+            forked_into = out_dir
+        out = out_dir
         id_source = str(manifest)
     else:
         pep_path = fit_dir / "riana_fit_peptides.txt"
@@ -900,10 +907,10 @@ def rollup(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info(f"rollup (method={method}, parsimony={parsimony}, model={model})")
-    if ignored_out is not None:
-        logger.warning(
-            "--manifest: riana_rollup_proteins.txt goes next to the manifest (%s); "
-            "ignoring -o %s", out, ignored_out)
+    if forked_into is not None:
+        logger.info(
+            "--manifest + -o: forking a derived project into %s "
+            "(input manifest left untouched)", forked_into)
 
     peptides = pd.read_table(pep_path, comment="#")
     fractions = pd.read_table(frac_path, comment="#")
@@ -948,10 +955,11 @@ def rollup(
         logger.info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
         written.append(frac_path)
 
-    # Record the stage='rollup' rows so the manifest indexes the whole chain.
+    # Record the stage='rollup' rows so the manifest indexes the whole chain (the
+    # derived project's manifest on a fork, not the input one).
     if manifest is not None:
-        record_stage_rows(manifest, "rollup", written, result, provenance)
-        logger.info(f"recorded {len(written)} rollup rows in {manifest}")
+        record_stage_rows(target_manifest, "rollup", written, result, provenance)
+        logger.info(f"recorded {len(written)} rollup rows in {target_manifest}")
 
     n_fit = int(result["k_deg"].notna().sum())
     logger.info(

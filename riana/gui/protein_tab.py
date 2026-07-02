@@ -424,18 +424,19 @@ class ProteinTab(QWidget):
             self._set_running(False)
 
     def _write_output(self, result: pd.DataFrame, params: dict) -> None:
-        # The manifest's folder is the project: write the rollup outputs next to
-        # it and record stage='rollup' rows (the integrate→fit→rollup chain), the
-        # same rooting `rollup --manifest` uses. The Output dir is ignored here.
-        from riana.core.pipeline import record_stage_rows
+        # Default / same-folder Output dir updates the project in place next to the
+        # manifest (recording stage='rollup' rows — the integrate→fit→rollup
+        # chain); a *different* Output dir forks a self-contained derived project
+        # there, leaving the input manifest untouched. Mirrors `rollup --manifest`.
+        from riana.core.pipeline import record_stage_rows, resolve_manifest_write
         from riana.core.protein import build_rollup_fractions
 
         manifest = Path(params["manifest"])
-        out_dir = manifest.resolve().parent
-        if (Path(params["out_dir"]).resolve() != out_dir
-                and params["out_dir"] != "."):
-            self._info(f"manifest path: writing next to the manifest ({out_dir}); "
-                       f"ignoring Output dir {params['out_dir']}")
+        out_dir, target_manifest = resolve_manifest_write(
+            manifest, params["out_dir"], "rollup")
+        if Path(out_dir).resolve() != manifest.resolve().parent:
+            self._info(f"forking a derived project into {out_dir} "
+                       f"(input manifest left untouched)")
         provenance = make_provenance(
             {k: params[k] for k in (
                 "model", "method", "parsimony", "kp", "kr", "rp",
@@ -460,8 +461,8 @@ class ProteinTab(QWidget):
             self._info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
             written.append(frac_path)
 
-        record_stage_rows(str(manifest), "rollup", written, result, provenance)
-        self._info(f"recorded {len(written)} rollup rows in {manifest}")
+        record_stage_rows(str(target_manifest), "rollup", written, result, provenance)
+        self._info(f"recorded {len(written)} rollup rows in {target_manifest}")
 
     def _on_cancel(self) -> None:
         self._cancelled = True

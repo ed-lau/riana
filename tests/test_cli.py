@@ -205,15 +205,11 @@ def test_fit_fs_single_int_and_auto_parse(tmp_path):
     assert "--fs" in _norm((r4.output or "") + str(r4.exception or ""))
 
 
-def test_fit_and_rollup_via_manifest_chain(tmp_path):
-    """fit --manifest writes next to the manifest (ignoring -o) + records fit
-    rows; rollup --manifest reads them and records the protein row."""
-    from riana.io.manifest import append_manifest, read_manifest
+def _manifest_fit_project(tmp_path):
+    """A tmp project: an integrate-row manifest + a coefficients CSV."""
+    from riana.io.manifest import append_manifest
     from tests.test_pipeline import (
-        _coeffs,
-        _integrate_rows_from_dfs,
-        _make_timepoint_dfs,
-    )
+        _coeffs, _integrate_rows_from_dfs, _make_timepoint_dfs)
 
     coeffs = _coeffs()
     rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs),
@@ -223,16 +219,23 @@ def test_fit_and_rollup_via_manifest_chain(tmp_path):
     coeff_csv = tmp_path / "coeffs.csv"
     pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
                  ).to_csv(coeff_csv, index=False)
-    elsewhere = tmp_path / "elsewhere"
+    return mf, coeff_csv
 
-    r = runner.invoke(app, [
+
+def test_fit_and_rollup_via_manifest_chain(tmp_path):
+    """Default -o: fit/rollup --manifest write next to the manifest and record
+    their stage rows in it (the in-place integrate→fit→rollup chain)."""
+    from riana.io.manifest import read_manifest
+
+    mf, coeff_csv = _manifest_fit_project(tmp_path)
+
+    r = runner.invoke(app, [  # default -o "." -> in place, next to the manifest
         "fit", "--manifest", str(mf), "--coefficients", str(coeff_csv),
-        "-o", str(elsewhere), "-q", "0.05", "-d", "3"])
+        "-q", "0.05", "-d", "3"])
     assert r.exit_code == 0, r.output
     pep_file = tmp_path / "riana_fit_peptides.txt"
-    assert pep_file.exists()                                    # next to manifest
+    assert pep_file.exists()
     assert (tmp_path / "riana_fit_fractions.txt").exists()
-    assert not (elsewhere / "riana_fit_peptides.txt").exists()  # -o ignored
     assert len(read_manifest(mf, stage="fit")) == 2
 
     # The peptides file is the scalar summary (per-timepoint detail is in the
@@ -250,6 +253,44 @@ def test_fit_and_rollup_via_manifest_chain(tmp_path):
     rollup_rows = read_manifest(mf, stage="rollup")
     assert len(rollup_rows) == 2                       # proteins + fractions
     assert all(r.created_at for r in rollup_rows)      # timestamped
+
+
+def test_fit_manifest_fork_preserves_original(tmp_path):
+    """`fit --manifest A -o B` (a *different* -o) forks a self-contained derived
+    project into B and leaves A's manifest untouched — so a pristine input run is
+    never clobbered by pointing -o elsewhere."""
+    from riana.io.manifest import read_manifest
+
+    mf, coeff_csv = _manifest_fit_project(tmp_path)
+    n_integrate = len(read_manifest(mf, stage="integrate"))  # one per timepoint
+    fork = tmp_path / "fork"
+
+    r = runner.invoke(app, [
+        "fit", "--manifest", str(mf), "--coefficients", str(coeff_csv),
+        "-o", str(fork), "-q", "0.05", "-d", "3"])
+    assert r.exit_code == 0, r.output
+
+    # Outputs land in the fork, not next to the input manifest.
+    assert (fork / "riana_fit_peptides.txt").exists()
+    assert not (tmp_path / "riana_fit_peptides.txt").exists()
+    # The input manifest is untouched: still just its integrate rows, no fit.
+    assert len(read_manifest(mf, stage="fit")) == 0
+    assert len(read_manifest(mf, stage="integrate")) == n_integrate
+    # The fork is a self-contained project: its manifest carries the upstream
+    # integrate rows (absolute, still pointing at the originals) + its own fit.
+    fork_mf = fork / "riana_manifest.tsv"
+    assert fork_mf.exists()
+    fork_integrate = read_manifest(fork_mf, stage="integrate")
+    assert len(fork_integrate) == n_integrate
+    assert all(Path(row.output_path).is_absolute() for row in fork_integrate)
+    assert len(read_manifest(fork_mf, stage="fit")) == 2
+
+    # The chain continues off the fork's manifest (rollup there, not in A).
+    r2 = runner.invoke(app, [
+        "rollup", "--manifest", str(fork_mf), "--min-peptides", "1"])
+    assert r2.exit_code == 0, r2.output
+    assert (fork / "riana_rollup_proteins.txt").exists()
+    assert len(read_manifest(mf, stage="rollup")) == 0  # original still untouched
 
 
 def test_rollup_requires_exactly_one_input_source(tmp_path):

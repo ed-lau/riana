@@ -502,6 +502,36 @@ def test_integrate_tab_detects_saved_results(main_window, tmp_path):
     assert tab.results_hint.text() == ""
 
 
+def test_protein_tab_forks_on_different_output_dir(main_window, tmp_path):
+    """A *different* Output dir forks a derived project (rollup outputs + a new
+    manifest carrying the upstream rows) and leaves the input manifest untouched."""
+    from riana.gui.tasks import run_rollup
+    from riana.io.manifest import read_manifest
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    mf = _build_manifest_project(proj)  # integrate + fit + rollup rows on disk
+    before = len(read_manifest(mf, stage="rollup"))
+
+    result, _pts = run_rollup(str(proj), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    tab = main_window.protein_tab
+    fork = tmp_path / "fork"
+    params = tab.build_params()
+    params.update(manifest=str(mf), out_dir=str(fork), model="simple",
+                  method="weighted", parsimony="unique")
+    tab._result_df = result
+    tab._write_output(result, params)
+
+    # Rollup outputs land in the fork; the fork's manifest is self-contained
+    # (upstream integrate+fit carried over) with its own rollup rows.
+    assert (fork / "riana_rollup_proteins.txt").exists()
+    fork_mf = fork / "riana_manifest.tsv"
+    assert read_manifest(fork_mf, stage="integrate") and read_manifest(fork_mf, stage="fit")
+    assert len(read_manifest(fork_mf, stage="rollup")) == 2  # proteins + fractions
+    # The input manifest is untouched (no new rollup rows recorded into it).
+    assert len(read_manifest(mf, stage="rollup")) == before
+
+
 def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
     """Selecting a protein row draws the collapsed points + the refit curve."""
     from pyqtgraph import PlotDataItem

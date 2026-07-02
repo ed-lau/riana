@@ -494,15 +494,19 @@ class ModelTab(QWidget):
     def _write_output(self, config, result_df, id_source, coefficients,
                       manifest=None) -> None:
         """Write ``riana_fit_peptides.txt`` (+ the M5 ``riana_fit_fractions.txt``)
-        exactly as riana.cli.fit does. On the manifest path, root the outputs at
-        the manifest's folder (ignore the Output dir) and record stage='fit' rows.
+        exactly as riana.cli.fit does. On the manifest path a default / same-folder
+        Output dir updates the project in place; a *different* Output dir forks a
+        self-contained derived project there (leaving the input manifest untouched).
         """
+        target_manifest = None
         if manifest:
-            out_dir = Path(manifest).resolve().parent
-            if Path(config.out_dir).resolve() != out_dir:
+            from riana.core.pipeline import resolve_manifest_write
+            out_dir, target_manifest = resolve_manifest_write(
+                manifest, config.out_dir, "fit")
+            if Path(out_dir).resolve() != Path(manifest).resolve().parent:
                 self._info(
-                    f"manifest path: writing next to the manifest ({out_dir}); "
-                    f"ignoring Output dir {config.out_dir}")
+                    f"forking a derived project into {out_dir} "
+                    f"(input manifest left untouched)")
         else:
             out_dir = Path(config.out_dir)
         provenance = make_provenance(
@@ -529,8 +533,8 @@ class ModelTab(QWidget):
 
         if manifest:
             from riana.core.pipeline import record_stage_rows
-            record_stage_rows(manifest, "fit", written, result_df, provenance)
-            self._info(f"recorded {len(written)} fit rows in {manifest}")
+            record_stage_rows(target_manifest, "fit", written, result_df, provenance)
+            self._info(f"recorded {len(written)} fit rows in {target_manifest}")
 
     def _populate_results(self, result_df: pd.DataFrame) -> None:
         display = result_df.reset_index()

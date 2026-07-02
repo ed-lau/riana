@@ -37,7 +37,13 @@ import pandas as pd
 
 from riana.config import FitConfig, IntegrationConfig
 from riana.exceptions import DataError
-from riana.io.manifest import MANIFEST_FILENAME, ManifestRow, append_manifest, read_manifest
+from riana.io.manifest import (
+    _STAGES,
+    MANIFEST_FILENAME,
+    ManifestRow,
+    append_manifest,
+    read_manifest,
+)
 from riana.io.mzml import IndexedMzML, list_mzml_files, mzml_stem
 from riana.io.mztab import read_mztab
 from riana.io.sdrf import SdrfTable
@@ -579,6 +585,62 @@ def record_stage_rows(
     ]
     append_manifest(manifest_path, rows)
     return rows
+
+
+def resolve_manifest_write(
+    manifest_path: str | os.PathLike[str],
+    requested_out_dir: str | os.PathLike[str],
+    stage: str,
+) -> tuple[Path, Path]:
+    """Decide where a ``--manifest`` *stage* writes, and seed a forked manifest.
+
+    On the manifest path the project's outputs live next to the manifest. This
+    resolves the requested output dir into ``(out_dir, target_manifest)``:
+
+    - **Default / same folder** — ``requested_out_dir`` empty, ``"."``, or the
+      manifest's own folder → *update in place*: write next to the manifest and
+      record the stage rows in it (the existing behaviour).
+    - **A different folder** → *fork*: write into that folder, into a **new**
+      manifest there seeded with the *upstream* stages' rows (``integrate`` for a
+      ``fit`` fork; ``integrate`` + ``fit`` for a ``rollup`` fork) with their
+      paths resolved to **absolute** so they still point at the already-computed
+      originals — and leave the **source manifest untouched**. The forked folder
+      is thus a self-contained project (a later ``rollup`` / GUI "Load results"
+      works on it), and a pristine input run is never mutated just by pointing
+      ``-o`` elsewhere.
+
+    ``append_manifest`` upserts, so re-forking into an existing folder is
+    idempotent.
+    """
+    src = Path(manifest_path).resolve()
+    proj_dir = src.parent
+    req = str(requested_out_dir)
+    if req in ("", ".") or Path(req).resolve() == proj_dir:
+        return proj_dir, src  # update the project in place
+
+    out_dir = Path(req)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / MANIFEST_FILENAME
+    if target.resolve() == src:  # a different spelling of the same folder
+        return proj_dir, src
+
+    # Seed the fork with the upstream stages' rows, paths -> absolute (relative to
+    # the SOURCE project) so they keep pointing at the already-computed originals.
+    upstream = _STAGES[:_STAGES.index(stage)]
+    seed = [
+        dataclasses.replace(row, output_path=str(_abs_under(row.output_path, proj_dir)))
+        for st in upstream
+        for row in read_manifest(src, stage=st)
+    ]
+    if seed:
+        append_manifest(target, seed)
+    return out_dir, target
+
+
+def _abs_under(path_str: str, base: Path) -> Path:
+    """Resolve *path_str* to absolute; a relative path is taken under *base*."""
+    p = Path(path_str)
+    return p if p.is_absolute() else (base / p).resolve()
 
 
 def fit_outputs_from_manifest(

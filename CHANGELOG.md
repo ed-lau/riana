@@ -118,6 +118,27 @@ frames the multi-file iPSC/cardiac series now produce.
   is re-resolved from it) and degrades to table + bars otherwise. New worker
   `load_integrate_results`.
 
+### GUI + CLI — a different `-o` on the manifest path forks a derived project — 2026-07-01
+
+#### Changed
+
+- **`fit --manifest` / `rollup --manifest` (and the GUI Model / Protein tabs) now
+  *fork* into a different Output dir instead of silently ignoring it.** Before,
+  the Output dir was ignored on the manifest path — outputs were always written
+  next to the input manifest and that manifest was updated in place, so pointing
+  `-o` at a new folder did nothing *and* re-running clobbered the original
+  project's fit/rollup. Now a **default / same-folder** `-o` still updates the
+  project in place (unchanged), but a **different** `-o` writes the outputs there
+  and seeds a **new, self-contained manifest** in that folder with the upstream
+  stages' rows (`integrate` for a fit; `integrate` + `fit` for a rollup) carried
+  over as **absolute paths** — so the forked folder is a valid project (a later
+  `rollup` / GUI "Load results" works on it) that reuses the already-computed
+  upstream stages, and the **input manifest is left untouched**. Running a variant
+  (different coefficients / model / curation) into a separate `-o` is now safe: a
+  pristine input run is never mutated just by choosing a different output folder.
+  New `core.pipeline.resolve_manifest_write`; both surfaces call it so they can't
+  diverge.
+
 ### Rollup — scale-free relative-uncertainty curation gate — 2026-07-01
 
 #### Changed
