@@ -291,6 +291,24 @@ def test_load_rollup_results_reconstructs_table_and_points(tmp_path):
     assert (row["experiment"], row["condition"], row["protein"]) in points
 
 
+def test_load_integrate_results_concats_run_outputs(tmp_path):
+    """`load_integrate_results` concatenates the manifest's stage='integrate'
+    per-run outputs, and degrades to an empty frame on a folder with no manifest."""
+    from riana.gui.tasks import load_integrate_results
+    from riana.io.manifest import append_manifest
+    from tests.test_pipeline import (
+        _coeffs, _integrate_rows_from_dfs, _make_timepoint_dfs)
+
+    dfs = _make_timepoint_dfs(_coeffs())
+    rows = _integrate_rows_from_dfs(tmp_path, dfs, condition="control")
+    append_manifest(tmp_path / "riana_manifest.tsv", rows)
+
+    loaded = load_integrate_results(str(tmp_path))
+    assert not loaded.empty
+    assert len(loaded) == sum(len(d) for d in dfs)  # all runs concatenated
+    assert load_integrate_results(str(tmp_path / "nope")).empty  # no manifest
+
+
 @pytest.mark.skipif(not MZML.exists(), reason="sample1 BSA mzML missing")
 def test_plan_sdrf_integration_worker_builds_runtasks(tmp_path):
     """The Integrate-tab SDRF planning worker resolves SDRF+mzTab -> RunTasks."""
@@ -459,6 +477,26 @@ def test_protein_tab_detects_saved_rollup_results(main_window, tmp_path):
     assert "found" in tab.results_hint.text().lower()
 
     tab.manifest_edit.setText(str(_bare_integrate_manifest(tmp_path / "bare")))
+    tab._check_for_saved_results()
+    assert not tab.load_button.isEnabled()
+    assert tab.results_hint.text() == ""
+
+
+def test_integrate_tab_detects_saved_results(main_window, tmp_path):
+    """The Integrate tab enables Load when its Output dir holds a manifest with
+    integrate rows (the Output-dir-as-project-locator path); an empty folder does
+    not."""
+    tab = main_window.integrate_tab
+
+    mf = _bare_integrate_manifest(tmp_path / "proj")  # stage='integrate' rows
+    tab.out_edit.setText(str(mf.parent))
+    tab._check_for_saved_results()
+    assert tab.load_button.isEnabled()
+    assert "found" in tab.results_hint.text().lower()
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    tab.out_edit.setText(str(empty))
     tab._check_for_saved_results()
     assert not tab.load_button.isEnabled()
     assert tab.results_hint.text() == ""

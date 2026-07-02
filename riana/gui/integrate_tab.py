@@ -59,6 +59,7 @@ from riana.gui.models import DataFrameTableModel
 from riana.gui.tasks import (
     extract_trace,
     integrate_fraction,
+    load_integrate_results,
     plan_sdrf_integration,
 )
 from riana.io.manifest import MANIFEST_FILENAME, append_manifest
@@ -99,6 +100,8 @@ class IntegrateTab(QWidget):
         # filter is a single ``str.contains`` rather than three per keystroke.
         self._full_df: pd.DataFrame | None = None
         self._search_key: pd.Series | None = None
+        #: whether the Output dir already holds integrate results to display.
+        self._results_available = False
 
         self._build_ui()
 
@@ -210,7 +213,14 @@ class IntegrateTab(QWidget):
 
         self.out_edit = QLineEdit(".")
         self.out_edit.setToolTip(
-            "Output directory for the _riana.txt files and the manifest.")
+            "Output directory for the _riana.txt files and the manifest. If it "
+            "already holds a project (a riana_manifest.tsv with integrate rows), "
+            "'Load results' displays those without re-integrating.")
+        # The Output dir doubles as the project locator: point it at an existing
+        # project folder and the Load button offers to display its integrate
+        # results (the Integrate tab has no manifest field — integrate *creates*
+        # the manifest, so a manifest input would invert the data flow).
+        self.out_edit.editingFinished.connect(self._check_for_saved_results)
         form.addRow("Output dir", self._path_row(self.out_edit, self._pick_out))
 
         # The power-user tuning dials — collapsed by default so the everyday
@@ -224,9 +234,22 @@ class IntegrateTab(QWidget):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._on_cancel)
+        self.load_button = QPushButton("Load results")
+        self.load_button.setEnabled(False)
+        self.load_button.setToolTip(
+            "Display the integrate results already saved in the Output dir (the "
+            "manifest's stage='integrate' rows) without re-integrating. Set the "
+            "mzML folder too if you want the chromatogram on row-select.")
+        self.load_button.clicked.connect(self._on_load)
         buttons.addWidget(self.run_button)
         buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.load_button)
         form.addRow(buttons)
+
+        self.results_hint = QLabel("")
+        self.results_hint.setStyleSheet("color: palette(mid);")
+        self.results_hint.setWordWrap(True)
+        form.addRow(self.results_hint)
 
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #b00020;")
@@ -540,6 +563,7 @@ class IntegrateTab(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Select output folder")
         if path:
             self.out_edit.setText(path)
+            self._check_for_saved_results()
 
     # --- config marshalling (the shared-validation contract) ---------------- #
     def build_config(self) -> IntegrationConfig:
@@ -756,6 +780,17 @@ class IntegrateTab(QWidget):
         if not frames:
             return
         df = pd.concat(frames, ignore_index=True)
+        self._last_config = config
+        self._display_frame(df)
+        self._info(f"done — {len(df)} rows across {len(frames)} run(s).")
+
+    def _display_frame(self, df: pd.DataFrame) -> None:
+        """Push a result frame into the (filtered + capped) view.
+
+        The shared tail of a fresh run (:meth:`_finish_table`) and a "Load
+        results" load: keep the full frame off-model, precompute the per-concat
+        scan spans + filter key once, and show the capped view.
+        """
         self._full_df = df
         # Precompute each peptide's scan span once, so a row click is an O(1)
         # lookup instead of a `df[df.concat == x]` scan of the whole frame.
@@ -770,8 +805,6 @@ class IntegrateTab(QWidget):
         self.isobars.show_placeholder(
             "Select a peptide row to view its isotopomer envelope."
         )
-        self._last_config = config
-        self._info(f"done — {len(df)} rows across {len(frames)} run(s).")
 
     # --- results filter (view = filtered + capped) -------------------------- #
     @staticmethod
@@ -829,6 +862,92 @@ class IntegrateTab(QWidget):
         self._cancelled = True
         self.cancel_button.setEnabled(False)
         self._info("cancelling — in-flight runs finish, but outputs are discarded …")
+
+    # --- load prior integrate results (no re-integrate) --------------------- #
+    def _check_for_saved_results(self) -> None:
+        """Enable Load + hint when the Output dir already holds integrate results.
+
+        The Output dir is the project locator (the Integrate tab has no manifest
+        field): a ``riana_manifest.tsv`` with ``stage="integrate"`` rows there
+        means this folder is an existing project whose results can be displayed.
+        """
+        out_dir = self.out_edit.text().strip()
+        found = False
+        if out_dir and (Path(out_dir) / MANIFEST_FILENAME).is_file():
+            try:
+                from riana.io.manifest import read_manifest
+                found = bool(read_manifest(
+                    Path(out_dir) / MANIFEST_FILENAME, stage="integrate"))
+            except Exception:
+                found = False
+        self._results_available = found
+        self.load_button.setEnabled(found and not self._running)
+        self.results_hint.setText(
+            "✓ integrate results found in this folder — Load to view, or Run to "
+            "re-integrate" if found else "")
+
+    @asyncSlot()
+    async def _on_load(self) -> None:
+        """Display the integrate results already saved in the Output dir."""
+        if self._running:
+            return
+        out_dir = self.out_edit.text().strip()
+        if not out_dir or not (Path(out_dir) / MANIFEST_FILENAME).is_file():
+            self._fail("Set the Output dir to a folder with a riana_manifest.tsv.")
+            return
+        try:
+            config = self.build_config()  # for the chromatogram (a visualization)
+        except ValueError as exc:
+            self._fail(str(exc))
+            return
+        self.error_label.setText("")
+        self._cancelled = False
+        self._set_running(True)
+        self.progress.setRange(0, 0)  # busy
+        loop = asyncio.get_running_loop()
+        try:
+            self._info(f"loading saved integrate results from {out_dir} …")
+            df = await loop.run_in_executor(
+                self.pool, load_integrate_results, out_dir)
+            if df.empty:
+                self._fail("No integrate rows / readable outputs in the manifest.")
+                return
+            self._last_config = config
+            # Map file_idx → mzML for the chromatogram, if the mzML folder is set
+            # (the isotopomer bars + table work without it).
+            self._fraction_mzml = self._resolve_fraction_mzml(df)
+            self._display_frame(df)
+            note = ("" if self._fraction_mzml
+                    else "  (set the mzML folder for the chromatogram)")
+            self._info(f"loaded {len(df)} rows from saved integrate results.{note}")
+        except Exception as exc:  # surface loader/IO errors inline
+            self._fail(f"{type(exc).__name__}: {exc}")
+        finally:
+            self.progress.setRange(0, 1)
+            self.progress.setValue(1)
+            self._set_running(False)
+
+    def _resolve_fraction_mzml(self, df: pd.DataFrame) -> dict[int, str]:
+        """Map ``file_idx → mzML path`` from the mzML folder, for the chromatogram.
+
+        A loaded frame carries ``file_idx`` + the run ``file`` stem but not the
+        mzML path (that lived in the run tasks). If the mzML folder is set and the
+        files are there, rebuild the map so the chromatogram works; otherwise it is
+        empty and row-select shows the table + isotopomer bars only.
+        """
+        folder = self.mzml_edit.text().strip()
+        if not folder or not {"file_idx", "file"}.issubset(df.columns):
+            return {}
+        base = Path(folder)
+        out: dict[int, str] = {}
+        for file_idx, stem in df[["file_idx", "file"]].drop_duplicates().itertuples(
+                index=False):
+            for ext in (".mzML", ".mzML.gz", ".mzml", ".mzml.gz"):
+                cand = base / f"{stem}{ext}"
+                if cand.is_file():
+                    out[int(file_idx)] = str(cand)
+                    break
+        return out
 
     # --- chromatogram on selection ----------------------------------------- #
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
@@ -894,6 +1013,10 @@ class IntegrateTab(QWidget):
         self._running = running
         self.run_button.setEnabled(not running)
         self.cancel_button.setEnabled(running)
+        if running:
+            self.load_button.setEnabled(False)
+        else:  # re-enable Load iff the Output dir has results (post run/load)
+            self._check_for_saved_results()
 
     def _info(self, message: str) -> None:
         self.log.appendPlainText(message)

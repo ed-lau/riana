@@ -88,7 +88,7 @@ frames the multi-file iPSC/cardiac series now produce.
   rollup` chain in the GUI exactly as on the CLI. The fit-directory rollup stays
   CLI-only (`riana rollup <fit_dir>`).
 
-### GUI — display saved fit/rollup results from a manifest (no recompute) — 2026-07-01
+### GUI — display saved results from a manifest / project without recompute — 2026-07-01
 
 #### Added
 
@@ -106,8 +106,17 @@ frames the multi-file iPSC/cardiac series now produce.
   a fresh run. The curve's kinetic model is read from the output's provenance
   header (only `k_deg` is in the table; the curve shape needs the model), via a
   new `read_provenance_header`. New off-the-Qt-loop workers `load_fit_results` /
-  `load_rollup_results` (`riana.gui.tasks`). The Integrate tab's equivalent — its
-  output folder as the project locator — is a planned follow-up.
+  `load_rollup_results` (`riana.gui.tasks`).
+- **The Integrate tab loads a prior project from its Output dir.** Because
+  `integrate` *creates* the manifest (a manifest *input* would invert the data
+  flow), the Output dir doubles as the project locator: point it at a folder that
+  already holds a `riana_manifest.tsv` with `stage="integrate"` rows and the same
+  Load button displays those runs' concatenated `_riana.txt` outputs — through the
+  same filtered + row-capped view a fresh run uses, so a 384-file project stays
+  responsive. The isotopomer bars work off the row immediately; the
+  chromatogram-on-select works when the mzML folder is also set (`file_idx` → mzML
+  is re-resolved from it) and degrades to table + bars otherwise. New worker
+  `load_integrate_results`.
 
 ### Rollup — scale-free relative-uncertainty curation gate — 2026-07-01
 

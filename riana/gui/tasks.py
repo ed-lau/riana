@@ -320,3 +320,26 @@ def load_rollup_results(manifest_path: str) -> tuple[pd.DataFrame, dict, dict]:
             k = key_vals if isinstance(key_vals, tuple) else (key_vals,)
             points[k] = (grp["labeling_time"].tolist(), grp["fs"].tolist())
     return proteins, points, read_provenance_header(prot)
+
+
+def load_integrate_results(out_dir: str) -> pd.DataFrame:
+    """Load a prior ``riana integrate`` result for display (no recompute).
+
+    Reads the per-run ``<stem>_riana.txt`` files recorded as the ``stage="integrate"``
+    rows of the manifest in *out_dir* and concatenates them into the one frame the
+    Integrate tab shows (same as a fresh run's ``pd.concat`` of the per-run frames).
+    The manifest is the project locator here — the Integrate tab has no manifest
+    field, so its Output dir doubles as "where this project's results live". Rows
+    whose output file is missing are skipped.
+    """
+    from pathlib import Path
+
+    from riana.io.manifest import MANIFEST_FILENAME, read_manifest
+
+    mf = Path(out_dir) / MANIFEST_FILENAME
+    if not mf.is_file():
+        return pd.DataFrame()
+    rows = read_manifest(mf, stage="integrate")
+    frames = [pd.read_table(r.output_path, comment="#")
+              for r in rows if Path(r.output_path).exists()]
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
