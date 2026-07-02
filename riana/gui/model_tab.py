@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import multiprocessing
 import os
 from concurrent.futures import Future
 from pathlib import Path
@@ -51,6 +52,7 @@ from riana.core.fitting import available_coefficient_presets
 from riana.core.fitting import peptide_summary
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
+from riana.gui.progress import ProgressPump
 from riana.gui.tasks import load_fit_results, run_fit_manifest
 from riana.io.writers import (
     ESTIMATE_FLOAT_FORMAT,
@@ -452,16 +454,23 @@ class ModelTab(QWidget):
 
         os.makedirs(config.out_dir, exist_ok=True)
         self._set_running(True)
-        self.progress.setRange(0, 0)  # busy
+        self.progress.setRange(0, 0)  # busy until the first progress update lands
         loop = asyncio.get_running_loop()
         # workers>1 spawns a ProcessPool inside fit_run; run it on a main-process
         # thread (executor=None) so that pool is NOT nested inside a shared-pool
         # worker (which breaks: BrokenProcessPool).
         executor = None if config.workers > 1 else self.pool
+        # A Manager queue carries (done, total) back from the worker (pool process
+        # or -W thread); a main-thread QTimer drains it into a determinate bar.
+        manager = multiprocessing.Manager()
+        progress_q = manager.Queue()
+        pump = ProgressPump(self.progress, progress_q, parent=self)
+        pump.start()
         try:
             self._info(f"fitting from manifest {manifest} …")
             self._future = loop.run_in_executor(
-                executor, run_fit_manifest, config, manifest, coefficients)
+                executor, run_fit_manifest, config, manifest, coefficients,
+                progress_q)
             id_source = manifest
             result_df = await self._future
 
@@ -486,6 +495,8 @@ class ModelTab(QWidget):
         except Exception as exc:  # surface worker/IO/fit errors inline
             self._fail(f"{type(exc).__name__}: {exc}")
         finally:
+            pump.stop()          # final drain while the queue proxy is still live
+            manager.shutdown()
             self._future = None
             self.progress.setRange(0, 1)
             self.progress.setValue(1)

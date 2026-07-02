@@ -309,6 +309,50 @@ def test_load_integrate_results_concats_run_outputs(tmp_path):
     assert load_integrate_results(str(tmp_path / "nope")).empty  # no manifest
 
 
+def test_run_rollup_emits_progress(tmp_path):
+    """run_rollup forwards (done, total) to a progress queue, ending done==total."""
+    import queue as _queue
+
+    from riana.gui.tasks import run_rollup
+
+    _build_manifest_project(tmp_path)  # writes the fit outputs run_rollup reads
+    q = _queue.Queue()
+    run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3,
+               progress_queue=q)
+    items = []
+    while not q.empty():
+        items.append(q.get_nowait())
+    assert items                          # progress was reported
+    assert items[-1][0] == items[-1][1]   # final tick is done == total
+
+
+def test_run_fit_manifest_emits_progress(tmp_path):
+    """run_fit_manifest forwards fit progress to a queue (the multi-phase path)."""
+    import queue as _queue
+
+    from riana.io.manifest import append_manifest
+    from riana.gui.tasks import run_fit_manifest
+    from tests.test_pipeline import (
+        _coeffs, _integrate_rows_from_dfs, _make_timepoint_dfs)
+
+    coeffs = _coeffs()
+    rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs),
+                                    condition="control")
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, rows)
+    coeff_csv = tmp_path / "coeffs.csv"
+    pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
+                 ).to_csv(coeff_csv, index=False)
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06)
+    q = _queue.Queue()
+    run_fit_manifest(config, str(mf), str(coeff_csv), progress_queue=q)
+    items = []
+    while not q.empty():
+        items.append(q.get_nowait())
+    assert items and items[-1][0] == items[-1][1]
+
+
 @pytest.mark.skipif(not MZML.exists(), reason="sample1 BSA mzML missing")
 def test_plan_sdrf_integration_worker_builds_runtasks(tmp_path):
     """The Integrate-tab SDRF planning worker resolves SDRF+mzTab -> RunTasks."""
@@ -500,6 +544,28 @@ def test_integrate_tab_detects_saved_results(main_window, tmp_path):
     tab._check_for_saved_results()
     assert not tab.load_button.isEnabled()
     assert tab.results_hint.text() == ""
+
+
+def test_progress_pump_drains_to_latest(main_window):
+    """ProgressPump collapses queued (done, total) to the latest and sets the bar
+    determinate; a non-positive total is a no-op."""
+    import queue as _queue
+
+    from riana.gui.progress import ProgressPump
+
+    bar = main_window.model_tab.progress
+    q = _queue.Queue()
+    pump = ProgressPump(bar, q)
+    for update in [(2, 10), (5, 10), (9, 10)]:
+        q.put(update)
+    pump._drain()
+    assert bar.maximum() == 10 and bar.value() == 9   # collapsed to the latest
+
+    ProgressPump.apply(bar, (3, 4))
+    assert bar.maximum() == 4 and bar.value() == 3
+    before = (bar.maximum(), bar.value())
+    ProgressPump.apply(bar, (0, 0))                    # non-positive total: no-op
+    assert (bar.maximum(), bar.value()) == before
 
 
 def test_protein_tab_forks_on_different_output_dir(main_window, tmp_path):

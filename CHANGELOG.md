@@ -118,6 +118,23 @@ frames the multi-file iPSC/cardiac series now produce.
   is re-resolved from it) and degrades to table + bars otherwise. New worker
   `load_integrate_results`.
 
+### GUI — determinate fit / rollup progress bars — 2026-07-01
+
+#### Added
+
+- **The Model and Protein tabs show a determinate progress bar during a fit /
+  rollup**, replacing the indeterminate busy-bar. The work runs in a pool process
+  (or a `-W` thread), so it can't touch Qt; it now reports throttled
+  `(done, total)` through a `multiprocessing.Manager` queue (picklable across the
+  spawn boundary, unlike a raw `mp.Queue`), and a main-thread `QTimer`
+  (`riana.gui.progress.ProgressPump`) drains the queue to its latest value and
+  updates the bar — so only the timer callback touches Qt. The bar stays busy
+  until the first update lands, then goes determinate; a manifest fit over several
+  condition curves refills per curve (the core's per-phase counter). It reuses the
+  same `progress_callback` the CLI bars already drive — the GUI just wraps it to
+  enqueue — so the two surfaces share one progress path. Closes the last GUI
+  results-display item promoted into 1.1.0.
+
 ### GUI + CLI — a different `-o` on the manifest path forks a derived project — 2026-07-01
 
 #### Changed

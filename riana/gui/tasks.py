@@ -129,10 +129,36 @@ def plan_sdrf_integration(
     return plan_integration(config, sdrf, mzml_dir, mztab_path)
 
 
+def _queue_progress_callback(progress_queue):
+    """A ``(done, total)`` callback that forwards *throttled* progress to a queue.
+
+    The core loops call back per item; on a 10⁴–10⁵-item fit that would flood the
+    cross-process Manager queue, so this emits at most ~100 updates (plus each
+    phase's final) — enough for a smooth bar, cheap on the wire. Returns ``None``
+    for a ``None`` queue (0-cost when progress isn't wanted). A put failure (full /
+    torn-down queue) is swallowed: reporting must never break the computation.
+    """
+    if progress_queue is None:
+        return None
+    step = {"n": None}
+
+    def cb(done: int, total: int) -> None:
+        if step["n"] is None:
+            step["n"] = max(1, int(total) // 100)
+        if done >= total or done % step["n"] == 0:
+            try:
+                progress_queue.put_nowait((int(done), int(total)))
+            except Exception:
+                pass
+
+    return cb
+
+
 def run_fit_manifest(
     config: FitConfig,
     manifest_path: str,
     coefficients: str | None,
+    progress_queue=None,
 ) -> pd.DataFrame:
     """Fit every curve indexed by a manifest (worker side; the SDRF fit path).
 
@@ -142,7 +168,8 @@ def run_fit_manifest(
     the timepoint from the SDRF identity. ``fit_project`` fits serially per curve
     (each curve's ``fit_run`` uses an in-process thread pool), so there is no
     nested process pool to worry about. The per-timepoint long table rides on
-    ``df.attrs["fractions_long"]``.
+    ``df.attrs["fractions_long"]``. ``progress_queue`` (optional) receives
+    ``(done, total)`` for a determinate GUI bar.
     """
     from riana.core.fitting import load_aa_coefficients
     from riana.core.pipeline import fit_project
@@ -151,7 +178,8 @@ def run_fit_manifest(
     # The Model tab's RIA spin is an explicit user value → pass it as the override
     # so it wins over the manifest's per-experiment enrichment (preserves the
     # GUI's current behavior; CLI without --ria defers to the manifest instead).
-    return fit_project(config, manifest_path, coeffs, ria_override=config.ria_max)
+    return fit_project(config, manifest_path, coeffs, ria_override=config.ria_max,
+                       progress_callback=_queue_progress_callback(progress_queue))
 
 
 def run_rollup(
@@ -170,6 +198,7 @@ def run_rollup(
     workers: int = 1,
     phi_limit: float = -4.0,
     reference_condition: str | None = None,
+    progress_queue=None,
 ) -> tuple[pd.DataFrame, dict]:
     """Read the ``riana fit`` outputs in *fit_dir* and roll peptides up to proteins.
 
@@ -208,6 +237,7 @@ def run_rollup(
         k_cv_max=float(k_cv_max), rescue_r2=float(rescue_r2),
         workers=int(workers), phi_limit=float(phi_limit),
         reference_condition=reference_condition,
+        progress_callback=_queue_progress_callback(progress_queue),
     )
     return result, result.attrs.get("protein_points", {})
 

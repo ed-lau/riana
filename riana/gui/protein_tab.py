@@ -21,6 +21,7 @@ drives the whole ``integrate → fit → rollup`` chain, exactly as the CLI's
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import os
 from concurrent.futures import Future
 from pathlib import Path
@@ -50,6 +51,7 @@ from PySide6.QtCore import QModelIndex, Qt
 
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
+from riana.gui.progress import ProgressPump
 from riana.gui.tasks import load_rollup_results, run_rollup
 from riana.io.writers import (
     ESTIMATE_FLOAT_FORMAT,
@@ -381,8 +383,14 @@ class ProteinTab(QWidget):
 
         os.makedirs(manifest.resolve().parent, exist_ok=True)
         self._set_running(True)
-        self.progress.setRange(0, 0)  # busy
+        self.progress.setRange(0, 0)  # busy until the first progress update lands
         loop = asyncio.get_running_loop()
+        # A Manager queue carries (done, total) back from the worker (pool process
+        # or -W thread); a main-thread QTimer drains it into a determinate bar.
+        manager = multiprocessing.Manager()
+        progress_q = manager.Queue()
+        pump = ProgressPump(self.progress, progress_q, parent=self)
+        pump.start()
         try:
             self._info(f"rolling up from manifest {manifest} (model={p['model']}, "
                        f"parsimony={p['parsimony']}) …")
@@ -396,6 +404,7 @@ class ProteinTab(QWidget):
                 p["min_peptides"], p["min_points"], p["min_r2"],
                 p["k_cv_max"], p["rescue_r2"], p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
+                progress_q,
             )
             result, points = await self._future
             if self._cancelled:
@@ -418,6 +427,8 @@ class ProteinTab(QWidget):
         except Exception as exc:  # surface worker/IO/rollup errors inline
             self._fail(f"{type(exc).__name__}: {exc}")
         finally:
+            pump.stop()          # final drain while the queue proxy is still live
+            manager.shutdown()
             self._future = None
             self.progress.setRange(0, 1)
             self.progress.setValue(1)
