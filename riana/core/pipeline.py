@@ -632,9 +632,40 @@ def resolve_manifest_write(
         for st in upstream
         for row in read_manifest(src, stage=st)
     ]
+    # A fork writes its own manifest; merging into a *different* project's manifest
+    # already in the folder would make a hybrid that can't be loaded. Refuse that —
+    # an empty folder or a prior fork of this same source (its upstream rows match
+    # the seed) is fine.
+    if target.exists() and _fork_target_conflicts(target, seed):
+        raise DataError(
+            f"output folder {out_dir} already contains a {MANIFEST_FILENAME} from a "
+            f"different project; choose an empty output folder to fork into (a fork "
+            f"writes its own manifest and must not merge with another project's)."
+        )
     if seed:
         append_manifest(target, seed)
     return out_dir, target
+
+
+def _fork_target_conflicts(target: Path, seed: list[ManifestRow]) -> bool:
+    """True if *target*'s manifest belongs to a different project than *seed*.
+
+    Compares the target's upstream-stage rows (the stages we're seeding) to the
+    seed by resolved absolute output path: any the seed doesn't have means the
+    folder holds another project's outputs (or the manifest is unreadable).
+    """
+    seed_keys = {(r.stage, r.output_path) for r in seed}  # seed paths are absolute
+    seed_stages = {r.stage for r in seed}
+    try:
+        existing = read_manifest(target)
+    except DataError:
+        return True  # a file named like a manifest but unreadable — don't touch it
+    for row in existing:
+        if row.stage not in seed_stages:
+            continue  # ignore the target's own downstream rows
+        if (row.stage, str(_abs_under(row.output_path, target.parent))) not in seed_keys:
+            return True
+    return False
 
 
 def _abs_under(path_str: str, base: Path) -> Path:

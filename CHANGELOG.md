@@ -20,9 +20,10 @@ multi-file series produce. See `PROJECT_REVIEW.md` §3. Entries are grouped by t
 produced them.
 
 > **Results-affecting defaults (read before upgrading a pipeline):** the default D₂O
-> coefficient table changed to `deberneh_2025_rss` (was the 1983 tritium values), and a
-> Spep curation floor is now applied by default (8 for `hw`/D₂O, 6 for `o18`). Pass the
-> prior table explicitly and `--min-spep 0` to reproduce 1.0.0 numbers.
+> coefficient table changed to `deberneh_2025_rss` (was the 1983 tritium values), a
+> Spep curation floor is now applied by default (8 for `hw`/D₂O, 6 for `o18`), and the
+> rollup peptide **R² gate now defaults to `--min-r2 0.8`** (was off). Pass the prior
+> table explicitly, `--min-spep 0`, and `--min-r2 0` to reproduce 1.0.0 numbers.
 
 ### GUI — results responsiveness on large frames — 2026-07-01
 
@@ -155,6 +156,40 @@ frames the multi-file iPSC/cardiac series now produce.
   pristine input run is never mutated just by choosing a different output folder.
   New `core.pipeline.resolve_manifest_write`; both surfaces call it so they can't
   diverge.
+- **A fork refuses to write into a folder that already holds a *different*
+  project's manifest**, rather than merging into it. Appending a fork's rows to a
+  foreign `riana_manifest.tsv` produced a hybrid manifest (rows from two projects)
+  that then failed to load; the fork now errors with a clear message (choose an
+  empty output folder) unless the folder is empty or a prior fork of the same
+  source. An empty / same-source folder forks as before.
+
+### Rollup — R² gate on by default (`--min-r2 0.8`) — 2026-07-01
+
+#### Changed
+
+- **`rollup --min-r2` now defaults to `0.8`** (was off). The peptide R² admission
+  gate is **results-affecting** and needed for good within-protein geometric CV —
+  inverse-variance weighting alone under-curates (shown in `reports/`). The
+  flat-curve rescue still admits a well-measured low-R² peptide (`R² ≥ --rescue-r2
+  0.6` **and** `k_cv < --k-cv 0.2`), so slow/flat curves aren't lost. Pass
+  **`--min-r2 0`** (any value ≤ 0) to disable the gate entirely (the prior
+  default). The GUI Protein tab's *Min R²* spin defaults to `0.8` to match; `0`
+  there still means off.
+
+### Output — full settings in the provenance header — 2026-07-01
+
+#### Changed
+
+- **Every output's provenance header now records the full settings**, one
+  `# key value` line per config option, instead of a hand-picked few. The header
+  was already stamped with `# riana` / `# git` / `# config_hash` / `# id_source`
+  plus a small `extra` set (model, label, …); it now also writes the complete
+  config dict that `config_hash` is computed from — so `riana_fit_peptides.txt`,
+  `riana_rollup_proteins.txt`, and each `_riana.txt` are fully self-documenting and
+  a run is reconstructable by reading the header, not just by matching the hash.
+  Values are flattened to one line each; `extra` still overrides a shared key
+  (e.g. the resolved coefficients path). Readers already skip the header
+  (`comment="#"`), so parsers and the golden/parity tests are unaffected.
 
 ### Rollup — scale-free relative-uncertainty curation gate — 2026-07-01
 

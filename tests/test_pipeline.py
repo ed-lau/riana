@@ -620,6 +620,34 @@ def test_resolve_manifest_write_in_place_vs_fork(tmp_path):
     assert len(read_manifest(tc, stage="fit")) == 1
 
 
+def test_resolve_manifest_write_refuses_foreign_target(tmp_path):
+    """Forking into a folder that already holds a *different* project's manifest is
+    refused (would make an unloadable hybrid); an empty or same-source folder is OK."""
+    import pytest
+
+    from riana.core.pipeline import resolve_manifest_write
+    from riana.exceptions import DataError
+
+    a = tmp_path / "A"
+    a.mkdir()
+    append_manifest(a / "riana_manifest.tsv", _integrate_rows_from_dfs(
+        a, _make_timepoint_dfs(_coeffs()), condition="control"))
+    mf = a / "riana_manifest.tsv"
+
+    # An empty folder forks fine, and re-forking into it (now our own fork) is fine.
+    _, target = resolve_manifest_write(mf, str(tmp_path / "empty"), "fit")
+    assert target.exists()
+    resolve_manifest_write(mf, str(tmp_path / "empty"), "fit")  # idempotent
+
+    # A folder holding a different project's manifest is refused.
+    b = tmp_path / "B"
+    b.mkdir()
+    append_manifest(b / "riana_manifest.tsv", _integrate_rows_from_dfs(
+        b, _make_timepoint_dfs(_coeffs()), condition="control"))
+    with pytest.raises(DataError):
+        resolve_manifest_write(mf, str(b), "fit")
+
+
 def test_aggregate_identity_blanks_mixed_groups():
     from riana.core.pipeline import aggregate_identity
     mixed = pd.DataFrame({"experiment": ["a", "b"], "condition": ["x", "x"]})

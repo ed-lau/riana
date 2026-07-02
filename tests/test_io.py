@@ -333,6 +333,23 @@ def test_write_tsv_emits_header(tmp_path):
     assert lines[header_idx].split("\t") == ["concat", "iso0"]
 
 
+def test_provenance_header_writes_full_config():
+    """The header records every setting (the full config + extra), one line each,
+    with extra overriding a shared key (no duplicate)."""
+    prov = iowriters.make_provenance(
+        {"model": "simple", "depth": 3, "ria_max": 0.06},
+        id_source="m.tsv",
+        extra={"coefficients": "c.csv", "model": "simple"},
+    )
+    lines = prov.comment_lines()
+    text = "\n".join(lines)
+    assert "# model simple" in text        # from config (and extra)
+    assert "# depth 3" in text             # a config key that was NOT in extra
+    assert "# ria_max 0.06" in text
+    assert "# coefficients c.csv" in text   # extra-only key
+    assert sum(ln.startswith("# model ") for ln in lines) == 1  # deduped
+
+
 def test_write_json_nests_provenance(tmp_path):
     prov = iowriters.make_provenance({"k": 1})
     out = tmp_path / "result.json"

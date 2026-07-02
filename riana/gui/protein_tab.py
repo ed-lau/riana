@@ -174,16 +174,17 @@ class ProteinTab(QWidget):
         self.min_points_spin.setValue(3)
         form.addRow("Min refit points", self.min_points_spin)
 
-        # Optional peptide R² admission gate; 0 = off (inverse-variance only).
+        # Peptide R² admission gate; default 0.8 (needed for good geom-CV), 0 = off.
         self.min_r2_spin = QDoubleSpinBox()
         self.min_r2_spin.setDecimals(2)
         self.min_r2_spin.setRange(0.0, 1.0)
         self.min_r2_spin.setSingleStep(0.05)
-        self.min_r2_spin.setValue(0.0)
+        self.min_r2_spin.setValue(0.8)
         self.min_r2_spin.setToolTip(
-            "Peptide R² gate before rollup. 0 = off (the inverse-variance "
-            "weighting already down-weights noisy peptides). Well-measured "
-            "flat-curve peptides are still rescued via the Max k_cv gate below.")
+            "Peptide R² gate before rollup (default 0.8 — needed for good "
+            "within-protein geom-CV; inverse-variance weighting alone "
+            "under-curates). Well-measured flat-curve peptides are still rescued "
+            "via the Max k_cv gate below. Set 0 to disable the gate.")
         form.addRow("Min R² (0 = off)", self.min_r2_spin)
 
         # Flat-curve rescue (only with Min R² > 0): admit a low-R² peptide whose

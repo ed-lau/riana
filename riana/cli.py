@@ -815,12 +815,12 @@ def rollup(
         "manifest rollup already inherits it); set this for explicit-file inputs "
         "or belt-and-braces."),
     min_r2: Optional[float] = typer.Option(
-        None, "--min-r2", metavar="R2",
-        help="Optional peptide R² admission gate before rollup (off by default — "
-        "the inverse-variance weighting already down-weights noisy peptides). "
-        "When set, keep a peptide if R² ≥ this, OR (flat-curve rescue) "
-        "R² ≥ --rescue-r2 and k_cv < --k-cv. Pass e.g. 0.8 to A/B against the "
-        "unfiltered result."),
+        0.8, "--min-r2", metavar="R2",
+        help="Peptide R² admission gate before rollup (default 0.8). Keep a "
+        "peptide if R² ≥ this, OR (flat-curve rescue) R² ≥ --rescue-r2 and "
+        "k_cv < --k-cv. The gate is needed for good within-protein geom-CV (the "
+        "inverse-variance weighting alone under-curates; see reports/). Pass 0 "
+        "(or any value ≤ 0) to disable it entirely."),
     k_cv: float = typer.Option(
         0.2, "--k-cv",
         help="Flat-curve rescue: max relative uncertainty of k̂ — "
@@ -877,6 +877,8 @@ def rollup(
     if workers > (os.cpu_count() or 1):
         raise typer.BadParameter(
             f"--workers {workers} exceeds CPU count ({os.cpu_count()}).")
+    # --min-r2 0 (or any value ≤ 0) disables the gate; the default 0.8 is on.
+    min_r2 = min_r2 if (min_r2 is not None and min_r2 > 0) else None
 
     forked_into = None
     if manifest is not None:

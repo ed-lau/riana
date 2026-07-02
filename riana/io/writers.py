@@ -48,9 +48,17 @@ class Provenance:
     config_hash: str
     id_source: str = ""
     extra: Mapping[str, str] = ()  # type: ignore[assignment]
+    config: Mapping[str, object] = ()  # full settings, written out for the record
 
     def comment_lines(self) -> list[str]:
-        """The lines (each starting ``# ``) to prepend to a TSV output."""
+        """The lines (each starting ``# ``) to prepend to a TSV output.
+
+        Writes **every setting** that shaped this output — the full ``config`` plus
+        any ``extra`` — one ``# key value`` line each, so the header is a complete,
+        human-readable record (``config_hash`` is the compact fingerprint of the
+        same set). ``extra`` supplements / overrides ``config`` on a shared key
+        (e.g. the resolved coefficients path or the string label).
+        """
         lines = [
             f"# riana {self.riana_version}",
             f"# git {self.git_sha}",
@@ -58,8 +66,9 @@ class Provenance:
         ]
         if self.id_source:
             lines.append(f"# id_source {self.id_source}")
-        for k, v in dict(self.extra).items():
-            lines.append(f"# {k} {v}")
+        merged: dict[str, object] = {**dict(self.config), **dict(self.extra)}
+        for key, value in merged.items():
+            lines.append(f"# {key} {str(value).replace(chr(10), ' ')}")
         return lines
 
 
@@ -76,6 +85,7 @@ def make_provenance(
         config_hash=hash_config(config),
         id_source=str(id_source),
         extra=dict(extra or {}),
+        config=dict(config),
     )
 
 

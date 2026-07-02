@@ -457,7 +457,7 @@ def test_protein_tab_build_params_defaults(main_window):
     assert params["model"] == "simple"
     assert params["min_peptides"] == 2
     assert params["min_points"] == 3
-    assert params["min_r2"] is None  # 0 on the spin -> gate off
+    assert params["min_r2"] == 0.8  # gate on by default (0 on the spin -> None/off)
 
 
 def test_protein_tab_is_on_the_manifest_path(main_window):
