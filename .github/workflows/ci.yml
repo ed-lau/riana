@@ -39,8 +39,11 @@ jobs:
         # GUI tests run in the dedicated 'gui' job (PySide6 + pytest-qt). This
         # matrix has no Qt binding, and pytest-qt would abort the session at
         # configure, so the GUI file is excluded here.
+        # -n auto: pytest-xdist (in [dev]) spreads the CPU-bound suite across the
+        # runner's cores; pytest-cov combines the per-worker coverage. For a fast
+        # local inner loop, deselect the heavy big-mzML tier with -m "not slow".
         run: |
-          pytest --cov=riana --cov-report=term-missing --cov-report=xml \
+          pytest -n auto --cov=riana --cov-report=term-missing --cov-report=xml \
             tests --ignore=tests/test_gui.py
 
       - name: Upload coverage report

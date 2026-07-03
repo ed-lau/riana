@@ -69,6 +69,7 @@ def test_read_psms_returns_records():
     assert all(p.sample == "sample1" for p in psms)
 
 
+@pytest.mark.slow
 def test_integrate_fraction_matches_cli_golden():
     """The GUI worker's integrate output == the committed CLI/0.9.0 golden.
 
@@ -100,6 +101,7 @@ def test_integrate_fraction_matches_cli_golden():
         )
 
 
+@pytest.mark.slow
 def test_extract_trace_returns_chromatograms():
     from riana.core.integration import extract_peptide_trace
     from riana.io.mzml import IndexedMzML

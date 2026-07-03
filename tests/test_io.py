@@ -80,6 +80,7 @@ def test_percolator_fraction_psms_assigns_pep_ids():
 # --- mzml --------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_indexed_mzml_matches_pymzml_ms1_count():
     """pyteomics-backed reader sees the same MS1 scans as the 0.9.0 pymzml one.
 
@@ -101,6 +102,7 @@ def test_indexed_mzml_matches_pymzml_ms1_count():
         assert len(new_mz) == mid_npeaks
 
 
+@pytest.mark.slow
 def test_indexed_mzml_ms1_iter_yields_full_set():
     with iomzml.IndexedMzML(MZML_GZ) as r:
         scans = [scan for scan, _, _, _ in r.ms1_iter()]

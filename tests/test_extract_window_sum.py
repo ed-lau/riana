@@ -48,6 +48,7 @@ def _assert_identical(mz, intens, target, delta):
     assert got == exp, f"target={target!r} delta={delta!r}: {got} != {exp}"
 
 
+@pytest.mark.slow
 def test_window_sum_matches_boolean_mask_on_real_scan(both_branches):
     """Across exact peak hits, inter-peak midpoints, and off-ends on a real
     BSA MS1 scan, the searchsorted window equals the boolean mask bit-for-bit."""
@@ -85,6 +86,7 @@ def test_window_sum_boundary_and_empty(both_branches):
     _assert_identical(one, np.array([3.0]), target + 1.0, delta)  # single peak, no hit
 
 
+@pytest.mark.slow
 def test_preload_rejects_non_ascending_mz(monkeypatch):
     """The sortedness guard fires loudly rather than silently under-summing."""
     real = mzml_mod._spec_peaks

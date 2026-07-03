@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Post-1.1.0 development on the `1.1.0` branch.
+The 1.2.0 development line (branch `1.2.0`).
 
-### Performance
+### Integrate — binary-searched isotopomer m/z window — 2026-07-02
+
+#### Performance
 
 - **`integrate` binary-searches the isotopomer m/z window on dense scans.** The
   per-(scan, isotopomer) extraction matched centroids with an O(n)
@@ -30,6 +32,21 @@ Post-1.1.0 development on the `1.1.0` branch.
 - **`IndexedMzML.preload_peaks` verifies each MS1's m/z is non-decreasing** (the
   binary-search extractor's precondition) and raises `DataError` on a pathological
   file, rather than silently under-summing.
+
+### Testing — parallel suite + a `slow` tier — 2026-07-02
+
+#### Changed
+
+- **The test suite runs under `pytest-xdist`.** `pytest-xdist` is added to the
+  `[dev]` extra, and the CI test job + `tox` now pass `-n auto` to spread the
+  CPU-bound suite (IsoSpec, integration, `curve_fit`, large-mzML decode) across
+  cores; `pytest-cov` combines the per-worker coverage. It is opt-in per invocation,
+  not in `addopts`, so single-file / `-x` / pdb runs stay serial.
+- **The heavy big-mzML / full-pipeline tests are marked `@pytest.mark.slow`** (17
+  items — the sample1 / ac16 integrate gates, the CLI / GUI end-to-end runs, and the
+  `IndexedMzML` decode checks). `pytest -m "not slow"` skips them for a fast
+  inner-loop run — **~24 s (parallel) vs ~5.5 min for the full serial suite** — while
+  CI still runs the full tier. The `slow` marker is registered in `pyproject.toml`.
 
 ## [1.1.0] — 2026-07-01
 

@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
 from riana import __version__
@@ -51,6 +52,7 @@ def test_no_args_shows_help():
     assert "Usage" in result.stdout
 
 
+@pytest.mark.slow
 def test_integrate_ms2_runs_and_writes_output(tmp_path):
     result = runner.invoke(app, [
         "integrate", str(SAMPLE1), str(PSMS),
@@ -67,6 +69,7 @@ def test_integrate_ms2_runs_and_writes_output(tmp_path):
         assert c in df.columns
 
 
+@pytest.mark.slow
 def test_integrate_iso_single_int_is_contiguous_range(tmp_path):
     """-i N is the easy form for the m0..mN contiguous capture (e.g. '5' =
     iso0-iso5); an explicit multi-value list (test above, '0 6') stays as-is."""
@@ -123,6 +126,7 @@ _BSA_SDRF = (
 )
 
 
+@pytest.mark.slow
 def test_integrate_sdrf_writes_per_run_output_and_manifest(tmp_path):
     mztab = tmp_path / "bsa.mzTab"
     mztab.write_text(_BSA_MZTAB)

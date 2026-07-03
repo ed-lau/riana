@@ -64,6 +64,7 @@ def legacy_sample1_output() -> pd.DataFrame:
                        index_col=0, comment="#")
 
 
+@pytest.mark.slow
 def test_sample1_iso0_iso6_within_rtol(legacy_sample1_output):
     config = IntegrationConfig(
         sample="sample1", isotopomers=(0, 6), q_value=1.0,
@@ -106,6 +107,7 @@ def test_sample1_iso0_iso6_within_rtol(legacy_sample1_output):
     not (AC16_MZML.exists() and AC16_PSMS.exists()),
     reason="ac16 calibration mzML/PSMs not present (heavy inputs are gitignored)",
 )
+@pytest.mark.slow
 def test_ac16_time0_matches_committed_baseline():
     """The bigger real-data check: ac16 time0, 9 isotopomers including 6."""
     config = IntegrationConfig(
@@ -143,6 +145,7 @@ def test_ac16_time0_matches_committed_baseline():
 # --- Phase C smoke: detected pipeline produces non-trivial, plausible areas --
 
 
+@pytest.mark.slow
 def test_sample1_detected_pipeline_runs_and_is_smaller_than_fixed():
     """Phase C smoke: the detected pipeline returns finite areas that are
     bounded above by the fixed-window areas (peak detection narrows the
@@ -196,6 +199,7 @@ def test_sample1_detected_pipeline_runs_and_is_smaller_than_fixed():
 # --- Phase D smoke: mass-accuracy outputs populated --------------------------
 
 
+@pytest.mark.slow
 def test_sample1_mass_accuracy_columns_populated():
     """Phase D smoke: each ``isoN_obs_mz`` is within ±mass_tol_ppm of its
     target (validates the intensity-weighted centroid calc), each
@@ -239,6 +243,7 @@ def test_sample1_mass_accuracy_columns_populated():
 # --- CLI smoke: `riana integrate` dispatch ----------------------------------
 
 
+@pytest.mark.slow
 def test_cli_integrate_produces_compatible_output(tmp_path):
     """CLI smoke: ``python -m riana integrate`` writes the legacy _riana.txt
     schema (plus the mass-accuracy columns) and a per-fraction drift JSON

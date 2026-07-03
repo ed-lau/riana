@@ -448,6 +448,7 @@ _BSA_SDRF = textwrap.dedent("""\
 
 
 @pytest.mark.skipif(not BSA_MZML.exists(), reason="sample1 BSA mzML missing")
+@pytest.mark.slow
 def test_integrate_project_end_to_end(tmp_path):
     mztab = tmp_path / "bsa.mzTab"
     mztab.write_text(_BSA_MZTAB)
@@ -490,6 +491,7 @@ def test_integrate_project_end_to_end(tmp_path):
 
 
 @pytest.mark.skipif(not BSA_MZML.exists(), reason="sample1 BSA mzML missing")
+@pytest.mark.slow
 def test_integrate_project_resume_skips_done_runs(tmp_path):
     """`resume=True` keeps an already-integrated run (file not rewritten)."""
     import time

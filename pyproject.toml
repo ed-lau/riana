@@ -55,6 +55,11 @@ dependencies = [
 dev = [
     "pytest>=7",
     "pytest-cov>=4",
+    # Process-level test parallelism (`pytest -n auto`). The suite is CPU-bound
+    # (IsoSpec, integration, curve_fit) and the heavy fixtures decode large mzML,
+    # so distribution across cores is a large CI/local win. Opt-in per invocation
+    # (CI test job + tox), not in addopts, so single-file / -x / pdb runs stay serial.
+    "pytest-xdist>=3",
     "pyarrow>=14",
 ]
 # DIA intake (M6b). Reading the DIA-NN report.parquet needs pyarrow; kept
@@ -98,3 +103,6 @@ version = { attr = "riana.__version__" }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "slow: heavy end-to-end / large-fixture test (big-mzML integration, full pipeline). Skip the slow tier with -m 'not slow' for a fast inner-loop run.",
+]
