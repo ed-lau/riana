@@ -917,6 +917,10 @@ def rollup(
         raise typer.BadParameter(
             "--test-condition requires --reference-condition (the baseline of the "
             "Δk contrast).", param_hint="--test-condition")
+    if test_condition and reference_condition and test_condition == reference_condition:
+        raise typer.BadParameter(
+            "--test-condition must differ from --reference-condition — a condition "
+            "compared to itself has no Δk.", param_hint="--test-condition")
 
     os.makedirs(out, exist_ok=True)
     logger = get_logger(__name__, str(out))

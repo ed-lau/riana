@@ -20,9 +20,11 @@ The 1.2.0 development line (branch `1.2.0`).
   An interim for multi-group projects ahead of full all-pairwise/Tukey: the pair is
   contrasted from the **joint (all-condition) fit** (`core.linear_model`), so it
   reuses the existing model and the eventual multi-group extension is additive rather
-  than a rewrite. `--test-condition` requires `--reference-condition`, and both are
+  than a rewrite. `--test-condition` requires `--reference-condition` and must name a
+  *different* condition (a self-contrast is rejected — it would degenerate into a
+  spurious slope-vs-zero test, `delta_k = −k` with `p ≈ 0`, not a Δk); both are
   validated against the conditions present in the data (a typo fails with the
-  available choices instead of an all-NaN Δk). The GUI Protein tab's Reference / Test
+  available choices). The GUI Protein tab's Reference / Test
   inputs are now **dropdowns auto-populated from the manifest's conditions**.
   **Honesty caveat** (surfaced in the CLI `--help` and the GUI tooltip): the joint
   fit still pools the residual variance over *all* conditions in the project, so

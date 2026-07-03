@@ -150,6 +150,19 @@ def test_unknown_contrast_condition_raises():
         fit_linear_deltak(df, reference_condition="nope")
 
 
+def test_same_reference_and_test_condition_raises():
+    """A self-contrast (reference == test) is rejected — it would degenerate into a
+    spurious slope-vs-zero test (delta_k = −k, p ≈ 0), not a Δk between conditions."""
+    from riana.exceptions import DataError
+    times = [0, 1, 2, 3, 4, 6, 8]
+    df = pd.DataFrame(
+        _curve("e", "P1", "control", 0.05, times, noise=0.003, seed=1)
+        + _curve("e", "P1", "drug", 0.10, times, noise=0.003, seed=2)
+    )
+    with pytest.raises(DataError, match="same"):
+        fit_linear_deltak(df, reference_condition="control", test_condition="control")
+
+
 def test_plateau_truncation_changes_fast_curve_slope():
     """A fast curve with a saturated tail: truncation must keep the slope honest
     rather than letting the floor-noise flatten it."""

@@ -413,6 +413,12 @@ class ProteinTab(QWidget):
             self._fail("Pick a Reference condition too — the Test condition is the "
                        "Δk comparison measured against a baseline.")
             return
+        if (p["test_condition"] and p["reference_condition"]
+                and p["test_condition"] == p["reference_condition"]):
+            self._fail("Pick two different conditions — Reference and Test are both "
+                       f"'{p['reference_condition']}', and a condition compared to "
+                       "itself has no Δk.")
+            return
         # Locate the fit outputs from the manifest's stage='fit' rows — the same
         # resolver `rollup --manifest` uses. Raises DataError (no fit rows yet /
         # missing outputs) which we surface inline. The manifest read is tiny, so

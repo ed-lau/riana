@@ -160,6 +160,15 @@ def fit_linear_deltak(
                 f"{role} condition {cond!r} is not among the conditions in the data "
                 f"({sorted(present)}). Check the spelling / the SDRF condition values."
             )
+    if (reference_condition is not None and test_condition is not None
+            and str(reference_condition) == str(test_condition)):
+        from riana.exceptions import DataError
+        raise DataError(
+            f"reference and test condition are the same ({reference_condition!r}) — "
+            "pick two different conditions. A self-contrast has no Δk: the ±1 "
+            "coefficients land on one slope and degenerate into a spurious "
+            "slope-vs-zero test (delta_k = −k, p ≈ 0), not a difference."
+        )
 
     rows: list[dict] = []
     grouped = points.groupby(["experiment", "protein"], sort=False)
