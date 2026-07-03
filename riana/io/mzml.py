@@ -267,7 +267,19 @@ class IndexedMzML:
         with mzml.MzML(str(self._reader_path), use_index=True) as reader:
             for scan in self.scan_idx.tolist():
                 spec = reader.get_by_id(self._scan_to_spec_id[scan])
-                cache[scan] = _spec_peaks(spec)
+                mz, intens = _spec_peaks(spec)
+                # The per-PSM extractor binary-searches each MS1's m/z array for
+                # the ±ppm isotopomer windows (core.integration._window_sum),
+                # which REQUIRES non-decreasing m/z. Centroid mzML arrays are
+                # ascending by convention (every writer emits them so), but this
+                # is the one place each scan is decoded — verify here so a
+                # pathological file fails loudly instead of silently under-summing.
+                if mz.shape[0] > 1 and not bool(np.all(mz[:-1] <= mz[1:])):
+                    raise DataError(
+                        f"{self.path.name}: MS1 scan {scan} has non-ascending m/z; "
+                        "the integrator requires sorted centroid m/z arrays."
+                    )
+                cache[scan] = (mz, intens)
         self._peak_cache = cache
 
     def close(self) -> None:

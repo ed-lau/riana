@@ -5,6 +5,32 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Post-1.1.0 development on the `1.1.0` branch.
+
+### Performance
+
+- **`integrate` binary-searches the isotopomer m/z window on dense scans.** The
+  per-(scan, isotopomer) extraction matched centroids with an O(n)
+  `np.abs(mz − target) ≤ delta` mask over every peak in the spectrum — the residual
+  per-PSM cost after the MS1-decode precache, and the dominant one on dense
+  fractionated Orbitrap runs where `use_range` spans the whole concat scan span. On
+  sorted centroid m/z the ±delta window is contiguous, so `_window_sum` now brackets
+  it with two `np.searchsorted` calls (O(log n)) once a scan clears a measured
+  ~7k-centroid crossover, falling back to the mask on sparse spectra where the mask
+  is faster (~1.3–2.7× faster window evaluation at 10–40k centroids; neutral below).
+  It is **byte-identical** to the mask either way — the search only narrows the
+  candidates (padded one index each side for ULP safety) and the exact predicate
+  makes the final selection over a contiguous ascending slice — verified bit-for-bit
+  on the sample1 integrate across both `use_range` paths and all output columns.
+
+#### Fixed
+
+- **`IndexedMzML.preload_peaks` verifies each MS1's m/z is non-decreasing** (the
+  binary-search extractor's precondition) and raises `DataError` on a pathological
+  file, rather than silently under-summing.
+
 ## [1.1.0] — 2026-07-01
 
 The experimental-science line, opened after the 1.0.0 N_ISO finish, plus a

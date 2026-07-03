@@ -650,6 +650,64 @@ def _adaptive_concat_channels(
     return out
 
 
+#: MS1 centroid count at/above which the binary-searched window beats the O(n)
+#: boolean mask in :func:`_window_sum`. The searchsorted path is ~flat in n
+#: (O(log n)) but carries a fixed two-dispatch overhead, so on sparse spectra the
+#: mask is faster; the measured crossover is ~7k centroids (single-protein BSA is
+#: ~2k → mask; a complex-proteome Orbitrap MS1 is 10-40k → searchsorted, up to
+#: ~2.7× at 30k). Both branches are byte-identical, so this only picks the faster
+#: one — never changes a number.
+_SEARCHSORTED_MIN_PEAKS = 8000
+
+
+def _window_sum(
+    mz_arr: np.ndarray,
+    intens_arr: np.ndarray,
+    target: float,
+    delta: float,
+    n_peaks: int,
+) -> tuple[float, float]:
+    """``(Σ intensity, Σ intensity·m/z)`` of the centroids within
+    ``|m/z − target| ≤ delta`` in one MS1 scan.
+
+    Two byte-identical implementations, selected by centroid count
+    (:data:`_SEARCHSORTED_MIN_PEAKS`):
+
+    * **Sparse** — the plain O(n) ``np.abs(mz_arr − target) ≤ delta`` mask.
+    * **Dense** — ``mz_arr`` is ascending (centroid mzML convention, verified once
+      per scan in :meth:`io.mzml.IndexedMzML.preload_peaks`), so the ±delta window
+      is a contiguous run: two binary searches (``np.searchsorted``, O(log n))
+      bracket it instead of scanning every centroid — the residual per-PSM cost
+      after the MS1-decode precache, dominant on dense runs where ``use_range``
+      spans the whole concat scan span.
+
+    The dense branch is byte-identical to the mask by construction: the search only
+    *narrows* the candidates (padded one index each side so ULP rounding of
+    ``target ± delta`` can never drop a boundary peak the exact test keeps), then
+    the exact predicate makes the final selection — over a contiguous ascending
+    slice, so the matched sequence and its float reductions match bit-for-bit.
+    Returns ``(0.0, 0.0)`` for an empty window (incl. an empty scan).
+    """
+    if n_peaks < _SEARCHSORTED_MIN_PEAKS:
+        mask = np.abs(mz_arr - target) <= delta
+        if not mask.any():
+            return 0.0, 0.0
+        matched_mz = mz_arr[mask]
+        matched_i = intens_arr[mask]
+        return float(matched_i.sum()), float((matched_mz * matched_i).sum())
+
+    lo = max(0, int(np.searchsorted(mz_arr, target - delta, side="left")) - 1)
+    hi = min(n_peaks, int(np.searchsorted(mz_arr, target + delta, side="right")) + 1)
+    if hi <= lo:
+        return 0.0, 0.0
+    cand_mz = mz_arr[lo:hi]
+    mask = np.abs(cand_mz - target) <= delta
+    if not mask.any():
+        return 0.0, 0.0
+    matched_mz = cand_mz[mask]
+    matched_i = intens_arr[lo:hi][mask]
+    return float(matched_i.sum()), float((matched_mz * matched_i).sum())
+
 
 def _extract_per_psm(
     psm: PSMRecord,
@@ -727,20 +785,19 @@ def _extract_per_psm(
     for scan, rt in zip(nearby.tolist(), nearby_rt.tolist()):
         scan_int = int(scan)
         mz_arr, intens_arr = mzml.peaks(scan_int)
+        n_peaks = mz_arr.shape[0]
         for iso in isos:
             col = f"iso{iso}"
             target = iso_target_mz[iso]
             targets[col] = target
             delta = target * ppm_tol
-            mask = np.abs(mz_arr - target) <= delta
-            if mask.any():
-                matched_mz = mz_arr[mask]
-                matched_i = intens_arr[mask]
-                summed = float(matched_i.sum())
-                mz_weighted[col] += float((matched_mz * matched_i).sum())
-                intens_total[col] += summed
-            else:
-                summed = 0.0
+            # Binary-searched centroid window (byte-identical to the old O(n)
+            # boolean mask; mz_arr is ascending — see _window_sum). Adding the
+            # 0.0 returned for an empty window is a no-op, so the accumulation
+            # matches the old "only on match" form bit-for-bit.
+            summed, mz_w = _window_sum(mz_arr, intens_arr, target, delta, n_peaks)
+            mz_weighted[col] += mz_w
+            intens_total[col] += summed
             rows.append((col, rt, summed))
 
     if not rows:
