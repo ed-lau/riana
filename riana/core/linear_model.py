@@ -97,6 +97,7 @@ def fit_linear_deltak(
     min_points: int = 3,
     min_points_per_condition: int = 2,
     reference_condition: str | None = None,
+    test_condition: str | None = None,
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """Per-protein linearized k per condition + a cross-condition Δk test.
@@ -112,21 +113,33 @@ def fit_linear_deltak(
         min_points: a protein needs at least this many surviving points total to
             be fit.
         min_points_per_condition: a condition needs at least this many surviving
-            points to get a slope (its k); the Δk contrast needs **exactly two**
-            qualifying conditions.
+            points to get a slope (its k). In auto mode (no ``test_condition``) the
+            Δk contrast needs **exactly two** qualifying conditions; with a named
+            ``reference`` / ``test`` pair it needs both of *those* to qualify.
         reference_condition: the baseline of the Δk contrast — ``delta_k`` is
-            ``k(other) − k(reference)``. Defaults to the alphabetically-first
+            ``k(test) − k(reference)``. Defaults to the alphabetically-first
             condition; pass e.g. ``"control"`` to make a treatment read positive
             when faster.
+        test_condition: the comparison condition of the Δk contrast. When BOTH
+            ``reference_condition`` and ``test_condition`` are given, the contrast is
+            that **named pair**, computed from the joint (all-condition) fit — so it
+            works even when a protein has **more than two** conditions (an interim
+            for multi-group projects, ahead of full all-pairwise/Tukey). The extra
+            conditions still contribute their own k rows **and** the shared residual
+            variance the contrast's SE pools over, so scope the conditions in the
+            SDRF/project deliberately if that pooling is unwanted. When
+            ``test_condition`` is ``None`` the legacy auto mode applies: a contrast
+            is emitted only for a protein with exactly two qualifying conditions.
 
     Returns:
         One row per ``(experiment, protein, condition)`` with ``k_deg`` (= −slope)
         and its CI (from the joint model covariance — emtrends), the joint
         uncentered ``R_squared``, ``n_points``, plus protein-level ``delta_k`` /
         ``delta_k_se`` / ``delta_k_p`` (the pairwise slope contrast,
-        ``k(other) − k(reference)``, present only when the protein has exactly two
-        qualifying conditions) and ``delta_k_p_adj`` (Benjamini-Hochberg across all
-        proteins that have a Δk). Columns are :data:`LINEAR_COLUMNS`.
+        ``k(test) − k(reference)``, present for a protein that carries the contrast
+        pair — the named pair, or the two conditions in auto mode) and
+        ``delta_k_p_adj`` (Benjamini-Hochberg across all proteins that have a Δk).
+        Columns are :data:`LINEAR_COLUMNS`.
     """
     import statsmodels.formula.api as smf
 
@@ -135,6 +148,18 @@ def fit_linear_deltak(
     if missing:
         from riana.exceptions import DataError
         raise DataError(f"linear-model points missing columns {sorted(missing)}.")
+
+    # A named contrast condition must actually be in the data — otherwise every
+    # protein silently misses it and delta_k is all-NaN. Fail loudly with the
+    # available choices (the CLI surfaces this as a bad-parameter error).
+    present = set(points["condition"].astype(str).unique())
+    for role, cond in (("reference", reference_condition), ("test", test_condition)):
+        if cond is not None and str(cond) not in present:
+            from riana.exceptions import DataError
+            raise DataError(
+                f"{role} condition {cond!r} is not among the conditions in the data "
+                f"({sorted(present)}). Check the spelling / the SDRF condition values."
+            )
 
     rows: list[dict] = []
     grouped = points.groupby(["experiment", "protein"], sort=False)
@@ -174,23 +199,33 @@ def fit_linear_deltak(
         conds = sorted(per_cond)
         coef = {c: f"day:C(condition)[{c}]" for c in conds}
 
-        # Cross-condition Δk: exactly-two-condition pairwise slope contrast,
-        # Δk = k(other) − k(reference). Reference defaults to the first sorted
-        # condition; the user can name it (e.g. "control") so a faster treatment
-        # reads positive.
-        delta_k = delta_se = delta_p = float("nan")
-        if len(conds) == 2 and all(coef[c] in slope.index for c in conds):
-            ref = reference_condition if reference_condition in conds else conds[0]
-            other = next(c for c in conds if c != ref)
+        # Cross-condition Δk, Δk = k(test) − k(reference). With a named
+        # reference/test pair, contrast THAT pair from the joint (all-condition)
+        # fit — so it works even when the protein has >2 conditions (option B, the
+        # multi-group interim). Without a named test, fall back to the legacy auto
+        # mode: contrast the two conditions of an exactly-two-condition protein.
+        def _contrast(ref: str, other: str) -> tuple[float, float, float]:
             names = list(slope.index)
             c_vec = np.zeros(len(names))
-            c_vec[names.index(coef[other])] = 1.0   # slope_other
+            c_vec[names.index(coef[other])] = 1.0   # slope_test
             c_vec[names.index(coef[ref])] = -1.0    # − slope_reference
             tt = res.t_test(c_vec)
-            # k = −slope, so Δk = k_other − k_ref = −(slope_other − slope_ref).
-            delta_k = -float(np.ravel(tt.effect)[0])
-            delta_se = float(np.ravel(tt.sd)[0])
-            delta_p = float(np.ravel(tt.pvalue)[0])
+            # k = −slope, so Δk = k_test − k_ref = −(slope_test − slope_ref).
+            return (-float(np.ravel(tt.effect)[0]),
+                    float(np.ravel(tt.sd)[0]),
+                    float(np.ravel(tt.pvalue)[0]))
+
+        delta_k = delta_se = delta_p = float("nan")
+        if reference_condition is not None and test_condition is not None:
+            if (reference_condition in coef and test_condition in coef
+                    and coef[reference_condition] in slope.index
+                    and coef[test_condition] in slope.index):
+                delta_k, delta_se, delta_p = _contrast(
+                    reference_condition, test_condition)
+        elif len(conds) == 2 and all(coef[c] in slope.index for c in conds):
+            ref = reference_condition if reference_condition in conds else conds[0]
+            other = next(c for c in conds if c != ref)
+            delta_k, delta_se, delta_p = _contrast(ref, other)
 
         for c in conds:
             name = coef[c]

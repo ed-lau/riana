@@ -106,6 +106,9 @@ class ProteinTab(QWidget):
         # Detect already-computed rollup results when a manifest is entered, so the
         # Load button + hint can offer to display them without re-running.
         self.manifest_edit.editingFinished.connect(self._check_for_saved_results)
+        # Fill the linear-model Reference/Test condition dropdowns from the
+        # manifest's conditions as soon as it is entered (SDRF/project path).
+        self.manifest_edit.editingFinished.connect(self._populate_conditions)
         man_row = QHBoxLayout()
         man_row.addWidget(self.manifest_edit, stretch=1)
         browse = QPushButton("Browse…")
@@ -153,12 +156,23 @@ class ProteinTab(QWidget):
             "['linear simple'] Plateau truncation: drop points with φ=log(1−θ) "
             "at/below this (saturated tail = noise, not slope). −4 ≈ θ 0.98.")
         form.addRow("φ-limit (linear)", self.phi_limit_spin)
-        self.reference_edit = QLineEdit("")
-        self.reference_edit.setPlaceholderText("optional, e.g. control")
-        self.reference_edit.setToolTip(
-            "['linear simple'] Δk reference condition: delta_k = k(other) − "
-            "k(reference). Blank = alphabetically first.")
-        form.addRow("Reference cond. (linear)", self.reference_edit)
+        self.reference_combo = QComboBox()
+        self.reference_combo.addItem("")  # blank = auto (alphabetically first)
+        self.reference_combo.setToolTip(
+            "['linear simple'] Δk baseline condition: delta_k = k(test) − "
+            "k(reference). Blank = alphabetically first. Auto-filled from the "
+            "manifest's conditions.")
+        form.addRow("Reference cond. (linear)", self.reference_combo)
+        self.test_combo = QComboBox()
+        self.test_combo.addItem("")  # blank = auto (only a 2-condition protein gets Δk)
+        self.test_combo.setToolTip(
+            "['linear simple'] Δk comparison condition (needs a Reference). Pick a "
+            "pair to contrast exactly those two even when >2 conditions are present "
+            "— an interim before full all-pairwise. NOTE: the joint fit still pools "
+            "the residual variance over ALL conditions in the project, so include "
+            "only the conditions you mean to compare in the SDRF. Blank = auto (Δk "
+            "only for a protein with exactly two conditions).")
+        form.addRow("Test cond. (linear)", self.test_combo)
 
         self.min_peptides_spin = QSpinBox()
         self.min_peptides_spin.setToolTip(
@@ -276,7 +290,7 @@ class ProteinTab(QWidget):
         linear = model == "linear simple"
         for w in (self.kp_spin, self.kr_spin, self.rp_spin):
             self._form.setRowVisible(w, not linear)
-        for w in (self.phi_limit_spin, self.reference_edit):
+        for w in (self.phi_limit_spin, self.reference_combo, self.test_combo):
             self._form.setRowVisible(w, linear)
 
     def _build_results(self) -> QWidget:
@@ -327,6 +341,31 @@ class ProteinTab(QWidget):
         if path:
             self.out_edit.setText(path)
 
+    def _populate_conditions(self) -> None:
+        """Fill the linear-model Reference/Test dropdowns from the manifest's
+        conditions (blank first item = auto). Best-effort and Qt-cheap: a
+        missing/malformed manifest just leaves the blank option, and a prior
+        still-valid pick is preserved across a re-read."""
+        conditions: list[str] = []
+        path = self.manifest_edit.text().strip()
+        if path and Path(path).is_file():
+            try:
+                from riana.io.manifest import read_manifest
+                conditions = sorted({
+                    r.identity.condition for r in read_manifest(path)
+                    if r.identity.condition})
+            except Exception:
+                conditions = []
+        for combo in (self.reference_combo, self.test_combo):
+            prior = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("")               # blank = auto
+            combo.addItems(conditions)
+            keep = combo.findText(prior)
+            combo.setCurrentIndex(keep if keep >= 0 else 0)
+            combo.blockSignals(False)
+
     # --- params marshalling ------------------------------------------------- #
     def build_params(self) -> dict:
         """Gather the rollup parameters from the form (testable, Qt-free dict)."""
@@ -346,7 +385,8 @@ class ProteinTab(QWidget):
             "rescue_r2": float(self.rescue_r2_spin.value()),
             "workers": int(self.workers_spin.value()),
             "phi_limit": float(self.phi_limit_spin.value()),
-            "reference_condition": self.reference_edit.text().strip() or None,
+            "reference_condition": self.reference_combo.currentText().strip() or None,
+            "test_condition": self.test_combo.currentText().strip() or None,
             "out_dir": self.out_edit.text().strip() or ".",
         }
 
@@ -368,6 +408,10 @@ class ProteinTab(QWidget):
         if manifest is None or not manifest.is_file():
             self._fail("Pick a riana_manifest.tsv (from `integrate`/`fit` on the "
                        "SDRF path). The legacy fit-directory rollup is CLI-only.")
+            return
+        if p["test_condition"] and not p["reference_condition"]:
+            self._fail("Pick a Reference condition too — the Test condition is the "
+                       "Δk comparison measured against a baseline.")
             return
         # Locate the fit outputs from the manifest's stage='fit' rows — the same
         # resolver `rollup --manifest` uses. Raises DataError (no fit rows yet /
@@ -405,6 +449,7 @@ class ProteinTab(QWidget):
                 p["min_peptides"], p["min_points"], p["min_r2"],
                 p["k_cv_max"], p["rescue_r2"], p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
+                p["test_condition"],
                 progress_q,
             )
             result, points = await self._future

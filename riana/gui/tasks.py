@@ -198,6 +198,7 @@ def run_rollup(
     workers: int = 1,
     phi_limit: float = -4.0,
     reference_condition: str | None = None,
+    test_condition: str | None = None,
     progress_queue=None,
 ) -> tuple[pd.DataFrame, dict]:
     """Read the ``riana fit`` outputs in *fit_dir* and roll peptides up to proteins.
@@ -213,8 +214,9 @@ def run_rollup(
     (``run_in_executor(None, …)``), not the shared ``ProcessPoolExecutor`` — a
     pool worker spawning its own pool is a nested pool, which breaks
     (``BrokenProcessPool``). On a thread the pool is created from the main
-    process. ``phi_limit`` / ``reference_condition`` apply only to
-    ``model="linear simple"``.
+    process. ``phi_limit`` / ``reference_condition`` / ``test_condition`` apply
+    only to ``model="linear simple"`` (``test_condition`` names the Δk comparison
+    condition — the multi-group interim; needs ``reference_condition`` set too).
 
     Returns ``(protein_table, points)`` — ``points`` is the
     ``{(experiment, condition, protein): (t_list, fs_list)}`` collapsed-refit
@@ -237,6 +239,7 @@ def run_rollup(
         k_cv_max=float(k_cv_max), rescue_r2=float(rescue_r2),
         workers=int(workers), phi_limit=float(phi_limit),
         reference_condition=reference_condition,
+        test_condition=test_condition,
         progress_callback=_queue_progress_callback(progress_queue),
     )
     return result, result.attrs.get("protein_points", {})

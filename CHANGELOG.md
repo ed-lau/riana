@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Rollup — selectable two-condition pair for the linear-simple Δk — 2026-07-03
+
+#### Added
+
+- **`rollup --test-condition` names the Δk comparison condition** (alongside the
+  existing `--reference-condition` baseline), so `--model "linear simple"` can
+  contrast any **chosen pair** of conditions — even in a project with **more than
+  two** conditions, which previously produced a per-condition k for each but no Δk.
+  An interim for multi-group projects ahead of full all-pairwise/Tukey: the pair is
+  contrasted from the **joint (all-condition) fit** (`core.linear_model`), so it
+  reuses the existing model and the eventual multi-group extension is additive rather
+  than a rewrite. `--test-condition` requires `--reference-condition`, and both are
+  validated against the conditions present in the data (a typo fails with the
+  available choices instead of an all-NaN Δk). The GUI Protein tab's Reference / Test
+  inputs are now **dropdowns auto-populated from the manifest's conditions**.
+  **Honesty caveat** (surfaced in the CLI `--help` and the GUI tooltip): the joint
+  fit still pools the residual variance over *all* conditions in the project, so
+  scope the SDRF/project to the conditions you actually mean to compare. Auto mode is
+  unchanged — with no `--test-condition`, a Δk is emitted only for a protein that has
+  exactly two conditions.
+
 ### Integrate — binary-searched isotopomer m/z window — 2026-07-02
 
 #### Performance

@@ -158,6 +158,7 @@ def rollup_proteins(
     random_state: int = 1337,
     phi_limit: float = -4.0,
     reference_condition: str | None = None,
+    test_condition: str | None = None,
     exclude_mbr: bool = False,
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
@@ -205,9 +206,12 @@ def rollup_proteins(
             order).
         n_boot / boot_ci_pct / random_state: bootstrap CI controls (ignored by
             ``model="linear simple"``, whose CIs are analytic).
-        phi_limit / reference_condition: only for ``model="linear simple"`` — the
-            plateau-truncation threshold in φ-space (default −4 ≈ θ 0.98) and the
-            Δk reference condition (default the alphabetically-first).
+        phi_limit / reference_condition / test_condition: only for
+            ``model="linear simple"`` — the plateau-truncation threshold in φ-space
+            (default −4 ≈ θ 0.98) and the Δk contrast conditions. ``reference`` is
+            the baseline (default the alphabetically-first); naming ``test`` as well
+            contrasts that specific pair even when >2 conditions are present (the
+            multi-group interim — see :func:`riana.core.linear_model.fit_linear_deltak`).
 
     Returns:
         One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
@@ -275,6 +279,7 @@ def rollup_proteins(
             stats, fractions, method=method, min_peptides=min_peptides,
             min_points=min_points, phi_limit=phi_limit,
             reference_condition=reference_condition,
+            test_condition=test_condition,
             progress_callback=progress_callback)
 
     model_fn = _MODELS[model]
@@ -310,6 +315,7 @@ def _rollup_linear(
     min_points: int,
     phi_limit: float,
     reference_condition: str | None,
+    test_condition: str | None,
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """The ``model="linear simple"`` path — φ-space OLS + cross-condition Δk.
@@ -326,6 +332,7 @@ def _rollup_linear(
     lin = fit_linear_deltak(
         long, phi_limit=phi_limit, min_points=min_points,
         reference_condition=reference_condition,
+        test_condition=test_condition,
         progress_callback=progress_callback)
 
     out = pd.merge(stats, lin, on=_GROUP_KEYS, how="right")

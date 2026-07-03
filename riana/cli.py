@@ -780,8 +780,16 @@ def rollup(
         "tail = measurement noise, not slope). −4 ≈ θ 0.98, −3 ≈ θ 0.95."),
     reference_condition: str = typer.Option(
         None, "--reference-condition", metavar="COND",
-        help="['linear simple' only] Baseline condition for the Δk contrast — "
-        "delta_k = k(other) − k(reference). Default: alphabetically first."),
+        help="['linear simple' only] Baseline condition of the Δk contrast — "
+        "delta_k = k(test) − k(reference). Default: alphabetically first."),
+    test_condition: str = typer.Option(
+        None, "--test-condition", metavar="COND",
+        help="['linear simple' only] Comparison condition of the Δk contrast "
+        "(requires --reference-condition). Naming a pair contrasts exactly those "
+        "two even when >2 conditions are present — an interim for multi-group "
+        "projects before full all-pairwise. NOTE: the joint fit still pools the "
+        "residual variance over ALL conditions in the data, so scope the SDRF "
+        "conditions to the ones you mean to compare."),
     method: str = typer.Option(
         "weighted", "--method",
         help="Protein estimator. 'weighted' (default): biorep-aware per-timepoint "
@@ -905,6 +913,11 @@ def rollup(
                     f"{p.name} not found in {fit_dir}. Run `riana fit` first.")
         id_source = str(fit_dir)
 
+    if test_condition and not reference_condition:
+        raise typer.BadParameter(
+            "--test-condition requires --reference-condition (the baseline of the "
+            "Δk contrast).", param_hint="--test-condition")
+
     os.makedirs(out, exist_ok=True)
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
@@ -926,6 +939,7 @@ def rollup(
             min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
             k_cv_max=float(k_cv), rescue_r2=float(rescue_r2), workers=int(workers),
             phi_limit=float(phi_limit), reference_condition=reference_condition,
+            test_condition=test_condition,
             exclude_mbr=bool(exclude_mbr), progress_callback=progress,
         )
         progress.close()
@@ -937,7 +951,8 @@ def rollup(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
          "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
-         "phi_limit": phi_limit, "reference_condition": reference_condition},
+         "phi_limit": phi_limit, "reference_condition": reference_condition,
+         "test_condition": test_condition},
         id_source=id_source,
         extra={"method": method, "parsimony": parsimony, "model": model},
     )

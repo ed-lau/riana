@@ -626,18 +626,38 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
 
 
 def test_protein_tab_linear_model_toggles_and_params(main_window):
-    """Selecting 'linear simple' swaps the ODE rate knobs for the φ knobs and
-    surfaces them in build_params."""
+    """Selecting 'linear simple' swaps the ODE rate knobs for the φ + Δk-condition
+    knobs and surfaces the reference/test pair in build_params."""
     tab = main_window.protein_tab
     tab.model_combo.setCurrentText("linear simple")
     assert tab.phi_limit_spin.isVisibleTo(tab)
+    assert tab.reference_combo.isVisibleTo(tab)
+    assert tab.test_combo.isVisibleTo(tab)
     assert not tab.kp_spin.isVisibleTo(tab)
-    tab.reference_edit.setText("control")
+    # The dropdowns are auto-populated from the manifest; simulate that here.
+    for combo in (tab.reference_combo, tab.test_combo):
+        combo.addItems(["control", "drug"])
+    tab.reference_combo.setCurrentText("control")
+    tab.test_combo.setCurrentText("drug")
     params = tab.build_params()
     assert params["model"] == "linear simple"
     assert params["phi_limit"] == -4.0
     assert params["reference_condition"] == "control"
+    assert params["test_condition"] == "drug"
     assert "workers" in params
+
+
+def test_protein_tab_populates_condition_dropdowns_from_manifest(main_window, tmp_path):
+    """Entering a manifest fills the linear-model Reference/Test dropdowns with its
+    conditions (blank-first = auto), so the user picks a Δk pair instead of typing."""
+    mf = _build_manifest_project(tmp_path)
+    tab = main_window.protein_tab
+    tab.manifest_edit.setText(str(mf))
+    tab._populate_conditions()
+    for combo in (tab.reference_combo, tab.test_combo):
+        items = [combo.itemText(i) for i in range(combo.count())]
+        assert items[0] == ""              # blank = auto
+        assert "control" in items
 
 
 def test_protein_tab_linear_plots_phi_space(main_window):

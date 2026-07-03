@@ -82,6 +82,74 @@ def test_single_condition_protein_has_no_delta_k():
     assert out["k_deg"].iloc[0] == pytest.approx(0.06, abs=0.01)
 
 
+def test_named_pair_contrast_with_more_than_two_conditions():
+    """Option B: a named reference/test pair contrasts exactly those two from the
+    joint fit even when a 3rd condition is present (which still gets its k row)."""
+    times = [0, 1, 2, 3, 4, 6, 8, 10]
+    rows = (
+        _curve("e", "P1", "control", 0.05, times, noise=0.004, seed=1)
+        + _curve("e", "P1", "drugA", 0.10, times, noise=0.004, seed=2)
+        + _curve("e", "P1", "drugB", 0.20, times, noise=0.004, seed=3)
+    )
+    out = fit_linear_deltak(pd.DataFrame(rows),
+                            reference_condition="control", test_condition="drugA")
+    # All three conditions still get a per-condition k.
+    k = out.set_index("condition")["k_deg"]
+    assert set(k.index) == {"control", "drugA", "drugB"}
+    assert k["control"] == pytest.approx(0.05, abs=0.01)
+    assert k["drugB"] == pytest.approx(0.20, abs=0.03)
+    # The single Δk is the NAMED pair (drugA − control ≈ +0.05), not drugB.
+    dk = out["delta_k"].dropna().unique()
+    assert len(dk) == 1 and dk[0] == pytest.approx(0.05, abs=0.02)
+    assert (out["delta_k_p"].dropna() < 0.05).all()
+
+
+def test_named_pair_reference_sets_sign():
+    """Swapping reference/test flips the Δk sign (Δk = k(test) − k(reference))."""
+    times = [0, 1, 2, 3, 4, 6, 8, 10]
+    df = pd.DataFrame(
+        _curve("e", "P1", "control", 0.05, times, noise=0.004, seed=1)
+        + _curve("e", "P1", "drug", 0.10, times, noise=0.004, seed=2)
+        + _curve("e", "P1", "other", 0.03, times, noise=0.004, seed=3)
+    )
+    up = fit_linear_deltak(df, reference_condition="control", test_condition="drug")
+    down = fit_linear_deltak(df, reference_condition="drug", test_condition="control")
+    dk_up = up["delta_k"].dropna().iloc[0]
+    dk_down = down["delta_k"].dropna().iloc[0]
+    assert dk_up == pytest.approx(-dk_down, abs=1e-9)
+    assert dk_up > 0  # k(drug) > k(control)
+
+
+def test_named_pair_absent_in_a_protein_gives_nan():
+    """A protein missing one of the named pair gets its k rows but no Δk."""
+    times = [0, 1, 2, 3, 4, 6, 8]
+    out = fit_linear_deltak(
+        pd.DataFrame(
+            _curve("e", "P1", "control", 0.05, times, noise=0.003, seed=1)
+            + _curve("e", "P1", "drug", 0.10, times, noise=0.003, seed=2)
+            + _curve("e", "P2", "control", 0.06, times, noise=0.003, seed=3)
+            + _curve("e", "P2", "other", 0.06, times, noise=0.003, seed=4)
+        ),
+        reference_condition="control", test_condition="drug",
+    )
+    assert out[out["protein"] == "P1"]["delta_k"].notna().all()  # has the pair
+    assert out[out["protein"] == "P2"]["delta_k"].isna().all()   # lacks 'drug'
+
+
+def test_unknown_contrast_condition_raises():
+    """A typo'd reference/test condition fails loudly rather than all-NaN silently."""
+    from riana.exceptions import DataError
+    times = [0, 1, 2, 3, 4, 6]
+    df = pd.DataFrame(
+        _curve("e", "P1", "control", 0.05, times)
+        + _curve("e", "P1", "drug", 0.10, times)
+    )
+    with pytest.raises(DataError, match="not among the conditions"):
+        fit_linear_deltak(df, reference_condition="control", test_condition="tpyo")
+    with pytest.raises(DataError, match="not among the conditions"):
+        fit_linear_deltak(df, reference_condition="nope")
+
+
 def test_plateau_truncation_changes_fast_curve_slope():
     """A fast curve with a saturated tail: truncation must keep the slope honest
     rather than letting the floor-noise flatten it."""
