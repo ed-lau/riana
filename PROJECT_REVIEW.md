@@ -213,14 +213,15 @@ threshold, the full captured envelope (e.g. iso0-5) at width ≥ 6 (`FS_AUTO_BAS
 `linear simple` cross-condition Δk model, the ¹⁸O rewrite, M7 PTM-aware envelope
 (phospho / N-term-Ac / K-ac / Met-Ox), the 2D-LC fraction collapse + mass-merge, and
 the within-protein-θ animal benchmark. **Open:**
-- **Selectable condition pair for the linear-simple Δk** — `fit_linear_deltak`
-  computes the fold-change / p-value on exactly two conditions. Rather than wait on
-  the full multi-group comparison (the >2-condition pairwise/Tukey extension, which
-  stays **deferred** — blocked on a good ≥3-condition dataset), let the user **pick
-  any two condition groups** as condition 1 / condition 2 for the current two-group
-  OLS. On the **CLI**, validate the two named conditions exist in the SDRF (clear
-  error otherwise); in the **GUI**, auto-populate two condition dropdowns from the
-  SDRF's condition values once the SDRF is loaded.
+- **>2-condition Δk — full multi-group comparison.** The **interim selectable pair
+  shipped 2026-07-03** (`rollup --test-condition` + `--reference-condition`, GUI
+  dropdowns auto-populated from the manifest; see CHANGELOG): the user picks any two
+  conditions and the named pair is contrasted from the **joint all-condition fit**,
+  so a multi-group project gets a targeted Δk now (both names validated vs the data;
+  the joint fit still pools variance over all conditions — a documented caveat).
+  **Open:** the full **all-pairwise / Tukey** extension (all pairs + multiplicity
+  correction), which builds *additively* on the same joint fit — blocked on a good
+  ≥3-condition dataset.
 - **Deamidation** (chemical fit-merge) — its own side project: the +0.984 / C13-M+1
   isobaric overlap needs joint envelope + deamidation-proportion modelling.
 - **TMT / multiplexing** (→ 1.2.0) — a third mod-handling type (sample identity): fit
