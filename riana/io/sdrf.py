@@ -59,7 +59,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from riana.exceptions import DataError
@@ -80,6 +80,13 @@ _LABELING_TIME_COL = "characteristics[labeling time]"
 _MIXING_PROPORTION_COL = "characteristics[mixing proportion]"
 _DATA_FILE_COL = "comment[data file]"
 _SOURCE_NAME_COL = "source name"
+_LABEL_COL = "comment[label]"
+
+# An isobaric (TMT / iTRAQ) channel label in ``comment[label]``. Its presence means
+# one mzML multiplexes several samples into ONE MS1 cluster, so Riana collapses the
+# per-channel rows to a single per-file run (``_collapse_isobaric_runs``) — it
+# measures the samples' intensity-weighted-average turnover, not per channel.
+_ISOBARIC_LABEL_RE = re.compile(r"^\s*(tmt|itraq)", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +174,14 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
     factor_cols = [name for name in col_index if name.startswith("factor value[")]
     mod_cols = col_index.get("comment[modification parameters]", [])
 
+    # Isobaric (TMT/iTRAQ) SDRF? Then one data file legitimately recurs once per
+    # channel; the rows are collapsed to a single per-file run after the loop.
+    label_cols = col_index.get(_LABEL_COL, [])
+    is_isobaric = bool(label_cols) and any(
+        _ISOBARIC_LABEL_RE.match(row[label_cols[0]])
+        for row in rows if label_cols[0] < len(row)
+    )
+
     runs: list[RunIdentity] = []
     acquisitions: set[str] = set()
     mass_tol_ppms: set[float] = set()
@@ -185,11 +200,11 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
         data_file = _strip_data_ext(cell(_DATA_FILE_COL))
         if not data_file:
             raise DataError(f"{path} line {line_no}: empty '{_DATA_FILE_COL}'.")
-        if data_file in seen_data_files:
+        if data_file in seen_data_files and not is_isobaric:
             raise DataError(
                 f"{path}: data file {data_file!r} appears on lines "
                 f"{seen_data_files[data_file]} and {line_no} — the mzML join "
-                "key must be unique per run."
+                "key must be unique per run (unless isobaric/TMT-multiplexed)."
             )
         seen_data_files[data_file] = line_no
 
@@ -255,6 +270,15 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
             "Riana expects one method per SDRF."
         )
 
+    if is_isobaric:
+        n_channels = len(runs)
+        runs = _collapse_isobaric_runs(runs)
+        _LOGGER.info(
+            "SDRF %s: isobaric (TMT/iTRAQ) — collapsed %d channel rows to %d "
+            "per-file runs (one MS1 measurement per file = the multiplexed "
+            "average).", path, n_channels, len(runs),
+        )
+
     # Precursor mass tolerance (search window) → integration tolerance. Uniform
     # across runs in practice; if rows disagree, use the smallest (tightest) and
     # warn. A present-but-Da column resolves to no ppm value (warn once).
@@ -283,6 +307,34 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
         acquisition=acquisitions.pop(),
         precursor_mass_tol_ppm=prec_mass_tol_ppm,
     )
+
+
+def _collapse_isobaric_runs(runs: list[RunIdentity]) -> list[RunIdentity]:
+    """Collapse an isobaric SDRF's per-channel rows into one run per data file.
+
+    The multiplexed samples co-elute in a SINGLE MS1 cluster, so Riana measures
+    their intensity-weighted-average D2O turnover — one measurement per file, not
+    per channel. The merged run's ``condition`` is the ``|``-joined **set** of the
+    channels' conditions:
+
+    - a file whose channels are all ONE treatment keeps that clean label — so a
+      design that splits treatments into separate TMT batches (all-control files vs
+      all-treatment files) flows straight into the linear-simple 2-sample Δk;
+    - a file that POOLS treatments into one plex (this dataset: control + nocodazole
+      together) carries the combined label and is not separable at MS1.
+
+    All other identity fields are file-level (they agree across channels — same
+    replicate / fraction / labeling time / enrichment); the per-channel source name
+    is replaced by the data-file stem. First-seen file order is preserved.
+    """
+    groups: dict[str, list[RunIdentity]] = {}
+    for r in runs:
+        groups.setdefault(r.data_file, []).append(r)
+    collapsed: list[RunIdentity] = []
+    for data_file, group in groups.items():
+        condition = "|".join(sorted({r.condition for r in group if r.condition}))
+        collapsed.append(replace(group[0], condition=condition, sample=data_file))
+    return collapsed
 
 
 # --------------------------------------------------------------------------- #

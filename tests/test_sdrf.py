@@ -105,6 +105,39 @@ def test_two_condition_sdrf_groups_and_replicates():
     assert sorted(r.biological_replicate for r in ctrl_t14) == [1, 2]
 
 
+def test_isobaric_tmt_collapses_channels_per_file(tmp_path):
+    """A TMT SDRF (comment[label]=TMT*) collapses its per-channel rows to one run
+    per data file — the multiplexed samples share one MS1 cluster. A file whose
+    channels are all one treatment keeps that clean condition (so split-batch
+    designs flow into the linear-simple 2-sample Δk); a file pooling treatments
+    carries the combined ``|``-joined label."""
+    cols = ["source name", "characteristics[organism]",
+            "characteristics[biological replicate]",
+            "characteristics[labeling time]", "comment[fraction identifier]",
+            "comment[label]", "comment[data file]",
+            "comment[proteomics data acquisition method]",
+            "characteristics[precursor enrichment]", "factor value[treatment]"]
+    rows = [
+        ["s1", "Homo sapiens", "1", "24 hours", "1", "TMT126", "fileA.mzML", "DDA", "0.06", "control"],
+        ["s2", "Homo sapiens", "1", "24 hours", "1", "TMT127N", "fileA.mzML", "DDA", "0.06", "control"],
+        ["s3", "Homo sapiens", "1", "24 hours", "1", "TMT128N", "fileA.mzML", "DDA", "0.06", "control"],
+        ["s4", "Homo sapiens", "2", "24 hours", "1", "TMT126", "fileB.mzML", "DDA", "0.06", "control"],
+        ["s5", "Homo sapiens", "2", "24 hours", "1", "TMT127N", "fileB.mzML", "DDA", "0.06", "nocodazole"],
+        ["s6", "Homo sapiens", "2", "24 hours", "1", "TMT128N", "fileB.mzML", "DDA", "0.06", "control"],
+    ]
+    p = tmp_path / "tmt.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+
+    t = read_sdrf(p)
+    assert len(t.runs) == 2, "6 channel rows across 2 files -> 2 collapsed runs"
+    by_file = {r.data_file: r for r in t.runs}
+    assert by_file["fileA"].condition == "control"            # single-treatment plex
+    assert by_file["fileB"].condition == "control|nocodazole"  # pooled plex
+    assert by_file["fileA"].biological_replicate == 1
+    assert by_file["fileB"].biological_replicate == 2
+    assert by_file["fileA"].sample == "fileA"  # per-channel source name -> file stem
+
+
 def test_experiment_label_defaults_to_stem(tmp_path):
     src = (TWO_CONDITION).read_text()
     p = tmp_path / "myproject.sdrf.tsv"
