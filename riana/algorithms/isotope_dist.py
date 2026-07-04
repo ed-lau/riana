@@ -77,6 +77,23 @@ def get_peptide_distribution(peptide: str,
                                                                                                            "S": peptide_atoms[4],
                                                                                                            "P": peptide_atoms[5]})
 
+    # Fixed-isotope modifications (TMT/TMTpro): built-in ¹³C/¹⁵N that are ~100%
+    # heavy by synthesis (NOT natural abundance), so they shift both mass and
+    # envelope shape. Append each as a single-isotope pseudo-element (prob 1.0) —
+    # mass added, zero combinatorial broadening — the same construction the D2O/O18
+    # label uses below. ``pep_mass`` (the caller's nominal-bin anchor) includes
+    # these via ``mass_calc.unimod_mass``, so the envelope and anchor stay in
+    # lockstep. Identical isotope masses are aggregated across all mod instances on
+    # the peptidoform (e.g. TMTpro on the N-term AND each lysine).
+    pinned_isotopes: dict = {}
+    for mod_id in mods:
+        for count, iso_mass in constants.mod_fixed_isotopes.get(mod_id, ()):
+            pinned_isotopes[iso_mass] = pinned_isotopes.get(iso_mass, 0) + count
+    for iso_mass, count in pinned_isotopes.items():
+        atom_count_list.append(count)
+        isotope_mass_list.append((iso_mass,))
+        isotope_probability_list.append((1.0,))
+
     if label == "D2O":
         # Subtract the number of labeling sites from hydrogen, extend the atom count list with accessible deuterium count
         atom_count_list[1] = atom_count_list[1] - num_labeling_sites

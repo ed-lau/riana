@@ -17,6 +17,7 @@ import pytest
 from riana.algorithms.isotope_dist import (
     _get_init_env,
     clear_envelope_cache,
+    get_peptide_distribution,
     solve_fs_d2o,
 )
 from riana.algorithms.mass_calc import (
@@ -35,6 +36,10 @@ def test_unimod_mass_matches_known_monoisotopic_shifts():
     # Phospho HPO3 and Acetyl C2H2O monoisotopic deltas.
     assert unimod_mass(21) == pytest.approx(79.96633, abs=1e-4)
     assert unimod_mass(1) == pytest.approx(42.01057, abs=1e-4)
+    # TMT/TMTpro carry built-in ¹³C/¹⁵N (pinned single-isotope pseudo-elements), so
+    # the mass must include them and match the UniMod monoisotopic Δ.
+    assert unimod_mass(2016) == pytest.approx(304.20715, abs=1e-4)  # TMTpro
+    assert unimod_mass(737) == pytest.approx(229.16293, abs=1e-4)   # TMT 6/10/11-plex
 
 
 def test_calculate_ion_mz_resolves_unimod_brackets():
@@ -71,6 +76,7 @@ def test_parse_unimod_ids_preserves_order_and_ignores_mass_brackets():
     ("0-UNIMOD:1,1-UNIMOD:4", "[UNIMOD:1]SAMPLERK"),  # Acetyl + CAM → encode Ac only
     ("3-UNIMOD:35", "SAM[UNIMOD:35]PLERK"),          # Met-Ox (tier 1b) → encoded
     ("0-UNIMOD:1,3-UNIMOD:35", "[UNIMOD:1]SAM[UNIMOD:35]PLERK"),  # Ac + Ox both kept
+    ("0-UNIMOD:2016,8-UNIMOD:2016", "[UNIMOD:2016]SAMPLERK[UNIMOD:2016]"),  # TMTpro N-term + K
     ("2-UNIMOD:7", None),                            # deamidation → drop (unsupported)
 ])
 def test_mztab_encode_peptidoform(modifications, expected):
@@ -107,6 +113,8 @@ def test_mztab_proteoform_sites(sequence, modifications, start, expected):
     ("PEPS[UNIMOD:21]M[UNIMOD:35]TIDEK_2", "PEPS[UNIMOD:21]MTIDEK_2"),  # phospho kept
     ("PEPMTIDEK_2", "PEPMTIDEK_2"),                            # no chemical mod → unchanged
     ("[UNIMOD:1]PEPM[UNIMOD:35]TIDEK_3", "[UNIMOD:1]PEPMTIDEK_3"),  # N-term Ac kept, Ox stripped
+    ("[UNIMOD:2016]PEPTIDEK[UNIMOD:2016]_2", "PEPTIDEK_2"),         # TMTpro (N-term + K) stripped → merge
+    ("[UNIMOD:2016]PEPS[UNIMOD:21]TIDEK[UNIMOD:2016]_2", "PEPS[UNIMOD:21]TIDEK_2"),  # TMT stripped, phospho kept
 ])
 def test_fit_key_strips_only_chemical_mods(concat, expected):
     from riana.core.fitting import _fit_key
@@ -140,6 +148,25 @@ def test_mods_reshape_the_envelope_but_bare_path_is_unchanged():
     # The empty-mods call must equal the legacy no-mods default exactly.
     env_default = np.asarray(_get_init_env(seq, pep_mass, n=6))
     assert np.array_equal(env_bare, env_default)
+
+
+def test_tmtpro_pinned_isotopes_shift_mass_and_envelope_in_lockstep():
+    """TMTpro's built-in ¹³C₇/¹⁵N₂ per tag are pinned single-isotope pseudo-elements:
+    they shift the precursor mass (``unimod_mass``) AND the envelope, and the
+    envelope's m0 must land on the mass anchor — the lockstep a naive light-atoms +
+    mass-override breaks (``get_envelope`` would bin around the wrong nominal mass
+    and collapse to zero)."""
+    clear_envelope_cache()
+    bare = calculate_ion_mz("SAMPLEK")
+    tmt = calculate_ion_mz("[UNIMOD:2016]SAMPLEK[UNIMOD:2016]")  # N-term + the K
+    assert tmt - bare == pytest.approx(2 * 304.20715, abs=1e-3)  # two tags
+    # The envelope built from atoms + pinned isotopes must sit at the same mass.
+    dist = get_peptide_distribution("SAMPLEK", mods=(2016, 2016), label="D2O")
+    assert min(dist.masses) == pytest.approx(tmt, abs=0.01)
+    # The extra light C₈ per tag broadens the natural envelope vs the bare peptide.
+    env_tmt = np.asarray(_get_init_env("SAMPLEK", tmt, n=6, mods=(2016, 2016)))
+    env_bare = np.asarray(_get_init_env("SAMPLEK", bare, n=6, mods=()))
+    assert env_tmt[1] > env_bare[1]
 
 
 def test_solve_fs_d2o_accepts_mods_and_recovers_endpoints():

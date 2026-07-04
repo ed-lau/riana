@@ -125,11 +125,17 @@ _UNIMOD_BRACKET_RE = re.compile(r'\[UNIMOD:(\d+)]', re.IGNORECASE)
 def unimod_mass(unimod_id: int) -> float:
     """Monoisotopic mass shift of a UniMod modification from its composition.
 
-    Derived from the curated ``constants.mod_atoms`` ``[C,H,O,N,S,P]`` table so
-    mass and envelope composition share a single source. Raises ``KeyError`` for
-    a UniMod id absent from the table (the caller decides whether to drop it).
+    Derived from the curated ``constants.mod_atoms`` ``[C,H,O,N,S,P]`` light-atom
+    table PLUS any ``constants.mod_fixed_isotopes`` pinned heavies (TMT/TMTpro's
+    built-in ¹³C/¹⁵N), so the precursor mass and the IsoSpec envelope
+    (``isotope_dist.get_peptide_distribution``) share one source and stay in
+    lockstep. Raises ``KeyError`` for a UniMod id absent from the table (the caller
+    decides whether to drop it).
     """
-    return _calc_atom_mass(constants.mod_atoms[unimod_id])
+    mass = _calc_atom_mass(constants.mod_atoms[unimod_id])
+    for count, iso_mass in constants.mod_fixed_isotopes.get(unimod_id, ()):
+        mass += count * iso_mass
+    return mass
 
 
 def parse_unimod_ids(seq: str) -> list[int]:

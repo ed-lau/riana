@@ -32,6 +32,12 @@ N_MASS = 14.00307400443
 S_MASS = 31.9720711744
 P_MASS = 30.97376199842  # P31 — monoisotopic (phosphorus is mononuclidic)
 
+# Heavy stable isotopes carried by *fixed-isotope* modifications: TMT/TMTpro's
+# reporter+balancer groups contain ¹³C/¹⁵N that are ~100% heavy by synthesis (not
+# natural abundance) — see ``mod_fixed_isotopes``.
+C13_MASS = 13.00335483507  # ¹³C
+N15_MASS = 15.0001088989   # ¹⁵N
+
 # Note: a previous version exposed a ``RIA_D2O`` constant fixed to 6% v/v
 # enrichment from the M2 calibration. That constant has been removed —
 # the precursor enrichment is an experiment parameter, not a constant of
@@ -100,6 +106,24 @@ mod_atoms = {
     36:  [2, 4, 0, 0, 0, 0],    # Dimethyl — roadmap tier 1
     37:  [3, 6, 0, 0, 0, 0],    # Trimethyl — roadmap tier 1
     121: [4, 6, 2, 2, 0, 0],    # GlyGly (ubiquitin remnant) — roadmap tier 2
+    # TMT/TMTpro — LIGHT atoms only; the built-in heavy ¹³C/¹⁵N are pinned
+    # single-isotope pseudo-elements in ``mod_fixed_isotopes`` (see there).
+    737:  [8, 20, 2, 1, 0, 0],   # TMT 6/10/11-plex (UNIMOD:737): light of C8 ¹³C4 H20 N ¹⁵N O2
+    2016: [8, 25, 3, 1, 0, 0],   # TMTpro 16/18-plex (UNIMOD:2016): light of C8 ¹³C7 H25 N ¹⁵N2 O3
+}
+
+# Built-in *fixed* heavy isotopes carried by a modification, keyed by UniMod id:
+# ``{id: [(count, exact_isotope_mass), ...]}``. Unlike organic mods (whose added
+# atoms are natural-abundance, in ``mod_atoms``), TMT/TMTpro reporter+balancer
+# groups carry ¹³C/¹⁵N that are ~100% heavy by synthesis, so they shift BOTH the
+# precursor mass (``mass_calc.unimod_mass``) and the envelope shape
+# (``isotope_dist.get_peptide_distribution`` appends each as a single-isotope,
+# prob-1.0 pseudo-element — mass added, zero combinatorial broadening: the same
+# mechanism the D2O / ¹⁸O label uses). Hand-check TMTpro: light 183.184 + 7·¹³C +
+# 2·¹⁵N = 304.207 = the UniMod:2016 monoisotopic Δ.
+mod_fixed_isotopes = {
+    737:  [(4, C13_MASS), (1, N15_MASS)],   # TMT 6/10/11-plex
+    2016: [(7, C13_MASS), (2, N15_MASS)],   # TMTpro 16/18-plex
 }
 
 # --- M7 modification policy (UniMod accession ids) ---------------------------
@@ -107,11 +131,13 @@ mod_atoms = {
 # per-cysteine ``iaa`` path in ``mass_calc``), so they are NOT encoded as
 # variable ``[UNIMOD:N]`` tokens on the peptidoform.
 FIXED_UNIMODS = frozenset({4})
-# Variable mods the forward model accounts for — encoded into the peptidoform
-# sequence as ``[UNIMOD:N]`` tokens (protein N-term Acetyl, Phospho-S/T/Y,
-# Met-Ox). A peptidoform carrying any other (non-fixed) mod is dropped until that
-# mod's roadmap tier lands.
-STARTER_VARIABLE_UNIMODS = frozenset({1, 21, 35})
+# Mods the forward model accounts for — encoded into the peptidoform sequence as
+# ``[UNIMOD:N]`` tokens (protein N-term Acetyl, Phospho-S/T/Y, Met-Ox, and
+# TMT/TMTpro). A peptidoform carrying any *other* mod is dropped until that mod's
+# roadmap tier lands. (TMTpro is searched fixed-on-K + variable-on-N-term, but
+# every instance is written ``pos-UNIMOD:2016`` in the mzTab, so it is tokenized
+# here like any other modelled mod; its heavy isotopes live in ``mod_fixed_isotopes``.)
+STARTER_VARIABLE_UNIMODS = frozenset({1, 21, 35, 737, 2016})
 # Mods that earn their own proteoform rollup key (Stage B) instead of folding
 # into the bare protein — the regulated, site-specific-turnover mods. Phospho
 # (21) and side-chain **Acetyl (1, e.g. K-ac)** qualify. Acetyl is special: the
@@ -128,7 +154,12 @@ BIOLOGICAL_MODS = frozenset({21, 1})
 # and unmodified forms share the FS-vs-time signature: ``riana fit`` strips these
 # from the **fit-grouping key** so the two forms are integrated separately (each
 # at its own clean m/z + envelope) but **merged into one turnover curve**.
-CHEMICAL_MODS = frozenset({35})  # Oxidation (Met)
+# TMT/TMTpro joins here: it is isobaric, so the multiplexed samples share one MS1
+# cluster — RIANA measures their *average* D2O turnover, and the N-term-labelled vs
+# unlabelled peptidoforms (TMTpro-K is fixed) merge onto one turnover curve, exactly
+# like Met-Ox. (TMT is NOT a multiplexing/sample-axis mod like SILAC/dimethyl —
+# their per-sample D2O signatures are not separable at MS1.)
+CHEMICAL_MODS = frozenset({35, 737, 2016})  # Oxidation (Met); TMT (737) / TMTpro (2016)
 # Proteoform-tag prefix per biological UniMod id (Stage B). The rollup key is
 # ``accession_<prefix><residue><protein_site>`` — e.g. Phospho-S at protein
 # coordinate 34476 on A2ASS6 → ``A2ASS6_pS34476`` (multi-site joined by ``_``).
