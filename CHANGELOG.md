@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### TMT / TMTpro + single-timepoint labeling — 2026-07-05
+
+Process an isobaric TMTpro D₂O turnover experiment end-to-end (integrate → fit →
+rollup), validated on a 16-plex AC16 single-timepoint dataset.
+
+#### Added
+
+- **TMT / TMTpro peptides are modelled and processed.** Their built-in ¹³C/¹⁵N
+  (≈100% heavy by synthesis) are injected as **pinned single-isotope pseudo-elements**
+  in the IsoSpec envelope and `unimod_mass`, so the precursor mass and the envelope
+  stay in exact lockstep (`unimod_mass(2016)` = 304.2071; the naive light-atoms +
+  mass-override that desynced `get_envelope` is avoided). TMTpro (`UNIMOD:2016`) and
+  TMT 6/10/11-plex (`737`) tokenise and are **chemical fit-merge mods**: the
+  multiplexed samples share one MS1 cluster, so RIANA reports their
+  intensity-weighted-average turnover and merges the N-term-labelled vs unlabelled
+  peptidoforms onto one curve. New `constants.mod_fixed_isotopes`.
+- **Isobaric SDRF intake.** A TMT/iTRAQ SDRF (detected from `comment[label]`)
+  collapses its per-channel rows to **one run per data file**; the condition is the
+  `|`-joined set of the channels' treatments — so a split-batch design (all-control
+  files vs all-treatment files) flows into the linear-simple 2-sample Δk, while a
+  pooled plex carries a combined label. Label-free intake is unchanged.
+- **Single-timepoint fitting + curation.** A one-labeling-timepoint experiment is
+  auto-detected from the data and curated **without R²** (degenerate at a single x):
+  the new `rollup --min-fit-points N` biological-replicate gate (auto **2**, tunable)
+  plus the `k_cv` relative-uncertainty gate, with the R²/rescue machinery bypassed and
+  logged. `fit --depth 1` recovers k analytically from the replicate points.
+
+#### Fixed
+
+- **Single-point fits report NaN uncertainty, not a spurious zero-width CI.** A
+  one-point residual bootstrap collapses to `k_cv = 0` (undefined uncertainty read as
+  perfect certainty), which sailed through the `--k-cv` gate; now `n_pts < 2` → NaN
+  CI/k_cv, so a single-replicate peptide is correctly excluded. General fix, surfaced
+  by the single-timepoint data.
+- **FS rail-hits are dropped from the single-timepoint fit** before counting fit
+  points / depth. The FS solver clamps an unphysical fit to its ±bound (−0.1 / 1.2) as
+  a diagnostic; such a point is not a real measurement, and railing to the *same*
+  bound in every replicate had manufactured fake "perfectly replicated" peptidoforms
+  (identical FS → R²=NaN, k_cv=0). Single-timepoint only for now; the same drop for
+  multi-point fits (same criterion) is a re-validation follow-up.
+
 ### Rollup — selectable two-condition pair for the linear-simple Δk — 2026-07-03
 
 #### Added

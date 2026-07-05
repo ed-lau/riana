@@ -152,6 +152,7 @@ def rollup_proteins(
     min_r2: float | None = None,
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
+    min_fit_points: int | None = None,
     workers: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
@@ -196,6 +197,12 @@ def rollup_proteins(
             the rate constant's scale-free CV. ``k_cv_max ≤ 0`` disables the
             rescue; the ``rescue_r2`` floor guards against degenerate k≈0 rail-hits
             (see :func:`_r2_admitted`).
+        min_fit_points: peptide-level biological-replicate gate — keep only
+            peptidoforms fit on ≥ this many points. ``None`` (default) auto-resolves
+            to **2 for a single-timepoint experiment** (detected from one distinct
+            labeling time) and **off otherwise**. For single-timepoint data R² is
+            degenerate, so curation is this replicate floor + the ``k_cv`` gate
+            (``k_cv_max``), with the R²/rescue machinery bypassed.
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
             collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
             pseudoreplication-naive).
@@ -259,8 +266,43 @@ def rollup_proteins(
         peptides = peptides[peptides["concat"].isin(keep)].copy()
         fractions = fractions[fractions["concat"].isin(keep)].copy()
 
-    # Optional peptide R² admission gate (off by default).
-    if min_r2 is not None:
+    # Single-timepoint detection (data-driven, needs no flag): an experiment with one
+    # labeling timepoint has no kinetic curve, so R² is degenerate (≈0/NaN) and the
+    # R²/rescue-floor gate does not apply. Curate on the rate-constant relative
+    # uncertainty (k_cv) plus a biological-replicate floor (min_fit_points) instead.
+    single_tp = (
+        "labeling_time" in fractions.columns
+        and int(fractions["labeling_time"].nunique(dropna=True)) <= 1
+    )
+    if min_fit_points is None:
+        min_fit_points = 2 if single_tp else 0
+    if single_tp:
+        _LOGGER.info(
+            "rollup: single labeling timepoint detected — R² is not applicable, "
+            "curating on >=%d replicate fit points and k_cv < %s "
+            "(tune with --min-fit-points / --k-cv; --min-fit-points 1 --k-cv 0 = off).",
+            max(min_fit_points, 1), k_cv_max,
+        )
+
+    # Peptide-level replicate gate: keep peptidoforms fit on >= min_fit_points points
+    # (distinct (biorep, timepoint) fit points) — the dominant curation lever for
+    # single-timepoint data, where n_points IS the biological-replicate count.
+    if min_fit_points and min_fit_points > 1:
+        if "n_points" not in peptides.columns:
+            raise DataError(
+                "peptides input is missing 'n_points' (needed for --min-fit-points).")
+        keep = peptides.loc[peptides["n_points"] >= min_fit_points, "concat"].unique()
+        peptides = peptides[peptides["concat"].isin(keep)].copy()
+        fractions = fractions[fractions["concat"].isin(keep)].copy()
+
+    # Curation gate. Single-timepoint: k_cv only (R² bypassed). Multi-timepoint: the
+    # R² gate + its flat-curve k_cv rescue, off by default (min_r2 is None).
+    if single_tp:
+        if k_cv_max is not None and k_cv_max > 0.0:
+            admitted = _k_cv_admitted(peptides, k_cv_max)
+            peptides = peptides[peptides["concat"].isin(admitted)].copy()
+            fractions = fractions[fractions["concat"].isin(admitted)].copy()
+    elif min_r2 is not None:
         admitted = _r2_admitted(peptides, min_r2, k_cv_max, rescue_r2)
         peptides = peptides[peptides["concat"].isin(admitted)].copy()
         fractions = fractions[fractions["concat"].isin(admitted)].copy()
@@ -488,6 +530,26 @@ def _ensure_group_cols(df: pd.DataFrame) -> pd.DataFrame:
     for c in GROUP_KEY_COLUMNS:
         df[c] = df[c].fillna("") if c in df.columns else ""
     return df
+
+
+def _k_cv_admitted(peptides: pd.DataFrame, k_cv_max: float) -> set:
+    """Concats whose rate-constant relative uncertainty ``k_cv < k_cv_max`` — the
+    **single-timepoint** curation gate. At one labeling timepoint R² is degenerate,
+    so it is bypassed and admission rides on ``k_cv = (ci_hi − ci_lo) / (2·|k|)``
+    alone (matches :func:`riana.core.fitting._k_cv`). A single-point fit has ``k_cv``
+    NaN (undefined uncertainty — no replication) and a k≈0 rail-hit gives NaN/inf, so
+    both fail the ``<`` and are excluded, as intended.
+    """
+    need = {"concat", "k_deg", "ci_lo", "ci_hi"}
+    missing = need - set(peptides.columns)
+    if missing:
+        raise DataError(f"single-timepoint k_cv gate needs columns {sorted(missing)}.")
+    k = peptides["k_deg"].to_numpy(dtype=float)
+    lo = peptides["ci_lo"].to_numpy(dtype=float)
+    hi = peptides["ci_hi"].to_numpy(dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        k_cv = (hi - lo) / (2.0 * np.abs(k))
+    return set(peptides.loc[k_cv < k_cv_max, "concat"])
 
 
 def _r2_admitted(

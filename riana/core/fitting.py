@@ -55,6 +55,7 @@ from scipy.optimize import curve_fit
 
 from riana import constants
 from riana.algorithms.isotope_dist import (
+    FS_BOUNDS,
     init_channel_masses, init_envelope_width,
     solve_fs_d2o, solve_fs_d2o_ds, solve_fs_o18, solve_fs_o18_ds,
     spep_from_coefficients, spep_from_length_coefficients,
@@ -80,6 +81,18 @@ _MODELS: dict[str, Callable] = {
 
 _K_DEG_INIT = 0.5
 _K_DEG_BOUNDS = ([1e-4], [10.0])
+
+#: FS rail-hit detection. The per-timepoint FS solve clamps an unphysical fit to the
+#: widened ``FS_BOUNDS`` (-0.1, 1.2) as a diagnostic; a point at (within
+#: ``_FS_RAIL_TOL`` of) a bound is not a real measurement — over-labelled (upper) or
+#: below natural abundance (lower) — so it is dropped from the kinetic fit BEFORE
+#: counting fit points / depth. The tol catches the lower rail (converges ~-0.099996,
+#: just inside -0.1) while keeping a genuine near-rail 1.19. **Single-timepoint only
+#: for now** — the same drop on multi-point fits shifts validated numbers, so it is a
+#: re-validation follow-up (identical criterion, wider scope).
+_FS_RAIL_TOL = 1e-3
+_FS_RAIL_HI = FS_BOUNDS[1] - _FS_RAIL_TOL
+_FS_RAIL_LO = FS_BOUNDS[0] + _FS_RAIL_TOL
 
 _DEFAULT_N_BOOT = 200
 _DEFAULT_BOOT_CI_PCT = (5.0, 95.0)
@@ -510,6 +523,12 @@ def fit_run(
                 f"No peptidoforms survive --min-spep {min_spep}. Lower it "
                 "(0 disables) or check the coefficient table.")
 
+    # Single-timepoint experiment? (one distinct labeling time across the data.) If
+    # so, drop per-point FS rail-hits inside the fit before counting points/depth —
+    # scoped here so the validated multi-timepoint path is untouched (its rail-hits
+    # are caught by the R² gate; a fit-level drop there is a re-validation follow-up).
+    single_tp = time_column is not None and int(rdf[time_column].nunique()) <= 1
+
     fit_partial = partial(
         _fit_one_concat,
         rdf=rdf,
@@ -520,6 +539,7 @@ def fit_run(
         n_boot=n_boot,
         boot_ci_pct=boot_ci_pct,
         base_seed=random_state,
+        single_timepoint=single_tp,
     )
 
     if config.workers > 1:
@@ -529,7 +549,7 @@ def fit_run(
         # initializer; only the lightweight concat strings cross per task. The
         # per-concat seed makes the result independent of worker count.
         init_args = (rdf, model_fn, config, dict(aa_coefficients),
-                     time_column, n_boot, boot_ci_pct, random_state)
+                     time_column, n_boot, boot_ci_pct, random_state, single_tp)
         chunk = max(1, len(concat_list) // (config.workers * 8))
         with futures.ProcessPoolExecutor(
             max_workers=config.workers,
@@ -575,12 +595,13 @@ _FIT_WORKER_STATE: dict[str, object] = {}
 
 def _init_fit_worker(
     rdf, model_fn, config, aa_coefficients,
-    time_column, n_boot, boot_ci_pct, base_seed,
+    time_column, n_boot, boot_ci_pct, base_seed, single_timepoint=False,
 ) -> None:
     _FIT_WORKER_STATE.update(
         rdf=rdf, model_fn=model_fn, config=config,
         aa_coefficients=aa_coefficients, time_column=time_column,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, base_seed=base_seed,
+        single_timepoint=single_timepoint,
     )
 
 
@@ -590,6 +611,7 @@ def _fit_one_concat_worker(concat: str) -> "FitResult | None":
         concat, rdf=s["rdf"], model_fn=s["model_fn"], config=s["config"],
         aa_coefficients=s["aa_coefficients"], time_column=s["time_column"],
         n_boot=s["n_boot"], boot_ci_pct=s["boot_ci_pct"], base_seed=s["base_seed"],
+        single_timepoint=s.get("single_timepoint", False),
     )
 
 
@@ -604,6 +626,7 @@ def _fit_one_concat(
     n_boot: int,
     boot_ci_pct: tuple[float, float],
     base_seed: int,
+    single_timepoint: bool = False,
 ) -> FitResult | None:
     """Per-peptide fit: Spep from coefficients → per-timepoint FS → k_deg.
 
@@ -735,6 +758,13 @@ def _fit_one_concat(
         return _null_result(concat, protein_id, mod_sites)
 
     fit_mask = ~np.isnan(fs_arr) & valid
+    if single_timepoint:
+        # Drop per-point FS rail-hits (the solver clamped an unphysical fit to the
+        # ±FS_BOUNDS diagnostic value): an over-labelled (>=~1.2) or below-natural
+        # (<=~-0.1) FS is a bad measurement, not a replicate, so it must not count
+        # toward fit points or depth. See _FS_RAIL_* (single-timepoint only for now).
+        railed = (fs_arr >= _FS_RAIL_HI) | (fs_arr <= _FS_RAIL_LO)
+        fit_mask = fit_mask & ~railed
     if int(fit_mask.sum()) < config.depth:
         return _null_result(concat, protein_id, mod_sites)
 

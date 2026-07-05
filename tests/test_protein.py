@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from riana.core.protein import (
+    _k_cv_admitted,
     _r2_admitted,
     _resolve_parsimony,
     _weighted_theta,
@@ -207,6 +208,43 @@ def test_weighted_refit_recovers_planted_k():
     assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
     assert out.loc["P0", "R_squared"] > 0.999
     assert out.loc["P0", "n_points"] == 5         # collapsed (biorep, t) cells
+
+
+def test_k_cv_admitted_single_timepoint_gate():
+    """The single-timepoint k_cv gate admits k_cv < threshold and rejects a wide CI
+    or a NaN CI (single-point / non-converged)."""
+    pep = pd.DataFrame([
+        {"concat": "A", "k_deg": 0.02, "ci_lo": 0.019, "ci_hi": 0.021},  # k_cv=0.05 keep
+        {"concat": "B", "k_deg": 0.02, "ci_lo": 0.005, "ci_hi": 0.05},   # k_cv=1.1 reject
+        {"concat": "C", "k_deg": 0.02, "ci_lo": np.nan, "ci_hi": np.nan},  # NaN reject
+    ])
+    assert _k_cv_admitted(pep, 0.2) == {"A"}
+
+
+def test_rollup_single_timepoint_auto_detects_and_curates_on_replicates_and_kcv():
+    """One distinct labeling time auto-detects single-timepoint: R² is bypassed and
+    curation = min_fit_points (auto 2) + the k_cv gate. A single-replicate peptide
+    (n_points=1, k_cv NaN) drops with no flags; --min-fit-points 1 --k-cv 0 keeps it."""
+    T = 24.0
+    pep = pd.DataFrame([
+        {"concat": "A_2", "protein id": "sp|P1|X", "k_deg": 0.02, "R_squared": 0.0,
+         "ci_lo": 0.019, "ci_hi": 0.021, "n_points": 3},                   # keep
+        {"concat": "B_2", "protein id": "sp|P1|X", "k_deg": 0.02, "R_squared": np.nan,
+         "ci_lo": np.nan, "ci_hi": np.nan, "n_points": 1},                 # single -> drop
+    ])
+    rows = []
+    for c, brs in (("A_2", [1, 2, 3]), ("B_2", [1])):
+        for br in brs:
+            rows.append({"concat": c, "protein id": "sp|P1|X",
+                         "biological_replicate": br, "labeling_time": T,
+                         "fs": 0.38, "fs_lower": 0.36, "fs_upper": 0.40})
+    frac = pd.DataFrame(rows)
+    auto = rollup_proteins(pep, frac, model="simple", min_points=1,
+                           min_peptides=1, n_boot=20).set_index("protein")
+    assert int(auto.loc["P1", "n_peptides"]) == 1     # only the replicated A survives
+    off = rollup_proteins(pep, frac, model="simple", min_points=1, min_peptides=1,
+                          min_fit_points=1, k_cv_max=0.0, n_boot=20).set_index("protein")
+    assert int(off.loc["P1", "n_peptides"]) == 2      # gates disabled -> A and B
 
 
 def test_rollup_min_spep_gate_drops_low_site_peptides():
