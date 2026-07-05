@@ -116,8 +116,13 @@ bar chart, fixed hint area). The remaining open work lives in the Tracks below.
   fit/rollup/integrate results from a manifest without refitting, and determinate
   fit/rollup progress bars — both shipped inside 1.1.0 (see `CHANGELOG.md`), so the
   milestone is empty.
-- **1.2.0:** TMT / multiplexing mods; deamidation (own side project); the
-  adaptive-N_ISO + robust-envelope rework.
+- **1.2.0 (in progress on the `1.2.0` branch — see `CHANGELOG.md [Unreleased]`):**
+  **shipped** — masking-vectorization perf, parallel test suite + `slow` tier, the
+  selectable-condition-pair linear-simple Δk, and the **TMT / TMTpro + single-timepoint
+  labeling** line (pinned-isotope envelopes, isobaric SDRF collapse, single-timepoint
+  auto-detect + `--min-fit-points` + FS rail-drop). **Remaining** — SILAC/dimethyl
+  multiplexing + the multi-point FS rail-drop (Track C), deamidation (own side
+  project), the adaptive-N_ISO + robust-envelope rework.
 
 The **Locked decisions** below are design invariants (kept for reference); the Tracks
 A–E are the open research/engineering clusters.
@@ -224,10 +229,22 @@ the within-protein-θ animal benchmark. **Open:**
   ≥3-condition dataset.
 - **Deamidation** (chemical fit-merge) — its own side project: the +0.984 / C13-M+1
   isobaric overlap needs joint envelope + deamidation-proportion modelling.
-- **TMT / multiplexing** (→ 1.2.0) — a third mod-handling type (sample identity): fit
-  each channel separately, combine at rollup as different experiments; TMT heavy
-  ¹³C/¹⁵N injected as pseudo-elements. Dimethyl/SILAC follow (SDRF channel→sample
-  mapping TBD).
+- **TMT / TMTpro — SHIPPED 2026-07-05** (see `CHANGELOG.md`). NOT the sample-axis
+  "multiplexing" it was first framed as: the multiplexed samples' D₂O signatures are
+  inseparable at MS1, so TMT is a **chemical fit-merge mod** whose built-in ¹³C/¹⁵N are
+  pinned single-isotope pseudo-elements, and RIANA reports the intensity-weighted-
+  average turnover of the plex. Includes isobaric SDRF collapse + single-timepoint
+  fitting/curation. **Open follow-ups:**
+  - **Multi-point FS rail-drop** — single-timepoint fitting drops per-point FS
+    rail-hits (at ±`FS_BOUNDS`) before counting fit points/depth; extend the *identical*
+    criterion to multi-point fits (widen the `single_timepoint` scope in
+    `core.fitting`). Deferred pending **re-validation** — it shifts the established
+    multi-timepoint numbers (rail-contaminated peptides the R² gate currently drops
+    would be re-fit on their physical points).
+  - **True multiplexing (SILAC / dimethyl)** — the genuine sample-axis mods: a mod
+    marks a *different sample* (fit separately, combined at rollup as experiments),
+    with heavy ¹³C/¹⁵N/²H as pseudo-elements — the **same machinery TMT now uses**.
+    SDRF channel→sample mapping TBD; needs Sadygov dimethyl-D₂O reprocessing.
 - **Proper demultiplexing** (Beyond initial 1.2.0) - correct the spillover from
 light cluster into heavy cluster (e.g., iso_6 from light cluster overlaps with
 iso_9 of the SILAC heavy D2O cluster)
