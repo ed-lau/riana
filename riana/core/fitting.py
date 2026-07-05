@@ -801,7 +801,14 @@ def _fit_one_concat(
         )
         boot_obs.append(pred_b + residuals[rng.integers(0, n_pts, size=n_pts)])
 
-    if len(boot_ks) >= 10:
+    # A residual bootstrap needs >= 2 fitted points to have any residual variation
+    # to resample: with a SINGLE point the 1-parameter fit passes through it exactly
+    # (0 residual degrees of freedom), so every resample returns the identical k and
+    # the CI collapses to zero width. That is *undefined* uncertainty, not zero — so
+    # require n_pts >= 2 and emit NaN (k_cv then NaN via _k_cv, correctly failing the
+    # --k-cv gate) rather than a spuriously tight CI (k_cv=0) that a single-timepoint,
+    # single-replicate peptide would otherwise sail through. R² is likewise NaN there.
+    if n_pts >= 2 and len(boot_ks) >= 10:
         ci_lo, ci_hi = (float(p) for p in np.percentile(boot_ks, boot_ci_pct))
         sd = float(np.std(boot_ks, ddof=1))
         lo_arr, hi_arr = np.percentile(np.vstack(boot_obs), boot_ci_pct, axis=0)
