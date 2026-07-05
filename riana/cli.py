@@ -558,6 +558,14 @@ def fit(
         "columns. 'anchor': keep only the highest-total-intensity fraction (legacy "
         "parity). Intensities are always combined before a single FS is solved — "
         "fraction FS values are never averaged."),
+    fs_rail_drop: bool = typer.Option(
+        True, "--fs-rail-drop/--no-fs-rail-drop",
+        help="Drop per-timepoint FS points beyond a 0.05 margin of the physical [0,1] "
+        "range (over-labelled ≥1.05 or below-natural ≤−0.05) before counting fit "
+        "points / depth — such a point is a failed solve, not a real measurement. On by "
+        "default for all fits (benchmark-picked rails; see the 2026-07-05 report); "
+        "--no-fs-rail-drop reproduces the pre-1.2.0 numbers (rail-hits then fall to the "
+        "R² gate)."),
 ) -> None:
     """Fit kinetic models to a D2O-labeling integrate time series."""
     import dataclasses
@@ -641,6 +649,7 @@ def fit(
             exclude_mbr=bool(exclude_mbr),
             fraction_collapse=fraction_collapse,
             min_spep=min_spep,
+            fs_rail_drop=bool(fs_rail_drop),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

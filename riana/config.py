@@ -415,6 +415,27 @@ class FitConfig:
     #: explicit value to tune per sample (the floor rises with shorter time
     #: series and slower turnover — report 2026-06-28_spep_curation_gate).
     min_spep: int | None = None
+    #: --fs-rail-drop / --no-fs-rail-drop. Drop per-timepoint FS points that fall beyond
+    #: a small margin of the physical [0, 1] range — over-labelled (``>= fs_rail_hi``,
+    #: default 1.05) or below natural abundance (``<= fs_rail_lo``, default −0.05) —
+    #: **before** counting fit points / depth: such a point is a failed solve, not a real
+    #: measurement, so it must not manufacture a fake replicate or contaminate the kinetic
+    #: curve. A genuine near-1.0 plateau or a near-0 t0 anchor sits inside the margin and
+    #: is kept, so the criterion is scope-independent — it applies to both single- and
+    #: multi-timepoint fits. ``True`` (default) is on for all fits; set ``False``
+    #: (``--no-fs-rail-drop``) to reproduce the pre-1.2.0 multi-timepoint numbers (where
+    #: rail-hits fell to the R² gate downstream instead of being dropped at the fit).
+    fs_rail_drop: bool = True
+    #: FS rail-drop thresholds. A per-timepoint FS ``>= fs_rail_hi`` or ``<= fs_rail_lo``
+    #: is dropped (when :attr:`fs_rail_drop`). ``None`` (default) uses the benchmark-picked
+    #: rails ``1.05`` / ``−0.05`` (a 0.05 margin around the physical [0, 1] range — the
+    #: drop-threshold sweep in reports/2026-07-05_multipoint_rail_drop.md found this beats
+    #: the old clamp-only rails on R²/CV/yield without eating real plateau/anchor points).
+    #: Override to tune the aggressiveness: tighter (e.g. 1.0 / 0.0, the physical bound) can
+    #: help clean data but eats near-0 anchors on noisy/low-FS sets like AC16; looser
+    #: (≈ the solver clamp 1.199 / −0.099) reproduces the pre-sweep behaviour.
+    fs_rail_hi: float | None = None
+    fs_rail_lo: float | None = None
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded

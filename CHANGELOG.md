@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Multi-point FS rail-drop + physical-margin rails — 2026-07-05
+
+#### Changed
+
+- **FS rail-drop now applies to every fit, single- and multi-timepoint** (was
+  single-timepoint only). A per-timepoint fraction-synthesis value that the solver
+  returns beyond a small margin of the physical [0, 1] range is a failed solve, not a
+  measurement, so it is dropped **before** counting fit points / depth. Re-validated at
+  the production `--depth 6` curation on all five turnover sets (boomi/juber iPSC + AC16
+  D₂O and ¹⁸O, lve in-vivo): admitted-peptide **yield rises 5–14 %** where rail-hits are
+  common and is neutral on the cleanest set, **R² of the fitted population is universally
+  cleaner**, the **matched within-protein geom-CV** (same peptides in both arms) is better
+  or unchanged on every set, and **median k is unbiased** (|Δk| ≤ 0.001). The earlier
+  single-timepoint-only scoping had deferred this pending re-validation; a depth-3 pass
+  had shown a spurious CV regression that a depth-6 (production) pass proved was an
+  artifact of the loose depth floor. Report: `reports/2026-07-05_multipoint_rail_drop.md`.
+- **Rail thresholds moved from the solver clamp to a physical-margin default.** The drop
+  rails are now **`FS ≥ 1.05` or `FS ≤ −0.05`** (a 0.05 margin around [0, 1]), replacing
+  the old clamp-only rails (`1.199` / `−0.099`, which dropped only points the solver
+  *pinned* to its bound). A drop-threshold sweep found `1.05 / −0.05` beats clamp-only on
+  R², within-protein CV, and yield across the D₂O sets — it also removes
+  solved-but-implausible points — while staying wide enough not to eat a genuine near-1.0
+  plateau or a near-0 t₀ anchor (the exact physical bound `1.0 / 0.0` did, cutting AC16
+  yield 16 %). Confirmed non-harmful on the ¹⁸O and single-timepoint TMT regimes.
+
+#### Added
+
+- **`FitConfig.fs_rail_drop` (CLI `--fs-rail-drop / --no-fs-rail-drop`, default on)**
+  gates the whole rail-drop; `--no-fs-rail-drop` reproduces the pre-1.2.0 multi-timepoint
+  numbers (rail-hits then fall to the R² gate downstream). **`FitConfig.fs_rail_hi` /
+  `fs_rail_lo`** override the drop thresholds per fit (e.g. the pre-sweep clamp `1.199 /
+  −0.099`, or the aggressive physical bound `1.0 / 0.0`). All flow into the provenance
+  header via the full-config record.
+
 ### TMT / TMTpro + single-timepoint labeling — 2026-07-05
 
 Process an isobaric TMTpro D₂O turnover experiment end-to-end (integrate → fit →

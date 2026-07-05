@@ -330,6 +330,108 @@ def test_depth_counts_distinct_timepoints_not_psm_rows():
     assert len(out) == 1
 
 
+def test_multipoint_fs_rail_drop_excludes_railed_points_from_the_fit():
+    """A per-timepoint FS that rails (solver clamped an over-labelled envelope to the
+    upper ±FS_BOUNDS diagnostic) is dropped from a *multi-timepoint* curve before it
+    counts toward fit points — the criterion that used to be single-timepoint only.
+
+    One peptide's mid-series envelope is over-labelled (extrapolated past θ=1) so its
+    FS solves to the upper rail. With ``fs_rail_drop`` on (default) that point is
+    excluded (it never reaches ``fractions_long`` and ``n_points`` drops by one); with
+    ``--no-fs-rail-drop`` it is kept, at the rail. The other peptides are untouched.
+    """
+    from riana.core.fitting import _FS_RAIL_HI
+
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    for ti, df in zip(_TIMES, dfs):
+        df["labeling_time"] = float(ti)
+        df["biological_replicate"] = 1
+
+    # Over-label ONE peptide at ONE mid-series timepoint: extrapolate its envelope
+    # past full labelling (proportion 1.6) so the FS solve wants ~1.6 and clamps to
+    # the upper rail. Clip tiny negatives from the extrapolation to keep areas >= 0.
+    target = f"{_TEST_PEPTIDES[0][0]}_{_TEST_PEPTIDES[0][1]}"
+    corrupt_i = 4
+    seq0, _ = _TEST_PEPTIDES[0]
+    pep_mass0 = calculate_ion_mz(seq0)
+    init0 = _get_init_env(seq0, pep_mass0, n=6)
+    final0 = _get_final_env(seq0, pep_mass0, spep_by_seq[seq0], ria_max=0.06, n=6)
+    over = 1.6 * (final0 / final0.sum()) - 0.6 * (init0 / init0.sum())
+    over = np.clip(over, 0.0, None) * 1e6
+    cdf = dfs[corrupt_i]
+    row = cdf["concat"] == target
+    for k in range(6):
+        cdf.loc[row, f"iso{k}"] = over[k]
+
+    def run(rail_drop: bool):
+        cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                        ria_max=0.06, min_spep=0, fs_rail_drop=rail_drop)
+        out = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42,
+                      time_column="labeling_time")
+        return out, out.attrs["fractions_long"]
+
+    off, off_frac = run(False)
+    on, on_frac = run(True)
+
+    def railed_rows(frac):
+        tgt = frac[frac["concat"] == target]
+        return tgt[tgt["fs"] >= _FS_RAIL_HI]
+
+    # --no-fs-rail-drop keeps the railed point: it is fitted (in fractions_long, at
+    # the rail) and counts toward n_points (concat is the output index).
+    assert len(railed_rows(off_frac)) == 1
+    # Default (on) drops it: gone from the curve, n_points one lower, no railed FS.
+    assert railed_rows(on_frac).empty
+    assert int(on.loc[target, "n_points"]) == int(off.loc[target, "n_points"]) - 1
+    # Only the corrupted peptide is affected — the clean peptides keep every point.
+    for seq, ch in _TEST_PEPTIDES[1:]:
+        other = f"{seq}_{ch}"
+        assert int(on.loc[other, "n_points"]) == int(off.loc[other, "n_points"])
+
+
+def test_fs_rail_thresholds_default_and_override():
+    """The shipped default rails are the physical-margin 1.05 / −0.05, and
+    ``fs_rail_hi`` / ``fs_rail_lo`` override them per fit.
+
+    An over-labelled point that solves to ≈1.2 is dropped by the default upper rail
+    (1.05) but *kept* when the caller loosens ``fs_rail_hi`` past the solved value —
+    proving the threshold, not just the on/off switch, is honoured.
+    """
+    from riana.core.fitting import _FS_RAIL_HI, _FS_RAIL_LO
+
+    # Regression guard on the benchmark-picked default (report 2026-07-05).
+    assert (_FS_RAIL_HI, _FS_RAIL_LO) == (1.05, -0.05)
+
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
+    for ti, df in zip(_TIMES, dfs):
+        df["labeling_time"] = float(ti)
+        df["biological_replicate"] = 1
+    target = f"{_TEST_PEPTIDES[0][0]}_{_TEST_PEPTIDES[0][1]}"
+    seq0, _ = _TEST_PEPTIDES[0]
+    pm0 = calculate_ion_mz(seq0)
+    over = (1.6 * (_get_final_env(seq0, pm0, spep_by_seq[seq0], ria_max=0.06, n=6)
+                   / _get_final_env(seq0, pm0, spep_by_seq[seq0], ria_max=0.06, n=6).sum())
+            - 0.6 * (_get_init_env(seq0, pm0, n=6) / _get_init_env(seq0, pm0, n=6).sum()))
+    over = np.clip(over, 0.0, None) * 1e6
+    crow = dfs[4]["concat"] == target
+    for k in range(6):
+        dfs[4].loc[crow, f"iso{k}"] = over[k]
+
+    def run(hi):
+        cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06,
+                        min_spep=0, fs_rail_drop=True, fs_rail_hi=hi)
+        out = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42,
+                      time_column="labeling_time")
+        return int(out.loc[target, "n_points"])
+
+    # Default rail (1.05) drops the ≈1.2 point; a loosened rail past 1.2 keeps it.
+    assert run(None) == run(1.5) - 1
+
+
 def test_fit_run_rejects_unknown_model():
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)

@@ -120,9 +120,9 @@ bar chart, fixed hint area). The remaining open work lives in the Tracks below.
   **shipped** — masking-vectorization perf, parallel test suite + `slow` tier, the
   selectable-condition-pair linear-simple Δk, and the **TMT / TMTpro + single-timepoint
   labeling** line (pinned-isotope envelopes, isobaric SDRF collapse, single-timepoint
-  auto-detect + `--min-fit-points` + FS rail-drop). **Remaining** — SILAC/dimethyl
-  multiplexing + the multi-point FS rail-drop (Track C), deamidation (own side
-  project), the adaptive-N_ISO + robust-envelope rework.
+  auto-detect + `--min-fit-points` + FS rail-drop) and the **multi-point FS rail-drop +
+  physical-margin rails** (2026-07-05). **Remaining** — SILAC/dimethyl multiplexing
+  (Track C), deamidation (own side project), the adaptive-N_ISO + robust-envelope rework.
 
 The **Locked decisions** below are design invariants (kept for reference); the Tracks
 A–E are the open research/engineering clusters.
@@ -235,12 +235,15 @@ the within-protein-θ animal benchmark. **Open:**
   pinned single-isotope pseudo-elements, and RIANA reports the intensity-weighted-
   average turnover of the plex. Includes isobaric SDRF collapse + single-timepoint
   fitting/curation. **Open follow-ups:**
-  - **Multi-point FS rail-drop** — single-timepoint fitting drops per-point FS
-    rail-hits (at ±`FS_BOUNDS`) before counting fit points/depth; extend the *identical*
-    criterion to multi-point fits (widen the `single_timepoint` scope in
-    `core.fitting`). Deferred pending **re-validation** — it shifts the established
-    multi-timepoint numbers (rail-contaminated peptides the R² gate currently drops
-    would be re-fit on their physical points).
+  - **Multi-point FS rail-drop — SHIPPED 2026-07-05** (see `CHANGELOG.md` +
+    `reports/2026-07-05_multipoint_rail_drop.md`). The rail-drop now applies to every fit
+    (config `fs_rail_drop`, CLI `--fs-rail-drop/--no-fs-rail-drop`, default on), and the
+    drop rails moved from the solver clamp to a **physical-margin `1.05 / −0.05`** default
+    (`fs_rail_hi`/`fs_rail_lo` override). Re-validated at the production `--depth 6` on all
+    five turnover sets: yield +5–14% on rail-heavy sets, universally cleaner R², matched
+    within-protein CV better/neutral, k unbiased; non-harmful on ¹⁸O (a no-op) and
+    single-timepoint TMT (neutral). The depth-3 CV "regression" seen mid-investigation was
+    an artifact of the loose depth floor.
   - **True multiplexing (SILAC / dimethyl)** — the genuine sample-axis mods: a mod
     marks a *different sample* (fit separately, combined at rollup as experiments),
     with heavy ¹³C/¹⁵N/²H as pseudo-elements — the **same machinery TMT now uses**.

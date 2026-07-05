@@ -82,17 +82,24 @@ _MODELS: dict[str, Callable] = {
 _K_DEG_INIT = 0.5
 _K_DEG_BOUNDS = ([1e-4], [10.0])
 
-#: FS rail-hit detection. The per-timepoint FS solve clamps an unphysical fit to the
-#: widened ``FS_BOUNDS`` (-0.1, 1.2) as a diagnostic; a point at (within
-#: ``_FS_RAIL_TOL`` of) a bound is not a real measurement — over-labelled (upper) or
-#: below natural abundance (lower) — so it is dropped from the kinetic fit BEFORE
-#: counting fit points / depth. The tol catches the lower rail (converges ~-0.099996,
-#: just inside -0.1) while keeping a genuine near-rail 1.19. **Single-timepoint only
-#: for now** — the same drop on multi-point fits shifts validated numbers, so it is a
-#: re-validation follow-up (identical criterion, wider scope).
-_FS_RAIL_TOL = 1e-3
-_FS_RAIL_HI = FS_BOUNDS[1] - _FS_RAIL_TOL
-_FS_RAIL_LO = FS_BOUNDS[0] + _FS_RAIL_TOL
+#: FS rail-drop thresholds. A per-timepoint FS is a physical fraction in [0, 1]; the
+#: solver is bounded to a *widened* ``FS_BOUNDS`` (-0.1, 1.2) so it can express failure,
+#: and a solved FS beyond a small margin of the physical range — over-labelled (upper)
+#: or below natural abundance (lower) — is not a real measurement, so it is dropped from
+#: the kinetic fit BEFORE counting fit points / depth. The default drops FS outside
+#: **[0, 1] by more than 0.05** (i.e. ``>= 1.05`` or ``<= -0.05``): the drop-threshold
+#: sweep (reports/2026-07-05_multipoint_rail_drop.md) found this beats the old
+#: clamp-only rails (``1.199`` / ``-0.099``) — cleaner R² and within-protein CV on every
+#: set and +5–9 % yield on the noisy ones — because it also removes solved-but-
+#: implausible points, not only the ones the solver pinned to its bound. It stays wide
+#: enough (0.05) not to eat a genuine near-1.0 plateau or a near-0 t0 anchor (the
+#: physical-bound ``1.0`` / ``0.0`` did, catastrophically on AC16). **Applies to all
+#: fits** (single- and multi-timepoint) when ``config.fs_rail_drop`` is on (the default)
+#: — scope-independent, so a rail-hit is dropped wherever it occurs; ``--no-fs-rail-drop``
+#: restores the pre-1.2.0 behaviour where multi-timepoint rail-hits fell to the R² gate
+#: downstream. ``config.fs_rail_hi`` / ``fs_rail_lo`` override these per fit.
+_FS_RAIL_HI = 1.05
+_FS_RAIL_LO = -0.05
 
 _DEFAULT_N_BOOT = 200
 _DEFAULT_BOOT_CI_PCT = (5.0, 95.0)
@@ -523,11 +530,9 @@ def fit_run(
                 f"No peptidoforms survive --min-spep {min_spep}. Lower it "
                 "(0 disables) or check the coefficient table.")
 
-    # Single-timepoint experiment? (one distinct labeling time across the data.) If
-    # so, drop per-point FS rail-hits inside the fit before counting points/depth —
-    # scoped here so the validated multi-timepoint path is untouched (its rail-hits
-    # are caught by the R² gate; a fit-level drop there is a re-validation follow-up).
-    single_tp = time_column is not None and int(rdf[time_column].nunique()) <= 1
+    # FS rail-hits are dropped inside every fit before counting points/depth (see
+    # _FS_RAIL_* and config.fs_rail_drop) — the criterion is scope-independent, so the
+    # gate lives in _fit_one_concat off config, not on a single-timepoint flag.
 
     fit_partial = partial(
         _fit_one_concat,
@@ -539,7 +544,6 @@ def fit_run(
         n_boot=n_boot,
         boot_ci_pct=boot_ci_pct,
         base_seed=random_state,
-        single_timepoint=single_tp,
     )
 
     if config.workers > 1:
@@ -549,7 +553,7 @@ def fit_run(
         # initializer; only the lightweight concat strings cross per task. The
         # per-concat seed makes the result independent of worker count.
         init_args = (rdf, model_fn, config, dict(aa_coefficients),
-                     time_column, n_boot, boot_ci_pct, random_state, single_tp)
+                     time_column, n_boot, boot_ci_pct, random_state)
         chunk = max(1, len(concat_list) // (config.workers * 8))
         with futures.ProcessPoolExecutor(
             max_workers=config.workers,
@@ -595,13 +599,12 @@ _FIT_WORKER_STATE: dict[str, object] = {}
 
 def _init_fit_worker(
     rdf, model_fn, config, aa_coefficients,
-    time_column, n_boot, boot_ci_pct, base_seed, single_timepoint=False,
+    time_column, n_boot, boot_ci_pct, base_seed,
 ) -> None:
     _FIT_WORKER_STATE.update(
         rdf=rdf, model_fn=model_fn, config=config,
         aa_coefficients=aa_coefficients, time_column=time_column,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, base_seed=base_seed,
-        single_timepoint=single_timepoint,
     )
 
 
@@ -611,7 +614,6 @@ def _fit_one_concat_worker(concat: str) -> "FitResult | None":
         concat, rdf=s["rdf"], model_fn=s["model_fn"], config=s["config"],
         aa_coefficients=s["aa_coefficients"], time_column=s["time_column"],
         n_boot=s["n_boot"], boot_ci_pct=s["boot_ci_pct"], base_seed=s["base_seed"],
-        single_timepoint=s.get("single_timepoint", False),
     )
 
 
@@ -626,7 +628,6 @@ def _fit_one_concat(
     n_boot: int,
     boot_ci_pct: tuple[float, float],
     base_seed: int,
-    single_timepoint: bool = False,
 ) -> FitResult | None:
     """Per-peptide fit: Spep from coefficients → per-timepoint FS → k_deg.
 
@@ -758,12 +759,16 @@ def _fit_one_concat(
         return _null_result(concat, protein_id, mod_sites)
 
     fit_mask = ~np.isnan(fs_arr) & valid
-    if single_timepoint:
-        # Drop per-point FS rail-hits (the solver clamped an unphysical fit to the
-        # ±FS_BOUNDS diagnostic value): an over-labelled (>=~1.2) or below-natural
-        # (<=~-0.1) FS is a bad measurement, not a replicate, so it must not count
-        # toward fit points or depth. See _FS_RAIL_* (single-timepoint only for now).
-        railed = (fs_arr >= _FS_RAIL_HI) | (fs_arr <= _FS_RAIL_LO)
+    if config.fs_rail_drop:
+        # Drop per-point FS rail-hits — a solved FS beyond a 0.05 margin of the
+        # physical [0,1] range (over-labelled >= 1.05 or below-natural <= -0.05) is a
+        # failed solve, not a replicate, so it must not count toward fit points or
+        # depth. See _FS_RAIL_*. Scope-independent — applies to single- and
+        # multi-timepoint fits alike; --no-fs-rail-drop turns it off. The thresholds
+        # default to the benchmark-picked rails (config.fs_rail_hi/lo override).
+        rail_hi = _FS_RAIL_HI if config.fs_rail_hi is None else config.fs_rail_hi
+        rail_lo = _FS_RAIL_LO if config.fs_rail_lo is None else config.fs_rail_lo
+        railed = (fs_arr >= rail_hi) | (fs_arr <= rail_lo)
         fit_mask = fit_mask & ~railed
     if int(fit_mask.sum()) < config.depth:
         return _null_result(concat, protein_id, mod_sites)
