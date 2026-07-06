@@ -90,6 +90,9 @@ matches the table's training population.
 | `bench_fit_recovery.py` | fit-module `k_deg₀` recovery via the pseudo-time trick |
 | `bench_depth_semantics.py` | `--depth` semantics: rows vs distinct-timepoint qualification |
 | `bench_mass_defect_theta.py` | prototype mass-defect θ_ΔS (v1.1.0 item 1b) |
+| `bench_fs_rail_drop.py` | FS rail-drop ON/OFF A/B: yield / R² / matched within-protein CV / k (run at `--depth 6`) |
+| `bench_fs_rail_threshold.py` | FS rail-drop `fs_rail_hi/lo` threshold sweep (why `1.05/−0.05` is the 1.2.0 default) |
+| `bench_fs_rail_singlepoint.py` | FS rail bound on a single-timepoint (TMT) set — confirm the tighter rail is not harmful |
 
 **Match-between-runs (MBR)**
 

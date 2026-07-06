@@ -8,7 +8,7 @@
   standard turnover sets at the production **depth-6** curation.
 - **Data:** `runs/{boomi_ipsc_d2o, juber_ac16_d2o, lve_atr_clean, boomi_ipsc_o18,
   juber_ac16_o18}` (coefficients: `alamillo_2025_{ipsc,ac16}`, `deberneh_2025_rss`,
-  `juber_2026_o18_ac16`). Harness: `scratchpad/ab_rail.py` (in-process `fit_project`,
+  `juber_2026_o18_ac16`). Harness: `tests/benchmark/bench_fs_rail_drop.py` (in-process `fit_project`,
   `n_boot=200`, production rollup gate R²≥0.8 OR (R²≥0.6 ∧ k_cv<0.2), geomCV = median
   over proteins with ≥3 admitted unique-accession peptides).
 
@@ -75,7 +75,7 @@ unstable. The pathology was the loose floor, not the rail-drop.
 The clamp-only drop (the solver's ±`FS_BOUNDS`) only removes points the solver *pinned*
 to its bound. A solved-but-implausible FS (1.15 over-labelled, −0.07 sub-natural) is also
 not a real measurement. Sweep of the drop threshold (rail-drop ON, `--depth 6`,
-production gate; `scratchpad/sweep_rail.py`):
+production gate; `tests/benchmark/bench_fs_rail_threshold.py`):
 
 | threshold (lo / hi) | boomi Δyield / r2all | juber_ac16 Δyield / r2all | lve Δyield / r2all |
 |---|---|---|---|
@@ -104,8 +104,8 @@ entirely.
 ### o18 and single-timepoint (TMT) confirmation
 
 The sweep above is D₂O + multi-timepoint. Before adopting `1.05 / −0.05` as the default
-it was confirmed non-harmful on the other two regimes (`scratchpad/o18_thresh.py`,
-`scratchpad/tmt_thresh.py`):
+it was confirmed non-harmful on the other two regimes (`tests/benchmark/bench_fs_rail_threshold.py` for ¹⁸O,
+`tests/benchmark/bench_fs_rail_singlepoint.py` for TMT):
 
 - **¹⁸O (multi-timepoint) — strict no-op.** `1.05 / −0.05` reproduces the clamp result
   *exactly* on both ¹⁸O sets (boomi admit 7241 = 7241; juber admit 719 = 719; Δmatched-CV
@@ -138,6 +138,8 @@ it was confirmed non-harmful on the other two regimes (`scratchpad/o18_thresh.py
 ## Reproduce
 
 ```
-python scratchpad/ab_rail.py            # depth-6 A/B + matched-CV, all 5 sets
-python scratchpad/sweep_rail.py         # drop-threshold sweep, 3 D₂O sets
+python -m tests.benchmark.bench_fs_rail_drop                 # depth-6 A/B + matched-CV, all 5 sets
+python -m tests.benchmark.bench_fs_rail_threshold            # drop-threshold sweep, 3 D₂O sets
+python -m tests.benchmark.bench_fs_rail_threshold --runs boomi_ipsc_o18 juber_ac16_o18  # ¹⁸O no-op
+python -m tests.benchmark.bench_fs_rail_singlepoint          # single-timepoint TMT
 ```
