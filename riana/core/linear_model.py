@@ -16,6 +16,25 @@ emmeans/emtrends for a fixed-effects OLS — a linear combination of the fitted
 coefficients — so we get it from statsmodels (`OLS.t_test`) rather than
 reimplementing the contrast algebra (PROJECT_REVIEW.md §3, Track C).
 
+**Weighting (WLS by default, since 2026-07) — load-bearing.** θ carries roughly
+homoscedastic *measurement* noise on the FS scale, but φ is a **log** of it, so by the
+delta method ``Var(φ) = σ_θ²/(1 − θ)²`` — the φ-residuals are strongly
+**heteroscedastic**, their SD blowing up as θ → 1 (measured on real data: residual SD
+0.061 → 0.612 across θ bins; regressing ``log|resid|`` on ``−log(1−θ)`` gives slope
+**1.10**, vs 1.0 predicted for FS-scale noise and 0 for φ-scale). An **unweighted** OLS
+treats that 10× SD range as equal, which makes it badly anti-conservative: on RIANA's own
+design a true null is rejected **~28 %** of the time at α = 0.05, 95 % CIs cover ~54 %, and
+k is biased **−14 %** in the fast tail (real data, vs the nonlinear MLE).
+
+So the fit is **weighted** by the delta-method inverse variance ``(1 − θ)²``, taken from
+the **fitted** value (one IRLS step; see :func:`fit_linear_deltak`) rather than the observed
+θ — weighting by the *observed* θ makes each weight a function of that point's own error and
+biases k low. The weighted estimator is the delta-method linearization of the exact MLE
+(which is plain nonlinear LS on the FS scale — the ``simple`` model) and recovers **~97 % of
+its efficiency**, while keeping the closed-form joint covariance the Δk contrast needs.
+``weights="ols"`` restores the old unweighted fit for audit. Full workup:
+``reports/2026-07-13_linear_model_wls.md``.
+
 **Plateau truncation (φ-limit) — required, and linear-only.** φ = `log(1 − θ)`
 descends without bound as θ → 1, but θ saturates at a measurement ceiling: once a
 fast curve hits θ ≈ 0.95–0.99 the later timepoints are noise around the floor, not
@@ -88,6 +107,14 @@ def truncate_plateau(
     return day[keep], phi[keep]
 
 
+#: Weighting schemes for the linearized fit (:func:`fit_linear_deltak`).
+#:
+#: ``"wls"`` (default) — **weighted** LS with the delta-method inverse variance, taken
+#: from the FITTED value (one IRLS step). ``"ols"`` — the pre-2026-07 unweighted fit,
+#: kept for audit / method comparison; it is anti-conservative (see the module note).
+LINEAR_WEIGHT_SCHEMES = ("wls", "ols")
+
+
 def fit_linear_deltak(
     points: pd.DataFrame,
     *,
@@ -98,6 +125,7 @@ def fit_linear_deltak(
     min_points_per_condition: int = 2,
     reference_condition: str | None = None,
     test_condition: str | None = None,
+    weights: str = "wls",
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """Per-protein linearized k per condition + a cross-condition Δk test.
@@ -130,6 +158,9 @@ def fit_linear_deltak(
             SDRF/project deliberately if that pooling is unwanted. When
             ``test_condition`` is ``None`` the legacy auto mode applies: a contrast
             is emitted only for a protein with exactly two qualifying conditions.
+        weights: ``"wls"`` (default) or ``"ols"`` — see :data:`LINEAR_WEIGHT_SCHEMES`
+            and the "Weighting" note in the module docstring. ``"ols"`` reproduces the
+            pre-2026-07 unweighted estimator (anti-conservative; for audit only).
 
     Returns:
         One row per ``(experiment, protein, condition)`` with ``k_deg`` (= −slope)
@@ -142,6 +173,12 @@ def fit_linear_deltak(
         Columns are :data:`LINEAR_COLUMNS`.
     """
     import statsmodels.formula.api as smf
+
+    if weights not in LINEAR_WEIGHT_SCHEMES:
+        from riana.exceptions import DataError
+        raise DataError(
+            f"linear-model weights must be one of {LINEAR_WEIGHT_SCHEMES}, got {weights!r}."
+        )
 
     need = {"experiment", "condition", "protein", "labeling_time", "theta"}
     missing = need - set(points.columns)
@@ -180,6 +217,15 @@ def fit_linear_deltak(
                          theta_floor=theta_floor, theta_ceiling=theta_ceiling)
             t, p = truncate_plateau(
                 cg["labeling_time"].to_numpy(), phi, phi_limit=phi_limit)
+            # Drop t = 0. In a through-origin fit it has ZERO leverage on the slope
+            # (x = 0 contributes nothing to Σxy or Σx²), so k is unchanged — but its θ
+            # is pinned by the ``theta_floor`` clamp (true θ(0) = 0, so ~half the
+            # measurements go negative and clamp to the floor), which makes its residual
+            # artificially ≈ 0 against the model's exact 0. That deflates the residual
+            # variance and shrinks EVERY standard error. Excluding it only corrects the
+            # inference. See reports/2026-07-13_linear_model_wls.md.
+            keep = t > 0
+            t, p = t[keep], p[keep]
             if len(t) >= min_points_per_condition:
                 per_cond[str(cond)] = (t, p)
         n_total = sum(len(t) for t, _ in per_cond.values())
@@ -196,8 +242,24 @@ def fit_linear_deltak(
             "condition": np.concatenate(
                 [[c] * len(t) for c, (t, _) in per_cond.items()]),
         })
+        formula = "phi ~ 0 + day:C(condition)"
         try:
-            res = smf.ols("phi ~ 0 + day:C(condition)", data=fit_df).fit()
+            res = smf.ols(formula, data=fit_df).fit()
+            if weights == "wls":
+                # Delta-method inverse variance: Var(φ) = σ²/(1−θ)², so the optimal
+                # weight is (1−θ)². Take it from the FITTED value, not the observed θ:
+                # w = (1−θ̂)² = exp(2·φ̂) = exp(−2·k̂·t). Using the *observed* θ would make
+                # each weight a function of that point's own error — down-weighting the
+                # points noise pushed high (the most-negative φ), which flattens the slope
+                # and biases k LOW. The fitted value depends on k̂ (all n points) and t
+                # (noise-free), so the weights are exogenous and the bias vanishes: the
+                # feasible-GLS rule. ONE IRLS step suffices (iterating further lets the
+                # weights chase the noise realization and degrades Type-I).
+                #
+                # φ̂ is floored at ``phi_limit`` so the weight range matches the plateau
+                # truncation and cannot underflow to 0 for a fast curve at a late t.
+                w = np.exp(2.0 * np.maximum(res.fittedvalues.to_numpy(), phi_limit))
+                res = smf.wls(formula, data=fit_df, weights=w).fit()
         except Exception as exc:  # noqa: BLE001 - statsmodels raises various
             _LOGGER.debug("linear fit failed for %s/%s: %s", exp, prot, exc)
             continue

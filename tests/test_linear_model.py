@@ -176,3 +176,68 @@ def test_plateau_truncation_changes_fast_curve_slope():
     # With the saturated tail dropped, k is closer to the true 0.5 and larger
     # than the flattened no-truncation estimate.
     assert k_trunc["control"] > k_notrunc["control"]
+
+
+# --- weighting (WLS by default since 2026-07) --------------------------------
+# phi = log(1-theta) is a LOG of FS-scale noise, so Var(phi) = sigma^2/(1-theta)^2:
+# the phi-residuals are heteroscedastic and an unweighted fit is anti-conservative
+# and biased low in the fast tail. See reports/2026-07-13_linear_model_wls.md.
+
+def test_unknown_weight_scheme_raises():
+    from riana.exceptions import DataError
+    pts = pd.DataFrame(_curve("e", "P1", "control", 0.05, [1, 2, 4]))
+    with pytest.raises(DataError, match="weights must be one of"):
+        fit_linear_deltak(pts, weights="bogus")
+
+
+def test_t0_point_is_excluded_and_does_not_move_k():
+    """t=0 has ZERO leverage on a through-origin slope, so dropping it cannot change
+    k — but its theta is pinned by the floor clamp, so its residual is artificially ~0
+    and would deflate the residual variance. It must be excluded from the fit."""
+    with_t0 = pd.DataFrame(
+        _curve("e", "P1", "control", 0.08, [0, 1, 2, 4, 8], noise=0.02, seed=3))
+    # drop the t=0 ROW so every other point is bit-identical (not a re-draw)
+    no_t0 = with_t0[with_t0["labeling_time"] > 0].reset_index(drop=True)
+    a = fit_linear_deltak(with_t0)
+    b = fit_linear_deltak(no_t0)
+    # identical k (t=0 has zero leverage on a through-origin slope) ...
+    assert a["k_deg"].iloc[0] == pytest.approx(b["k_deg"].iloc[0], rel=1e-9)
+    # ... and t=0 is not counted among the fitted points
+    assert int(a["n_points"].iloc[0]) == len(no_t0)
+
+
+def _fast_curve_panel(k_true, n_rep, times, sigma, seed):
+    """n_rep synthetic proteins, each a two-condition curve at the SAME k, with
+    homoscedastic noise on the FS scale (the real error structure)."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i in range(n_rep):
+        for cond in ("control", "atrium"):
+            for t in times:
+                th = 1.0 - np.exp(-k_true * t) + rng.normal(0, sigma)
+                rows.append({"experiment": "e", "protein": f"P{i}",
+                             "condition": cond, "labeling_time": float(t),
+                             "theta": float(th)})
+    return pd.DataFrame(rows)
+
+
+def test_wls_removes_the_fast_tail_bias_that_ols_has():
+    """Under FS-scale noise the unweighted fit reads a FAST curve's k low (~-14% on
+    real data); the delta-method weighting is essentially unbiased."""
+    k_true, times = 0.30, [1, 2, 3, 4, 6, 8, 10, 15, 20, 25, 30]
+    pts = _fast_curve_panel(k_true, 120, times, sigma=0.056, seed=17)
+    k_ols = fit_linear_deltak(pts, weights="ols")["k_deg"].median()
+    k_wls = fit_linear_deltak(pts, weights="wls")["k_deg"].median()
+    assert k_ols < 0.9 * k_true          # OLS is biased LOW on a fast curve
+    assert k_wls == pytest.approx(k_true, rel=0.10)   # WLS recovers it
+    assert abs(k_wls - k_true) < abs(k_ols - k_true)  # and is strictly better
+
+
+def test_wls_is_the_default():
+    k_true, times = 0.30, [1, 2, 3, 4, 6, 8, 10, 15, 20, 25, 30]
+    pts = _fast_curve_panel(k_true, 60, times, sigma=0.056, seed=23)
+    default = fit_linear_deltak(pts)["k_deg"].median()
+    wls = fit_linear_deltak(pts, weights="wls")["k_deg"].median()
+    ols = fit_linear_deltak(pts, weights="ols")["k_deg"].median()
+    assert default == pytest.approx(wls, rel=1e-9)
+    assert default != pytest.approx(ols, rel=1e-6)

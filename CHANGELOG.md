@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### `linear simple` Δk — weighted least squares (RESULTS-AFFECTING DEFAULT) — 2026-07-13
+
+#### Changed
+
+- **The `linear simple` Δk model now fits by weighted least squares (`--linear-weights wls`,
+  the new default) instead of unweighted OLS.** θ carries roughly homoscedastic *measurement*
+  noise on the FS scale, but φ = log(1 − θ) is a **log** of it, so by the delta method
+  `Var(φ) = σ_θ²/(1 − θ)²` — the φ-residuals are strongly **heteroscedastic**, their SD
+  blowing up as θ → 1. Measured on `lve_atr`, the residual SD runs 0.061 → 0.612 across θ bins,
+  and regressing `log|resid|` on `−log(1−θ)` gives slope **1.10** (1.0 is the FS-scale
+  prediction; 0.0 the φ-scale one). The old **unweighted** fit treated that 10× SD range as
+  equal, which made it **anti-conservative and biased**: Monte-Carlo through RIANA's own
+  pipeline puts the false-positive rate of the Δk test at **~28 % at α = 0.05** (nominal 5 %),
+  95 % CI coverage at **~54 %**, and k biased **−14 %** in the fast tail (confirmed on 180 real
+  `lve_atr` curves against the nonlinear MLE).
+
+  The fit is now weighted by the delta-method inverse variance `(1 − θ)²` taken from the
+  **fitted** value (one IRLS step, `w = exp(2·φ̂)`), *not* the observed θ — weighting by the
+  observed θ makes each weight a function of that point's own error, which down-weights the
+  points noise pushed high and biases k **low**. The weighted estimator is the delta-method
+  linearization of the exact MLE (plain nonlinear LS on the FS scale) and recovers **~97 % of
+  its efficiency**, while keeping the closed-form joint covariance the Δk contrast needs.
+  Result: Type-I **0.285 → 0.062**, coverage **0.543 → 0.926**, bias **−0.105 → +0.003**, and
+  the *lowest RMSE at every k*. Because α is now honest it also has more **genuine** power.
+- **The t = 0 point is excluded from the linear fit.** In a through-origin model it has **zero
+  leverage on the slope** (so k is unchanged), but its θ is pinned by the `theta_floor` clamp —
+  true θ(0) = 0, so ~half the measurements go negative and clamp to the floor — which makes its
+  residual artificially ≈ 0 against the model's exact 0, deflating the residual variance and
+  shrinking **every** standard error. Excluding it only corrects the inference.
+- `--linear-weights ols` restores the previous unweighted estimator for audit / method
+  comparison. Full workup, including the Monte-Carlo and the real-data validation against the
+  nonlinear MLE: `reports/2026-07-13_linear_model_wls.md`.
+
+  **Impact to expect:** on `lve_atr` the significant-protein count moves 321 → 275 and fast-tail
+  k's rise ~15 % (the old ones read low). This does **not** overturn biology — the large effects
+  survive; what changes is that the p-values no longer overstate the evidence.
+
 ### True (sample-axis) multiplexing — dimethyl channel→sample intake — 2026-07-13
 
 #### Added

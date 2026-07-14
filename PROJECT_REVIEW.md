@@ -348,9 +348,16 @@ chain glued by the manifest — orchestration-agnostic; see §5).
 - **Peak fidelity / baseline:** integration uses an apex-centred narrow window (the
   calibration-gated 1.0 default); robust in-window baseline subtraction and a
   cross-proportion-stable peak picker are still open (§2c / Track B).
-- **Linear Δk model:** `linear simple` is an ordinary (unweighted) OLS in
-  φ = log(1−θ) space — homoscedastic over per-timepoint points whose precision
-  actually varies (peptide depth, φ non-linearity); see
-  `reports/2026-06-28_lve_atr_d2o.md`.
+- **Linear Δk model — the heteroscedasticity is FIXED (2026-07-13), one gap remains.**
+  `linear simple` now fits by **weighted** LS (`--linear-weights wls`, default): φ = log(1−θ)
+  makes FS-scale noise heteroscedastic (`Var(φ) = σ²/(1−θ)²`), and the old unweighted OLS was
+  anti-conservative (Type-I ~28 % at α=0.05) and biased −14 % in the fast tail. The weights are
+  the delta-method inverse variance `(1−θ̂)²` taken from the *fitted* value; see
+  `reports/2026-07-13_linear_model_wls.md`. **Still open:** the weights assume θ noise is
+  homoscedastic on FS *within* a protein, but per-point θ precision also varies with **peptide
+  depth**. The ideal weight is `(1−θ̂)²/Var(θᵢ)`; `riana_rollup_fractions.txt` does not yet carry
+  a per-point `Var(θᵢ)`. Adding it would push the estimator closer still to the MLE. A **joint
+  nonlinear fit + Wald contrast** (the exact MLE *with* exact inference) is the purist
+  alternative, filed but not built — it buys back only the last ~3 % of efficiency.
 - **Memory** is bounded — streaming/indexed mzML, one fraction at a time
   (`io/mzml.py`, `IndexedMzML`).

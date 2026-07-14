@@ -158,6 +158,7 @@ def rollup_proteins(
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
     random_state: int = 1337,
     phi_limit: float = -4.0,
+    linear_weights: str = "wls",
     reference_condition: str | None = None,
     test_condition: str | None = None,
     exclude_mbr: bool = False,
@@ -320,6 +321,7 @@ def rollup_proteins(
         return _rollup_linear(
             stats, fractions, method=method, min_peptides=min_peptides,
             min_points=min_points, phi_limit=phi_limit,
+            linear_weights=linear_weights,
             reference_condition=reference_condition,
             test_condition=test_condition,
             progress_callback=progress_callback)
@@ -358,6 +360,7 @@ def _rollup_linear(
     phi_limit: float,
     reference_condition: str | None,
     test_condition: str | None,
+    linear_weights: str = "wls",
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """The ``model="linear simple"`` path — φ-space OLS + cross-condition Δk.
@@ -373,6 +376,7 @@ def _rollup_linear(
     long = _collapse_long(fractions, method=method, min_peptides=min_peptides)
     lin = fit_linear_deltak(
         long, phi_limit=phi_limit, min_points=min_points,
+        weights=linear_weights,
         reference_condition=reference_condition,
         test_condition=test_condition,
         progress_callback=progress_callback)

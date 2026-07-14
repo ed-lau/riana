@@ -787,6 +787,13 @@ def rollup(
         help="['linear simple' only] Plateau-truncation threshold in φ-space: "
         "points with φ=log(1−θ) at/below this are dropped per curve (saturated "
         "tail = measurement noise, not slope). −4 ≈ θ 0.98, −3 ≈ θ 0.95."),
+    linear_weights: str = typer.Option(
+        "wls", "--linear-weights", metavar="SCHEME",
+        help="['linear simple' only] Weighting of the φ-space fit: 'wls' (default) "
+        "weights by the delta-method inverse variance (1−θ)², taken from the fitted "
+        "value — φ=log(1−θ) makes FS-scale noise heteroscedastic, so an unweighted "
+        "fit is anti-conservative (~28% false positives at α=0.05, and k biased ~14% "
+        "low in the fast tail). 'ols' restores the old unweighted fit (audit only)."),
     reference_condition: str = typer.Option(
         None, "--reference-condition", metavar="COND",
         help="['linear simple' only] Baseline condition of the Δk contrast — "
@@ -959,7 +966,8 @@ def rollup(
             min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
             k_cv_max=float(k_cv), rescue_r2=float(rescue_r2),
             min_fit_points=min_fit_points, workers=int(workers),
-            phi_limit=float(phi_limit), reference_condition=reference_condition,
+            phi_limit=float(phi_limit), linear_weights=str(linear_weights),
+            reference_condition=reference_condition,
             test_condition=test_condition,
             exclude_mbr=bool(exclude_mbr), progress_callback=progress,
         )
@@ -973,7 +981,8 @@ def rollup(
          "min_peptides": min_peptides, "min_points": min_points,
          "min_fit_points": min_fit_points,
          "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
-         "phi_limit": phi_limit, "reference_condition": reference_condition,
+         "phi_limit": phi_limit, "linear_weights": linear_weights,
+         "reference_condition": reference_condition,
          "test_condition": test_condition},
         id_source=id_source,
         extra={"method": method, "parsimony": parsimony, "model": model},
