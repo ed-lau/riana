@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### True (sample-axis) multiplexing — dimethyl channel→sample intake — 2026-07-13
+
+#### Added
+
+- **Sample-axis multiplexing intake (dimethyl duplex).** A multiplexing label marks a
+  *different sample* that co-elutes but stays separable at MS1 (the label shifts the whole
+  precursor), so — unlike isobaric TMT/iTRAQ, whose channels share one MS1 cluster and are
+  **merged** into an average — the channels are now **kept as distinct samples**: each is
+  integrated at its own m/z, fit at its own precursor enrichment, and combined at rollup as
+  a separate condition (so a duplex flows straight into the existing `linear simple`
+  two-condition Δk). New **`riana/multiplex.py`** is the label registry: it maps each
+  channel to its SDRF `comment[label]` CV term and to the UNIMOD mod a peptidoform carries,
+  and declares the site rule + per-residue heavy shift. Dimethyl is wired (light
+  `UNIMOD:36` / medium `199` / heavy `330`, +8.0444 Da per site over `S = 1 N-term + #K`
+  sites); **SILAC (K+6/R+10) is registered as geometry**, proving the heterogeneous
+  per-residue-shift model (K and R shift by different amounts, so the sibling-cluster offset
+  is a per-residue sum, not a uniform multiple).
+- **Heavy dimethyl `UNIMOD:330` and `UNIMOD:199` (DIMETHYL4) as pinned-isotope
+  pseudo-elements** — the same machinery TMT/TMTpro introduced: their built-in ²H/¹³C are
+  ~100 % heavy by synthesis, so they are appended as single-isotope (prob 1.0) pseudo-elements
+  that shift mass without broadening the envelope. Adds `constants.D_MASS` (²H, IsoSpec's
+  built-in value). 36/199/330 are whitelisted so their peptidoforms survive intake, and are
+  deliberately **not** in `CHEMICAL_MODS` — a sample-axis mod must keep its channels distinct,
+  not merge them onto one curve the way isobaric TMT does.
+- `io/sdrf` keeps every channel row of a multiplexed sheet as its own `RunIdentity` (distinct
+  sample / condition / precursor enrichment) and exposes a channel-keyed map; `io/mztab`
+  routes **each PSM to its channel by the peptidoform's own label mod**; `plan_integration`
+  emits **one run per channel** (shared mzML, distinct output). The manifest and fit stages
+  needed no schema change — `fit_project` already resolves the RIA per
+  `(experiment, condition)` group, so the channels are fit at their own enrichment.
+  Validated end-to-end on the dimethyl-D₂O liver duplex; see
+  `reports/2026-07-13_dimethyl_duplex_intake.md`.
+
+#### Fixed
+
+- **quantms ≥ 1.8.0 (OpenMS 3.6.0) mzTabs were silently unusable.** 1.8.0 stopped writing the
+  *optional* `opt_global_q-value` column, so every PSM fell back to `q = 1.0` — which can never
+  pass the strict `q < --q_value` gate (itself capped at 1.0) — and the entire file was
+  filtered away with a misleading "relax --q_value" error. The q-value did not disappear: it is
+  `search_engine_score[1]`, whose type the metadata declares (`MS:1001491 percolator:Q value` in
+  1.8.0; `MS:1003115 OpenMS target-decoy q-value` in 1.7.0). `io.mztab` now prefers the explicit
+  column and falls back to `search_engine_score[1]` **only when the metadata declares it to be a
+  q-value**, so the FDR semantics stay exact and pre-1.8.0 files are unaffected.
+
 ### Multi-point FS rail-drop + physical-margin rails — 2026-07-05
 
 #### Changed

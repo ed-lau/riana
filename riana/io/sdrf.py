@@ -62,6 +62,7 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from riana import multiplex
 from riana.exceptions import DataError
 from riana.records import RunIdentity
 
@@ -114,6 +115,18 @@ class SdrfTable:
     #: the integration mass window unless CLI ``--mass_tol`` overrides. ``None``
     #: when the column is absent or given in Da (not a ppm window).
     precursor_mass_tol_ppm: float | None = None
+    #: For a **sample-axis-multiplexed** SDRF (dimethyl/SILAC — one mzML carries N
+    #: channels at distinct precursor masses, kept as distinct samples), the
+    #: ``{(data_file_stem, (label, channel)): RunIdentity}`` map the mzTab reader
+    #: routes each PSM through, by its label mod. ``None`` for a normal one-run-per-
+    #: file SDRF. See :mod:`riana.multiplex`.
+    multiplex_channel_map: dict[tuple[str, tuple[str, str]], RunIdentity] | None = None
+
+    @property
+    def is_multiplexed(self) -> bool:
+        """True when this SDRF declares sample-axis multiplexing (dimethyl/SILAC) —
+        i.e. one mzML holds several channels the intake keeps as distinct samples."""
+        return self.multiplex_channel_map is not None
 
     @property
     def sample_map(self) -> dict[str, RunIdentity]:
@@ -177,10 +190,21 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
     # Isobaric (TMT/iTRAQ) SDRF? Then one data file legitimately recurs once per
     # channel; the rows are collapsed to a single per-file run after the loop.
     label_cols = col_index.get(_LABEL_COL, [])
+
+    def _label_cell(row: list[str]) -> str:
+        return row[label_cols[0]] if label_cols and label_cols[0] < len(row) else ""
+
     is_isobaric = bool(label_cols) and any(
-        _ISOBARIC_LABEL_RE.match(row[label_cols[0]])
-        for row in rows if label_cols[0] < len(row)
+        _ISOBARIC_LABEL_RE.match(_label_cell(row)) for row in rows
     )
+    # Sample-axis multiplexing (dimethyl/SILAC): one mzML carries several channels at
+    # DISTINCT precursor masses, so — unlike isobaric TMT — the channel rows are KEPT
+    # as separate samples (each fit at its own enrichment). Detected via the registry
+    # ``comment[label]`` CV terms. Mutually exclusive with isobaric.
+    is_multiplex = not is_isobaric and bool(label_cols) and any(
+        multiplex.is_multiplex_cv(_label_cell(row)) for row in rows
+    )
+    channel_map: dict[tuple[str, tuple[str, str]], RunIdentity] = {}
 
     runs: list[RunIdentity] = []
     acquisitions: set[str] = set()
@@ -200,11 +224,12 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
         data_file = _strip_data_ext(cell(_DATA_FILE_COL))
         if not data_file:
             raise DataError(f"{path} line {line_no}: empty '{_DATA_FILE_COL}'.")
-        if data_file in seen_data_files and not is_isobaric:
+        if data_file in seen_data_files and not (is_isobaric or is_multiplex):
             raise DataError(
                 f"{path}: data file {data_file!r} appears on lines "
                 f"{seen_data_files[data_file]} and {line_no} — the mzML join "
-                "key must be unique per run (unless isobaric/TMT-multiplexed)."
+                "key must be unique per run (unless isobaric/TMT-multiplexed or "
+                "sample-axis-multiplexed, e.g. dimethyl/SILAC)."
             )
         seen_data_files[data_file] = line_no
 
@@ -231,28 +256,46 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
             v for c in factor_cols if (v := cell(c)) and v.lower() not in _NOT_APPLICABLE
         )
 
-        runs.append(
-            RunIdentity(
-                experiment=experiment,
-                sample=cell(_SOURCE_NAME_COL),
-                data_file=data_file,
-                biological_replicate=_parse_int(
-                    cell("characteristics[biological replicate]"), default=1
-                ),
-                technical_replicate=_parse_int(
-                    cell("comment[technical replicate]"), default=1
-                ),
-                fraction=_parse_int(cell("comment[fraction identifier]"), default=1),
-                labeling_time=labeling_time,
-                labeling_time_unit=time_unit,
-                mixing_proportion=mixing,
-                condition=condition,
-                acquisition=acquisition,
-                precursor_enrichment=_parse_optional_float(
-                    cell("characteristics[precursor enrichment]")
-                ),
-            )
+        identity = RunIdentity(
+            experiment=experiment,
+            sample=cell(_SOURCE_NAME_COL),
+            data_file=data_file,
+            biological_replicate=_parse_int(
+                cell("characteristics[biological replicate]"), default=1
+            ),
+            technical_replicate=_parse_int(
+                cell("comment[technical replicate]"), default=1
+            ),
+            fraction=_parse_int(cell("comment[fraction identifier]"), default=1),
+            labeling_time=labeling_time,
+            labeling_time_unit=time_unit,
+            mixing_proportion=mixing,
+            condition=condition,
+            acquisition=acquisition,
+            precursor_enrichment=_parse_optional_float(
+                cell("characteristics[precursor enrichment]")
+            ),
         )
+        runs.append(identity)
+
+        # Sample-axis multiplexing: map (file stem, channel) → this row's identity so
+        # the mzTab reader can route each PSM to its channel by the peptidoform's mod.
+        if is_multiplex:
+            channel = multiplex.label_channel_for_cv(_label_cell(row))
+            if channel is None:
+                raise DataError(
+                    f"{path} line {line_no}: comment[label] "
+                    f"{_label_cell(row)!r} is not a recognised multiplexing channel "
+                    "(a sample-axis-multiplexed sheet must use registry CV terms, "
+                    "e.g. NT=DIMETHYL0/DIMETHYL8, on every row)."
+                )
+            key = (data_file, channel)
+            if key in channel_map:
+                raise DataError(
+                    f"{path} line {line_no}: channel {channel} of file "
+                    f"{data_file!r} is declared more than once."
+                )
+            channel_map[key] = identity
 
         # Modifications are shared across rows in practice; dedup but keep order.
         for col in mod_cols:
@@ -277,6 +320,15 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
             "SDRF %s: isobaric (TMT/iTRAQ) — collapsed %d channel rows to %d "
             "per-file runs (one MS1 measurement per file = the multiplexed "
             "average).", path, n_channels, len(runs),
+        )
+    elif is_multiplex:
+        # Sample-axis multiplexing: KEEP every channel row (opposite of the isobaric
+        # collapse) — each channel is a distinct sample fit at its own enrichment.
+        _LOGGER.info(
+            "SDRF %s: sample-axis multiplexed (dimethyl/SILAC) — %d channel rows "
+            "across %d files kept as distinct samples (routed to channels %s).",
+            path, len(runs), len(seen_data_files),
+            sorted({ch for _, ch in channel_map}),
         )
 
     # Precursor mass tolerance (search window) → integration tolerance. Uniform
@@ -306,6 +358,7 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
         experiment_type=experiment_type,
         acquisition=acquisitions.pop(),
         precursor_mass_tol_ppm=prec_mass_tol_ppm,
+        multiplex_channel_map=(channel_map if is_multiplex else None),
     )
 
 

@@ -244,10 +244,34 @@ the within-protein-θ animal benchmark. **Open:**
     within-protein CV better/neutral, k unbiased; non-harmful on ¹⁸O (a no-op) and
     single-timepoint TMT (neutral). The depth-3 CV "regression" seen mid-investigation was
     an artifact of the loose depth floor.
-  - **True multiplexing (SILAC / dimethyl)** — the genuine sample-axis mods: a mod
-    marks a *different sample* (fit separately, combined at rollup as experiments),
-    with heavy ¹³C/¹⁵N/²H as pseudo-elements — the **same machinery TMT now uses**.
-    SDRF channel→sample mapping TBD; needs Sadygov dimethyl-D₂O reprocessing.
+  - **True multiplexing (SILAC / dimethyl) — channel→sample intake SHIPPED 2026-07-13**
+    (see `reports/2026-07-13_dimethyl_duplex_intake.md`). The genuine sample-axis mods: a
+    mod marks a *different sample*, so the channels are **kept** as distinct samples (the
+    opposite of the isobaric TMT collapse), each fit at its own precursor enrichment and
+    compared at rollup as separate conditions. New `riana/multiplex.py` label registry
+    (channels ↔ SDRF `comment[label]` CV term ↔ the UNIMOD mod the peptidoform carries);
+    heavy dimethyl (UNIMOD:330) + DIMETHYL4 (199) as pinned-isotope pseudo-elements — the
+    **same machinery TMT uses**; `io/sdrf` keeps every channel row as its own `RunIdentity`,
+    `io/mztab` routes each PSM by its own label mod, `plan_integration` emits one task per
+    channel. No manifest/fit schema change (`fit_project` already resolves RIA per
+    `(experiment, condition)` group). Validated end-to-end on the dimethyl duplex.
+    **Open:** the S=1 spillover gate (below); SILAC is registered as *geometry* only —
+    its heavy-UNIMOD constants + intake CV terms land with SILAC-D₂O data.
+  - **Exact forward-model spillover gate (S=1 heavy peptides) — NEXT.** Long S=1
+    peptidoforms (N-term dimethyl only, R-terminal, no K) sit only +8 Da from their light
+    sibling, so the D₂O-broadened light envelope contaminates the heavy FS-scoring window
+    (`reports/2026-07-06_dimethyl_duplex_spillover.md`). Single-timepoint data has no R²
+    safety net, so an explicit gate is required: compute the spill from the IsoSpec forward
+    model per peptidoform (worst-case FS=1, conservative), emit a `spillover` reference
+    column, and drop the heavy FS above a threshold. Primitive factors out of
+    `tests/benchmark/bench_dimethyl_spillover.py` and is shared with the future demux.
+  - **Precursor enrichment (RIA) modelling — open questions.** Per-sample/per-condition RIA
+    works (resolved per curve from the manifest; load-bearing for ¹⁸O and now the dimethyl
+    channels). Unanswered: when RIA is **non-constant across timepoints**, rebuild the
+    labelled envelope per timepoint or use the max/plateau (what the simple model implicitly
+    assumes)? For **Guan/Fornasiero**, should the true precursor at *t* be derived as
+    `RIA_max·(1−e^{−k_p·t})` from the user-set `k_p`, or estimated per point from the data —
+    and **can `k_p` be fit from the data** rather than set by hand?
 - **Proper demultiplexing** (Beyond initial 1.2.0) - correct the spillover from
 light cluster into heavy cluster (e.g., iso_6 from light cluster overlaps with
 iso_9 of the SILAC heavy D2O cluster)

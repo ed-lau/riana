@@ -96,10 +96,21 @@ def plan_integration(
     between the surfaces.
     """
     if sdrf.acquisition == "DIA":
+        if sdrf.is_multiplexed:
+            raise DataError(
+                "sample-axis multiplexing (dimethyl/SILAC) is not supported for DIA "
+                "acquisition yet — channel routing needs the DDA mzTab per-PSM mods."
+            )
         from riana.io.diann import read_diann
 
         all_psms, file_index_map = read_diann(
             mztab_path, sdrf.sample_map
+        )
+    elif sdrf.is_multiplexed:
+        # Sample-axis multiplex: route each PSM to its channel identity by its own
+        # label mod (distinct sample/condition/enrichment), not one identity per file.
+        all_psms, file_index_map = read_mztab(
+            mztab_path, channel_map=sdrf.multiplex_channel_map
         )
     else:
         all_psms, file_index_map = read_mztab(
@@ -130,16 +141,32 @@ def plan_integration(
     tasks: list[RunTask] = []
     for file_idx in sorted(by_file_idx):
         stem = file_index_map.get(file_idx, "")
-        identity = sdrf.sample_map.get(stem)
-        if identity is None:  # read_mztab already guards this; defensive.
-            raise DataError(f"ms_run {file_idx} ({stem!r}) has no SDRF identity.")
         if stem not in mzml_index:
             raise DataError(
                 f"no mzML for run {stem!r} in {mzml_dir} "
                 f"(have {sorted(mzml_index)[:5]}...)."
             )
-        fraction = _assign_pep_ids(by_file_idx[file_idx])
-        tasks.append(RunTask(file_idx, stem, identity, mzml_index[stem], fraction))
+        file_psms = by_file_idx[file_idx]
+        if sdrf.is_multiplexed:
+            # One task per CHANNEL: each PSM already carries its channel identity
+            # (distinct sample / condition / enrichment) from the reader; the physical
+            # mzML is shared, but each channel is a separate run at its own m/z. The
+            # output stem is the channel's SDRF `source name` (unique per channel).
+            by_identity: dict[RunIdentity, list[PSMRecord]] = {}
+            for p in file_psms:
+                by_identity.setdefault(p.identity, []).append(p)
+            for identity, ch_psms in by_identity.items():
+                fraction = _assign_pep_ids(ch_psms)
+                tasks.append(
+                    RunTask(file_idx, identity.sample, identity,
+                            mzml_index[stem], fraction)
+                )
+        else:
+            identity = sdrf.sample_map.get(stem)
+            if identity is None:  # read_mztab already guards this; defensive.
+                raise DataError(f"ms_run {file_idx} ({stem!r}) has no SDRF identity.")
+            fraction = _assign_pep_ids(file_psms)
+            tasks.append(RunTask(file_idx, stem, identity, mzml_index[stem], fraction))
     return tasks
 
 

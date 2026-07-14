@@ -37,6 +37,11 @@ P_MASS = 30.97376199842  # P31 — monoisotopic (phosphorus is mononuclidic)
 # natural abundance) — see ``mod_fixed_isotopes``.
 C13_MASS = 13.00335483507  # ¹³C
 N15_MASS = 15.0001088989   # ¹⁵N
+# ²H (deuterium) — the value IsoSpecPy uses in its built-in element table
+# (``IsoParamsFromDict({'H':1})`` → 2.01410177819), so a pinned-²H pseudo-element
+# (heavy dimethyl / SILAC-²H) sits exactly where IsoSpec would place natural D.
+# Agrees with the NIST atomic mass 2.014101777844 to ~3e-10 (immaterial for binning).
+D_MASS = 2.01410177819      # ²H
 
 # Note: a previous version exposed a ``RIA_D2O`` constant fixed to 6% v/v
 # enrichment from the M2 calibration. That constant has been removed —
@@ -103,7 +108,11 @@ mod_atoms = {
     35:  [0, 0, 1, 0, 0, 0],    # Oxidation (Met) — roadmap tier 1b
     7:   [0, -1, 1, -1, 0, 0],  # Deamidation (N/Q) — roadmap tier 1b
     34:  [1, 2, 0, 0, 0, 0],    # Methyl — roadmap tier 1
-    36:  [2, 4, 0, 0, 0, 0],    # Dimethyl — roadmap tier 1
+    36:  [2, 4, 0, 0, 0, 0],    # Dimethyl (light, +28.0313) — 1.2.0 multiplexing
+    # Dimethyl multiplexing heavies — LIGHT atoms only; the built-in ²H/¹³C are pinned
+    # single-isotope pseudo-elements in ``mod_fixed_isotopes`` (see there), exactly like TMT.
+    199: [2, 0, 0, 0, 0, 0],    # Dimethyl:2H(4) (+4, prewired for the 0/4 duplex) — 2 C + 4 pinned ²H
+    330: [0, -2, 0, 0, 0, 0],   # Dimethyl:2H(6)13C(2) (heavy +8, +36.0757) — 2 pinned ¹³C + 6 pinned ²H − 2 H
     37:  [3, 6, 0, 0, 0, 0],    # Trimethyl — roadmap tier 1
     121: [4, 6, 2, 2, 0, 0],    # GlyGly (ubiquitin remnant) — roadmap tier 2
     # TMT/TMTpro — LIGHT atoms only; the built-in heavy ¹³C/¹⁵N are pinned
@@ -124,6 +133,11 @@ mod_atoms = {
 mod_fixed_isotopes = {
     737:  [(4, C13_MASS), (1, N15_MASS)],   # TMT 6/10/11-plex
     2016: [(7, C13_MASS), (2, N15_MASS)],   # TMTpro 16/18-plex
+    # Dimethyl multiplexing heavies (1.2.0). Hand-check heavy dimethyl 330:
+    # ``mod_atoms −2·H + 2·¹³C + 6·²H`` = −2·1.0078250 + 2·13.0033548 + 6·2.0141018
+    # = 36.0757 (= +8.0444 over light 36); DIMETHYL4 199: ``2·C + 4·²H`` = 32.0564 (+4.0251).
+    199: [(4, D_MASS)],                     # Dimethyl:2H(4)
+    330: [(2, C13_MASS), (6, D_MASS)],      # Dimethyl:2H(6)13C(2)
 }
 
 # --- M7 modification policy (UniMod accession ids) ---------------------------
@@ -137,7 +151,12 @@ FIXED_UNIMODS = frozenset({4})
 # roadmap tier lands. (TMTpro is searched fixed-on-K + variable-on-N-term, but
 # every instance is written ``pos-UNIMOD:2016`` in the mzTab, so it is tokenized
 # here like any other modelled mod; its heavy isotopes live in ``mod_fixed_isotopes``.)
-STARTER_VARIABLE_UNIMODS = frozenset({1, 21, 35, 737, 2016})
+# Dimethyl multiplexing labels (light 36 / medium-²H4 199 / heavy-²H6¹³C2 330) are
+# whitelisted so their peptidoforms survive intake, but are deliberately **not** in
+# ``CHEMICAL_MODS`` — a sample-axis mod marks a *different sample*, so the light/heavy
+# forms must stay distinct (routed to separate samples by the ``io.sdrf``/``io.mztab``
+# channel intake), not merge onto one curve the way isobaric TMT does. See ``riana.multiplex``.
+STARTER_VARIABLE_UNIMODS = frozenset({1, 21, 35, 36, 199, 330, 737, 2016})
 # Mods that earn their own proteoform rollup key (Stage B) instead of folding
 # into the bare protein — the regulated, site-specific-turnover mods. Phospho
 # (21) and side-chain **Acetyl (1, e.g. K-ac)** qualify. Acetyl is special: the

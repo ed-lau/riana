@@ -176,6 +176,59 @@ def test_mztab_keeps_decoys_when_flag_off(tmp_path):
     assert len(records) == 3
 
 
+# quantms 1.8.0 (OpenMS 3.6.0) stopped writing the *optional* ``opt_global_q-value``
+# column; the q-value now lives in ``search_engine_score[1]``, whose type the metadata
+# declares (``percolator:Q value``). Without resolving it, every PSM defaults to q=1.0
+# and the strict ``q < --q_value`` gate (capped at 1.0) rejects the whole file.
+_V180_MZTAB = textwrap.dedent(
+    """\
+    MTD\tmzTab-version\t1.0.0
+    MTD\tmzTab-mode\tSummary
+    MTD\tmzTab-type\tIdentification
+    MTD\tpsm_search_engine_score[1]\t[MS, MS:1001491, percolator:Q value, ]
+    MTD\tms_run[1]-format\t[MS, MS:1000584, mzML file, ]
+    MTD\tms_run[1]-location\tfile://run_A.mzML
+    MTD\tms_run[1]-id_format\t[MS, MS:1000768, Thermo nativeID format, ]
+
+    PSH\tsequence\tPSM_ID\taccession\tunique\tdatabase\tdatabase_version\tsearch_engine\tsearch_engine_score[1]\tmodifications\tretention_time\tcharge\texp_mass_to_charge\tcalc_mass_to_charge\tspectra_ref\tpre\tpost\tstart\tend\topt_global_Posterior_Error_Probability_score\topt_global_cv_MS:1002217_decoy_peptide\topt_global_cv_MS:1000889_peptidoform_sequence
+    PSM\tPEPTIDEK\t0\tsp|P00001|TEST_HUMAN\t1\tdb\tnull\tperc\t0.002\tnull\t10.5\t2\t472.74\t472.73\tms_run[1]:controllerType=0 controllerNumber=1 scan=101\tK\tR\t10\t17\t0.01\t0\tPEPTIDEK
+    PSM\tELVISLIVES\t1\tsp|P00002|TEST2_HUMAN\t1\tdb\tnull\tperc\t0.4\tnull\t20.1\t3\t372.21\t372.20\tms_run[1]:controllerType=0 controllerNumber=1 scan=202\tK\tA\t1\t10\t0.5\t0\tELVISLIVES
+    """
+)
+
+
+def test_mztab_reads_qvalue_from_search_engine_score_when_column_absent(tmp_path):
+    """quantms >=1.8.0 layout: no opt_global_q-value column, so the q-value must come
+    from search_engine_score[1] (metadata-declared 'percolator:Q value')."""
+    fixture = tmp_path / "v180.mzTab"
+    fixture.write_text(_V180_MZTAB)
+    records, _ = iomztab.read_mztab(fixture, sample="syn")
+    by_scan = {r.scan: r for r in records}
+    assert by_scan[101].percolator_q_value == pytest.approx(0.002)
+    assert by_scan[202].percolator_q_value == pytest.approx(0.4)
+
+
+def test_mztab_prefers_explicit_qvalue_column_when_present(tmp_path):
+    """Pre-1.8.0 layout is unchanged: the explicit opt_global_q-value column wins over
+    search_engine_score[1] (0.4 vs 0.5 for this PSM)."""
+    fixture = tmp_path / "minimal.mzTab"
+    fixture.write_text(_MINIMAL_MZTAB)
+    records, _ = iomztab.read_mztab(fixture, sample="syn")
+    by_scan = {r.scan: r for r in records}
+    assert by_scan[202].percolator_q_value == pytest.approx(0.4)
+
+
+def test_mztab_without_any_qvalue_leaves_default(tmp_path):
+    """No q-value column and a non-q-value score type → honest 1.0 default (warned)."""
+    src = _V180_MZTAB.replace(
+        "[MS, MS:1001491, percolator:Q value, ]", "[MS, MS:1002252, Comet:xcorr, ]"
+    )
+    fixture = tmp_path / "noq.mzTab"
+    fixture.write_text(src)
+    records, _ = iomztab.read_mztab(fixture, sample="syn")
+    assert all(r.percolator_q_value == 1.0 for r in records)
+
+
 _MODS_MZTAB = _MINIMAL_MZTAB + (
     # Carbamidomethyl (UNIMOD:4) is fixed → kept (folded into the recomputed mass).
     "PSM\tGEIEHHCSGLHR\t3\tsp|P00004|TEST4_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t"

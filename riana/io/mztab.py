@@ -58,7 +58,7 @@ from pathlib import Path
 
 from pyteomics import mztab
 
-from riana import constants
+from riana import constants, multiplex
 from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
 from riana.records import PSMRecord, RunIdentity
@@ -75,12 +75,44 @@ _LOCATION_RE = re.compile(r"^(?:file://)?(.*)$")
 # DIA-NN-style ``UniMod:`` spelling.
 _MOD_FIELD_RE = re.compile(r"(\d+)-UNIMOD:(\d+)", re.IGNORECASE)
 
+#: Per-PSM confidence columns. ``opt_global_q-value`` is an **optional** extra column
+#: that OpenMS writes on some paths only — quantms 1.8.0 (OpenMS 3.6.0) stopped
+#: emitting it. The authoritative PSM score is always ``search_engine_score[1]``, whose
+#: meaning is declared by the metadata term ``psm_search_engine_score[1]``; in both
+#: quantms 1.7.0 (``MS:1003115`` OpenMS target-decoy q-value) and 1.8.0 (``MS:1001491``
+#: percolator:Q value) that score IS a q-value. See :func:`_resolve_q_value_column`.
+_Q_VALUE_COL = "opt_global_q-value"
+_SCORE_COL = "search_engine_score[1]"
+_PEP_COL = "opt_global_Posterior_Error_Probability_score"
+_PSM_SCORE_TERM = "psm_search_engine_score[1]"
+#: A ``psm_search_engine_score[1]`` term that denotes a q-value (any FDR-style score
+#: we can feed the ``--q_value`` gate). Matched case-insensitively on the CV name.
+_Q_VALUE_TERM_RE = re.compile(r"q[\s_-]?value|qval", re.IGNORECASE)
+
+
+def _resolve_q_value_column(metadata: dict, columns) -> str | None:
+    """The column holding each PSM's q-value, or ``None`` if the file has none.
+
+    Prefers the explicit ``opt_global_q-value`` column (quantms ≤ 1.7.0). When it is
+    absent — quantms 1.8.0 / OpenMS 3.6.0 dropped it — fall back to
+    ``search_engine_score[1]``, but **only if the mzTab metadata declares that score to
+    be a q-value** (``psm_search_engine_score[1]``, e.g. ``percolator:Q value``). This
+    keeps the FDR semantics exact rather than substituting a different score type.
+    """
+    if _Q_VALUE_COL in columns:
+        return _Q_VALUE_COL
+    term = str(metadata.get(_PSM_SCORE_TERM, "") or "")
+    if _SCORE_COL in columns and _Q_VALUE_TERM_RE.search(term):
+        return _SCORE_COL
+    return None
+
 
 def read_mztab(
     path: str | os.PathLike[str],
     sample_map: Mapping[str, RunIdentity] | None = None,
     *,
     sample: str | None = None,
+    channel_map: Mapping[tuple[str, tuple[str, str]], RunIdentity] | None = None,
     drop_decoys: bool = True,
     drop_variable_mods: bool = True,
 ) -> tuple[list[PSMRecord], dict[int, str]]:
@@ -96,6 +128,13 @@ def read_mztab(
         sample: legacy single-label fallback (no SDRF) — written into every
             record's ``sample`` field with ``identity=None``. Mutually exclusive
             with ``sample_map``.
+        channel_map: ``{(mzML stem, (label, channel)): RunIdentity}`` from a
+            sample-axis-multiplexed SDRF (:attr:`riana.io.sdrf.SdrfTable.multiplex_channel_map`).
+            Each PSM is routed to its channel by the peptidoform's own multiplexing
+            mod (:func:`riana.multiplex.channel_of`), so light and heavy land in
+            distinct samples. A PSM with no channel mod, a conflicting-channel ID, or
+            a channel not declared for its file is dropped. Mutually exclusive with
+            ``sample_map`` / ``sample``.
         drop_decoys: when true (default), rows flagged as decoys are skipped.
         drop_variable_mods: when true (default), a peptidoform carrying a mod the
             v1 forward model can't account for (anything outside the fixed +
@@ -113,10 +152,10 @@ def read_mztab(
         DataError: neither/both of ``sample_map`` / ``sample`` given, or (with a
             ``sample_map``) an ``ms_run`` location that the SDRF does not cover.
     """
-    if (sample_map is None) == (sample is None):
+    if sum(x is not None for x in (sample_map, sample, channel_map)) != 1:
         raise DataError(
-            "read_mztab needs exactly one of `sample_map` (SDRF identity) or "
-            "`sample` (legacy single-label)."
+            "read_mztab needs exactly one of `sample_map` (SDRF identity), "
+            "`sample` (legacy single-label), or `channel_map` (sample-axis multiplex)."
         )
     path = Path(path)
     if not path.exists():
@@ -141,6 +180,17 @@ def read_mztab(
                 f"in the SDRF (known: {sorted(sample_map)}). Check that "
                 "`comment[data file]` matches the mzML names."
             )
+    elif channel_map is not None:
+        covered = {stem for stem, _ch in channel_map}
+        unmatched = sorted(
+            {stem for stem in file_index_map.values() if stem not in covered}
+        )
+        if unmatched:
+            raise DataError(
+                f"mzTab {path} references ms_run mzML(s) {unmatched} that are not "
+                f"in the multiplex SDRF (known: {sorted(covered)}). Check that "
+                "`comment[data file]` matches the mzML names."
+            )
 
     psm_df = table.spectrum_match_table
     if psm_df is None or len(psm_df) == 0:
@@ -152,15 +202,33 @@ def read_mztab(
 
     has_mod_col = "modifications" in psm_df.columns
     n_before = len(psm_df)
-    n_dropped = 0
+    n_dropped = 0     # peptidoforms carrying a mod outside the modelled set
+    n_unrouted = 0    # (multiplex only) PSMs with no / conflicting channel mod
+
+    # Per-PSM q-value. quantms 1.8.0 (OpenMS 3.6.0) stopped writing the optional
+    # ``opt_global_q-value`` column; the q-value now lives in ``search_engine_score[1]``
+    # (metadata declares it ``percolator:Q value``). Without this resolution every PSM
+    # would default to q=1.0 and be wholesale-rejected by the strict ``q < --q_value``
+    # gate (capped at 1.0), making a 1.8.0 mzTab silently unusable.
+    q_col = _resolve_q_value_column(table.metadata, psm_df.columns)
+    if q_col is None:
+        _LOGGER.warning(
+            "io.mztab: %s declares no q-value (neither '%s' nor a q-value-typed "
+            "'%s') — every PSM defaults to q=1.0, so --q_value cannot filter. "
+            "Check the search output.", path.name, _Q_VALUE_COL, _SCORE_COL,
+        )
+    elif q_col != _Q_VALUE_COL:
+        _LOGGER.info(
+            "io.mztab: %s has no '%s' column (quantms ≥1.8.0) — reading the q-value "
+            "from '%s' (%s).", path.name, _Q_VALUE_COL, _SCORE_COL,
+            table.metadata.get(_PSM_SCORE_TERM, "?"),
+        )
 
     records: list[PSMRecord] = []
     for row in psm_df.to_dict(orient="records"):
         ms_run, scan = _parse_spectra_ref(row["spectra_ref"])
         file_idx = ms_run - 1
         file_name = file_index_map.get(file_idx, "")
-        identity = sample_map.get(file_name) if sample_map is not None else None
-        record_sample = identity.sample if identity is not None else (sample or "")
         # Fold variable mods into the sequence as [UNIMOD:N] tokens (or drop a
         # peptidoform the v1 forward model can't account for). ``drop_variable_mods``
         # gates only the *drop*: with it off, an unmodelable peptidoform is kept
@@ -181,6 +249,26 @@ def read_mztab(
             mod_sites = _proteoform_sites(
                 bare_sequence, row.get("modifications"), row.get("start")
             )
+        # Run identity: per-file (sample_map / legacy sample), or per-CHANNEL routed
+        # by the peptidoform's own multiplexing mod for a sample-axis-multiplexed run
+        # (the mod block above has folded the [UNIMOD:N] tokens into ``sequence``).
+        if channel_map is not None:
+            try:
+                channel = multiplex.channel_of(accmass.parse_unimod_ids(sequence))
+            except ValueError:
+                n_unrouted += 1
+                continue  # conflicting multiplex channels on one peptidoform
+            if channel is None:
+                n_unrouted += 1
+                continue  # no channel mod → unroutable in a multiplexed run
+            identity = channel_map.get((file_name, channel))
+            if identity is None:
+                n_unrouted += 1
+                continue  # this file/channel not declared in the multiplex SDRF
+            record_sample = identity.sample
+        else:
+            identity = sample_map.get(file_name) if sample_map is not None else None
+            record_sample = identity.sample if identity is not None else (sample or "")
         records.append(
             PSMRecord(
                 scan=scan,
@@ -204,10 +292,10 @@ def read_mztab(
                 # missing value is honest rather than fabricated.
                 neutral_mass=0.0,
                 percolator_score=_safe_float(row.get("search_engine_score[1]"), 1.0),
-                percolator_q_value=_safe_float(row.get("opt_global_q-value"), 1.0),
-                percolator_pep=_safe_float(
-                    row.get("opt_global_Posterior_Error_Probability_score"), 1.0
+                percolator_q_value=_safe_float(
+                    row.get(q_col) if q_col else None, 1.0
                 ),
+                percolator_pep=_safe_float(row.get(_PEP_COL), 1.0),
                 distinct_matches=0,
             )
         )
@@ -217,6 +305,11 @@ def read_mztab(
             "v1 set (kept %d); starter-set mods (N-term Acetyl, Phospho) are "
             "encoded as [UNIMOD:N] and integrated at the modified m/z.",
             n_dropped, n_before, len(records),
+        )
+    if n_unrouted:
+        _LOGGER.info(
+            "io.mztab: dropped %d/%d PSMs with no / conflicting sample-axis "
+            "multiplexing channel (unroutable to a sample).", n_unrouted, n_before,
         )
     return records, file_index_map
 
