@@ -94,6 +94,7 @@ matches the table's training population.
 | `bench_fs_rail_threshold.py` | FS rail-drop `fs_rail_hi/lo` threshold sweep (why `1.05/−0.05` is the 1.2.0 default) |
 | `bench_fs_rail_singlepoint.py` | FS rail bound on a single-timepoint (TMT) set — confirm the tighter rail is not harmful |
 | `bench_dimethyl_spillover.py` | dimethyl 0/8 duplex light→heavy spillover go/no-go (S=1 by length; `reports/2026-07-06_dimethyl_duplex_spillover.md`) |
+| `bench_linear_weights.py` | `linear simple` Δk, OLS vs WLS: noise-scale diagnostic + Monte-Carlo (bias / CI coverage / Type-I / power / efficiency-vs-MLE / IRLS steps) + real-data impact. Subcommands `diagnose recover power efficiency irls real all`; `--plot DIR` writes PNGs. See `reports/2026-07-13_linear_model_wls.md` |
 
 **Match-between-runs (MBR)**
 

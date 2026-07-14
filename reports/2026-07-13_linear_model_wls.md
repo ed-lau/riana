@@ -34,13 +34,36 @@ Fitting the current OLS per protein on `lve_atr_clean` and binning the φ-residu
 
 | θ bin | 0–0.2 | 0.2–0.4 | 0.4–0.6 | 0.6–0.8 | 0.8–0.9 | 0.95+ |
 |---|---|---|---|---|---|---|
-| **observed** residual SD | 0.061 | 0.094 | 0.147 | 0.235 | 0.387 | 0.612 |
-| predicted, FS-scale `σ/(1−θ)` | 0.063 | 0.080 | 0.113 | 0.186 | 0.370 | 1.59 |
-| predicted, flat φ-scale | 0.060 | 0.060 | 0.060 | 0.060 | 0.060 | 0.060 |
+| **observed** residual SD | 0.060 | 0.093 | 0.147 | 0.233 | 0.384 | 0.603 |
+| predicted, FS-scale `σ_θ/(1−θ)` | 0.065 | 0.083 | 0.117 | 0.193 | 0.382 | 1.64 |
+| predicted, flat φ-scale | 0.064 | 0.064 | 0.064 | 0.064 | 0.064 | 0.064 |
 
-Formal test — regress `log|resid|` on `−log(1−θ)`: **slope = 1.101, 95 % CI [1.066, 1.136]**.
-The FS-scale model predicts exactly 1; the flat-φ model predicts 0. The noise is **FS-scale**,
-with σ_θ ≈ **0.056**. Residual SD spans a **10× range** that OLS treats as equal.
+Formal test — regress `log|resid|` on `−log(1−θ)`. A pure FS-scale noise model predicts a
+slope of exactly **1**; a pure φ-scale (flat) model predicts **0**:
+
+| t = 0 | plateau truncation | slope | 95 % CI |
+|---|---|---|---|
+| **excluded (what the fit sees)** | **φ > −4 (production)** | **0.800** | [0.770, 0.831] |
+| excluded | none | 0.881 | [0.851, 0.912] |
+| *included* | φ > −4 | *1.101* | *[1.066, 1.136]* |
+
+**Read the first row.** The two lower rows are instructive but must not be quoted: including
+t = 0 inflates the slope by **+0.30**, because those points sit at θ ≈ 0 (x ≈ 0) with
+*artificially tiny* residuals — the θ-floor clamp pins them (see "Two implementation details"),
+which drags the regression's left end down and steepens it. That is the very artifact this
+report goes on to remove from the fit, so it cannot be used to justify the fit. The plateau
+truncation then costs a further ~0.08 by censoring the largest residuals at the top end.
+
+**So the honest exponent is ≈ 0.8 (0.88 untruncated), not 1.0.** The noise is therefore
+**predominantly FS-scale but not purely so** — most consistent with a *mixture*,
+`Var(φ) ≈ σ_θ²/(1−θ)² + σ_bio²`, i.e. dominant FS-scale measurement noise plus a smaller
+φ-scale (biological / model-misfit) floor. σ_θ ≈ **0.056**.
+
+This does **not** weaken the case for weighting — 0.80 is ~9 SE from the φ-scale prediction of
+0, and the residual SD still spans a **10× range** that OLS treats as equal. It does mean the
+pure-FS Monte-Carlo below is a mild **upper bound** on OLS's real-world Type-I inflation. The
+load-bearing evidence is therefore the **real-data** validation against the nonlinear MLE
+(next-but-one section), which assumes nothing about the exponent and is unaffected.
 
 ## Consequence (Monte Carlo through RIANA's actual pipeline)
 
@@ -169,10 +192,18 @@ rate). The linear k finally agrees with the nonlinear k (ρ 0.93, ratio 1.000), 
   29 new ones appear). **This does not overturn the biology** — atrium really does turn over
   faster than ventricle, and the large effects survive. What changes is that the *p-values no
   longer overstate the evidence*, and the fast-tail k's stop being ~14 % low.
-- Assumes θ noise is homoscedastic on the FS scale. It is *within* a protein, but per-point θ
+- **The weight exponent is slightly over-aggressive.** `(1−θ̂)²` is exactly right for *pure*
+  FS-scale noise (exponent 1). The measured exponent is ≈ **0.88** (untruncated), so the
+  variance-optimal weight is nearer `(1−θ̂)^1.8`. In practice this costs nothing measurable —
+  `wls_fit` still lands on the nonlinear MLE at ratio **1.0005** — but **note that the MLE
+  reference itself assumes pure FS-scale noise**, so their agreement confirms `wls_fit`
+  approximates *that* estimator, it does not independently prove the exponent. Fitting the
+  exponent (weight `(1−θ̂)^{2γ}`, γ ≈ 0.88) is a clean, cheap refinement. What is *not* in doubt
+  is the direction: OLS implicitly assumes exponent **0**, and the data say **0.8–0.9**.
+- Assumes θ noise is homoscedastic on the FS scale *within* a protein, but per-point θ
   precision genuinely varies with peptide depth. The ideal weight is `(1−θ̂)² / Var(θ_i)`;
   `riana_rollup_fractions.txt` does not currently carry a per-point `Var(θ)`. Adding it would
-  be strictly better — a clean follow-up.
+  be strictly better — a clean follow-up, and it may absorb part of the apparent φ-scale floor.
 - Residual coverage is 0.93–0.95, not exactly 0.95, at the fastest k — the plateau truncation
   (φ > −4) and the θ clamp still censor the tail. With proper weighting the truncation is
   arguably redundant (the weights already down-weight the saturated tail smoothly); worth a

@@ -20,8 +20,9 @@ reimplementing the contrast algebra (PROJECT_REVIEW.md §3, Track C).
 homoscedastic *measurement* noise on the FS scale, but φ is a **log** of it, so by the
 delta method ``Var(φ) = σ_θ²/(1 − θ)²`` — the φ-residuals are strongly
 **heteroscedastic**, their SD blowing up as θ → 1 (measured on real data: residual SD
-0.061 → 0.612 across θ bins; regressing ``log|resid|`` on ``−log(1−θ)`` gives slope
-**1.10**, vs 1.0 predicted for FS-scale noise and 0 for φ-scale). An **unweighted** OLS
+0.060 → 0.603 across θ bins; regressing ``log|resid|`` on ``−log(1−θ)`` gives slope
+**0.80** [0.77, 0.83], vs 1.0 predicted for pure FS-scale noise and 0 for φ-scale — i.e.
+predominantly FS-scale, likely with a smaller φ-scale floor). An **unweighted** OLS
 treats that 10× SD range as equal, which makes it badly anti-conservative: on RIANA's own
 design a true null is rejected **~28 %** of the time at α = 0.05, 95 % CIs cover ~54 %, and
 k is biased **−14 %** in the fast tail (real data, vs the nonlinear MLE).

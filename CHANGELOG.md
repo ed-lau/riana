@@ -17,9 +17,11 @@ The 1.2.0 development line (branch `1.2.0`).
   the new default) instead of unweighted OLS.** θ carries roughly homoscedastic *measurement*
   noise on the FS scale, but φ = log(1 − θ) is a **log** of it, so by the delta method
   `Var(φ) = σ_θ²/(1 − θ)²` — the φ-residuals are strongly **heteroscedastic**, their SD
-  blowing up as θ → 1. Measured on `lve_atr`, the residual SD runs 0.061 → 0.612 across θ bins,
-  and regressing `log|resid|` on `−log(1−θ)` gives slope **1.10** (1.0 is the FS-scale
-  prediction; 0.0 the φ-scale one). The old **unweighted** fit treated that 10× SD range as
+  blowing up as θ → 1. Measured on `lve_atr`, the residual SD runs 0.060 → 0.603 across θ bins,
+  and regressing `log|resid|` on `−log(1−θ)` gives slope **0.80** [0.77, 0.83] — vs 1.0 for pure
+  FS-scale noise and 0.0 for φ-scale, i.e. predominantly FS-scale with a smaller φ-scale floor.
+  (An earlier draft quoted 1.10; that included the t=0 points, whose clamped residuals are the
+  very artifact removed below.) The old **unweighted** fit treated that 10× SD range as
   equal, which made it **anti-conservative and biased**: Monte-Carlo through RIANA's own
   pipeline puts the false-positive rate of the Δk test at **~28 % at α = 0.05** (nominal 5 %),
   95 % CI coverage at **~54 %**, and k biased **−14 %** in the fast tail (confirmed on 180 real
