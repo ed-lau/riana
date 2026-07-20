@@ -622,6 +622,34 @@ def test_resolve_manifest_write_in_place_vs_fork(tmp_path):
     assert len(read_manifest(tc, stage="fit")) == 1
 
 
+def test_fork_seeds_cwd_relative_upstream_paths(tmp_path, monkeypatch):
+    """Regression: manifest paths are stored relative to the CWD (that is how the
+    reader resolves them), so the fork must anchor a relative upstream path at the
+    cwd — not at the manifest's folder, which double-counts the ``proj/`` prefix and
+    yields a non-existent ``proj/proj/run_riana.txt``."""
+    from riana.core.pipeline import resolve_manifest_write
+    monkeypatch.chdir(tmp_path)
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    real = proj / "run_riana.txt"          # the actual integrate output
+    real.write_text("dummy\n")
+
+    mf = proj / "riana_manifest.tsv"
+    ident = RunIdentity(experiment="syn", sample="r", data_file="r",
+                        labeling_time=0.0, labeling_time_unit="au", condition="control")
+    # output_path stored RELATIVE to cwd (the real-world convention that broke)
+    append_manifest(mf, [ManifestRow("integrate", "proj/run_riana.txt", ident)])
+
+    _, target = resolve_manifest_write(mf, str(tmp_path / "fork"), "fit")
+    seeded = read_manifest(target, stage="integrate")
+    assert len(seeded) == 1
+    p = Path(seeded[0].output_path)
+    assert p.is_absolute()
+    assert p.is_file(), f"seeded path does not exist (doubled?): {p}"
+    assert p.resolve() == real.resolve()
+    assert "proj/proj" not in str(p)
+
+
 def test_resolve_manifest_write_refuses_foreign_target(tmp_path):
     """Forking into a folder that already holds a *different* project's manifest is
     refused (would make an unloadable hybrid); an empty or same-source folder is OK."""

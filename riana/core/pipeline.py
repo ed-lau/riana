@@ -651,11 +651,16 @@ def resolve_manifest_write(
     if target.resolve() == src:  # a different spelling of the same folder
         return proj_dir, src
 
-    # Seed the fork with the upstream stages' rows, paths -> absolute (relative to
-    # the SOURCE project) so they keep pointing at the already-computed originals.
+    # Seed the fork with the upstream stages' rows, paths -> absolute so they keep
+    # pointing at the already-computed originals. Manifest paths are stored
+    # **relative to the working directory** (that is how the reader at ``run_fit`` /
+    # ``pd.read_table(row.output_path)`` resolves them), so anchor a relative path at
+    # the cwd — NOT at ``proj_dir`` (the manifest's folder), which double-counts the
+    # ``runs/<project>/`` prefix already inside the stored path.
     upstream = _STAGES[:_STAGES.index(stage)]
+    base = Path.cwd()
     seed = [
-        dataclasses.replace(row, output_path=str(_abs_under(row.output_path, proj_dir)))
+        dataclasses.replace(row, output_path=str(_abs_under(row.output_path, base)))
         for st in upstream
         for row in read_manifest(src, stage=st)
     ]
@@ -683,6 +688,7 @@ def _fork_target_conflicts(target: Path, seed: list[ManifestRow]) -> bool:
     """
     seed_keys = {(r.stage, r.output_path) for r in seed}  # seed paths are absolute
     seed_stages = {r.stage for r in seed}
+    base = Path.cwd()  # same anchor the seed uses, so relative rows compare correctly
     try:
         existing = read_manifest(target)
     except DataError:
@@ -690,7 +696,7 @@ def _fork_target_conflicts(target: Path, seed: list[ManifestRow]) -> bool:
     for row in existing:
         if row.stage not in seed_stages:
             continue  # ignore the target's own downstream rows
-        if (row.stage, str(_abs_under(row.output_path, target.parent))) not in seed_keys:
+        if (row.stage, str(_abs_under(row.output_path, base))) not in seed_keys:
             return True
     return False
 

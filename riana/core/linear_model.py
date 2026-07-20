@@ -225,7 +225,11 @@ def fit_linear_deltak(
             # artificially ≈ 0 against the model's exact 0. That deflates the residual
             # variance and shrinks EVERY standard error. Excluding it only corrects the
             # inference. See reports/2026-07-13_linear_model_wls.md.
-            keep = t > 0
+            #
+            # EXCEPT under ``weights="ols"``: that scheme exists solely to reproduce the
+            # pre-2026-07 fit for audit, and that fit KEPT t = 0. Dropping it there would
+            # make ``ols`` a hybrid that never shipped, so the audit path retains t = 0.
+            keep = np.ones(len(t), dtype=bool) if weights == "ols" else (t > 0)
             t, p = t[keep], p[keep]
             if len(t) >= min_points_per_condition:
                 per_cond[str(cond)] = (t, p)

@@ -241,3 +241,22 @@ def test_wls_is_the_default():
     ols = fit_linear_deltak(pts, weights="ols")["k_deg"].median()
     assert default == pytest.approx(wls, rel=1e-9)
     assert default != pytest.approx(ols, rel=1e-6)
+
+
+def test_ols_keeps_t0_while_wls_drops_it():
+    """Regression: ``weights="ols"`` must reproduce the pre-2026-07 fit, which KEPT
+    the t=0 point; only ``wls`` drops it (the clamped ≈0 residual at t=0 deflates σ̂²).
+    t=0 has zero leverage on a through-origin slope, so k is unchanged either way — the
+    difference is purely which points enter the fit. Plateau truncation is independent
+    of the scheme (see ``test_truncate_plateau_drops_saturated_tail``)."""
+    times = [0, 1, 2, 3, 4, 6, 8, 10]     # includes t=0
+    pts = pd.DataFrame(
+        _curve("e", "P", "control", 0.05, times, noise=0.01, seed=1)
+        + _curve("e", "P", "atrium", 0.10, times, noise=0.01, seed=2))
+    ols = fit_linear_deltak(pts, weights="ols", reference_condition="control")
+    wls = fit_linear_deltak(pts, weights="wls", reference_condition="control")
+    n_ols = int(ols["n_points"].iloc[0])
+    n_wls = int(wls["n_points"].iloc[0])
+    assert n_ols > n_wls                                     # ols retains t=0, wls drops it
+    # k is unchanged (t=0 has no leverage on a through-origin slope)
+    assert ols["k_deg"].iloc[0] == pytest.approx(wls["k_deg"].iloc[0], abs=5e-3)
