@@ -32,7 +32,7 @@ from riana.algorithms.isotope_dist import (
 from riana.algorithms.mass_calc import calculate_ion_mz
 from riana.constants import PROTON_MASS
 from riana.config import FitConfig
-from riana.core.fitting import fit_run
+from riana.core.fitting import fit_run, _solve_k_single_t, _K_DEG_BOUNDS
 from riana.core import models
 
 
@@ -830,3 +830,112 @@ def test_fit_merges_met_ox_with_unoxidized_into_one_curve():
     row = out.loc["SAMMLPEPTIDEK_2"]
     assert len(row["t"]) == 6
     assert row["k_deg"] == pytest.approx(k, abs=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Single-timepoint fits — direct k solve (no futile NLS), R² N/A, warning-free.
+# See PROJECT_REVIEW.md §3 "Single-timepoint hardening".
+# ---------------------------------------------------------------------------
+import warnings
+
+from scipy.optimize import OptimizeWarning, curve_fit
+
+_SINGLE_KW = dict(a_0=0.0, a_max=1.0, k_p=0.5, k_r=0.05, r_p=10.0)
+
+
+def test_solve_k_single_t_closed_form_matches_curve_fit():
+    """one_exponent: the closed form −ln(1−FSbar)/t* reproduces the bounded curve_fit
+    optimum (to machine precision) and the elementary formula."""
+    t_star = 24.0
+    for fsbar in (0.1, 0.35, 0.62, 0.85):
+        fs = np.full(5, fsbar)
+        k_closed = _solve_k_single_t(t_star, fs, models.one_exponent, _SINGLE_KW)
+        popt, _ = curve_fit(
+            lambda tt, k: models.one_exponent(tt, k_deg=k, **_SINGLE_KW),
+            np.full(5, t_star), fs, bounds=_K_DEG_BOUNDS, p0=[0.5], maxfev=2000)
+        assert k_closed == pytest.approx(float(popt[0]), abs=1e-6)
+        assert k_closed == pytest.approx(-np.log(1 - fsbar) / t_star, rel=1e-9)
+
+
+def test_solve_k_single_t_guan_root_find_recovers_k():
+    """guan is strictly monotonic in k at a fixed k_p, so the pole-safe root-find
+    inverts it — where the default NLS init (0.5) sits on guan's k_p pole and can
+    null the fit."""
+    t_star, k_true = 1.0, 3.0
+    fs = float(models.two_compartment_guan(t_star, k_deg=k_true, **_SINGLE_KW))
+    k = _solve_k_single_t(t_star, np.full(4, fs), models.two_compartment_guan, _SINGLE_KW)
+    assert k is not None
+    assert k == pytest.approx(k_true, rel=1e-4)
+
+
+def test_solve_k_single_t_edge_cases():
+    """t* ≤ 0 defers to NLS (None); FSbar out of [0,1] clips to the k bounds."""
+    lo, hi = _K_DEG_BOUNDS[0][0], _K_DEG_BOUNDS[1][0]
+    assert _solve_k_single_t(0.0, np.array([0.3]), models.one_exponent, _SINGLE_KW) is None
+    assert _solve_k_single_t(24.0, np.array([1.2]), models.one_exponent, _SINGLE_KW) == hi
+    assert _solve_k_single_t(24.0, np.array([-0.1]), models.one_exponent, _SINGLE_KW) == lo
+
+
+def _single_tp_dfs(*, t_star=24.0, fs=0.4, n_rep=3, jitter=0.0, seed=1, spep_target=8):
+    """One integrate frame: ``n_rep`` replicate rows of ONE peptide at ONE labeling
+    time, envelopes mixed to fraction-new ≈ fs (``jitter`` gives the bootstrap real
+    replicate scatter). Returns ``(dfs, coeffs)`` for :func:`fit_run`."""
+    clear_envelope_cache()
+    seq, charge = "VAPEPTIDEK", 2
+    coeffs = _coefficients_for_target_spep([(seq, charge)], spep_target)
+    spep = _spep_by_seq_from_coefficients([(seq, charge)], coeffs)[seq]
+    pep_mass = calculate_ion_mz(seq)
+    init = _get_init_env(seq, pep_mass, n=6); init = init / init.sum()
+    final = _get_final_env(seq, pep_mass, spep, ria_max=0.06, n=6); final = final / final.sum()
+    rng = np.random.default_rng(seed)
+    rows = []
+    for r in range(n_rep):
+        prop = fs + (float(rng.normal(0, jitter)) if jitter else 0.0)
+        scaled = ((1.0 - prop) * init + prop * final) * 1e6
+        rows.append({
+            "file_idx": 0, "scan": 1000 + r, "charge": charge,
+            "concat": f"{seq}_{charge}", "sequence": seq, "sample": f"rep{r}",
+            "labeling_time": float(t_star), "biological_replicate": r + 1,
+            "percolator q-value": 1e-4, "protein id": "sp|P00001|TEST_HUMAN",
+            **{f"iso{n}": scaled[n] for n in range(6)},
+        })
+    return [pd.DataFrame(rows)], coeffs
+
+
+def test_fit_run_single_timepoint_auto_relaxes_depth_and_solves_directly_no_warning():
+    """One distinct labeling time: fit_run auto-relaxes --depth (default 3) → 1, solves
+    k directly (k_deg == −ln(1−FSbar)/t* of its OWN recovered FS), reports R² as NaN,
+    and emits NO scipy OptimizeWarning — the point of the direct solve."""
+    t_star, fs = 24.0, 0.5
+    dfs, coeffs = _single_tp_dfs(t_star=t_star, fs=fs, n_rep=3)
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                    ria_max=0.06, min_spep=0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", OptimizeWarning)   # any OptimizeWarning → fail
+        out = fit_run(cfg, dfs, coeffs, n_boot=50, random_state=42,
+                      time_column="labeling_time")
+    assert len(out) == 1
+    row = out.iloc[0]
+    assert int(row["n_points"]) == 3
+    assert np.isnan(row["R_squared"])                     # R² is not applicable
+    fsbar = float(np.mean(row["fs"]))
+    assert row["k_deg"] == pytest.approx(-np.log(1 - fsbar) / t_star, rel=1e-9)
+    assert fsbar == pytest.approx(fs, abs=0.05)           # setup sanity
+
+
+def test_fit_run_single_timepoint_ci_finite_for_replicates_nan_for_single():
+    """Multi-replicate single-timepoint → a finite, non-degenerate k CI from the
+    replicate scatter; a single-replicate peptide → NaN CI (undefined uncertainty,
+    per b03484e)."""
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=1,
+                    ria_max=0.06, min_spep=0)
+    dfs, coeffs = _single_tp_dfs(t_star=24.0, fs=0.4, n_rep=3, jitter=0.03, seed=7)
+    multi = fit_run(cfg, dfs, coeffs, n_boot=200, random_state=42,
+                    time_column="labeling_time").iloc[0]
+    assert np.isfinite(multi["ci_lo"]) and np.isfinite(multi["ci_hi"])
+    assert multi["ci_hi"] > multi["ci_lo"]                # genuine replicate-scatter width
+
+    dfs1, coeffs1 = _single_tp_dfs(t_star=24.0, fs=0.4, n_rep=1)
+    single = fit_run(cfg, dfs1, coeffs1, n_boot=200, random_state=42,
+                     time_column="labeling_time").iloc[0]
+    assert np.isnan(single["ci_lo"]) and np.isnan(single["ci_hi"])

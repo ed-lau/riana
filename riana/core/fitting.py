@@ -44,14 +44,14 @@ import importlib.resources
 import logging
 import re
 from concurrent import futures
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from typing import Callable, Mapping
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import curve_fit
+from scipy.optimize import brentq, curve_fit
 
 from riana import constants
 from riana.algorithms.isotope_dist import (
@@ -116,6 +116,70 @@ def _concat_seed(base_seed: int, concat: str) -> int:
     """
     digest = hashlib.blake2b(concat.encode(), digest_size=8).digest()
     return (base_seed ^ int.from_bytes(digest, "big")) & 0xFFFFFFFFFFFFFFFF
+
+
+def _solve_k_single_t(
+    t_star: float,
+    fs_values: np.ndarray,
+    model_fn: Callable,
+    kinetic_kwargs: Mapping,
+) -> float | None:
+    """Direct k for a fit whose points all share ONE labeling time ``t_star``.
+
+    At a single timepoint every point has the same model prediction, so the
+    least-squares fit collapses to solving ``model(t_star, k) = mean(fs)`` for the
+    one free parameter — an elementary closed form for ``one_exponent``
+    (``k = -ln(1 - FSbar) / t_star``) and a bounded, pole-safe scalar root-find for
+    the monotonic two-compartment models (guan/fornasiero are strictly increasing in
+    k at a fixed ``k_p``). Reproduces the bounded ``curve_fit`` optimum (closed form
+    exact; root-find to ~1e-6) with no iterative solve and no ``OptimizeWarning`` from
+    the zero-residual-dof single point. Returns ``None`` when a direct solve does not
+    apply (``t_star <= 0``, degenerate span, or the root-find fails), so the caller
+    falls back to ``curve_fit`` — no behaviour change on the multi-timepoint path.
+
+    Routes on the LOCAL point spread, so it also serves a multi-timepoint peptide
+    whose points collapse to one surviving ``t`` after FS rail-drop.
+    """
+    if not np.isfinite(t_star) or t_star <= 0:
+        return None
+    lo, hi = _K_DEG_BOUNDS[0][0], _K_DEG_BOUNDS[1][0]
+    target = float(np.mean(fs_values))
+    a_0 = float(kinetic_kwargs.get("a_0", 0.0))
+    a_max = float(kinetic_kwargs.get("a_max", 1.0))
+
+    if model_fn is models.one_exponent:
+        span = a_max - a_0
+        if span == 0.0:
+            return None
+        frac = 1.0 - (target - a_0) / span          # == exp(-k * t_star)
+        if frac <= 0.0:                              # FSbar at/above the asymptote
+            return hi
+        if frac >= 1.0:                              # FSbar at/below the baseline
+            return lo
+        return float(min(max(-np.log(frac) / t_star, lo), hi))
+
+    # Monotonic two-compartment model (k_p, k_r, r_p fixed): bounded root-find of
+    # model(t_star, k) - target. Pole-safe — guan has a removable ``k == k_p`` pole,
+    # so a tiny nudge recovers the finite limit if an evaluation lands on it.
+    def g(k: float) -> float:
+        v = float(model_fn(t_star, k_deg=k, **kinetic_kwargs))
+        if not np.isfinite(v):
+            v = float(model_fn(t_star, k_deg=k * (1.0 + 1e-7) + 1e-9, **kinetic_kwargs))
+        return v - target
+
+    try:
+        g_lo, g_hi = g(lo), g(hi)
+        if not (np.isfinite(g_lo) and np.isfinite(g_hi)):
+            return None
+        if g_lo == 0.0:
+            return lo
+        if g_hi == 0.0:
+            return hi
+        if g_lo * g_hi > 0.0:            # target outside the achievable range
+            return lo if abs(g_lo) < abs(g_hi) else hi
+        return float(brentq(g, lo, hi, xtol=1e-10, maxiter=200))
+    except (RuntimeError, ValueError, ZeroDivisionError):
+        return None
 
 
 def _fit_key(concat: str) -> str:
@@ -483,6 +547,19 @@ def fit_run(
                 f"time_column {time_column!r} not in the integrate frames "
                 f"(have {list(rdf.columns)}). The pipeline must add it."
             )
+        # Single-timepoint experiment: one distinct labeling time cannot constrain a
+        # kinetic curve, so R² is degenerate and k is solved DIRECTLY per peptide
+        # (_solve_k_single_t), not by NLS. Auto-relax the depth floor to 1 so the data
+        # is admitted at all — the default depth=3 would otherwise empty the frame with
+        # a cryptic "no peptides survive". Mirrors the rollup's single-timepoint
+        # auto-detection; replicate curation moves to k_cv + --min-fit-points at rollup.
+        n_distinct_t = int(rdf[time_column].nunique(dropna=True))
+        if n_distinct_t <= 1 and config.depth > 1:
+            _LOGGER.info(
+                "fit: single labeling timepoint (%d distinct) — relaxing --depth %d→1; "
+                "k solved directly (R² N/A). Curate on k_cv + --min-fit-points at rollup.",
+                n_distinct_t, config.depth)
+            config = replace(config, depth=1)
         # depth = distinct labeling timepoints per merged peptidoform — the
         # kinetic-identifiability quantity (a one-exponent curve needs >= depth
         # distinct x to constrain k). NOT raw PSM rows: a peptidoform seen many
@@ -783,17 +860,33 @@ def _fit_one_concat(
         k_p=config.k_p, k_r=config.k_r, r_p=config.r_p,
     )
 
-    try:
-        popt, _ = curve_fit(
-            partial(model_fn, **kinetic_kwargs),
-            t_arr[fit_mask], fs_arr[fit_mask],
-            bounds=_K_DEG_BOUNDS,
-            p0=[_K_DEG_INIT],
-            maxfev=2000,
-        )
-    except (RuntimeError, ValueError):
-        return _null_result(concat, protein_id, mod_sites)
-    k_deg = float(popt[0])
+    # A fit whose points all share one labeling time has a closed-form / root-find k
+    # (see _solve_k_single_t): the 1-parameter LS collapses to model(t*, k)=mean(fs).
+    # Route on the LOCAL point spread (not an experiment-level flag), so a
+    # multi-timepoint peptide that rail-drop reduced to one surviving t is caught too.
+    # None ⇒ direct solve doesn't apply ⇒ fall back to curve_fit (multi-timepoint path
+    # byte-identical).
+    single_t = bool(np.ptp(t_arr[fit_mask]) == 0)
+    k_direct = (
+        _solve_k_single_t(float(t_arr[fit_mask][0]), fs_arr[fit_mask],
+                          model_fn, kinetic_kwargs)
+        if single_t else None
+    )
+    use_direct = k_direct is not None
+    if use_direct:
+        k_deg = k_direct
+    else:
+        try:
+            popt, _ = curve_fit(
+                partial(model_fn, **kinetic_kwargs),
+                t_arr[fit_mask], fs_arr[fit_mask],
+                bounds=_K_DEG_BOUNDS,
+                p0=[_K_DEG_INIT],
+                maxfev=2000,
+            )
+        except (RuntimeError, ValueError):
+            return _null_result(concat, protein_id, mod_sites)
+        k_deg = float(popt[0])
 
     pred = np.array([
         model_fn(ti, k_deg=k_deg, **kinetic_kwargs) for ti in t_arr[fit_mask]
@@ -801,7 +894,13 @@ def _fit_one_concat(
     residuals = fs_arr[fit_mask] - pred
     ss_res = float(np.sum(residuals ** 2))
     ss_tot = float(np.sum((fs_arr[fit_mask] - np.mean(fs_arr[fit_mask])) ** 2))
-    r_squared = float("nan") if ss_tot == 0 else 1.0 - ss_res / ss_tot
+    # R² needs time-axis variance to mean anything; a single-t fit explains none of the
+    # (replicate) scatter by construction (ss_res == ss_tot), so report NaN — "not
+    # applicable", not a misleading 0. Rollup already bypasses R² for single-timepoint
+    # data and curates on k_cv instead.
+    r_squared = (
+        float("nan") if (single_t or ss_tot == 0) else 1.0 - ss_res / ss_tot
+    )
 
     # Unified residual bootstrap (fixed t-design). Resample the fit residuals,
     # refit k_deg, and from each refit derive BOTH the k_deg CI and a
@@ -819,17 +918,25 @@ def _fit_one_concat(
     boot_obs: list[np.ndarray] = []
     for _ in range(n_boot):
         fs_star = pred + residuals[rng.integers(0, n_pts, size=n_pts)]
-        try:
-            popt_b, _ = curve_fit(
-                partial(model_fn, **kinetic_kwargs),
-                t_fit, fs_star,
-                bounds=_K_DEG_BOUNDS,
-                p0=[k_deg],
-                maxfev=2000,
-            )
-        except (RuntimeError, ValueError):
-            continue
-        k_b = float(popt_b[0])
+        if use_direct:
+            # Same closed-form / root-find as the point estimate, on the resampled
+            # FS — no curve_fit. The rng draw above is unchanged, so the bootstrap
+            # stream (hence the CI) is deterministic and matches the NLS design.
+            k_b = _solve_k_single_t(float(t_fit[0]), fs_star, model_fn, kinetic_kwargs)
+            if k_b is None:
+                continue
+        else:
+            try:
+                popt_b, _ = curve_fit(
+                    partial(model_fn, **kinetic_kwargs),
+                    t_fit, fs_star,
+                    bounds=_K_DEG_BOUNDS,
+                    p0=[k_deg],
+                    maxfev=2000,
+                )
+            except (RuntimeError, ValueError):
+                continue
+            k_b = float(popt_b[0])
         boot_ks.append(k_b)
         pred_b = np.asarray(
             model_fn(t_fit, k_deg=k_b, **kinetic_kwargs), dtype=np.float64

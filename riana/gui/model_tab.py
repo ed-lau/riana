@@ -175,7 +175,9 @@ class ModelTab(QWidget):
 
         self.depth_spin = QSpinBox()
         self.depth_spin.setToolTip(
-            "Fit only peptidoforms seen at this many distinct labelling timepoints (kinetic identifiability) — not raw PSM rows.")
+            "Fit only peptidoforms seen at this many distinct labelling timepoints "
+            "(kinetic identifiability) — not raw PSM rows. A single-timepoint experiment "
+            "(one labelling time) auto-relaxes this to 1 and solves k directly (R² N/A).")
         self.depth_spin.setRange(1, 100)
         self.depth_spin.setValue(3)
         form.addRow("Depth", self.depth_spin)
@@ -485,10 +487,19 @@ class ModelTab(QWidget):
             self._populate_results(result_df)
             self.curve.show_placeholder("Select a peptide row to view its fit.")
             n_fitted = int(result_df["k_deg"].notna().sum())
-            n_well = int((result_df["R_squared"] >= 0.9).sum())
-            self.summary_label.setText(
-                f"{len(result_df)} peptides; {n_fitted} converged; {n_well} R²≥0.9."
-            )
+            # A single-timepoint fit reports R² as NaN by design (not applicable), so an
+            # "R²≥0.9" tally would read as a spurious "0 well-fit" — show the direct-solve
+            # regime instead.
+            if n_fitted and bool(result_df["R_squared"].isna().all()):
+                self.summary_label.setText(
+                    f"{len(result_df)} peptides; {n_fitted} fitted; single timepoint — "
+                    "R² N/A, k solved directly (curate on k_cv at rollup)."
+                )
+            else:
+                n_well = int((result_df["R_squared"] >= 0.9).sum())
+                self.summary_label.setText(
+                    f"{len(result_df)} peptides; {n_fitted} converged; {n_well} R²≥0.9."
+                )
             self._info("done.")
         except asyncio.CancelledError:
             self._info("cancelled.")

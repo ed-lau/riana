@@ -199,6 +199,28 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
     assert len(a_t) == len(a_fs) > 0
 
 
+def test_run_rollup_forwards_min_fit_points(tmp_path, monkeypatch):
+    """The Protein-tab worker forwards the (newly GUI-exposed) min_fit_points
+    replicate floor to rollup_proteins — the dominant single-timepoint curation lever."""
+    import riana.core.protein as protein_mod
+
+    captured: dict = {}
+
+    def fake_rollup(peptides, fractions, **kw):
+        captured.update(kw)
+        out = pd.DataFrame({"experiment": [], "condition": [], "protein": []})
+        out.attrs["protein_points"] = {}
+        return out
+
+    monkeypatch.setattr(protein_mod, "rollup_proteins", fake_rollup)
+    (tmp_path / "riana_fit_peptides.txt").write_text("concat\tprotein id\nA_2\tsp|P|X\n")
+    (tmp_path / "riana_fit_fractions.txt").write_text(
+        "concat\tlabeling_time\tfs\nA_2\t24.0\t0.4\n")
+
+    run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3, min_fit_points=3)
+    assert captured.get("min_fit_points") == 3
+
+
 def _build_manifest_project(tmp_path):
     """Leave a manifest project on disk as integrate→fit→rollup would.
 
@@ -459,6 +481,7 @@ def test_protein_tab_build_params_defaults(main_window):
     assert params["model"] == "simple"
     assert params["min_peptides"] == 2
     assert params["min_points"] == 3
+    assert params["min_fit_points"] is None  # 0 on the spin -> auto (2 for single-tp)
     assert params["min_r2"] == 0.8  # gate on by default (0 on the spin -> None/off)
 
 

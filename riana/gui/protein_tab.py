@@ -188,6 +188,21 @@ class ProteinTab(QWidget):
         self.min_points_spin.setValue(3)
         form.addRow("Min refit points", self.min_points_spin)
 
+        # Peptide-level biological-replicate floor — distinct from "Min refit points"
+        # (that is the protein-level (t, θ) floor). The dominant single-timepoint
+        # curation lever. 0 = auto (2 for single-timepoint, off for a time series).
+        self.min_fit_points_spin = QSpinBox()
+        self.min_fit_points_spin.setToolTip(
+            "Peptide biological-replicate floor: keep only peptidoforms fit on ≥ N "
+            "distinct (biorep, timepoint) points. 0 = auto — 2 for a single-timepoint "
+            "experiment (its dominant curation lever, where n_points IS the replicate "
+            "count) and off for a time series; set 1 to disable, 3+ to require more "
+            "replicates. Distinct from 'Min refit points' above (the protein-level "
+            "(t, θ) refit floor).")
+        self.min_fit_points_spin.setRange(0, 1000)
+        self.min_fit_points_spin.setValue(0)
+        form.addRow("Min fit points (0 = auto)", self.min_fit_points_spin)
+
         # Peptide R² admission gate; default 0.8 (needed for good geom-CV), 0 = off.
         self.min_r2_spin = QDoubleSpinBox()
         self.min_r2_spin.setDecimals(2)
@@ -210,10 +225,12 @@ class ProteinTab(QWidget):
         self.k_cv_spin.setSingleStep(0.05)
         self.k_cv_spin.setValue(0.2)
         self.k_cv_spin.setToolTip(
-            "Flat-curve rescue (with Min R² > 0): admit a low-R² peptide if its "
-            "relative uncertainty k_cv = (ci_hi−ci_lo)/(2·|k|) is below this. "
-            "Scale-free CV of k̂ — no retuning across time ranges or k units. "
-            "0 = rescue off (R²-only gate).")
+            "Max relative uncertainty of k̂: k_cv = (ci_hi−ci_lo)/(2·|k|), a scale-free "
+            "CV — no retuning across time ranges or k units. Its ROLE depends on the "
+            "data: for a MULTI-timepoint series it is a SECONDARY flat-curve rescue "
+            "(admit a low-R² peptide whose k is nonetheless tight — only when Min R² > 0); "
+            "for a SINGLE-timepoint experiment R² is bypassed, so this becomes the "
+            "PRIMARY gate (alongside Min fit points). 0 = off.")
         form.addRow("Max k_cv (0 = off)", self.k_cv_spin)
 
         self.rescue_r2_spin = QDoubleSpinBox()
@@ -370,6 +387,7 @@ class ProteinTab(QWidget):
     def build_params(self) -> dict:
         """Gather the rollup parameters from the form (testable, Qt-free dict)."""
         r2 = float(self.min_r2_spin.value())
+        mfp = int(self.min_fit_points_spin.value())   # 0 = auto (None)
         return {
             "manifest": self.manifest_edit.text().strip(),
             "method": self.method_combo.currentText(),
@@ -380,6 +398,7 @@ class ProteinTab(QWidget):
             "rp": float(self.rp_spin.value()),
             "min_peptides": int(self.min_peptides_spin.value()),
             "min_points": int(self.min_points_spin.value()),
+            "min_fit_points": (mfp if mfp > 0 else None),   # 0 = auto
             "min_r2": (r2 if r2 > 0.0 else None),   # 0 = off
             "k_cv_max": float(self.k_cv_spin.value()),
             "rescue_r2": float(self.rescue_r2_spin.value()),
@@ -452,7 +471,7 @@ class ProteinTab(QWidget):
             self._future = loop.run_in_executor(
                 executor, run_rollup, str(fit_dir), p["model"],
                 p["kp"], p["kr"], p["rp"], p["parsimony"],
-                p["min_peptides"], p["min_points"], p["min_r2"],
+                p["min_peptides"], p["min_points"], p["min_fit_points"], p["min_r2"],
                 p["k_cv_max"], p["rescue_r2"], p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
                 p["test_condition"],
@@ -473,6 +492,18 @@ class ProteinTab(QWidget):
                 f"{len(result)} proteins ({p['method']}); "
                 f"{n_fit} with a fitted k_deg."
             )
+            # Surface the single-timepoint regime — the core logs it, but that INFO is
+            # emitted in a worker process and never reaches the GUI. If every rolled
+            # protein sits at one labeling timepoint, R² was N/A and curation rode on
+            # k_cv + Min fit points.
+            single_tp = (
+                "n_timepoints" in result.columns and len(result) > 0
+                and bool((result["n_timepoints"].dropna() <= 1).all())
+            )
+            self.results_hint.setText(
+                "Single labeling timepoint — R² is not applicable (bypassed); curation "
+                "was on Max k_cv + Min fit points (replicate floor). Min R² / Rescue R² "
+                "do not apply." if single_tp else "")
             self._info("done.")
         except asyncio.CancelledError:
             self._info("cancelled.")

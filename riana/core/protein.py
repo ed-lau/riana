@@ -73,6 +73,7 @@ import pandas as pd
 from scipy.optimize import curve_fit
 
 from riana.core import models
+from riana.core.fitting import _solve_k_single_t
 from riana.exceptions import DataError
 from riana.progress import iter_progress
 from riana.records import GROUP_KEY_COLUMNS, PROTEIN_KEY_COLUMNS
@@ -900,29 +901,48 @@ def _fit_kdeg(
     rng: np.random.Generator,
 ) -> tuple[float, float, float, float] | None:
     """Fit one ``k_deg`` to collapsed ``(t, θ)`` + a residual-bootstrap CI."""
-    try:
-        popt, _ = curve_fit(
-            partial(model_fn, **kinetic_kwargs), t, fs,
-            bounds=_K_DEG_BOUNDS, p0=[_K_DEG_INIT], maxfev=2000)
-    except (RuntimeError, ValueError):
-        return None
-    k = float(popt[0])
+    # Collapsed points all at one timepoint (single-timepoint rollup, or a protein
+    # seen at a single t) → direct k solve, not futile NLS (mirrors the per-peptide
+    # fit; see riana.core.fitting._solve_k_single_t). None ⇒ fall back to curve_fit.
+    single_t = bool(len(t) > 0 and np.ptp(t) == 0)
+    k_direct = (
+        _solve_k_single_t(float(t[0]), fs, model_fn, kinetic_kwargs)
+        if single_t else None
+    )
+    use_direct = k_direct is not None
+    if use_direct:
+        k = k_direct
+    else:
+        try:
+            popt, _ = curve_fit(
+                partial(model_fn, **kinetic_kwargs), t, fs,
+                bounds=_K_DEG_BOUNDS, p0=[_K_DEG_INIT], maxfev=2000)
+        except (RuntimeError, ValueError):
+            return None
+        k = float(popt[0])
     pred = np.asarray(model_fn(t, k_deg=k, **kinetic_kwargs), dtype=float)
     resid = fs - pred
     ss_res = float(np.sum(resid ** 2))
     ss_tot = float(np.sum((fs - fs.mean()) ** 2))
-    r2 = float("nan") if ss_tot == 0 else 1.0 - ss_res / ss_tot
+    # R² is not applicable at a single timepoint (the rollup gate bypasses it anyway).
+    r2 = float("nan") if (single_t or ss_tot == 0) else 1.0 - ss_res / ss_tot
     n = len(t)
     boot: list[float] = []
     for _ in range(n_boot):
         fs_star = pred + resid[rng.integers(0, n, n)]
-        try:
-            pb, _ = curve_fit(
-                partial(model_fn, **kinetic_kwargs), t, fs_star,
-                bounds=_K_DEG_BOUNDS, p0=[k], maxfev=2000)
-            boot.append(float(pb[0]))
-        except (RuntimeError, ValueError):
-            continue
+        if use_direct:
+            kb = _solve_k_single_t(float(t[0]), fs_star, model_fn, kinetic_kwargs)
+            if kb is None:
+                continue
+            boot.append(kb)
+        else:
+            try:
+                pb, _ = curve_fit(
+                    partial(model_fn, **kinetic_kwargs), t, fs_star,
+                    bounds=_K_DEG_BOUNDS, p0=[k], maxfev=2000)
+                boot.append(float(pb[0]))
+            except (RuntimeError, ValueError):
+                continue
     if len(boot) >= 10:
         lo, hi = (float(p) for p in np.percentile(boot, boot_ci_pct))
     else:

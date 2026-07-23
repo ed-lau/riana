@@ -9,6 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Single-timepoint fits — direct k solve + fit-step detection — 2026-07-21
+
+Single-timepoint data (TMT, dimethyl, any one-labeling-time run) is a flagship 1.2.0
+substrate; the fit now handles it directly instead of burning futile nonlinear least
+squares on it. **Numerically identical results — this is perf, correctness, and UX, not a
+results change.**
+
+#### Changed
+
+- **`riana fit` auto-detects a single labeling timepoint and relaxes the `--depth` floor to
+  1** (with an INFO log) instead of emptying the frame with the generic "no peptides survive
+  --q-value / --depth" error. Curation is unchanged (it stays at rollup: k_cv +
+  `--min-fit-points`, R² bypassed).
+- **k is solved directly at a single timepoint, not by `curve_fit`.** When a peptide's
+  surviving points all share one labeling time the 1-parameter fit collapses to
+  `model(t*, k) = mean(FS)`: an elementary closed form `k = −ln(1 − F̄S)/t*` for the `simple`
+  model (verified to ~1e-12 vs the bounded `curve_fit` optimum, ~100× faster) and a pole-safe
+  Brent root-find for guan/fornasiero (strictly monotonic in k at a fixed `k_p`). The
+  residual-bootstrap CI is computed the same way on the same RNG stream, so
+  `ci_lo`/`ci_hi`/`sd` are unchanged. Applies to the per-peptide fit **and** the
+  protein-rollup refit, and to any multi-timepoint peptide whose points collapse to one t
+  after FS rail-drop.
+- **The single point's `OptimizeWarning` ("Covariance of the parameters could not be
+  estimated") is gone** — no `curve_fit` is invoked on the single-timepoint path.
+- **R² is reported as `NaN` (not a misleading ≈0) for a single-timepoint fit** — there is no
+  time-axis variance for it to explain; the rollup already bypasses R² there and curates on
+  k_cv.
+- **GUI clarity.** The rollup tab now exposes a **Min fit points** control (the peptide
+  biological-replicate floor; `0 = auto` → 2 for single-timepoint, off otherwise) — previously
+  tunable only from the CLI — and relabels **Max k_cv** to state its role (a *secondary*
+  flat-curve rescue for a time series; the *primary* gate for single-timepoint, where R² is
+  bypassed), plus shows a single-timepoint hint when every rolled protein sits at one labeling
+  time. The fit tab's Depth tooltip notes the single-timepoint auto-relax, and its summary
+  reads "single timepoint — R² N/A, k solved directly" instead of a spurious "0 R²≥0.9".
+
+#### Fixed
+
+- guan/fornasiero single-timepoint fits no longer risk a silent null from the default fit
+  init `k=0.5` landing on guan's `k=k_p` pole (`config.k_p=0.5`): the direct root-find
+  sidesteps NLS init-sensitivity.
+
+Tests: `tests/test_fitting.py` (closed-form ≡ `curve_fit`, guan root-find, edge cases,
+auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py`
+(`min_fit_points` in `build_params` + `run_rollup` forwarding).
+
 ### `linear simple` Δk — weighted least squares (RESULTS-AFFECTING DEFAULT) — 2026-07-13
 
 #### Changed
