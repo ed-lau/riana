@@ -9,16 +9,27 @@ method ``Var(φ) = σ_θ²/(1−θ)²`` — so the φ-residuals are strongly **h
 SD blowing up as θ → 1. An unweighted OLS treats that ~10× SD range as equal, which makes the
 Δk test badly anti-conservative and biases k low in the fast tail.
 
-THREE ESTIMATORS are compared throughout:
-  ols      unweighted (the pre-2026-07 default)
-  wls_obs  weights = (1−θ_obs)²   — the naive inverse-variance form. Fixes calibration but
-           BIASES k LOW: the weight is a function of that point's OWN error, so points noise
-           pushed high get down-weighted, discarding the most-negative φ and flattening the
-           slope. (Endogenous weights.)
-  wls_fit  weights = (1−θ̂)² = exp(2·φ̂)  — from the FITTED value (one IRLS step). The weight
-           then depends only on k̂ (all n points) and t (noise-free), so it is exogenous and
-           the bias vanishes: the feasible-GLS rule. THIS IS WHAT PRODUCTION NOW DOES
-           (`core.linear_model.fit_linear_deltak(weights="wls")`).
+FOUR ESTIMATORS are compared throughout:
+  ols          unweighted (the pre-2026-07 default)
+  wls_obs      weights = (1−θ_obs)²   — the naive inverse-variance form. Fixes calibration but
+               BIASES k LOW: the weight is a function of that point's OWN error, so points noise
+               pushed high get down-weighted, discarding the most-negative φ and flattening the
+               slope. (Endogenous weights.)
+  wls_fit      weights = (1−θ̂)² = exp(2·φ̂)  — from the FITTED value (one IRLS step). The weight
+               then depends only on k̂ (all n points) and t (noise-free), so it is exogenous and
+               the bias vanishes: the feasible-GLS rule. THIS IS WHAT PRODUCTION NOW DOES
+               (`core.linear_model.fit_linear_deltak(weights="wls")`).
+  wls_fit_var  weights = (1−θ̂)²/Var(θ_i)  — the candidate refit. Multiplies wls_fit's transform
+               factor by the EXOGENOUS per-point precision (1/Var(θ_i), from the peptide's
+               PI-width / inverse-variance collapse). Still needs the one IRLS step for (1−θ̂).
+               Only differs from wls_fit when point precision genuinely VARIES — so it is
+               exercised in the heteroscedastic regime below, and MUST be fed the *estimated*
+               (noisy) variance, as production would. NOT yet wired into production.
+
+The candidate is validated with the `varweight` subcommand, which sweeps a homoscedastic and a
+heteroscedastic noise regime × an oracle and a noisy per-point-variance estimate, and ranks
+against the WEIGHTED nonlinear MLE (`wmle`, the correct reference under heteroscedastic FS-scale
+noise — `mle` is only correct when σ_θ is constant).
 
 All simulation is faithful to RIANA's real chain: clamp θ→[0.001, 0.999] → φ = log(1−θ) →
 truncate φ > `--phi-limit` → drop t=0 → joint through-origin fit `phi ~ 0 + day:C(condition)`.
@@ -26,9 +37,10 @@ truncate φ > `--phi-limit` → drop t=0 → joint through-origin fit `phi ~ 0 +
 Subcommands
 -----------
   diagnose    Is the noise FS-scale or φ-scale?  (real data; the PREMISE the whole thing rests on)
-  recover     MC: bias / CI coverage / Type-I across a k grid, all three estimators
+  recover     MC: bias / CI coverage / Type-I across a k grid, all estimators
   power       MC: power curve for the Δk contrast (the δ=0 row is Type-I)
   efficiency  MC: how close is each estimator to the EXACT MLE (nonlinear LS on FS)?
+  varweight   MC: (1−θ̂)²/Var(θ) vs (1−θ̂)² across homo/hetero × oracle/noisy-Var — the effect size
   irls        MC: how many IRLS steps, and does dropping t=0 matter?
   real        Real-data impact on a run: k, Δk, significance, agreement with the nonlinear MLE
   all         diagnose + recover + power + efficiency
@@ -36,11 +48,15 @@ Subcommands
 Usage
 -----
     python -m tests.benchmark.bench_linear_weights all
-    python -m tests.benchmark.bench_linear_weights diagnose --run runs/lve_atr_clean
-    python -m tests.benchmark.bench_linear_weights recover --sigma 0.08 --nsim 500
+    python -m tests.benchmark.bench_linear_weights all --regime both --plot 36_out  # homo vs hetero
+    python -m tests.benchmark.bench_linear_weights recover --regime hetero --spread 0.8 --var-df 16
+    python -m tests.benchmark.bench_linear_weights varweight --nsim 500      # the 2×2 effect size
     python -m tests.benchmark.bench_linear_weights real --run runs/lve_atr_clean \
         --reference control --test atrium
-    python -m tests.benchmark.bench_linear_weights all --plot 36_out   # writes PNGs
+
+``--regime {homo,hetero,both}`` is the homo/hetero switch for recover/power/efficiency (with
+``--spread`` the hetero magnitude and ``--var-df`` the Var-estimate fidelity); ``both`` overlays
+the two scenarios in one table/plot.
 
 Calibrated defaults come from `runs/lve_atr_clean`: σ_θ ≈ 0.056, days 0..30, and the
 empirical protein-k percentiles (5/25/50/75/95 = 0.03/0.05/0.075/0.11/0.216 /day).
@@ -62,8 +78,49 @@ from riana.core.linear_model import to_phi
 DAYS = np.array([0, 1, 2, 3, 4, 6, 8, 10, 15, 20, 25, 30], float)
 SIGMA_THETA = 0.056          # per-point noise SD on the θ (FS) scale
 PHI_LIMIT = -4.0             # RIANA's plateau truncation (θ ≈ 0.982)
+_PI_SPAN = 3.29              # the M5 5–95% PI spans 3.29·σ (= _PI_SPAN_SIGMA in core.protein)
 K_GRID = [0.03, 0.05, 0.075, 0.11, 0.216, 0.30]   # lve_atr 5/25/50/75/95 pct + a fast one
-METHODS = ("ols", "wls_obs", "wls_fit")
+METHODS = ("ols", "wls_obs", "wls_fit", "wls_fit_var")
+
+
+# --------------------------------------------------------------------------- #
+# heteroscedastic per-point precision (the regime where per-point Var(θ) can matter)
+# --------------------------------------------------------------------------- #
+def per_point_sigma(n, sigma, spread, rng):
+    """Per-point θ-noise SD. ``spread == 0`` → homoscedastic (every point = ``sigma``).
+    ``spread > 0`` → a lognormal spread of precisions (a deep/shallow-peptide mix),
+    normalized so E[σ_i²] = sigma² — the AVERAGE noise level is held fixed, so a
+    homo-vs-hetero comparison isolates the heteroscedasticity, not just "more noise"."""
+    if spread <= 0:
+        return np.full(n, sigma)
+    s = rng.lognormal(0.0, spread, n) / np.exp(spread ** 2)   # E[s²] = 1
+    return sigma * s
+
+
+def estimate_var(true_sigma, var_df, rng):
+    """The per-point variance ESTIMATE the WLS is fed. ``var_df = inf`` → the oracle
+    (true σ_i²). Finite ``var_df`` → an unbiased but noisy estimate σ_i²·χ²(df)/df, as
+    a PI-width/bootstrap variance from ~df effective observations would be — this is
+    what production actually has, and the honest test of whether the gain survives."""
+    tv = np.asarray(true_sigma, float) ** 2
+    if not np.isfinite(var_df):
+        return tv
+    return tv * rng.chisquare(var_df, len(tv)) / var_df
+
+
+# --------------------------------------------------------------------------- #
+# regime selection — the homo/hetero split, a first-class knob for every MC command
+# --------------------------------------------------------------------------- #
+_MCOLOR = {"ols": "C0", "wls_obs": "C1", "wls_fit": "C2", "wls_fit_var": "C3"}
+_REGIME_LS = {"homo": "-", "hetero": "--"}
+
+
+def regimes_from_args(a):
+    """``[(label, spread), ...]`` selected by ``--regime``; ``--spread`` sets the hetero
+    magnitude. ``both`` runs homoscedastic and heteroscedastic so the scenarios sit side
+    by side in one table / plot. recover / power / efficiency all honour this."""
+    homo, hetero = ("homo", 0.0), ("hetero", a.spread)
+    return {"homo": [homo], "hetero": [hetero], "both": [homo, hetero]}[a.regime]
 
 
 # --------------------------------------------------------------------------- #
@@ -77,8 +134,11 @@ def _design(day, cond):
     return X
 
 
-def fit(day, cond, phi, theta, how, phi_limit=PHI_LIMIT):
-    """Joint through-origin fit; returns per-condition k, a CI for k(A), and the Δk test."""
+def fit(day, cond, phi, theta, how, phi_limit=PHI_LIMIT, var=None):
+    """Joint through-origin fit; returns per-condition k, a CI for k(A), and the Δk test.
+
+    ``var`` = per-point Var(θ_i), used only by ``wls_fit_var`` (ignored otherwise;
+    ``None`` there degrades it to ``wls_fit``)."""
     X = _design(day, cond)
     if (cond == 0).sum() < 2 or (cond == 1).sum() < 2:
         return None
@@ -89,6 +149,15 @@ def fit(day, cond, phi, theta, how, phi_limit=PHI_LIMIT):
     elif how == "wls_fit":
         phat = sm.OLS(phi, X).fit().fittedvalues            # φ̂ = −k̂·t
         w = np.exp(2.0 * np.maximum(phat, phi_limit))       # (1 − θ̂)², floored
+        m = sm.WLS(phi, X, weights=w).fit()
+    elif how == "wls_fit_var":
+        # (1−θ̂)²/Var(θ_i): the delta-method transform factor (from the FITTED θ̂ — same
+        # one-step OLS pilot as wls_fit, so the ONLY difference is the /Var factor) times
+        # the EXOGENOUS per-point precision. var=None falls back to wls_fit.
+        phat = sm.OLS(phi, X).fit().fittedvalues
+        w = np.exp(2.0 * np.maximum(phat, phi_limit))
+        if var is not None:
+            w = w / np.clip(np.asarray(var, float), 1e-12, None)
         m = sm.WLS(phi, X, weights=w).fit()
     else:
         raise ValueError(how)
@@ -101,8 +170,9 @@ def fit(day, cond, phi, theta, how, phi_limit=PHI_LIMIT):
 
 
 def mle_nls(day, theta):
-    """The EXACT MLE under FS-scale Gaussian noise: nonlinear LS on θ, no transform.
-    (This is RIANA's nonlinear `simple` model — the unbiased reference.)"""
+    """The EXACT MLE under HOMOscedastic FS-scale Gaussian noise: unweighted nonlinear LS
+    on θ. (RIANA's nonlinear `simple` model — the unbiased reference when σ_θ is constant;
+    suboptimal, though still unbiased, when it is not.)"""
     try:
         return float(curve_fit(lambda x, k: 1 - np.exp(-k * x), day, theta,
                                p0=[0.05], bounds=(0, 5), maxfev=5000)[0][0])
@@ -110,19 +180,41 @@ def mle_nls(day, theta):
         return np.nan
 
 
-def simulate(kA, kB, sigma, rng, days=DAYS, phi_limit=PHI_LIMIT, drop_t0=True):
-    """One two-condition dataset through RIANA's exact chain. Returns the linear-space
-    arrays plus the raw (day, θ) for the nonlinear MLE."""
+def wmle_nls(day, theta, var):
+    """The EXACT MLE under HETEROscedastic FS-scale noise: nonlinear LS on θ weighted by
+    1/Var(θ_i) (via ``sigma=√var``). The correctly-specified reference the per-point-Var
+    WLS is chasing; reduces to :func:`mle_nls` when var is constant."""
+    try:
+        return float(curve_fit(lambda x, k: 1 - np.exp(-k * x), day, theta,
+                               p0=[0.05], bounds=(0, 5), maxfev=5000,
+                               sigma=np.sqrt(np.clip(var, 1e-12, None)),
+                               absolute_sigma=True)[0][0])
+    except Exception:
+        return np.nan
+
+
+def simulate(kA, kB, sigma, rng, days=DAYS, phi_limit=PHI_LIMIT, drop_t0=True,
+             spread=0.0, var_df=np.inf):
+    """One two-condition dataset through RIANA's exact chain.
+
+    ``spread`` sets the per-point precision spread (0 = homoscedastic); ``var_df`` the
+    fidelity of the variance ESTIMATE fed to the WLS (inf = oracle). Returns the
+    linear-space arrays + the per-point variance ESTIMATE (for wls_fit_var), then the raw
+    (day, cond, θ) and the per-point TRUE variance (for the MLE references).
+    """
     day = np.concatenate([days, days])
     cond = np.concatenate([np.zeros(len(days), int), np.ones(len(days), int)])
     ktrue = np.where(cond == 0, kA, kB)
-    theta_raw = 1 - np.exp(-ktrue * day) + rng.normal(0, sigma, len(day))  # FS-scale noise
+    sig_i = per_point_sigma(len(day), sigma, spread, rng)     # per-point θ-noise SD
+    theta_raw = 1 - np.exp(-ktrue * day) + rng.normal(0, sig_i)  # FS-scale noise
+    var_est = estimate_var(sig_i, var_df, rng)                # what the WLS is fed
+    var_true = sig_i ** 2                                     # for the weighted MLE
     phi = to_phi(theta_raw)                                   # RIANA clamp + log
     keep = phi > phi_limit                                    # RIANA plateau truncation
     if drop_t0:
         keep &= day > 0                                       # zero leverage + clamp artifact
-    return (day[keep], cond[keep], phi[keep],
-            np.clip(theta_raw[keep], 0.001, 0.999), day, cond, theta_raw)
+    return (day[keep], cond[keep], phi[keep], np.clip(theta_raw[keep], 0.001, 0.999),
+            var_est[keep], day, cond, theta_raw, var_true)
 
 
 # --------------------------------------------------------------------------- #
@@ -190,32 +282,40 @@ def cmd_diagnose(a):
 def cmd_recover(a):
     rng = np.random.default_rng(a.seed)
     rows = []
-    for k in a.k_grid:
-        acc = {m: {"k": [], "cov": [], "rej": []} for m in METHODS}
-        for _ in range(a.nsim):
-            day, cond, phi, th, *_ = simulate(k, k, a.sigma, rng, phi_limit=a.phi_limit)
+    for reg, spread in regimes_from_args(a):
+        for k in a.k_grid:
+            acc = {m: {"k": [], "cov": [], "rej": []} for m in METHODS}
+            for _ in range(a.nsim):
+                day, cond, phi, th, var, *_ = simulate(
+                    k, k, a.sigma, rng, phi_limit=a.phi_limit,
+                    spread=spread, var_df=a.var_df)
+                for m in METHODS:
+                    r = fit(day, cond, phi, th, m, a.phi_limit, var=var)
+                    if r is None:
+                        continue
+                    acc[m]["k"].append(r["kA"])
+                    acc[m]["cov"].append(r["kA_lo"] <= k <= r["kA_hi"])
+                    acc[m]["rej"].append(r["dk_p"] < 0.05)
             for m in METHODS:
-                r = fit(day, cond, phi, th, m, a.phi_limit)
-                if r is None:
-                    continue
-                acc[m]["k"].append(r["kA"])
-                acc[m]["cov"].append(r["kA_lo"] <= k <= r["kA_hi"])
-                acc[m]["rej"].append(r["dk_p"] < 0.05)
-        for m in METHODS:
-            kk = np.array(acc[m]["k"])
-            rows.append(dict(k_true=k, method=m, n=len(kk),
-                             rel_bias=(kk.mean() - k) / k,
-                             rmse=float(np.sqrt(np.mean((kk - k) ** 2))),
-                             coverage=float(np.mean(acc[m]["cov"])),
-                             type1=float(np.mean(acc[m]["rej"]))))
+                kk = np.array(acc[m]["k"])
+                rows.append(dict(regime=reg, k_true=k, method=m, n=len(kk),
+                                 rel_bias=(kk.mean() - k) / k,
+                                 rmse=float(np.sqrt(np.mean((kk - k) ** 2))),
+                                 coverage=float(np.mean(acc[m]["cov"])),
+                                 type1=float(np.mean(acc[m]["rej"]))))
     rec = pd.DataFrame(rows)
-    print("RECOVERY / CI COVERAGE / TYPE-I   (true Δk = 0; nominal coverage .95, Type-I .05)\n")
-    for m in METHODS:
-        print(f"--- {m} ---")
-        print(rec[rec.method == m][["k_true", "rel_bias", "rmse", "coverage", "type1"]]
-              .to_string(index=False, float_format=lambda x: f"{x:8.3f}"), "\n")
+    print("RECOVERY / CI COVERAGE / TYPE-I   (true Δk = 0; nominal coverage .95, Type-I .05)")
+    print(f"var-df = {a.var_df:g} (∞ = oracle Var)\n")
+    for reg in rec.regime.unique():
+        tag = f"  (σ-spread {a.spread})" if reg == "hetero" else ""
+        print(f"================ regime: {reg}{tag} ================")
+        for m in METHODS:
+            print(f"--- {m} ---")
+            print(rec[(rec.method == m) & (rec.regime == reg)]
+                  [["k_true", "rel_bias", "rmse", "coverage", "type1"]]
+                  .to_string(index=False, float_format=lambda x: f"{x:8.3f}"), "\n")
     print("SUMMARY over the k grid")
-    print(rec.groupby("method").agg(
+    print(rec.groupby(["regime", "method"], sort=False).agg(
         mean_rel_bias=("rel_bias", "mean"), mean_coverage=("coverage", "mean"),
         mean_type1=("type1", "mean"), worst_type1=("type1", "max"),
     ).to_string(float_format=lambda x: f"{x:8.3f}"))
@@ -230,20 +330,27 @@ def cmd_recover(a):
 def cmd_power(a):
     rng = np.random.default_rng(a.seed)
     rows = []
-    for d_k in a.deltas:
-        acc = {m: [] for m in METHODS}
-        for _ in range(a.nsim):
-            day, cond, phi, th, *_ = simulate(a.k0, a.k0 + d_k, a.sigma, rng,
-                                              phi_limit=a.phi_limit)
-            for m in METHODS:
-                r = fit(day, cond, phi, th, m, a.phi_limit)
-                if r:
-                    acc[m].append(r["dk_p"] < 0.05)
-        rows.append(dict(delta_k=d_k, **{m: float(np.mean(acc[m])) for m in METHODS}))
+    for reg, spread in regimes_from_args(a):
+        for d_k in a.deltas:
+            acc = {m: [] for m in METHODS}
+            for _ in range(a.nsim):
+                day, cond, phi, th, var, *_ = simulate(
+                    a.k0, a.k0 + d_k, a.sigma, rng, phi_limit=a.phi_limit,
+                    spread=spread, var_df=a.var_df)
+                for m in METHODS:
+                    r = fit(day, cond, phi, th, m, a.phi_limit, var=var)
+                    if r:
+                        acc[m].append(r["dk_p"] < 0.05)
+            rows.append(dict(regime=reg, delta_k=d_k,
+                             **{m: float(np.mean(acc[m])) for m in METHODS}))
     pw = pd.DataFrame(rows)
     print(f"POWER of the Δk test at k0={a.k0} (α=0.05). The delta_k=0 row is TYPE-I.\n")
-    print(pw.to_string(index=False, float_format=lambda x: f"{x:8.3f}"))
-    print("\nNote: OLS's apparent sensitivity at small δ is largely its false-positive rate.")
+    for reg in pw.regime.unique():
+        tag = f"  (σ-spread {a.spread})" if reg == "hetero" else ""
+        print(f"--- regime: {reg}{tag} ---")
+        print(pw[pw.regime == reg].drop(columns="regime")
+              .to_string(index=False, float_format=lambda x: f"{x:8.3f}"), "\n")
+    print("Note: OLS's apparent sensitivity at small δ is largely its false-positive rate.")
     if a.plot:
         _plot_power(pw, a.plot)
     return pw
@@ -255,28 +362,125 @@ def cmd_power(a):
 def cmd_efficiency(a):
     rng = np.random.default_rng(a.seed)
     rows = []
-    for k in a.k_grid:
-        acc = {m: [] for m in ("mle", *METHODS)}
-        for _ in range(a.nsim):
-            day, cond, phi, th, raw_day, raw_cond, raw_th = simulate(
-                k, k, a.sigma, rng, phi_limit=a.phi_limit)
-            acc["mle"].append(mle_nls(raw_day[raw_cond == 0], raw_th[raw_cond == 0]))
-            for m in METHODS:
-                r = fit(day, cond, phi, th, m, a.phi_limit)
-                acc[m].append(r["kA"] if r else np.nan)
-        A = pd.DataFrame(acc).dropna()
-        rmse_mle = float(np.sqrt(np.mean((A["mle"] - k) ** 2)))
-        for m in ("mle", *METHODS):
-            r = float(np.sqrt(np.mean((A[m] - k) ** 2)))
-            rows.append(dict(k_true=k, estimator=m,
-                             rel_bias=(A[m].mean() - k) / k, rmse=r,
-                             rmse_vs_mle=r / rmse_mle))
+    for reg, spread in regimes_from_args(a):
+        for k in a.k_grid:
+            acc = {m: [] for m in ("wmle", "mle", *METHODS)}
+            for _ in range(a.nsim):
+                day, cond, phi, th, var, raw_day, raw_cond, raw_th, tv = simulate(
+                    k, k, a.sigma, rng, phi_limit=a.phi_limit,
+                    spread=spread, var_df=a.var_df)
+                m0 = raw_cond == 0
+                acc["mle"].append(mle_nls(raw_day[m0], raw_th[m0]))
+                acc["wmle"].append(wmle_nls(raw_day[m0], raw_th[m0], tv[m0]))
+                for m in METHODS:
+                    r = fit(day, cond, phi, th, m, a.phi_limit, var=var)
+                    acc[m].append(r["kA"] if r else np.nan)
+            A = pd.DataFrame(acc).dropna()
+            rmse_ref = float(np.sqrt(np.mean((A["wmle"] - k) ** 2)))   # regime-correct MLE
+            for m in ("wmle", "mle", *METHODS):
+                r = float(np.sqrt(np.mean((A[m] - k) ** 2)))
+                rows.append(dict(regime=reg, k_true=k, estimator=m,
+                                 rel_bias=(A[m].mean() - k) / k, rmse=r,
+                                 rmse_vs_wmle=r / rmse_ref))
     eff = pd.DataFrame(rows)
-    print("EFFICIENCY vs the EXACT MLE (nonlinear LS on FS = RIANA's `simple` model).")
-    print("The MLE is the correctly-specified estimator under FS-scale noise.\n")
-    print(eff.to_string(index=False, float_format=lambda x: f"{x:9.3f}"))
-    print("\nwls_fit is the delta-method LINEARIZATION of the MLE — it should sit at ~1.0.")
+    print("EFFICIENCY vs the WEIGHTED MLE (`wmle` — the regime-correct reference; it equals")
+    print("the plain `mle` when noise is homoscedastic). rmse_vs_wmle 1.0 = optimal.\n")
+    for reg in eff.regime.unique():
+        tag = f"  (σ-spread {a.spread})" if reg == "hetero" else ""
+        print(f"--- regime: {reg}{tag} ---")
+        print(eff[eff.regime == reg].drop(columns="regime")
+              .to_string(index=False, float_format=lambda x: f"{x:9.3f}"), "\n")
+    print("wls_fit is the delta-method linearization of the MLE — ~1.0 under homoscedastic")
+    print("noise, but > 1 under heteroscedastic; wls_fit_var closes that gap.")
     return eff
+
+
+# --------------------------------------------------------------------------- #
+# 4b. varweight — the candidate (1−θ̂)²/Var(θ) vs (1−θ̂)²: effect size + safety
+# --------------------------------------------------------------------------- #
+def cmd_varweight(a):
+    """Does the per-point-variance weight earn its keep?
+
+    Sweeps {homoscedastic, heteroscedastic} × {oracle Var, noisy Var estimate} and
+    compares wls_fit_var against wls_fit, ranked by RMSE vs the WEIGHTED MLE (wmle, the
+    correct reference under heteroscedastic FS-scale noise). Reads off: the efficiency
+    gain, and whether a NOISY variance estimate keeps it without inflating Type-I.
+    """
+    rng = np.random.default_rng(a.seed)
+    spread_hi = a.spread
+    vdf = a.var_df if np.isfinite(a.var_df) else 4.0
+    regimes = [("homosced.", 0.0), ("heterosced.", spread_hi)]
+    vmodes = [("Var oracle", np.inf), (f"Var est(df={vdf:g})", vdf)]
+    methods = ("wls_fit", "wls_fit_var")
+    rows = []
+    for reg, spread in regimes:
+        for vname, vd in vmodes:
+            for k in a.k_grid:
+                est = {m: [] for m in methods}
+                cov = {m: [] for m in methods}
+                rej = {m: [] for m in methods}
+                mle, wmle = [], []
+                for _ in range(a.nsim):
+                    day, cond, phi, th, var, rday, rcond, rth, tvar = simulate(
+                        k, k, a.sigma, rng, phi_limit=a.phi_limit, spread=spread, var_df=vd)
+                    m0 = rcond == 0
+                    mle.append(mle_nls(rday[m0], rth[m0]))
+                    wmle.append(wmle_nls(rday[m0], rth[m0], tvar[m0]))
+                    for m in methods:
+                        r = fit(day, cond, phi, th, m, a.phi_limit, var=var)
+                        if r is None:
+                            continue
+                        est[m].append(r["kA"])
+                        cov[m].append(r["kA_lo"] <= k <= r["kA_hi"])
+                        rej[m].append(r["dk_p"] < 0.05)
+
+                def rmse(arr):
+                    return float(np.sqrt(np.nanmean((np.asarray(arr, float) - k) ** 2)))
+
+                r_wmle = rmse(wmle)
+                base = dict(regime=reg, vmode=vname, k=k)
+                rows.append({**base, "method": "wmle", "rmse": r_wmle, "rmse_vs_wmle": 1.0,
+                             "rel_bias": (np.nanmean(wmle) - k) / k,
+                             "coverage": np.nan, "type1": np.nan})
+                rows.append({**base, "method": "mle", "rmse": rmse(mle),
+                             "rmse_vs_wmle": rmse(mle) / r_wmle,
+                             "rel_bias": (np.nanmean(mle) - k) / k,
+                             "coverage": np.nan, "type1": np.nan})
+                for m in methods:
+                    rows.append({**base, "method": m, "rmse": rmse(est[m]),
+                                 "rmse_vs_wmle": rmse(est[m]) / r_wmle,
+                                 "rel_bias": (np.mean(est[m]) - k) / k,
+                                 "coverage": float(np.mean(cov[m])),
+                                 "type1": float(np.mean(rej[m]))})
+    df = pd.DataFrame(rows)
+    order = ["wmle", "mle", "wls_fit", "wls_fit_var"]
+    df["method"] = pd.Categorical(df["method"], order, ordered=True)
+    summ = (df.groupby(["regime", "vmode", "method"], observed=True)
+              .agg(rel_bias=("rel_bias", "mean"), rmse_vs_wmle=("rmse_vs_wmle", "mean"),
+                   coverage=("coverage", "mean"), type1=("type1", "mean"))
+              .reset_index())
+    print(f"PER-POINT Var(θ) WLS — mean over the k grid  "
+          f"(nsim={a.nsim}, hetero spread={spread_hi}, days={len(DAYS)})")
+    print("rmse_vs_wmle: 1.00 = matches the weighted MLE; lower is better; wmle is the ref.\n")
+    print(summ.to_string(index=False, float_format=lambda x: f"{x:8.3f}"))
+
+    print("\nEFFECT SIZE — wls_fit_var vs wls_fit (mean over k):")
+    print(f"  {'regime':12s} {'Var mode':14s} {'RMSE Δ':>8}  "
+          f"{'Type-I fit→var':>16}  {'cover fit→var':>15}")
+    d = df[df.method.isin(methods)]
+    for (reg, vm), g in d.groupby(["regime", "vmode"], observed=True, sort=False):
+        rr = g.groupby("method", observed=True)["rmse"].mean()
+        t1 = g.groupby("method", observed=True)["type1"].mean()
+        cv = g.groupby("method", observed=True)["coverage"].mean()
+        gain = (rr["wls_fit"] - rr["wls_fit_var"]) / rr["wls_fit"] * 100.0
+        print(f"  {reg:12s} {vm:14s} {gain:+7.1f}%  "
+              f"{t1['wls_fit']:.3f}→{t1['wls_fit_var']:.3f}      "
+              f"{cv['wls_fit']:.3f}→{cv['wls_fit_var']:.3f}")
+    print("\nRead: homosced.+oracle ⇒ ~0% (identical by construction — the sanity check); "
+          "heterosced.+oracle ⇒ the ceiling gain; heterosced.+noisy ⇒ the REAL question.")
+    print("A noisy estimate that inflates Type-I much past 0.05 is the veto — that is what")
+    print("decides whether the per-point weight earns the production default.")
+    return df
 
 
 # --------------------------------------------------------------------------- #
@@ -323,7 +527,9 @@ def cmd_real(a):
     pts = pd.read_table(Path(a.run) / "riana_rollup_fractions.txt", comment="#")
     pts = pts.rename(columns={"fs": "theta"})
     out, ref, test = {}, a.reference, a.test
-    for how in METHODS:
+    # wls_fit_var is omitted here: real `riana_rollup_fractions.txt` does not yet carry a
+    # per-point Var(θ) column (that plumbing is the production step this bench gates).
+    for how in ("ols", "wls_obs", "wls_fit"):
         rows = []
         for (_e, prot), grp in pts.groupby(["experiment", "protein"], sort=False):
             per = {}
@@ -375,6 +581,84 @@ def cmd_real(a):
 
 
 # --------------------------------------------------------------------------- #
+# 7. measure — the REAL per-point-variance regime (places production on the curves)
+# --------------------------------------------------------------------------- #
+def cmd_measure(a):
+    """Measure production's actual per-point-variance regime from a run's PEPTIDE-level
+    fractions (`riana_fit_fractions.txt`, which carries the fs_lower/fs_upper PI), to place
+    it on the varweight curves BEFORE any shrinkage. Reports:
+      1. heteroscedasticity — the spread of per-point σ (≈ the bench --spread), at both the
+         raw peptide level and the COLLAPSED cell level the linear model actually weights on;
+      2. effective df — how well each point's σ is pinned (bootstrap timepoints/peptide,
+         peptides/collapse-cell) → the Type-I-risk axis of the varweight sweep;
+      3. calibration — do peptides in a cell scatter as much as their σ claims (dispersion)?
+    """
+    ff = Path(a.run) / "riana_fit_fractions.txt"
+    d = pd.read_table(ff, comment="#")
+    need = {"fs", "fs_lower", "fs_upper", "labeling_time", "concat", "protein id",
+            "biological_replicate", "experiment", "condition"}
+    miss = need - set(d.columns)
+    if miss:
+        raise SystemExit(f"{ff}\n  lacks {sorted(miss)} — need a PEPTIDE-level "
+                         "riana_fit_fractions.txt (not the collapsed rollup one).")
+    d = d[d["labeling_time"] > 0].copy()                    # t=0 is excluded from the linear fit
+    d["sigma"] = (d["fs_upper"] - d["fs_lower"]) / _PI_SPAN  # the same σ the rollup collapses on
+    v = d[np.isfinite(d["sigma"]) & (d["sigma"] > 0)].copy()
+    CELL = ["experiment", "condition", "protein id", "biological_replicate", "labeling_time"]
+
+    print(f"REAL VARIANCE REGIME — {a.run}  (peptide-level {ff.name})")
+    print(f"points with a usable PI: {len(v)}/{len(d)}   "
+          f"{v['concat'].nunique()} peptidoforms, {v['protein id'].nunique()} proteins\n")
+
+    # 1. heteroscedasticity — spread of per-point σ (maps to the bench --spread)
+    def _spread(sig):
+        sig = np.asarray(sig, float)
+        p10, p50, p90 = np.percentile(sig, [10, 50, 90])
+        return float(np.std(np.log(sig))), p50, p90 / p10
+    sp_pep, med_pep, ratio_pep = _spread(v["sigma"])
+    cell_var = v.groupby(CELL)["sigma"].apply(lambda s: 1.0 / np.sum(1.0 / s.to_numpy() ** 2))
+    cell_sigma = np.sqrt(cell_var.to_numpy())               # σ of the inverse-variance mean
+    sp_cell, med_cell, ratio_cell = _spread(cell_sigma)
+    print("1. HETEROSCEDASTICITY   SD(log σ) ← compare to the bench --spread "
+          "(0 = homosced.; bench default 0.7)")
+    print(f"   raw peptide points : spread {sp_pep:.3f}   median σ {med_pep:.4f}   "
+          f"p90/p10 {ratio_pep:.1f}×")
+    print(f"   COLLAPSED cells    : spread {sp_cell:.3f}   median σ {med_cell:.4f}   "
+          f"p90/p10 {ratio_cell:.1f}×   ← what the linear model weights on\n")
+
+    # 2. effective df — reliability of each point's variance estimate
+    npts = v.groupby(["experiment", "condition", "concat",
+                      "biological_replicate"])["labeling_time"].nunique()
+    ppc = v.groupby(CELL)["concat"].nunique()
+    print("2. EFFECTIVE df   (how noisy the per-point σ estimate is → the varweight df axis)")
+    print(f"   timepoints/peptide (bootstrap df) : median {int(npts.median())}   "
+          f"p10 {int(npts.quantile(.1))}  p90 {int(npts.quantile(.9))}")
+    print(f"   peptides/collapse-cell            : median {int(ppc.median())}   "
+          f"single-peptide cells {float((ppc == 1).mean()) * 100:.0f}%\n")
+
+    # 3. calibration — do peptides scatter as much as their σ claims? (dispersion)
+    disp = []
+    for _, cg in v.groupby(CELL):
+        if cg["concat"].nunique() >= 3:
+            stated = float(np.mean(cg["sigma"].to_numpy() ** 2))
+            if stated > 0:
+                disp.append(float(np.var(cg["fs"].to_numpy(), ddof=1)) / stated)
+    print("3. CALIBRATION   (cells with ≥3 peptides: empirical θ-scatter / mean stated σ²)")
+    if disp:
+        disp = np.array(disp)
+        print(f"   dispersion ratio: median {np.median(disp):.2f}   n={len(disp)} cells   "
+              "(1 = calibrated; >1 = σ under-stated → the formal 1/Σ(1/σ²) under-covers)")
+    else:
+        print("   (no cells with ≥3 peptides)")
+    print(f"\nPLACEMENT: run `varweight --spread {sp_cell:.2f}` (the measured cell spread) to read "
+          "the real-regime effect size; the median df above says which var-df row applies.")
+    return dict(spread_cell=sp_cell, spread_pep=sp_pep, median_sigma_cell=med_cell,
+                npts_median=float(npts.median()), ppc_median=float(ppc.median()),
+                single_cell_frac=float((ppc == 1).mean()),
+                disp_median=float(np.median(disp)) if len(disp) else float("nan"))
+
+
+# --------------------------------------------------------------------------- #
 # plots (optional)
 # --------------------------------------------------------------------------- #
 def _mpl(outdir):
@@ -399,30 +683,42 @@ def _plot_diagnose(g, sigma, outdir):
 
 
 def _plot_recover(rec, outdir):
+    """Colour = estimator, linestyle = regime (solid homo, dashed hetero) — so a
+    ``--regime both`` run overlays the scenarios on the same axes for comparison."""
     plt = _mpl(outdir)
-    fig, axes = plt.subplots(1, 3, figsize=(13, 3.6))
-    for m in METHODS:
-        s = rec[rec.method == m]
-        axes[0].plot(s.k_true, s.rel_bias, "o-", label=m)
-        axes[1].plot(s.k_true, s.coverage, "o-", label=m)
-        axes[2].plot(s.k_true, s.type1, "o-", label=m)
-    axes[0].axhline(0, ls="--", c="k", lw=.8); axes[0].set_title("relative bias in k")
-    axes[1].axhline(.95, ls="--", c="k", lw=.8); axes[1].set_title("95% CI coverage")
-    axes[2].axhline(.05, ls="--", c="k", lw=.8); axes[2].set_title("Type-I of the Δk test")
+    fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
+    multi = rec.regime.nunique() > 1
+    for reg in rec.regime.unique():
+        ls = _REGIME_LS.get(reg, "-")
+        for m in METHODS:
+            s = rec[(rec.method == m) & (rec.regime == reg)]
+            lbl = f"{m} [{reg}]" if multi else m
+            axes[0].plot(s.k_true, s.rel_bias, ls, marker="o", color=_MCOLOR[m], label=lbl)
+            axes[1].plot(s.k_true, s.coverage, ls, marker="o", color=_MCOLOR[m], label=lbl)
+            axes[2].plot(s.k_true, s.type1, ls, marker="o", color=_MCOLOR[m], label=lbl)
+    axes[0].axhline(0, ls=":", c="k", lw=.8); axes[0].set_title("relative bias in k")
+    axes[1].axhline(.95, ls=":", c="k", lw=.8); axes[1].set_title("95% CI coverage")
+    axes[2].axhline(.05, ls=":", c="k", lw=.8); axes[2].set_title("Type-I of the Δk test")
     for ax in axes:
-        ax.set_xlabel("true k (/day)"); ax.legend(fontsize=8)
+        ax.set_xlabel("true k (/day)"); ax.legend(fontsize=7)
     fig.tight_layout(); fig.savefig(Path(outdir) / "mc_recover.png", dpi=150); plt.close(fig)
 
 
 def _plot_power(pw, outdir):
+    """Colour = estimator, linestyle = regime (solid homo, dashed hetero)."""
     plt = _mpl(outdir)
-    fig, ax = plt.subplots(figsize=(5.5, 4))
-    for m in METHODS:
-        ax.plot(pw.delta_k, pw[m], "o-", label=m)
+    fig, ax = plt.subplots(figsize=(6, 4.2))
+    multi = pw.regime.nunique() > 1
+    for reg in pw.regime.unique():
+        ls = _REGIME_LS.get(reg, "-")
+        s = pw[pw.regime == reg]
+        for m in METHODS:
+            lbl = f"{m} [{reg}]" if multi else m
+            ax.plot(s.delta_k, s[m], ls, marker="o", color=_MCOLOR[m], label=lbl)
     ax.axhline(.05, ls=":", c="k", lw=.8)
     ax.set_xlabel("true Δk (test − reference)"); ax.set_ylabel("rejection rate")
     ax.set_title("Power of the Δk contrast (δ=0 ⇒ Type-I)")
-    ax.legend(fontsize=8); fig.tight_layout()
+    ax.legend(fontsize=7); fig.tight_layout()
     fig.savefig(Path(outdir) / "mc_power.png", dpi=150); plt.close(fig)
 
 
@@ -431,13 +727,26 @@ def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("cmd", choices=["diagnose", "recover", "power", "efficiency",
-                                   "irls", "real", "all"])
+                                   "varweight", "measure", "irls", "real", "all"])
     p.add_argument("--run", default="runs/lve_atr_clean",
                    help="a rollup run dir holding riana_rollup_fractions.txt")
     p.add_argument("--reference", default="control")
     p.add_argument("--test", default="atrium")
     p.add_argument("--sigma", type=float, default=SIGMA_THETA,
                    help=f"per-point θ-scale noise SD (default {SIGMA_THETA}, from lve_atr)")
+    p.add_argument("--regime", choices=["homo", "hetero", "both"], default="homo",
+                   help="noise regime for recover/power/efficiency: homoscedastic, "
+                        "heteroscedastic (per-point σ spread), or BOTH side-by-side in one "
+                        "table/plot. (diagnose/real read real data; varweight always sweeps "
+                        "both internally.)")
+    p.add_argument("--spread", type=float, default=0.7,
+                   help="heteroscedastic σ_θ spread — lognormal, E[σ²] held fixed so a "
+                        "homo-vs-hetero comparison isolates the heteroscedasticity. Used by "
+                        "the 'hetero'/'both' regimes and varweight's hetero arm (default 0.7).")
+    p.add_argument("--var-df", type=float, default=float("inf"), dest="var_df",
+                   help="fidelity of the per-point Var(θ) estimate fed to wls_fit_var: inf = "
+                        "oracle (true σ²), finite = noisy χ²(df)/df estimate. varweight's "
+                        "noisy mode uses this (default 4).")
     p.add_argument("--phi-limit", type=float, default=PHI_LIMIT)
     p.add_argument("--nsim", type=int, default=2000)
     p.add_argument("--seed", type=int, default=7)
@@ -460,6 +769,10 @@ def main():
         rule("3. POWER — the Δk contrast"); cmd_power(a)
     if a.cmd in ("efficiency", "all"):
         rule("4. EFFICIENCY — vs the exact MLE"); cmd_efficiency(a)
+    if a.cmd == "varweight":
+        rule("4b. VARWEIGHT — per-point Var(θ) effect size + safety"); cmd_varweight(a)
+    if a.cmd == "measure":
+        rule("7. MEASURE — the real per-point-variance regime"); cmd_measure(a)
     if a.cmd == "irls":
         rule("5. IRLS — steps and the t=0 point"); cmd_irls(a)
     if a.cmd == "real":

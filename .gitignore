@@ -119,6 +119,9 @@ tests/data/timeseries_lve/
 # Local integration/experiment outputs (not tracked)
 runs/
 
+# Bench --plot output dir (bench_linear_weights.py default example); throwaway
+36_out/
+
 # Technical-note write-up + figure notebooks — a paper artifact, not part of the
 # shippable package. Maintained separately (see notes/technical_note/00_overview.md).
 notes/
