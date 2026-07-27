@@ -16,6 +16,9 @@ recommendation.** Bench: `tests/benchmark/bench_linear_weights.py` (`varweight` 
 > and **Var(θ_i) = σ_θ,i²** is the "PI-width variance" — the quantity the rollup's inverse-variance
 > collapse already uses. (It is a *prediction* interval on θ, not a *confidence* interval on k̂ —
 > the latter is `ci_lo`/`ci_hi`, which feeds the `k_cv` gate.)
+> **Accents:** `^` (hat) = a raw estimate from the data (e.g. `Var̂(θ_i)`, the PI-width variance;
+> `k̂`); `~` (tilde) = its **eBayes-moderated** version (`Ṽar(θ_i)`). Both estimate the same true
+> `Var(θ_i)`.
 
 ## TL;DR
 
@@ -31,11 +34,11 @@ recommendation.** Bench: `tests/benchmark/bench_linear_weights.py` (`varweight` 
   **6–9** (40–44 % of cells are single-peptide), and the PI-width σ's are **under-calibrated by
   1.25–1.72×** (peptides scatter more than their σ claims). Fed that estimate raw, `wls_fit_var`
   keeps most of the gain (+69–71 %) but **inflates Type-I to ~0.07 and drops coverage to ~0.91**.
-- **Verdict:** big, worthwhile efficiency prize, but the naive weight is **not** a safe default.
-  Next step (pre-registered here): **moderate the variance** — empirical-Bayes shrinkage toward
-  the pooled variance + the measured dispersion scale — and re-run `varweight` to confirm Type-I
-  returns to ~0.05 while keeping the bulk of the gain. Do **not** wire the raw estimator into the
-  `wls` default.
+- **Verdict:** big, worthwhile efficiency prize, but the naive weight is **not** a safe default —
+  and the fix is now **settled by the bench**: **eBayes-moderated** per-point variance keeps ~+58 %
+  of the +70 % at Type-I ≈ 0.01–0.02 (safely conservative), while a hard df-threshold and the raw
+  empirical variance both **fail**. The shipped `wls` (IRLS) remains the standing default; `wls-var`
+  with eBayes moderation is the validated path to evaluate for a future opt-in.
 
 ## The candidate
 
@@ -59,6 +62,59 @@ Var(φ_i) = (dφ/dθ)²·Var(θ_i) = Var(θ_i)/(1 − θ_i)²
 quantity `core.protein._weighted_theta` already inverse-variance-collapses, then discards. Under
 the default `weighted` rollup the linear model's point is a `(protein, biorep, timepoint)` **cell**,
 so its variance is `1/Σ(1/σ²_pep)` — the collapse's own byproduct.
+
+## The estimators — one machinery, four weights
+
+All four fits are the **same generalized-least-squares estimator** on the through-origin design
+$\varphi = X\beta + \varepsilon$ (one slope column per condition; $\beta = -k$, so a $\Delta k$ is a
+contrast $L\hat\beta$). They differ **only** in the diagonal weight matrix
+$W=\operatorname{diag}(w_1,\dots,w_N)$:
+
+$$
+\hat\beta = (X^\top W X)^{-1} X^\top W \varphi,
+\qquad
+\hat\sigma^2 = \frac{(\varphi - X\hat\beta)^\top W (\varphi - X\hat\beta)}{N-p},
+\qquad
+\widehat{\operatorname{Var}}(\hat\beta) = \hat\sigma^2\,(X^\top W X)^{-1},
+$$
+
+$$
+t \;=\; \frac{L\hat\beta}{\sqrt{L\,\widehat{\operatorname{Var}}(\hat\beta)\,L^\top}},
+\qquad \textbf{df} = N-p \quad\text{(for every method).}
+$$
+
+$N$ = collapsed $(\text{condition},\text{biorep},t)$ points for the protein, $p$ = number of
+conditions, and $\hat\sigma^2$ is the **single** residual scale estimated with $N-p$ df — so **only
+the *relative* weights matter**: rescaling all $w_i$ by a constant leaves $\hat\beta$, the SE, and
+$t$ unchanged (verified). Only $w_i$ changes across methods:
+
+| method | weight $w_i$ | notes |
+|---|---|---|
+| **OLS** | $1$ | $W=I$; anti-conservative on φ (which is heteroscedastic) |
+| **WLS (naive)** `wls_obs` | $(1-\theta_i)^2$ — *observed* $\theta$ | endogenous → biases $k$ **low** |
+| **IRLS** `wls_fit` *(shipped)* | $(1-\hat\theta_i)^2 = e^{2\hat\varphi_i}$ — *fitted* $\hat\theta$ | feasible-GLS, exogenous → unbiased |
+| **WLS-Var** *(candidate)* | $\dfrac{(1-\hat\theta_i)^2}{\widetilde{\operatorname{Var}}(\theta_i)}$ | + moderated per-point precision |
+
+The transform factor is the delta-method inverse variance of the log:
+$\varphi=\log(1-\theta)\Rightarrow \operatorname{Var}(\varphi)=\operatorname{Var}(\theta)/(1-\theta)^2$,
+so the ideal weight is $(1-\theta)^2/\operatorname{Var}(\theta)$. **IRLS is one step:** pilot
+$\tilde\beta=(X^\top X)^{-1}X^\top\varphi$, $\hat\varphi = X\tilde\beta$, then
+$w_i=\exp\!\big(2\max(\hat\varphi_i,\varphi_{\lim})\big)$ — taking $\hat\theta$ from the fit (not the
+observed $\theta$) is what keeps the weight exogenous.
+
+`WLS-Var`'s per-point variance is **eBayes-moderated** (arm #1) — a precision-weighted blend of the
+point's own estimate and the pooled variance:
+
+$$
+\widetilde{\operatorname{Var}}(\theta_i)
+   = \frac{d_0\,s_0^2 + d_i\,\widehat{\operatorname{Var}}(\theta_i)}{d_0 + d_i},
+\qquad s_0^2 = \text{pooled }\widehat{\operatorname{Var}},
+$$
+
+with $d_i$ = the *variance estimate's* own df and $d_0$ = the Smyth prior df ($d_0\to\infty$ recovers
+`wls_fit`; $d_0\to 0$ the raw `wls_fit_var`). **This enters only $w_i$ — the contrast df stays
+$N-p$.** The alternative that *would* move the df — moderating each protein's $\hat\sigma^2$ across
+proteins with a Satterthwaite contrast df, the true limma analog — is a separate roadmap item.
 
 ## Bench design (the homo/hetero split)
 
@@ -153,29 +209,59 @@ Type-I/coverage. With the *realistic* noisy estimate the efficiency prize is nea
 (**+70 %**), but Type-I runs **~0.07** and coverage **~0.91** — an over-rejection of ~40 %
 relative, and the under-coverage the dispersion measurement predicts.
 
-## Why moderate the variance — the limma/eBayes logic
+## How the θ interval is built — and why it under-states
 
-This is the problem limma solves for gene expression, one level up. There, each gene's variance
-`s²_g` is estimated from a few replicates (small df), so some genes draw a spuriously tiny `s²_g` →
-an inflated t-statistic → a false positive. eBayes (Smyth 2004) replaces each estimate with a
-**moderated** variance — a precision-weighted blend of the gene's own estimate and a pooled prior
-`s₀²`, with the prior df `d₀` estimated empirically from how much the `s²_g` scatter:
+`fs_lower` / `fs_upper` are a **within-peptide** prediction interval. The fit's residual bootstrap
+(`core/fitting._fit_one_concat`) resamples each peptide's own fit residuals, refits `k*`, and takes
+the 5–95 % band of `model(t_i; k*) + a resampled residual` — so the width measures how well a
+peptide fits **its own** curve (its measurement scatter). The rollup collapse
+(`core/protein._weighted_theta`) turns that into `σ_i = (hi − lo)/3.29` and inverse-variance-combines
+the peptides in a cell, so the propagated cell variance `1/Σ(1/σ²)` is a **fixed-effects,
+measurement-only** quantity.
+
+The empirical between-peptide scatter is larger because it also carries a **peptide-heterogeneity**
+component the PI structurally cannot see: peptides of one protein at one `(biorep, t)` genuinely
+differ in θ — differential turnover across regions/proteoforms, sequence-dependent labeling/quant
+biases, residual PTM (Met-Ox / deamidation) and MBR effects. That is a *random-effects* variance the
+within-peptide bootstrap never samples. So the dispersion (empirical / propagated = 1.25–1.72×
+median) is that between-peptide component made visible — a fixed-vs-random-effects gap — and `measure`
+shows it is **heterogeneous** across cells (p90/p10 ≈ 15×), not a uniform rescale.
+
+## Why moderate the variance — the eBayes logic (and where limma differs)
+
+The machinery is limma's, but note *what* we moderate. limma (Smyth 2004) moderates each gene's own
+**regression residual variance** `s²_g`, estimated from a few replicates (small df); a spuriously
+tiny `s²_g` inflates that gene's t-statistic, so eBayes replaces it with a precision-weighted blend
+of the gene's estimate and a pooled prior `s₀²` **and augments the t-test df** to `d_g + d₀`:
 
 ```
- s̃²_g = (d₀·s₀² + d_g·s²_g) / (d₀ + d_g)          effective df = d_g + d₀
+ s̃²_g = (d₀·s₀² + d_g·s²_g) / (d₀ + d_g)          limma contrast df → d_g + d₀
 ```
 
-Our cells are the "genes": `Var̂(θ_i)` is noisy (effective df ~6–9, 40 % single-peptide), so the
-raw weight over-trusts spuriously small variances — the Type-I inflation above. The moderated weight
-is `(1 − θ̂_i)² / Ṽar(θ_i)` with the same blend, and it is a **continuous dial between the two
-estimators we already have**:
+Our situation is one level over, and the object is **different**. The linear model's *residual*
+variance `σ̂²` already has decent df (`N − p` ≈ 20 collapsed points), so there is nothing to augment
+there — the Δk contrast df stays **`N − p`** (see *The estimators*). What is noisy is the **per-point
+weight** `Var̂(θ_i)` (effective df ~6–9, 40 % single-peptide cells), a *separate* object. We borrow
+limma's **shrinkage** to de-noise it — a precision-weighted blend of the point's own estimate and the
+pooled variance:
+
+```
+ Ṽar(θ_i) = (d₀·s₀² + d_i·Var̂(θ_i)) / (d₀ + d_i)      d_i = the variance ESTIMATE's own df
+```
+
+so the raw weight stops over-trusting spuriously small variances (the Type-I inflation above). The
+`d_i + d₀` here is the **variance estimate's** effective reliability — **not** the t-test df: the
+moderated `Ṽar` enters only the weight `w_i = (1 − θ̂_i)²/Ṽar(θ_i)`, and the Δk contrast still uses
+`N − p`. (The true-limma move — moderating `σ̂²` across proteins with a Satterthwaite contrast df —
+is a **separate roadmap item**; it stabilizes sparse proteins, orthogonal to per-point weighting.)
+`Ṽar` is a **continuous dial between the two estimators we already have**:
 
 - `d₀ → ∞` (variances untrustworthy) ⇒ shrink fully to pooled ⇒ **exactly `wls_fit`**;
 - `d₀ → 0` (variances trustworthy) ⇒ no shrinkage ⇒ **exactly `wls_fit_var`**.
 
 eBayes picks `d₀` from the data, so the estimator **cannot do worse than the shipped default** and
-approaches the full per-point weight only as far as the data earn it. Target here: lift effective df
-from ~6–9 into the ~16+ band the sweep showed is Type-I-safe — a `d₀` ≈ 8–10.
+approaches the full per-point weight only as far as the data earn it (the frontier is mapped in
+*The three arms*).
 
 **We already have the mean-variance trend.** limma-*trend* makes the prior a function of the mean
 (the mean-variance relationship); our `(1 − θ̂)²` factor *is* exactly that — `Var(φ) = σ²_θ/(1 − θ)²`
@@ -198,6 +284,40 @@ estimates — the propagated `1/Σ(1/σ²)` and the empirical between-peptide sc
 one under-covers. A reduced-χ² / dispersion scale (itself a shrinkage between the two) is the fix, and
 a third arm to bench.
 
+## The three arms — eBayes wins
+
+`moderate` runs all three at the measured regime (`--spread 1.0`; a df mix of **4 @ 40 %**
+single-peptide / **12** multi; between-peptide `between = 0.5` → median dispersion ≈ 1.5), against
+`wls_fit` and the raw `wls_fit_var`. Mean over k = {0.05, 0.075, 0.11, 0.216}, nsim 400:
+
+| arm | RMSE gain vs `wls_fit` | Type-I | coverage | rmse_vs_wmle |
+|---|---|---|---|---|
+| `wls_fit` (shipped) | 0 % | 0.037 | 0.946 | 4.13 |
+| `wls_fit_var` (raw) | **+70 %** | 0.078 | 0.907 | 1.21 |
+| **eBayes `d₀=2`** | **+58 %** | **0.014** | 0.973 | 1.73 |
+| eBayes `d₀=4` | +52 % | 0.015 | 0.974 | 1.94 |
+| eBayes `d₀=8` | +46 % | 0.018 | 0.971 | 2.18 |
+| threshold `T=4 / 8` | +59 % | 0.079 | 0.908 | 1.68 |
+| empirical | +51 % | **0.141** | 0.810 | 1.98 |
+
+**eBayes (arm #1) is the clear winner.** *Any* mild shrinkage fixes the Type-I — a finer sweep at
+the measured regime gives `d₀=0.5` → **+65 %** gain / Type-I **0.020**, `d₀=1` → +62 % / 0.015,
+`d₀=2` → +58 % / 0.014: the raw weight's 0.078 collapses to ~0.02 by `d₀=0.5`, and the whole
+`d₀ ≳ 0.5` range is safely conservative (coverage ~0.97). So `d₀` is **not** a value to hand-pick
+(the grid just maps the frontier, and `d₀=2` is already conservative — more gain sits at lower `d₀`);
+it should be **estimated per run à la Smyth**, from how much the per-point log-variances scatter
+beyond their sampling noise. eBayes works because it moderates **every** point, including the
+higher-df ones the threshold leaves raw.
+
+**Threshold (arm #2) fails.** `T=4` and `T=8` are identical to each other and barely better than the
+raw weight (Type-I 0.079): a hard cut only pools the sub-threshold points; the "passing" (df ≈ 12)
+points still carry noisy variances and drive the inflation. The cliff moderates the wrong thing.
+
+**Empirical (arm #3) fails as posed.** Swapping to the between-peptide scatter is *worse* than raw
+(Type-I 0.141) — with 2–3 peptides per cell the empirical variance has df ≈ 2, far noisier than the
+propagated one. Unbiased but unusable raw; it would itself need shrinkage. So the dispersion, though
+real and heterogeneous, is **not** fixed by naively adopting the empirical variance.
+
 ## Recommendation
 
 **Publish / recommend on the shipped `wls` (IRLS) now.** It is a large, validated improvement over
@@ -205,18 +325,17 @@ OLS (Type-I 0.285 → 0.062, coverage 0.543 → 0.926; `reports/2026-07-13_linea
 reproduced byte-for-byte here) and is the correct default regardless of how the per-point work lands.
 Nothing below blocks it.
 
-**Continue evaluating `wls_fit_var` as a refinement — do not default it yet.** The prize is real and
-large (a ~4× efficiency gap under production's own heteroscedasticity), but the raw per-point weight
-inflates Type-I at the measured df, so it needs the moderation above. Plan, all in the bench before
-any production code:
+**The per-point path is now settled: eBayes-moderated per-point variance.** The arms above decide the
+design — moderation captures ~+50–58 % of the +70 % at nominal-or-conservative Type-I, while the hard
+threshold and the raw empirical variance both fail. Plan before it becomes a default:
 
-1. Add three `varweight` arms — **eBayes-moderated** `Ṽar` (shrink `r_i → 1`, `d₀` estimated à la
-   Smyth), the **hard df-threshold** baseline, and the **dispersion-scaled / empirical** variance.
-2. Confirm the winner lands **Type-I ≈ 0.05, coverage ≈ 0.95** at the measured `--spread 1.0
-   --var-df 6` while keeping most of the +70 %.
-3. Only then wire it as **`--linear-weights wls-var`** (opt-in first, A/B on `lve_atr`, then decide
-   the default). The plumbing is small — the collapse already computes the per-point variance; it
-   need only be carried into `fit_linear_deltak`.
+1. Estimate `d₀` per run **à la Smyth** (from the spread of the per-point log-variances across all
+   cells) so the shrinkage is data-driven, and tune toward Type-I ≈ 0.05 (`d₀ = 2` is slightly
+   conservative — more gain is available nearer nominal).
+2. Wire it as **`--linear-weights wls-var`** (opt-in), carrying the per-point variance through the
+   collapse into `fit_linear_deltak` and moderating it there; A/B on `lve_atr`, then decide the default.
+3. Optional later refinement: an eBayes-moderated **random-effects** variance (moderate the empirical
+   between-peptide scatter rather than discard it) to also absorb the heterogeneous dispersion.
 
 ## Reproduce
 
@@ -224,8 +343,12 @@ any production code:
 # the effect-size sweep (homo/hetero × oracle/noisy)
 python -m tests.benchmark.bench_linear_weights varweight --nsim 500 --spread 1.0 --var-df 6
 
-# where production sits (per-point variance regime, real data)
-python -m tests.benchmark.bench_linear_weights measure --run runs/lve_atr_clean
+# where production sits + visualize the variance spread across runs
+python -m tests.benchmark.bench_linear_weights measure \
+    --runs runs/lve_atr_clean runs/boomi_ipsc_d2o --plot out_dir   # → measure_variance.png
+
+# the three moderation arms; sweep d0 to map the shrinkage frontier
+python -m tests.benchmark.bench_linear_weights moderate --spread 1.0 --d0-grid 0.5 1 2 4
 
 # play with the scenarios directly (overlaid homo vs hetero, with plots)
 python -m tests.benchmark.bench_linear_weights all --regime both --spread 1.0 --plot out_dir

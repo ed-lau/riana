@@ -235,6 +235,15 @@ intake, and the multi-point FS rail-drop. **Open:**
   (`--test-condition`/`--reference-condition`, contrasted from the joint all-condition fit). The
   all-pairwise + multiplicity-correction extension builds additively on the same joint fit —
   blocked on a good ≥3-condition dataset.
+- **[INVESTIGATE] Residual-variance moderation for the Δk t-test (limma-exact / Satterthwaite).**
+  The `linear simple` contrast uses the per-protein WLS residual df `N − p`; a protein with few
+  collapsed points has a noisy `σ̂²` → an unstable t. Complementary to the per-point-variance /
+  eBayes-weight work (`reports/2026-07-24_linear_wls_per_point_var.md`) — that *weights* points for
+  efficiency and keeps the contrast df at `N − p`; this would instead **moderate each protein's
+  regression `σ̂²` across proteins (limma eBayes) and use an augmented / Satterthwaite contrast df**,
+  for sparse-protein inference stability. A different object (the regression residual variance, not
+  the input weights) and the only lever here that actually changes the df. Not built; prototype in
+  `bench_linear_weights.py`.
 - **A1 — dimethyl S=1 spillover gate** (thin primitive + `spillover` column; see the scope block).
 - **Deamidation** (deferred; own side project).
 - **Precursor-enrichment (RIA) modelling** (deferred; MAJOR, data-blocked; see the scope block).

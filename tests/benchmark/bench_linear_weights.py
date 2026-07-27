@@ -484,6 +484,114 @@ def cmd_varweight(a):
 
 
 # --------------------------------------------------------------------------- #
+# 4c. moderate — the three arms that could make per-point Var(θ) safe to ship
+# --------------------------------------------------------------------------- #
+def ebayes_var(var, d, pool, d0):
+    """limma/eBayes moderated variance (arm #1): shrink each estimate toward the
+    pool by prior df ``d0``. ``d`` = the estimate's own df; effective df → ``d + d0``.
+    ``d0 → ∞`` recovers `wls_fit` (pooled), ``d0 → 0`` recovers `wls_fit_var` (raw)."""
+    var, d = np.asarray(var, float), np.asarray(d, float)
+    return (d0 * pool + d * var) / (d0 + d)
+
+
+def threshold_var(var, d, pool, T):
+    """Hard-threshold baseline (arm #2): use the per-point estimate only where its
+    df exceeds ``T``, else fall back to the pooled variance (= `wls_fit` there)."""
+    return np.where(np.asarray(d, float) > T, np.asarray(var, float), pool)
+
+
+def simulate_moderate(kA, kB, sigma, rng, *, spread, df_lo, df_hi, frac_lo,
+                      between, phi_limit=PHI_LIMIT):
+    """Two-source variance model for the moderation arms. Each cell has a
+    within-peptide σ (heteroscedastic via ``spread``) whose ESTIMATE has df drawn
+    from a {``df_lo`` single-peptide, ``df_hi`` multi-peptide} mix (``frac_lo`` at
+    the low end), PLUS a heterogeneous **between-peptide** component (``between``,
+    the source of the measured 1.25–1.72× dispersion) that the propagated PI-variance
+    MISSES. Returns the two variance estimates the arms choose between:
+    ``prop`` (propagated, within-only → biased low, noisy at within-df) and ``emp``
+    (empirical between-peptide scatter → unbiased of the true variance but noisy at
+    df = n_pep−1; falls back to ``prop`` for single-peptide cells)."""
+    day = np.concatenate([DAYS, DAYS])
+    cond = np.concatenate([np.zeros(len(DAYS), int), np.ones(len(DAYS), int)])
+    ktrue = np.where(cond == 0, kA, kB)
+    n = len(day)
+    within = per_point_sigma(n, sigma, spread, rng) ** 2
+    is_lo = rng.random(n) < frac_lo
+    d = np.where(is_lo, df_lo, df_hi).astype(float)              # within-peptide bootstrap df
+    n_pep = np.where(is_lo, 1, 3)                                # peptides/cell (df_emp = n_pep−1)
+    btw = between * within * rng.gamma(2.0, 0.5, n)              # heterogeneous between comp (mean≈between·within)
+    true_var = within + btw                                      # what the cell θ actually scatters by
+    theta_raw = 1 - np.exp(-ktrue * day) + rng.normal(0, np.sqrt(true_var))
+    prop = within * rng.chisquare(d) / d                        # misses `btw` → biased low
+    df_emp = np.maximum(n_pep - 1, 1)
+    emp = np.where(n_pep >= 2, true_var * rng.chisquare(df_emp) / df_emp, prop)
+    phi = to_phi(theta_raw)
+    keep = (phi > phi_limit) & (day > 0)
+    return (day[keep], cond[keep], phi[keep], np.clip(theta_raw[keep], 0.001, 0.999),
+            prop[keep], emp[keep], d[keep], day, cond, theta_raw, true_var)
+
+
+def cmd_moderate(a):
+    """Rank the three moderation arms against `wls_fit` / raw `wls_fit_var`, at the
+    measured production regime (heteroscedastic + per-point-df mix + between-peptide
+    dispersion). The winner is the arm that keeps the RMSE gain while landing
+    Type-I ≈ 0.05 and coverage ≈ 0.95 — the veto the raw weight fails."""
+    rng = np.random.default_rng(a.seed)
+    d0_grid, T_grid = a.d0_grid, a.t_grid
+    arms = (["wls_fit", "wls_fit_var(raw)"]
+            + [f"ebayes(d0={x})" for x in d0_grid]
+            + [f"thresh(T={x})" for x in T_grid] + ["empirical"])
+    rows, base = [], {}
+    for k in a.k_grid:
+        acc = {m: dict(kk=[], cov=[], rej=[]) for m in arms}
+        wmle = []
+        for _ in range(a.nsim):
+            (day, cond, phi, th, prop, emp, d,
+             rday, rcond, rth, rtv) = simulate_moderate(
+                k, k, a.sigma, rng, spread=a.spread, df_lo=a.df_lo, df_hi=a.df_hi,
+                frac_lo=a.frac_lo, between=a.between, phi_limit=a.phi_limit)
+            m0 = rcond == 0
+            wmle.append(wmle_nls(rday[m0], rth[m0], rtv[m0]))
+            pool = float(np.mean(prop))
+            variants = {"wls_fit": None, "wls_fit_var(raw)": prop, "empirical": emp}
+            variants.update({f"ebayes(d0={x})": ebayes_var(prop, d, pool, x) for x in d0_grid})
+            variants.update({f"thresh(T={x})": threshold_var(prop, d, pool, x) for x in T_grid})
+            for m in arms:
+                v = variants[m]
+                r = fit(day, cond, phi, th, "wls_fit" if v is None else "wls_fit_var",
+                        a.phi_limit, var=v)
+                if r is None:
+                    continue
+                acc[m]["kk"].append(r["kA"])
+                acc[m]["cov"].append(r["kA_lo"] <= k <= r["kA_hi"])
+                acc[m]["rej"].append(r["dk_p"] < 0.05)
+        rw = float(np.sqrt(np.nanmean((np.asarray(wmle) - k) ** 2)))
+        base[k] = float(np.sqrt(np.mean((np.asarray(acc["wls_fit"]["kk"]) - k) ** 2)))
+        for m in arms:
+            kk = np.asarray(acc[m]["kk"])
+            rmse = float(np.sqrt(np.mean((kk - k) ** 2)))
+            rows.append(dict(k=k, arm=m, rmse=rmse, rmse_vs_wmle=rmse / rw,
+                             gain=(base[k] - rmse) / base[k] * 100.0,
+                             coverage=float(np.mean(acc[m]["cov"])),
+                             type1=float(np.mean(acc[m]["rej"]))))
+    df = pd.DataFrame(rows)
+    df["arm"] = pd.Categorical(df["arm"], arms, ordered=True)
+    summ = (df.groupby("arm", observed=True)
+              .agg(rmse_gain_vs_fit=("gain", "mean"), type1=("type1", "mean"),
+                   coverage=("coverage", "mean"), rmse_vs_wmle=("rmse_vs_wmle", "mean"))
+              .reset_index())
+    print(f"MODERATION ARMS — spread={a.spread}, df mix {{{a.df_lo:g}@{a.frac_lo:.0%} / "
+          f"{a.df_hi:g}}}, between={a.between}  (nsim={a.nsim})")
+    print("target: max rmse_gain_vs_fit at Type-I ≈ 0.05, coverage ≈ 0.95 "
+          "(rmse_vs_wmle 1.0 = the weighted MLE)\n")
+    print(summ.to_string(index=False, float_format=lambda x: f"{x:8.3f}"))
+    print("\nwls_fit = shipped default (gain 0 by definition); wls_fit_var(raw) = the")
+    print("unmoderated candidate (the Type-I offender). An arm 'wins' if it keeps most of")
+    print("the raw gain with Type-I back near 0.05.")
+    return df
+
+
+# --------------------------------------------------------------------------- #
 # 5. irls — how many steps, and does dropping t=0 matter?
 # --------------------------------------------------------------------------- #
 def cmd_irls(a):
@@ -583,17 +691,15 @@ def cmd_real(a):
 # --------------------------------------------------------------------------- #
 # 7. measure — the REAL per-point-variance regime (places production on the curves)
 # --------------------------------------------------------------------------- #
-def cmd_measure(a):
-    """Measure production's actual per-point-variance regime from a run's PEPTIDE-level
-    fractions (`riana_fit_fractions.txt`, which carries the fs_lower/fs_upper PI), to place
-    it on the varweight curves BEFORE any shrinkage. Reports:
+def _measure_one(run):
+    """Per-run per-point-variance readout + the arrays for plotting. Reports:
       1. heteroscedasticity — the spread of per-point σ (≈ the bench --spread), at both the
          raw peptide level and the COLLAPSED cell level the linear model actually weights on;
       2. effective df — how well each point's σ is pinned (bootstrap timepoints/peptide,
          peptides/collapse-cell) → the Type-I-risk axis of the varweight sweep;
       3. calibration — do peptides in a cell scatter as much as their σ claims (dispersion)?
     """
-    ff = Path(a.run) / "riana_fit_fractions.txt"
+    ff = Path(run) / "riana_fit_fractions.txt"
     d = pd.read_table(ff, comment="#")
     need = {"fs", "fs_lower", "fs_upper", "labeling_time", "concat", "protein id",
             "biological_replicate", "experiment", "condition"}
@@ -606,7 +712,7 @@ def cmd_measure(a):
     v = d[np.isfinite(d["sigma"]) & (d["sigma"] > 0)].copy()
     CELL = ["experiment", "condition", "protein id", "biological_replicate", "labeling_time"]
 
-    print(f"REAL VARIANCE REGIME — {a.run}  (peptide-level {ff.name})")
+    print(f"REAL VARIANCE REGIME — {run}  (peptide-level {ff.name})")
     print(f"points with a usable PI: {len(v)}/{len(d)}   "
           f"{v['concat'].nunique()} peptidoforms, {v['protein id'].nunique()} proteins\n")
 
@@ -646,16 +752,36 @@ def cmd_measure(a):
     print("3. CALIBRATION   (cells with ≥3 peptides: empirical θ-scatter / mean stated σ²)")
     if disp:
         disp = np.array(disp)
-        print(f"   dispersion ratio: median {np.median(disp):.2f}   n={len(disp)} cells   "
-              "(1 = calibrated; >1 = σ under-stated → the formal 1/Σ(1/σ²) under-covers)")
+        p10, p50, p90 = np.percentile(disp, [10, 50, 90])
+        het = p90 / max(p10, 1e-9)
+        print(f"   dispersion ratio: median {p50:.2f}  (p10 {p10:.2f}, p90 {p90:.2f})  "
+              f"n={len(disp)} cells")
+        print("     1 = calibrated; >1 = σ under-stated (the formal 1/Σ(1/σ²) under-covers). "
+              f"p90/p10 = {het:.1f}× ⇒")
+        print("     " + ("HETEROGENEOUS across cells → the empirical / random-effects arm can help"
+                         if het > 3 else
+                         "fairly uniform → a uniform scale is harmless for the WLS point estimate"))
     else:
         print("   (no cells with ≥3 peptides)")
     print(f"\nPLACEMENT: run `varweight --spread {sp_cell:.2f}` (the measured cell spread) to read "
           "the real-regime effect size; the median df above says which var-df row applies.")
-    return dict(spread_cell=sp_cell, spread_pep=sp_pep, median_sigma_cell=med_cell,
-                npts_median=float(npts.median()), ppc_median=float(ppc.median()),
-                single_cell_frac=float((ppc == 1).mean()),
-                disp_median=float(np.median(disp)) if len(disp) else float("nan"))
+    return dict(sigma_pep=v["sigma"].to_numpy(), sigma_cell=cell_sigma,
+                disp=np.asarray(disp, float), ppc=ppc.to_numpy(), spread_cell=sp_cell)
+
+
+def cmd_measure(a):
+    """Measure the real per-point-variance regime from one or more runs' peptide-level
+    fractions. With ``--plot`` it overlays their variance-spread distributions for visual
+    comparison. Runs come from ``--runs`` (falls back to the single ``--run``)."""
+    runs = a.runs if getattr(a, "runs", None) else [a.run]
+    stats = {}
+    for i, run in enumerate(runs):
+        if i:
+            print("\n" + "-" * 70)
+        stats[Path(run).name] = _measure_one(run)
+    if a.plot:
+        _plot_measure(stats, a.plot)
+    return stats
 
 
 # --------------------------------------------------------------------------- #
@@ -722,12 +848,47 @@ def _plot_power(pw, outdir):
     fig.savefig(Path(outdir) / "mc_power.png", dpi=150); plt.close(fig)
 
 
+def _plot_measure(stats, outdir):
+    """Visualize the REAL variance spread across run(s): (a) the per-point σ the linear
+    model weights on (the heteroscedasticity), (b) the dispersion = empirical/propagated
+    variance (the fixed-vs-random-effects gap), (c) peptides/cell (the effective-df axis)."""
+    plt = _mpl(outdir)
+    fig, ax = plt.subplots(1, 3, figsize=(14, 4.2))
+    colors = [f"C{i}" for i in range(len(stats))]
+    for c, (name, s) in zip(colors, stats.items()):
+        cs = s["sigma_cell"]; cs = cs[np.isfinite(cs) & (cs > 0)]
+        ax[0].hist(np.log10(cs), bins=60, density=True, histtype="step", color=c,
+                   label=f"{name}  (SD log σ = {s['spread_cell']:.2f})")
+        ax[0].axvline(np.log10(np.median(cs)), color=c, ls=":", lw=.9)
+    ax[0].set_xlabel(r"$\log_{10}\,\sigma_\theta$  (collapsed cell)")
+    ax[0].set_ylabel("density")
+    ax[0].set_title("per-point σ — the heteroscedasticity the WLS weights on")
+    ax[0].legend(fontsize=7)
+    for c, (name, s) in zip(colors, stats.items()):
+        dd = s["disp"]; dd = dd[np.isfinite(dd) & (dd > 0)]
+        if len(dd):
+            ax[1].hist(np.log10(dd), bins=60, density=True, histtype="step", color=c,
+                       label=f"{name}  (median {np.median(dd):.2f}×)")
+    ax[1].axvline(0.0, color="k", ls="--", lw=.9)          # dispersion = 1 (calibrated)
+    ax[1].set_xlabel(r"$\log_{10}$ (empirical / propagated var)")
+    ax[1].set_title("dispersion — fixed- vs random-effects gap"); ax[1].legend(fontsize=7)
+    for c, (name, s) in zip(colors, stats.items()):
+        ppc = np.clip(s["ppc"], 1, 8)
+        vals, cnt = np.unique(ppc, return_counts=True)
+        ax[2].plot(vals, cnt / cnt.sum(), "o-", color=c,
+                   label=f"{name}  ({(s['ppc'] == 1).mean() * 100:.0f}% single-peptide)")
+    ax[2].set_xlabel("peptides / collapse cell  (≥8 clipped)")
+    ax[2].set_ylabel("fraction of cells")
+    ax[2].set_title("effective-df axis — single-peptide = low df"); ax[2].legend(fontsize=7)
+    fig.tight_layout(); fig.savefig(Path(outdir) / "measure_variance.png", dpi=150); plt.close(fig)
+
+
 # --------------------------------------------------------------------------- #
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("cmd", choices=["diagnose", "recover", "power", "efficiency",
-                                   "varweight", "measure", "irls", "real", "all"])
+                                   "varweight", "moderate", "measure", "irls", "real", "all"])
     p.add_argument("--run", default="runs/lve_atr_clean",
                    help="a rollup run dir holding riana_rollup_fractions.txt")
     p.add_argument("--reference", default="control")
@@ -747,6 +908,22 @@ def main():
                    help="fidelity of the per-point Var(θ) estimate fed to wls_fit_var: inf = "
                         "oracle (true σ²), finite = noisy χ²(df)/df estimate. varweight's "
                         "noisy mode uses this (default 4).")
+    p.add_argument("--df-lo", type=float, default=4.0, dest="df_lo",
+                   help="[moderate] variance-estimate df for single-peptide cells (default 4).")
+    p.add_argument("--df-hi", type=float, default=12.0, dest="df_hi",
+                   help="[moderate] variance-estimate df for multi-peptide cells (default 12).")
+    p.add_argument("--frac-lo", type=float, default=0.4, dest="frac_lo",
+                   help="[moderate] fraction of single-peptide (low-df) cells (default 0.4).")
+    p.add_argument("--between", type=float, default=0.5,
+                   help="[moderate] between-peptide variance fraction (the dispersion source; "
+                        "mean dispersion ≈ 1+between, default 0.5 → ~1.5×).")
+    p.add_argument("--d0-grid", type=float, nargs="+", default=[2, 4, 8, 16], dest="d0_grid",
+                   help="[moderate] eBayes prior-df (shrinkage) grid to sweep (default 2 4 8 16; "
+                        "d0→∞ = wls_fit, d0→0 = raw wls_fit_var).")
+    p.add_argument("--t-grid", type=float, nargs="+", default=[4, 8], dest="t_grid",
+                   help="[moderate] hard df-threshold grid to sweep (default 4 8).")
+    p.add_argument("--runs", nargs="+", default=None,
+                   help="[measure] one or more run dirs to read/overlay (falls back to --run).")
     p.add_argument("--phi-limit", type=float, default=PHI_LIMIT)
     p.add_argument("--nsim", type=int, default=2000)
     p.add_argument("--seed", type=int, default=7)
@@ -771,6 +948,8 @@ def main():
         rule("4. EFFICIENCY — vs the exact MLE"); cmd_efficiency(a)
     if a.cmd == "varweight":
         rule("4b. VARWEIGHT — per-point Var(θ) effect size + safety"); cmd_varweight(a)
+    if a.cmd == "moderate":
+        rule("4c. MODERATE — eBayes / threshold / empirical arms"); cmd_moderate(a)
     if a.cmd == "measure":
         rule("7. MEASURE — the real per-point-variance regime"); cmd_measure(a)
     if a.cmd == "irls":
