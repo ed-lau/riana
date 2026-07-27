@@ -393,7 +393,8 @@ def _rollup_linear(
         .reset_index(drop=True)
     )
     points = {
-        keys: (g["labeling_time"].tolist(), g["theta"].tolist())
+        keys: (g["labeling_time"].tolist(), g["theta"].tolist(),
+               g["theta_var"].tolist(), g["theta_df"].tolist())
         for keys, g in long.groupby(_GROUP_KEYS, sort=False)
     }
     result.attrs["protein_points"] = points
@@ -408,15 +409,20 @@ def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
     """
     rows = []
     for (exp, cond, prot), pts in result.attrs.get("protein_points", {}).items():
-        t_list, fs_list = pts
-        for t, fs in zip(t_list, fs_list):
+        t_list, fs_list = pts[0], pts[1]
+        # var/df carried from the collapse (a 4-tuple); older 2-tuples pad with NaN.
+        n = len(t_list)
+        var_list = pts[2] if len(pts) > 2 else [float("nan")] * n
+        df_list = pts[3] if len(pts) > 3 else [float("nan")] * n
+        for t, fs, var, df in zip(t_list, fs_list, var_list, df_list):
             rows.append({
                 "experiment": exp, "condition": cond, "protein": prot,
                 "labeling_time": float(t), "fs": float(fs),
+                "fs_var": float(var), "fs_df": float(df),
             })
     return pd.DataFrame(
         rows,
-        columns=[*PROTEIN_KEY_COLUMNS, "labeling_time", "fs"],
+        columns=[*PROTEIN_KEY_COLUMNS, "labeling_time", "fs", "fs_var", "fs_df"],
     )
 
 
@@ -748,31 +754,43 @@ def _refit_table(
     return table, points
 
 
-def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list]:
-    """Collapse one protein group's peptide θ into ``(t_list, fs_list)`` points.
+def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, list]:
+    """Collapse one protein group's peptide θ into ``(t_list, fs_list, var_list,
+    df_list)`` points — the θ (unchanged), its per-point variance ``Var(θ_i)``, and
+    the variance estimate's effective df (for the WLS-Var / eBayes moderation).
 
-    ``method="pooled"`` keeps every peptide×timepoint θ (pseudoreplication);
+    ``method="pooled"`` keeps every peptide×timepoint θ (pseudoreplication; each
+    point's var is that peptide's own PI-width variance, df ≈ its fit-point count);
     ``method="weighted"`` collapses peptides within each (biorep, timepoint) by
-    inverse variance. Shared by the nonlinear refit (:func:`_refit_one_group`) and
-    the linear collapse (:func:`_collapse_long`) so both see identical points.
+    inverse variance (:func:`_weighted_theta`). Shared by the nonlinear refit
+    (:func:`_refit_one_group`) and the linear collapse (:func:`_collapse_long`).
     """
+    # Per-peptide σ-df ≈ the peptide's fit-point count (its residual-bootstrap df).
+    npts = grp.groupby("concat")["labeling_time"].nunique().to_dict()
     if method == "pooled":
         fs = grp["fs"].to_numpy(dtype=float)
         t = grp["labeling_time"].to_numpy(dtype=float)
+        sig = (grp["fs_upper"].to_numpy(float) - grp["fs_lower"].to_numpy(float)) / _PI_SPAN_SIGMA
+        var = np.where(np.isfinite(sig) & (sig > 0), sig ** 2, np.nan)
+        df = np.array([float(npts.get(c, 1)) for c in grp["concat"].to_numpy()])
         keep = np.isfinite(fs) & np.isfinite(t)
-        return t[keep].tolist(), fs[keep].tolist()
-    t_list, fs_list = [], []
+        return (t[keep].tolist(), fs[keep].tolist(),
+                var[keep].tolist(), df[keep].tolist())
+    t_list, fs_list, var_list, df_list = [], [], [], []
     for (_br, t), cell in grp.groupby(
         ["biological_replicate", "labeling_time"], sort=False
     ):
-        theta = _weighted_theta(
+        dfs = np.array([float(npts.get(c, 1)) for c in cell["concat"].to_numpy()])
+        theta, var, eff_df = _weighted_theta(
             cell["fs"].to_numpy(), cell["fs_lower"].to_numpy(),
-            cell["fs_upper"].to_numpy(),
+            cell["fs_upper"].to_numpy(), dfs,
         )
         if np.isfinite(theta):
             t_list.append(float(t))
             fs_list.append(theta)
-    return t_list, fs_list
+            var_list.append(var)
+            df_list.append(eff_df)
+    return t_list, fs_list, var_list, df_list
 
 
 def _collapse_long(
@@ -786,13 +804,14 @@ def _collapse_long(
     for (exp, cond, prot), grp in fractions.groupby(_GROUP_KEYS, sort=False):
         if grp["concat"].nunique() < min_peptides:
             continue
-        t_list, fs_list = _collapse_group(grp, method)
-        for t, fs in zip(t_list, fs_list):
+        t_list, fs_list, var_list, df_list = _collapse_group(grp, method)
+        for t, fs, var, df in zip(t_list, fs_list, var_list, df_list):
             rows.append({"experiment": exp, "condition": cond, "protein": prot,
-                         "labeling_time": float(t), "theta": float(fs)})
+                         "labeling_time": float(t), "theta": float(fs),
+                         "theta_var": float(var), "theta_df": float(df)})
     return pd.DataFrame(
         rows, columns=["experiment", "condition", "protein",
-                       "labeling_time", "theta"])
+                       "labeling_time", "theta", "theta_var", "theta_df"])
 
 
 def _refit_one_group(
@@ -815,7 +834,7 @@ def _refit_one_group(
     keys, grp = item
     n_rep = int(grp["biological_replicate"].nunique())
     n_tp = int(grp["labeling_time"].nunique())
-    t_list, fs_list = _collapse_group(grp, method)
+    t_list, fs_list, var_list, df_list = _collapse_group(grp, method)
     if len(t_list) < min_points:
         return keys, None, None
     fit = _fit_kdeg(
@@ -834,7 +853,7 @@ def _refit_one_group(
         "n_points": int(len(t_list)), "k_deg": k,
         "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
     }
-    return keys, row, (t_list, fs_list)
+    return keys, row, (t_list, fs_list, var_list, df_list)
 
 
 # --- process-pool plumbing (mirrors core/fitting._init_fit_worker) -----------
@@ -866,19 +885,30 @@ def _refit_one_group_worker(index: int):
 
 
 def _weighted_theta(
-    fs: np.ndarray, lo: np.ndarray, hi: np.ndarray
-) -> float:
-    """Inverse-variance weighted mean of θ within one (protein, biorep, t) cell.
+    fs: np.ndarray, lo: np.ndarray, hi: np.ndarray,
+    dfs: np.ndarray | None = None,
+) -> tuple[float, float, float]:
+    """Inverse-variance weighted mean of θ within one (protein, biorep, t) cell,
+    plus the variance of that mean and its effective df.
 
-    σ comes from the M5 prediction-interval width (``(hi − lo) / 3.29``).
-    Peptides with a missing/zero σ are filled with the cell's median valid σ
-    (counted as a typical peptide rather than dropped); if no peptide in the
-    cell has a usable σ, the mean is unweighted.
+    Returns ``(theta, var, eff_df)``:
+
+    - ``theta`` — the inverse-variance-weighted mean (**unchanged** from before).
+      σ comes from the M5 prediction-interval width (``(hi − lo) / 3.29``); peptides
+      with a missing/zero σ are filled with the cell's median valid σ; if no peptide
+      has a usable σ the mean is unweighted.
+    - ``var`` — the variance of the weighted mean, ``1/Σ(1/σ²)`` (the propagated,
+      fixed-effects cell variance the linear model would weight on). ``NaN`` when no
+      peptide has a usable σ.
+    - ``eff_df`` — a Satterthwaite effective df from the per-peptide σ-dfs ``dfs``
+      (each ≈ that peptide's fit-point count): ``(Σw)² / Σ(w²/d_i)``. Reduces to the
+      lone peptide's df for a single-peptide cell, ≈ ``n_pep × d`` for equal peptides.
+      Falls back to the peptide count when ``dfs`` is None; ``NaN`` when var is.
     """
     fs = np.asarray(fs, dtype=float)
     keep = np.isfinite(fs)
     if not keep.any():
-        return float("nan")
+        return float("nan"), float("nan"), float("nan")
     sigma = (np.asarray(hi, float) - np.asarray(lo, float)) / _PI_SPAN_SIGMA
     valid = np.isfinite(sigma) & (sigma > 0)
     if valid.any():
@@ -887,7 +917,17 @@ def _weighted_theta(
     else:
         w = np.ones_like(fs)
     w = np.where(keep, w, 0.0)
-    return float(np.sum(w * np.where(keep, fs, 0.0)) / np.sum(w))
+    sw = float(np.sum(w))
+    theta = float(np.sum(w * np.where(keep, fs, 0.0)) / sw)
+    if not valid.any():                       # no σ information → undefined variance
+        return theta, float("nan"), float("nan")
+    var = float(1.0 / sw)
+    if dfs is not None:
+        d = np.maximum(np.asarray(dfs, float), 1.0)
+        eff_df = float(sw ** 2 / np.sum(np.where(keep, w ** 2 / d, 0.0)))
+    else:
+        eff_df = float(int(keep.sum()))
+    return theta, var, eff_df
 
 
 def _fit_kdeg(

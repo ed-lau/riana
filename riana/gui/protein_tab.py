@@ -580,7 +580,7 @@ class ProteinTab(QWidget):
         if pts is None or k is None or pd.isna(k):
             self.curve.show_placeholder(f"{row['protein']}: no refit to show.")
             return
-        t_list, fs_list = pts
+        t_list, fs_list = pts[0], pts[1]      # (t, fs[, var, df]) — curve needs t/fs
         kinetic = dict(k_p=p.get("kp", 0.5), k_r=p.get("kr", 0.05),
                        r_p=p.get("rp", 10.0))
         self.curve.plot_fit(
@@ -603,7 +603,7 @@ class ProteinTab(QWidget):
             pts = self._points.get((exp, r["condition"], prot))
             if pts is None:
                 continue
-            t_list, theta_list = pts
+            t_list, theta_list = pts[0], pts[1]      # (t, θ[, var, df])
             per_condition[str(r["condition"])] = (
                 list(t_list), list(theta_list), r.get("k_deg"),
                 _safe_float(r.get("ci_lo")), _safe_float(r.get("ci_hi")))

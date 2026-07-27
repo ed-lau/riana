@@ -352,7 +352,10 @@ def load_rollup_results(manifest_path: str) -> tuple[pd.DataFrame, dict, dict]:
         for key_vals, grp in fr.sort_values(
                 "labeling_time", kind="mergesort").groupby(keys, sort=False):
             k = key_vals if isinstance(key_vals, tuple) else (key_vals,)
-            points[k] = (grp["labeling_time"].tolist(), grp["fs"].tolist())
+            n = len(grp)
+            var = grp["fs_var"].tolist() if "fs_var" in grp else [float("nan")] * n
+            df = grp["fs_df"].tolist() if "fs_df" in grp else [float("nan")] * n
+            points[k] = (grp["labeling_time"].tolist(), grp["fs"].tolist(), var, df)
     return proteins, points, read_provenance_header(prot)
 
 

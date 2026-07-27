@@ -195,7 +195,7 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
     assert int(proteins["k_deg"].notna().sum()) >= 1
     # The collapsed (t, θ) points behind each refit ride alongside (the curve).
     assert len(points) >= 1
-    a_t, a_fs = next(iter(points.values()))
+    a_t, a_fs = next(iter(points.values()))[:2]   # (t, fs[, var, df])
     assert len(a_t) == len(a_fs) > 0
 
 

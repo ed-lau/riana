@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from riana.core.protein import (
+    _PI_SPAN_SIGMA,
     _k_cv_admitted,
     _r2_admitted,
     _resolve_parsimony,
@@ -307,13 +308,31 @@ def test_weighted_theta_favours_tighter_ci():
     fs = np.array([0.5, 0.6])
     lo = np.array([0.49, 0.40])
     hi = np.array([0.51, 0.80])
-    assert _weighted_theta(fs, lo, hi) == pytest.approx(0.5, abs=0.01)
+    theta, var, df = _weighted_theta(fs, lo, hi)
+    assert theta == pytest.approx(0.5, abs=0.01)      # the tight-CI peptide dominates
+    # var = 1/Σ(1/σ²) is smaller than the tighter peptide's own σ² (info adds)
+    sig_tight = (0.51 - 0.49) / _PI_SPAN_SIGMA
+    assert 0.0 < var < sig_tight ** 2
+    assert df == pytest.approx(2.0)                    # n_pep fallback (dfs not given)
 
 
 def test_weighted_theta_falls_back_to_unweighted_when_no_ci():
     fs = np.array([0.4, 0.6])
     nan = np.array([np.nan, np.nan])
-    assert _weighted_theta(fs, nan, nan) == pytest.approx(0.5)
+    theta, var, df = _weighted_theta(fs, nan, nan)
+    assert theta == pytest.approx(0.5)                # unweighted mean, θ unchanged
+    assert np.isnan(var) and np.isnan(df)             # no σ info → undefined variance
+
+
+def test_weighted_theta_satterthwaite_df():
+    """eff_df = (Σw)²/Σ(w²/d): a lone peptide → its own df; equal peptides → n·d."""
+    fs = np.array([0.5, 0.5])
+    lo = np.array([0.49, 0.49])
+    hi = np.array([0.51, 0.51])            # identical σ → equal weights
+    _, _, df = _weighted_theta(fs, lo, hi, dfs=np.array([6.0, 6.0]))
+    assert df == pytest.approx(12.0)       # two equal peptides at df 6 → 12
+    _, _, df1 = _weighted_theta(fs[:1], lo[:1], hi[:1], dfs=np.array([6.0]))
+    assert df1 == pytest.approx(6.0)       # single peptide → its own df
 
 
 def test_min_peptides_filters_small_proteins():
