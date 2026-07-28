@@ -97,11 +97,16 @@ def d0_grid(kA, kB, n_pep, nsim, seed, d0s=(0.5, 1, 2, 4, 8), rollup="collapse")
     return pd.DataFrame(rows)
 
 
-def fit_fdist(s2, df):
-    """Smyth (2004) fitFDist → (d0, s0²) from sample variances s2 and their df."""
+def fit_fdist(s2, df, trim=0.0):
+    """Smyth (2004) fitFDist → (d0, s0²) from sample variances s2 and their df. `trim` > 0
+    Winsorizes the log-variance deviations before the moment-match — a limma `robust=TRUE`
+    (Phipson 2016) flavour, needed because proteomics variances are heavy-tailed and the
+    outliers bias d0 LOW (under-shrinkage)."""
     s2, df = np.asarray(s2, float), np.asarray(df, float)
     ok = np.isfinite(s2) & (s2 > 0) & (df > 0); s2, df = s2[ok], df[ok]
     e = np.log(s2) - digamma(df / 2) + np.log(df / 2)
+    if trim > 0:
+        lo, hi = np.quantile(e, [trim, 1 - trim]); e = np.clip(e, lo, hi)
     evar = np.var(e, ddof=1) - np.mean(polygamma(1, df / 2))
     if evar <= 0:
         return np.inf, float(np.exp(np.mean(e)))
@@ -111,6 +116,64 @@ def fit_fdist(s2, df):
         d0 = np.inf
     s0 = float(np.exp(np.mean(e) + digamma(d0 / 2) - np.log(d0 / 2))) if np.isfinite(d0) else float(np.exp(np.mean(e)))
     return d0, s0
+
+
+# --------------------------------------------------------------------------- #
+# Real-data validation — biorep-split stability of per-protein k (no ground truth)
+# --------------------------------------------------------------------------- #
+def collapse_cells(ff, pi_span=3.29):
+    """Peptide `riana_fit_fractions` → per (protein, condition, biorep, t) cells with θ,
+    Var(θ)=1/Σ(1/σ²), and a Satterthwaite df (per-peptide σ-df ≈ its fit-point count)."""
+    ff = ff[ff.labeling_time > 0].copy()
+    ff["sig"] = (ff.fs_upper - ff.fs_lower) / pi_span
+    ff = ff[np.isfinite(ff.sig) & (ff.sig > 0) & np.isfinite(ff.fs)].copy()
+    ff["npts"] = ff.groupby(["protein id", "concat"])["labeling_time"].transform("nunique")
+    ff["w"] = 1 / ff.sig ** 2; ff["wth"] = ff.w * ff.fs; ff["w2d"] = ff.w ** 2 / np.maximum(ff.npts, 1)
+    g = ff.groupby(["protein id", "condition", "biological_replicate", "labeling_time"]).agg(
+        sw=("w", "sum"), swth=("wth", "sum"), sw2d=("w2d", "sum"), npep=("concat", "nunique")).reset_index()
+    g["theta"] = g.swth / g.sw; g["var"] = 1 / g.sw; g["df"] = g.sw ** 2 / g.sw2d
+    g["phi"] = to_phi(g.theta.to_numpy())
+    return g
+
+
+def _fit_k(t, phi, var=None, phi_lim=-4.0):
+    """Single-condition k via one IRLS step: φ = −k·t through origin, weight (1−θ̂)²[/var]."""
+    keep = np.isfinite(phi) & (phi > phi_lim) & (t > 0); t, phi = t[keep], phi[keep]
+    if len(t) < 3:
+        return np.nan
+    b0 = np.sum(t * phi) / np.sum(t * t)                     # OLS pilot slope
+    w = np.exp(2 * np.maximum(b0 * t, phi_lim))
+    if var is not None:
+        w = w / np.clip(var[keep], 1e-12, None)
+    return -np.sum(w * t * phi) / np.sum(w * t * t)
+
+
+def biorep_split(run_dir, d0_trim=0.1):
+    """Biorep-split stability of per-protein k: fit k per (protein, condition, biorep) under
+    `wls` vs `wls-var` (eBayes with a robust-fitFDist d0), and measure |log(k_b1/k_b2)| within
+    each (protein, condition). Lower = more consistent across biological replicates = better.
+    Returns (summary_df, d0) or (None, nan) if the run has < 2 bioreps."""
+    ff = pd.read_table(f"{run_dir}/riana_fit_fractions.txt", comment="#")
+    c = collapse_cells(ff)
+    brs = sorted(c.biological_replicate.unique())
+    if len(brs) < 2:
+        return None, float("nan")
+    d0, _ = fit_fdist(c["var"].to_numpy(), c["df"].to_numpy(), trim=d0_trim)
+    pool = float(np.nanmean(c["var"]))
+    rows = []
+    for (prot, cond, br), g in c.groupby(["protein id", "condition", "biological_replicate"]):
+        t, phi, var, df = g.labeling_time.to_numpy(), g.phi.to_numpy(), g["var"].to_numpy(), g["df"].to_numpy()
+        rows.append(dict(prot=prot, cond=cond, br=br, maxpep=int(g.npep.max()),
+                         k_wls=_fit_k(t, phi), k_var=_fit_k(t, phi, ebayes_var(var, df, pool, d0))))
+    K = pd.DataFrame(rows)
+    mp = K.groupby(["prot", "cond"])["maxpep"].max()
+    out = {}
+    for col, lab in [("k_wls", "wls"), ("k_var", "wls-var")]:
+        p = K.pivot_table(index=["prot", "cond"], columns="br", values=col)[brs[:2]].dropna()
+        p = p[(p[brs[0]] > 0) & (p[brs[1]] > 0)]
+        d = np.abs(np.log(p[brs[0]] / p[brs[1]])); m = mp.reindex(d.index)
+        out[lab] = dict(all=d.median(), multi_pep=d[m >= 2].median(), single_pep=d[m < 2].median(), n=len(d))
+    return pd.DataFrame(out).T, d0
 
 
 if __name__ == "__main__":
