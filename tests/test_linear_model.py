@@ -190,6 +190,56 @@ def test_unknown_weight_scheme_raises():
         fit_linear_deltak(pts, weights="bogus")
 
 
+def _two_cond(seed=3, **kw):
+    return pd.DataFrame(
+        _curve("e", "P1", "control", 0.08, [0, 1, 2, 4, 8], noise=0.02, seed=seed)
+        + _curve("e", "P1", "atrium", 0.12, [0, 1, 2, 4, 8], noise=0.02, seed=seed + 1))
+
+
+def test_wls_var_falls_back_to_wls_without_theta_var():
+    """wls-var on a points table with no per-point variance must reproduce wls exactly."""
+    pts = _two_cond()
+    a = fit_linear_deltak(pts, weights="wls", reference_condition="control")
+    b = fit_linear_deltak(pts, weights="wls-var", reference_condition="control")
+    for col in ("k_deg", "delta_k"):
+        np.testing.assert_allclose(a[col].to_numpy(), b[col].to_numpy(), equal_nan=True)
+
+
+def test_wls_var_equals_wls_when_variance_is_constant():
+    """A constant Var̂(θ) cancels out of the RELATIVE weights, so wls-var ≡ wls."""
+    pts = _two_cond()
+    pts["theta_var"] = 4e-4        # constant across all points
+    pts["theta_df"] = 8.0
+    a = fit_linear_deltak(pts, weights="wls", reference_condition="control")
+    b = fit_linear_deltak(pts, weights="wls-var", reference_condition="control")
+    np.testing.assert_allclose(a["k_deg"].to_numpy(), b["k_deg"].to_numpy(), rtol=1e-9)
+
+
+def test_wls_var_reweights_under_heteroscedastic_variance():
+    """With genuinely varying per-point variance, wls-var re-weights → k differs from wls
+    (but tracks it); a tiny-sample fitFDist falls back to the fixed d0."""
+    rng = np.random.default_rng(7)
+    rows, var = [], []
+    for i in range(40):
+        for cond, k in (("control", 0.08), ("atrium", 0.12)):
+            for t in [1, 2, 4, 8, 12]:
+                sd = 0.06 if rng.random() < 0.5 else 0.012      # half the points 5x noisier
+                rows.append({"experiment": "e", "protein": f"P{i}", "condition": cond,
+                             "labeling_time": float(t), "theta": float(1 - np.exp(-k * t) + rng.normal(0, sd))})
+                var.append(sd ** 2)
+    pts = pd.DataFrame(rows); pts["theta_var"] = var; pts["theta_df"] = 6.0
+    a = fit_linear_deltak(pts, weights="wls", reference_condition="control").set_index("protein")["k_deg"]
+    b = fit_linear_deltak(pts, weights="wls-var", reference_condition="control").set_index("protein")["k_deg"]
+    assert (a - b).abs().median() > 0        # the per-point weighting bites
+    assert a.corr(b) > 0.9                    # but the two track each other
+
+
+def test_fit_fdist_fallback_on_tiny_sample():
+    from riana.core.linear_model import _fit_fdist
+    d0, s0 = _fit_fdist(np.array([1e-3, 2e-3]), np.array([6.0, 6.0]), d0_fallback=2.0)
+    assert d0 == 2.0 and s0 > 0               # < 8 variances → the fixed-2 fallback
+
+
 def test_t0_point_is_excluded_and_does_not_move_k():
     """t=0 has ZERO leverage on a through-origin slope, so dropping it cannot change
     k — but its theta is pinned by the floor clamp, so its residual is artificially ~0

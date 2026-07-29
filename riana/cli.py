@@ -793,7 +793,11 @@ def rollup(
         "weights by the delta-method inverse variance (1−θ)², taken from the fitted "
         "value — φ=log(1−θ) makes FS-scale noise heteroscedastic, so an unweighted "
         "fit is anti-conservative (~28% false positives at α=0.05, and k biased ~14% "
-        "low in the fast tail). 'ols' restores the old unweighted fit (audit only)."),
+        "low in the fast tail). 'wls-var' (opt-in) additionally weights by the per-point "
+        "precision 1/Var̂(θ) (eBayes-moderated, robust-fitFDist d0) — ~10% better "
+        "biological-replicate consistency on rich multi-peptide time series, safe/neutral "
+        "elsewhere; needs the collapse's theta_var (else falls back to wls). 'ols' restores "
+        "the old unweighted fit (audit only)."),
     reference_condition: str = typer.Option(
         None, "--reference-condition", metavar="COND",
         help="['linear simple' only] Baseline condition of the Δk contrast — "

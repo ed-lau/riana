@@ -108,12 +108,45 @@ def truncate_plateau(
     return day[keep], phi[keep]
 
 
+def _fit_fdist(s2, df, *, trim=0.10, d0_fallback=2.0):
+    """Robust Smyth (2004) fitFDist → ``(d0, s0²)`` from per-point variances ``s2`` and
+    their df. Winsorizes the log-variance deviations (limma ``robust=TRUE`` / Phipson
+    2016) — proteomics variances are heavy-tailed and the outliers bias d0 LOW
+    (under-shrinkage). Returns ``d0_fallback`` if the moment-match degenerates."""
+    from scipy.special import digamma, polygamma
+    from scipy.optimize import brentq
+    s2 = np.asarray(s2, float); df = np.asarray(df, float)
+    if s2.size < 8:
+        return float(d0_fallback), (float(np.mean(s2)) if s2.size else 1.0)
+    e = np.log(s2) - digamma(df / 2.0) + np.log(df / 2.0)
+    if trim > 0:
+        lo, hi = np.quantile(e, [trim, 1.0 - trim]); e = np.clip(e, lo, hi)
+    evar = float(np.var(e, ddof=1) - np.mean(polygamma(1, df / 2.0)))
+    d0 = float(d0_fallback)
+    if evar > 0:
+        try:
+            d0 = 2.0 * brentq(lambda x: polygamma(1, x) - evar, 1e-4, 1e5)
+        except Exception:
+            d0 = float(d0_fallback)
+    if not (np.isfinite(d0) and d0 > 0):
+        d0 = float(d0_fallback)
+    s0 = float(np.exp(np.mean(e) + digamma(d0 / 2.0) - np.log(d0 / 2.0)))
+    if not (np.isfinite(s0) and s0 > 0):
+        s0 = float(np.mean(s2))
+    return d0, s0
+
+
 #: Weighting schemes for the linearized fit (:func:`fit_linear_deltak`).
 #:
-#: ``"wls"`` (default) — **weighted** LS with the delta-method inverse variance, taken
-#: from the FITTED value (one IRLS step). ``"ols"`` — the pre-2026-07 unweighted fit,
-#: kept for audit / method comparison; it is anti-conservative (see the module note).
-LINEAR_WEIGHT_SCHEMES = ("wls", "ols")
+#: ``"wls"`` (default) — **weighted** LS with the delta-method inverse variance ``(1−θ̂)²``,
+#: from the FITTED value (one IRLS step). ``"wls-var"`` — opt-in; multiplies that by the
+#: **per-point** precision ``1/Var̂(θ)`` (the inverse-variance collapse's ``theta_var``),
+#: eBayes-moderated with a robust-fitFDist ``d0`` (fixed-2 fallback). Improves
+#: biological-replicate consistency ~10% on rich multi-peptide time series (see
+#: ``reports/2026-07-24_linear_wls_per_point_var.md``); falls back to ``"wls"`` if the points
+#: carry no per-point variance. ``"ols"`` — the pre-2026-07 unweighted fit, for audit only
+#: (anti-conservative; see the module note).
+LINEAR_WEIGHT_SCHEMES = ("wls", "ols", "wls-var")
 
 
 def fit_linear_deltak(
@@ -187,6 +220,23 @@ def fit_linear_deltak(
         from riana.exceptions import DataError
         raise DataError(f"linear-model points missing columns {sorted(missing)}.")
 
+    # wls-var (opt-in): the per-point precision needs the collapse's theta_var/theta_df.
+    # Absent them (a pooled/legacy points table) fall back to wls; otherwise estimate the
+    # eBayes hyperparameters ONCE across every cell — the robust-fitFDist d0 and pooled s0²
+    # applied per protein below.
+    _d0 = _s0 = None
+    if weights == "wls-var":
+        if {"theta_var", "theta_df"} <= set(points.columns):
+            _v = points["theta_var"].to_numpy(float); _dfv = points["theta_df"].to_numpy(float)
+            _ok = np.isfinite(_v) & (_v > 0) & np.isfinite(_dfv) & (_dfv > 0)
+            _d0, _s0 = _fit_fdist(_v[_ok], _dfv[_ok])
+            _LOGGER.info("linear wls-var: robust fitFDist d0=%.2f, s0^2=%.3g "
+                         "(%d cells with a per-point variance)", _d0, _s0, int(_ok.sum()))
+        else:
+            _LOGGER.info("linear wls-var requested but points carry no "
+                         "theta_var/theta_df — using wls.")
+            weights = "wls"
+
     # A named contrast condition must actually be in the data — otherwise every
     # protein silently misses it and delta_k is all-NaN. Fail loudly with the
     # available choices (the CLI surfaces this as a bad-parameter error).
@@ -213,11 +263,12 @@ def fit_linear_deltak(
     for (exp, prot), grp in iter_progress(grouped, grouped.ngroups, progress_callback):
         # φ-transform and per-condition plateau truncation.
         per_cond: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        per_cond_var: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for cond, cg in grp.groupby("condition", sort=True):
+            day0 = cg["labeling_time"].to_numpy()
             phi = to_phi(cg["theta"].to_numpy(),
                          theta_floor=theta_floor, theta_ceiling=theta_ceiling)
-            t, p = truncate_plateau(
-                cg["labeling_time"].to_numpy(), phi, phi_limit=phi_limit)
+            t, p = truncate_plateau(day0, phi, phi_limit=phi_limit)
             # Drop t = 0. In a through-origin fit it has ZERO leverage on the slope
             # (x = 0 contributes nothing to Σxy or Σx²), so k is unchanged — but its θ
             # is pinned by the ``theta_floor`` clamp (true θ(0) = 0, so ~half the
@@ -233,6 +284,12 @@ def fit_linear_deltak(
             t, p = t[keep], p[keep]
             if len(t) >= min_points_per_condition:
                 per_cond[str(cond)] = (t, p)
+                if weights == "wls-var":
+                    # the SAME plateau∘(t>0) mask on the original arrays → align var/df
+                    m = (np.isfinite(phi) & np.isfinite(day0)
+                         & (phi > phi_limit) & (day0 > 0))
+                    per_cond_var[str(cond)] = (cg["theta_var"].to_numpy()[m],
+                                               cg["theta_df"].to_numpy()[m])
         n_total = sum(len(t) for t, _ in per_cond.values())
         if not per_cond or n_total < min_points:
             continue
@@ -247,6 +304,9 @@ def fit_linear_deltak(
             "condition": np.concatenate(
                 [[c] * len(t) for c, (t, _) in per_cond.items()]),
         })
+        if weights == "wls-var":
+            fit_df["theta_var"] = np.concatenate([per_cond_var[c][0] for c in per_cond])
+            fit_df["theta_df"] = np.concatenate([per_cond_var[c][1] for c in per_cond])
         formula = "phi ~ 0 + day:C(condition)"
         try:
             res = smf.ols(formula, data=fit_df).fit()
@@ -264,6 +324,19 @@ def fit_linear_deltak(
                 # φ̂ is floored at ``phi_limit`` so the weight range matches the plateau
                 # truncation and cannot underflow to 0 for a fast curve at a late t.
                 w = np.exp(2.0 * np.maximum(res.fittedvalues.to_numpy(), phi_limit))
+                res = smf.wls(formula, data=fit_df, weights=w).fit()
+            elif weights == "wls-var":
+                # wls's exogenous (1−θ̂)² transform weight × the per-point precision
+                # 1/Ṽar(θ): the collapse's ``theta_var`` eBayes-moderated toward the
+                # pooled ``s0²`` by the robust-fitFDist ``d0`` (per-point df = ``theta_df``),
+                # Ṽar = (d0·s0² + df·var)/(d0 + df). Only RELATIVE weights matter (WLS
+                # estimates its own scale), so the variance units cancel; a point with no
+                # usable variance keeps the plain (1−θ̂)² weight.
+                w = np.exp(2.0 * np.maximum(res.fittedvalues.to_numpy(), phi_limit))
+                var = fit_df["theta_var"].to_numpy()
+                df = fit_df["theta_df"].to_numpy()
+                vmod = (_d0 * _s0 + df * var) / (_d0 + df)
+                w = w / np.where(np.isfinite(vmod) & (vmod > 0), vmod, 1.0)
                 res = smf.wls(formula, data=fit_df, weights=w).fit()
         except Exception as exc:  # noqa: BLE001 - statsmodels raises various
             _LOGGER.debug("linear fit failed for %s/%s: %s", exp, prot, exc)
