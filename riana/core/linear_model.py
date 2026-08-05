@@ -330,13 +330,18 @@ def fit_linear_deltak(
                 # 1/Ṽar(θ): the collapse's ``theta_var`` eBayes-moderated toward the
                 # pooled ``s0²`` by the robust-fitFDist ``d0`` (per-point df = ``theta_df``),
                 # Ṽar = (d0·s0² + df·var)/(d0 + df). Only RELATIVE weights matter (WLS
-                # estimates its own scale), so the variance units cancel; a point with no
-                # usable variance keeps the plain (1−θ̂)² weight.
+                # estimates its own scale), so the variance units cancel. A point with no
+                # usable per-point variance (``theta_var`` NaN) falls back to the pooled
+                # prior ``s0²`` (``_s0``) — the df→0 limit of the moderation formula — so it
+                # sits on the SAME scale as the moderated points and keeps the plain
+                # (1−θ̂)² weight. (A constant 1.0 divisor there would be ~1/s0² ≈ 100–1000×
+                # lighter than its finite-variance siblings, silently dropping a real θ
+                # measurement from the joint fit.)
                 w = np.exp(2.0 * np.maximum(res.fittedvalues.to_numpy(), phi_limit))
                 var = fit_df["theta_var"].to_numpy()
                 df = fit_df["theta_df"].to_numpy()
                 vmod = (_d0 * _s0 + df * var) / (_d0 + df)
-                w = w / np.where(np.isfinite(vmod) & (vmod > 0), vmod, 1.0)
+                w = w / np.where(np.isfinite(vmod) & (vmod > 0), vmod, _s0)
                 res = smf.wls(formula, data=fit_df, weights=w).fit()
         except Exception as exc:  # noqa: BLE001 - statsmodels raises various
             _LOGGER.debug("linear fit failed for %s/%s: %s", exp, prot, exc)

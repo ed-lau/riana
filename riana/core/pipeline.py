@@ -792,6 +792,17 @@ def _merge_fractions_anchor(
     return work.loc[keep, rdf.columns].reset_index(drop=True)
 
 
+def _sum_min1(s: pd.Series) -> float:
+    """A sum that keeps an all-NaN group NaN (``min_count=1``) instead of folding it
+    to ``0.0``. Under ``--iso auto`` a channel a short peptidoform never extracted is
+    NaN-padded ("not a channel", distinct from an integrated ``0.0``); plain ``sum``
+    (``min_count=0``) would fabricate an observed-zero channel that the FS solver then
+    scores, biasing FS/k low. Fixed-iso mode is unaffected — its empty channels are a
+    real ``0.0`` (present), and a partially-padded channel still sums to its seen value.
+    """
+    return s.sum(min_count=1)
+
+
 def _merge_fractions_sum(
     rdf: pd.DataFrame, iso_cols: list[str], point_keys: list[str]
 ) -> pd.DataFrame:
@@ -816,7 +827,11 @@ def _merge_fractions_sum(
         work["__rowtot"] = row_tot
         work["__wnum_apex_snr"] = work["apex_snr"].to_numpy(dtype=float) * row_tot
 
-    agg: dict[str, object] = {c: "sum" for c in iso_cols}
+    # NaN-preserving sum for the iso channels (see _sum_min1): an all-NaN --iso auto
+    # pad must stay NaN, not become a fabricated observed-0.0. The weighted-numerator
+    # helpers below stay plain "sum" — their result is divided by the (now NaN)
+    # channel sum and guarded by `denom > 0`, so an all-NaN channel yields NaN anyway.
+    agg: dict[str, object] = {c: _sum_min1 for c in iso_cols}
     agg.update({h: "sum" for h in wnum.values()})
     if has_snr:
         agg["__rowtot"] = "sum"

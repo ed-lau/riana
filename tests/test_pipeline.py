@@ -290,6 +290,24 @@ def test_merge_fractions_sum_intensity_weights_mass_columns():
     assert r["n_scans"] == 8                                       # max across frac
 
 
+def test_merge_fractions_sum_preserves_all_nan_iso_pad_as_nan():
+    """--iso auto NaN-pads a channel a short peptidoform never extracted ("not a
+    channel", distinct from an integrated 0.0). The sum collapse must keep an all-NaN
+    channel NaN, not fold it to a fabricated 0.0 that the FS solver would score as an
+    observed-zero channel (biasing FS/k low). A partially-padded channel still sums to
+    its seen value."""
+    a = _frac_frame(iso0=1000.0, obs_mz=500.0, fraction=1)
+    b = _frac_frame(iso0=3000.0, obs_mz=500.0, fraction=2)
+    a["iso2"], b["iso2"] = np.nan, np.nan       # adaptive pad: neither fraction saw it
+    a["iso3"], b["iso3"] = 200.0, np.nan        # one fraction saw it, one padded
+    merged = _merge_fractions([a, b], policy="sum")
+    assert len(merged) == 1
+    r = merged.iloc[0]
+    assert r["iso0"] == pytest.approx(4000.0)   # real channels still sum
+    assert pd.isna(r["iso2"])                    # all-NaN pad stays NaN (not 0.0)
+    assert r["iso3"] == pytest.approx(200.0)     # partial pad -> the seen value
+
+
 def test_merge_fractions_anchor_keeps_highest_intensity_fraction():
     """`anchor` keeps only the single highest-total-intensity fraction's row."""
     a = _frac_frame(iso0=1000.0, obs_mz=500.0, fraction=1)

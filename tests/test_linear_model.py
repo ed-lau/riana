@@ -234,6 +234,26 @@ def test_wls_var_reweights_under_heteroscedastic_variance():
     assert a.corr(b) > 0.9                    # but the two track each other
 
 
+def test_wls_var_missing_variance_falls_back_to_prior_not_near_zero_weight():
+    """A point whose per-point variance is missing (``theta_var`` NaN) must fall back
+    to the pooled prior ``s0²`` — the same scale as its finite-variance siblings — not
+    to a constant 1.0 that would be ~1/s0² lighter and silently drop it. With every
+    finite variance equal, ``s0² ≈`` that constant, so blanking some points' variance
+    to NaN must leave k UNCHANGED (they still weigh in). Regression for the old 1.0
+    fallback, which near-zero-weighted the blanked points and shifted k."""
+    pts = pd.DataFrame(_curve("e", "P1", "control", 0.10, [1, 2, 4, 8, 12],
+                              noise=0.03, seed=11))
+    pts["theta_df"] = 8.0
+    all_finite = pts.assign(theta_var=4e-4)            # uniform variance -> wls-var ≡ wls
+    some_nan = all_finite.copy()
+    some_nan.loc[some_nan["labeling_time"] >= 8, "theta_var"] = np.nan  # blank late points
+    k_all = fit_linear_deltak(all_finite, weights="wls-var")["k_deg"].iloc[0]
+    k_nan = fit_linear_deltak(some_nan, weights="wls-var")["k_deg"].iloc[0]
+    # Fix: blanked points moderate to the (equal) prior scale -> identical k. The old
+    # 1.0 fallback would have dropped t≥8 and moved k well outside this tolerance.
+    np.testing.assert_allclose(k_nan, k_all, rtol=1e-6)
+
+
 def test_fit_fdist_fallback_on_tiny_sample():
     from riana.core.linear_model import _fit_fdist
     d0, s0 = _fit_fdist(np.array([1e-3, 2e-3]), np.array([6.0, 6.0]), d0_fallback=2.0)
