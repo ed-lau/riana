@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Rollup curation & weighting correctness fixes — 2026-08-03
+
+A code audit of the post-1.1.0 additions surfaced one results-affecting rollup defect and
+two narrower weighting/collapse bugs on opt-in paths.
+
+#### Fixed
+
+- **Rollup curation gates are now per-condition (RESULTS-AFFECTING for multi-condition
+  rollups).** The `--min-r2` (default 0.8), single-timepoint `k_cv`, and `--min-fit-points`
+  admission gates reduced their keep-set to bare `concat` (sequence+charge, identical across
+  conditions) and filtered with `.isin`, so a peptide that passed the gate in **one**
+  condition was admitted in **every** condition — dragging its bad-condition fit rows into
+  the other conditions' protein k and into the two-condition `linear simple` Δk contrast (an
+  anti-conservative OR-across-conditions union). Admission is now keyed on the full per-curve
+  key `(experiment, condition, concat)`, so a peptide is dropped in exactly the conditions
+  where its own fit fails. `--min-spep` is unchanged (Spep is condition-invariant by
+  construction). Single-condition rollups are unaffected. New regression test
+  `test_rollup_gates_are_per_condition_not_leaked_across_conditions`.
+
+#### Added
+
+- **`rollup --peptide-admission {auto,own,any,all}`** (default `auto`) — makes the
+  cross-condition admission policy explicit and auditable. `auto` picks per-model: **`all`
+  for `--model "linear simple"`** (the Δk path — a two-condition contrast resting on
+  *different* peptides per condition confounds Δk with peptide identity, so the paired
+  common-support basis is the right default) and **`own` for the kinetic models**. `own` is
+  the per-condition fix above (each condition uses only peptides that pass the gate there);
+  `any` restores the old passed-in-one⇒kept-in-all behaviour (opt-in, for back-comparison);
+  `all` keeps a peptide only if it passes the gate in **every** condition it appears in
+  (same peptides on both sides of the contrast, at the cost of yield). Recorded in the
+  rollup provenance header. On `runs/lve_atr_clean` (control-vs-atrium, default gate), ~22%
+  of both-condition peptides pass in only one condition; `all` vs `own` shifts the Δk set by
+  ~18 proteins with a 0.90 Δk correlation (bulk stable, margins cleaned).
+- **`--iso auto` fraction collapse no longer fabricates observed zeros.** The multi-fraction
+  sum collapse aggregated iso channels with pandas `sum` (`min_count=0`), so an all-NaN
+  adaptive-N_ISO channel pad (a channel a short peptidoform never extracted — "not a channel",
+  distinct from an integrated `0.0`) collapsed to `0.0`, which the FS solver then scored as an
+  observed-zero channel and biased FS/k low. The iso-channel sum now uses `min_count=1`
+  (NaN-preserving); fixed-iso mode is unaffected (its empty channels are a real `0.0`).
+- **`--linear-weights wls-var`: a point with no per-point variance now moderates to the
+  prior.** A collapsed cell lacking a usable prediction-interval σ (`theta_var` NaN) got a
+  constant `1.0` weight divisor while its finite-variance siblings got `1/Ṽar ≈ 1/s0²`
+  (~100–1000× heavier), silently near-excluding a real θ measurement from the joint fit. The
+  missing-variance fallback is now the pooled prior `s0²` (the df→0 limit of the eBayes
+  moderation), putting the point on the same scale as its siblings.
+
 ### Single-timepoint fits — direct k solve + fit-step detection — 2026-07-21
 
 Single-timepoint data (TMT, dimethyl, any one-labeling-time run) is a flagship 1.2.0

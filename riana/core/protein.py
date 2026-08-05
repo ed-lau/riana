@@ -76,7 +76,9 @@ from riana.core import models
 from riana.core.fitting import _solve_k_single_t
 from riana.exceptions import DataError
 from riana.progress import iter_progress
-from riana.records import GROUP_KEY_COLUMNS, PROTEIN_KEY_COLUMNS
+from riana.records import (
+    CURVE_KEY_COLUMNS, GROUP_KEY_COLUMNS, PROTEIN_KEY_COLUMNS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,6 +110,41 @@ _METHODS = ("weighted", "pooled")
 #: recombination so the stages can't drift. (Distinct from ``PROTEIN_COLUMNS``
 #: below, which is the *output* schema.)
 _GROUP_KEYS = list(PROTEIN_KEY_COLUMNS)
+#: The per-curve key — ``(experiment, condition, concat)``. The peptide fit stats
+#: that drive curation (R², k_cv, n_points) are per-curve quantities from
+#: independent per-condition fits, so the admission gates filter on this composite
+#: key, NOT on bare ``concat`` (sequence+charge, identical across conditions):
+#: filtering on ``concat`` alone would admit a peptide in *every* condition once it
+#: passes the gate in *one*, leaking a bad-condition curve into the per-condition
+#: rollup and the two-condition Δk contrast.
+_CURVE_KEYS = list(CURVE_KEY_COLUMNS)
+#: Cross-condition peptide admission policies for the curation gates. A gate scores each
+#: ``(experiment, condition, concat)`` CURVE on its own per-condition fit stats; this
+#: decides how a peptide's per-condition pass/fail maps across the conditions it appears in
+#: (peptide identity = ``(experiment, concat)``; ``condition`` is the mapped axis):
+#:   ``"own"`` — keep a curve iff it passed in its OWN condition (default; per-condition,
+#:      so each condition's protein k / Δk term rests only on peptides that fit well there).
+#:   ``"any"`` — keep the peptide in ALL conditions it appears in if it passed in ANY one
+#:      (the pre-2026-08 behaviour; anti-conservative — a good-in-one fit drags its
+#:      bad-in-another curve into the contrast).
+#:   ``"all"`` — keep the peptide only if it passed in EVERY condition it appears in
+#:      (paired / common-support; the cleanest Δk basis — same peptides both sides — at
+#:      the cost of yield). Note a Δk under ``"own"`` can rest on DIFFERENT peptides per
+#:      condition, which confounds the contrast with peptide identity; ``"all"`` removes
+#:      that confound.
+_ADMISSION_POLICIES = ("own", "any", "all")
+#: Accepted CLI/API inputs: the three resolved policies plus ``"auto"`` (the default),
+#: which picks per-model — ``"all"`` for ``linear simple`` (the Δk path, where a
+#: different-peptides-per-condition contrast is a real confound) and ``"own"`` for the
+#: kinetic side-by-side models.
+_ADMISSION_INPUTS = ("auto",) + _ADMISSION_POLICIES
+
+
+def _resolve_admission(policy: str, model: str) -> str:
+    """Resolve ``"auto"`` to the model-appropriate policy; pass the others through."""
+    if policy == "auto":
+        return "all" if model == LINEAR_MODEL else "own"
+    return policy
 
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
 #: the selected ``method``; ``peptide_median_k`` is the near-free median of the
@@ -154,6 +191,7 @@ def rollup_proteins(
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
     min_fit_points: int | None = None,
+    peptide_admission: str = "auto",
     workers: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
@@ -205,6 +243,15 @@ def rollup_proteins(
             labeling time) and **off otherwise**. For single-timepoint data R² is
             degenerate, so curation is this replicate floor + the ``k_cv`` gate
             (``k_cv_max``), with the R²/rescue machinery bypassed.
+        peptide_admission: how a peptide's per-condition gate result maps across the
+            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"auto"`` (default)
+            → ``"all"`` for ``model="linear simple"`` (the Δk path, where a
+            different-peptides-per-condition contrast is a real confound) and ``"own"``
+            for the kinetic models. ``"own"`` — strictly per-condition. ``"any"`` —
+            passed-in-one ⇒ kept-in-all (the anti-conservative pre-2026-08 behaviour).
+            ``"all"`` — kept only if it passed in every condition it appears in (paired /
+            common-support, the cleanest Δk basis). Only bites a multi-condition rollup;
+            single-condition is unaffected.
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
             collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
             pseudoreplication-naive).
@@ -241,6 +288,11 @@ def rollup_proteins(
     if method not in _METHODS:
         raise DataError(
             f"method must be one of {list(_METHODS)}, got {method!r}")
+    if peptide_admission not in _ADMISSION_INPUTS:
+        raise DataError(
+            f"peptide_admission must be one of {list(_ADMISSION_INPUTS)}, "
+            f"got {peptide_admission!r}")
+    peptide_admission = _resolve_admission(peptide_admission, model)
     kk = dict(a_0=0.0, a_max=1.0, **dict(kinetic_kwargs or {}))
 
     peptides = _ensure_group_cols(peptides)
@@ -286,28 +338,31 @@ def rollup_proteins(
             max(min_fit_points, 1), k_cv_max,
         )
 
-    # Peptide-level replicate gate: keep peptidoforms fit on >= min_fit_points points
-    # (distinct (biorep, timepoint) fit points) — the dominant curation lever for
-    # single-timepoint data, where n_points IS the biological-replicate count.
+    # Curation gates. Each scores a peptide's per-condition CURVE (see _CURVE_KEYS) on
+    # its own stats; a curve must pass EVERY active gate (intersection). Gates:
+    #   min_fit_points — replicate floor (per-curve n_points), dominant for single-tp.
+    #   single-timepoint: k_cv only (R² degenerate). multi-timepoint: R² gate + its
+    #     flat-curve k_cv rescue (off by default — min_r2 is None).
+    gate_sets: list[set] = []
     if min_fit_points and min_fit_points > 1:
         if "n_points" not in peptides.columns:
             raise DataError(
                 "peptides input is missing 'n_points' (needed for --min-fit-points).")
-        keep = peptides.loc[peptides["n_points"] >= min_fit_points, "concat"].unique()
-        peptides = peptides[peptides["concat"].isin(keep)].copy()
-        fractions = fractions[fractions["concat"].isin(keep)].copy()
-
-    # Curation gate. Single-timepoint: k_cv only (R² bypassed). Multi-timepoint: the
-    # R² gate + its flat-curve k_cv rescue, off by default (min_r2 is None).
+        gate_sets.append(
+            _admitted_curves(peptides, peptides["n_points"] >= min_fit_points))
     if single_tp:
         if k_cv_max is not None and k_cv_max > 0.0:
-            admitted = _k_cv_admitted(peptides, k_cv_max)
-            peptides = peptides[peptides["concat"].isin(admitted)].copy()
-            fractions = fractions[fractions["concat"].isin(admitted)].copy()
+            gate_sets.append(_k_cv_admitted(peptides, k_cv_max))
     elif min_r2 is not None:
-        admitted = _r2_admitted(peptides, min_r2, k_cv_max, rescue_r2)
-        peptides = peptides[peptides["concat"].isin(admitted)].copy()
-        fractions = fractions[fractions["concat"].isin(admitted)].copy()
+        gate_sets.append(_r2_admitted(peptides, min_r2, k_cv_max, rescue_r2))
+
+    if gate_sets:
+        # Curves passing every active gate, then mapped across conditions by the
+        # --peptide-admission policy (default "own" = strictly per-condition).
+        own = set.intersection(*gate_sets)
+        admitted = _apply_admission_policy(peptides, own, peptide_admission)
+        peptides = _filter_by_curve(peptides, admitted)
+        fractions = _filter_by_curve(fractions, admitted)
 
     stats = _peptide_stats(peptides, min_peptides=min_peptides)
     # Per-protein data-point census from the (filtered) fraction points: how many
@@ -543,9 +598,57 @@ def _ensure_group_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _admitted_curves(peptides: pd.DataFrame, keep_mask) -> set:
+    """The ``(experiment, condition, concat)`` keys of the kept peptide rows.
+
+    ``keep_mask`` is a row-aligned boolean (array or Series) over ``peptides``.
+    Admission is per-curve because the stats it is derived from (R², k_cv,
+    n_points) are per-condition — see :data:`_CURVE_KEYS`.
+    """
+    return set(
+        peptides.loc[keep_mask, _CURVE_KEYS].itertuples(index=False, name=None)
+    )
+
+
+def _filter_by_curve(df: pd.DataFrame, admitted: set) -> pd.DataFrame:
+    """Keep the rows of ``df`` whose ``(experiment, condition, concat)`` is admitted.
+
+    Works for both the peptide table and the fraction points, which each carry the
+    full curve key, so a peptide is dropped in exactly the conditions where its own
+    fit failed the gate (not unioned across conditions).
+    """
+    idx = pd.MultiIndex.from_frame(df[_CURVE_KEYS])
+    return df[idx.isin(admitted)].copy()
+
+
+def _apply_admission_policy(peptides: pd.DataFrame, own: set, policy: str) -> set:
+    """Map the per-curve ``own``-admitted set across conditions per :data:`_ADMISSION_POLICIES`.
+
+    ``own`` is the set of ``(experiment, condition, concat)`` curves that passed the gate
+    on their own stats. Peptide identity is ``(experiment, concat)``; ``condition`` is the
+    axis the gate result is mapped over. Returns the final admitted curve-key set.
+    """
+    if policy == "own":
+        return own
+    appear: dict[tuple, set] = {}   # (experiment, concat) -> conditions it appears in
+    for exp, cond, concat in peptides[_CURVE_KEYS].itertuples(index=False, name=None):
+        appear.setdefault((exp, concat), set()).add(cond)
+    passed: dict[tuple, set] = {}   # (experiment, concat) -> conditions it passed the gate in
+    for exp, cond, concat in own:
+        passed.setdefault((exp, concat), set()).add(cond)
+    out: set = set()
+    for pep, conds in appear.items():
+        ok = passed.get(pep, set())
+        keep = bool(ok) if policy == "any" else (ok >= conds)  # any: >=1 cond; all: every cond
+        if keep:
+            exp, concat = pep
+            out.update((exp, cond, concat) for cond in conds)
+    return out
+
+
 def _k_cv_admitted(peptides: pd.DataFrame, k_cv_max: float) -> set:
-    """Concats whose rate-constant relative uncertainty ``k_cv < k_cv_max`` — the
-    **single-timepoint** curation gate. At one labeling timepoint R² is degenerate,
+    """Per-curve keys (:data:`_CURVE_KEYS`) whose rate-constant relative uncertainty
+    ``k_cv < k_cv_max`` — the **single-timepoint** curation gate. At one labeling timepoint R² is degenerate,
     so it is bypassed and admission rides on ``k_cv = (ci_hi − ci_lo) / (2·|k|)``
     alone (matches :func:`riana.core.fitting._k_cv`). A single-point fit has ``k_cv``
     NaN (undefined uncertainty — no replication) and a k≈0 rail-hit gives NaN/inf, so
@@ -560,7 +663,7 @@ def _k_cv_admitted(peptides: pd.DataFrame, k_cv_max: float) -> set:
     hi = peptides["ci_hi"].to_numpy(dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
         k_cv = (hi - lo) / (2.0 * np.abs(k))
-    return set(peptides.loc[k_cv < k_cv_max, "concat"])
+    return _admitted_curves(peptides, k_cv < k_cv_max)
 
 
 def _r2_admitted(
@@ -569,7 +672,7 @@ def _r2_admitted(
     k_cv_max: float,
     rescue_r2: float,
 ) -> set:
-    """Concats passing the R² admission gate (with a relative-uncertainty rescue).
+    """Per-curve keys (:data:`_CURVE_KEYS`) passing the R² admission gate (with a relative-uncertainty rescue).
 
     Keep a peptide if ``R² ≥ min_r2`` (the primary goodness-of-fit gate), OR — to
     rescue well-measured peptides whose R² is low only because the curve is flat
@@ -600,7 +703,7 @@ def _r2_admitted(
         with np.errstate(divide="ignore", invalid="ignore"):
             k_cv = (hi - lo) / (2.0 * np.abs(k))   # matches fitting._k_cv; NaN/inf at k≈0 fail <
         keep = keep | ((r2 >= rescue_r2) & (k_cv < k_cv_max))
-    return set(peptides.loc[keep, "concat"])
+    return _admitted_curves(peptides, keep)
 
 
 def _group_rng(random_state: int, key) -> np.random.Generator:

@@ -244,6 +244,20 @@ class ProteinTab(QWidget):
             "validated; the exact value barely matters above the negative-R² band.")
         form.addRow("Rescue R² floor", self.rescue_r2_spin)
 
+        # Cross-condition peptide admission (only bites a multi-condition rollup).
+        self.admission_combo = QComboBox()
+        self.admission_combo.addItems(["auto", "own", "any", "all"])
+        self.admission_combo.setToolTip(
+            "How a peptide's per-condition curation result maps across conditions "
+            "(multi-condition rollups only). 'auto' (default): 'all' for the "
+            "'linear simple' Δk model, 'own' for the kinetic models. 'own': "
+            "per-condition — each condition's k / Δk term uses only peptides that pass "
+            "the gate THERE. 'any': passed-in-one ⇒ kept-in-all (anti-conservative). "
+            "'all': kept only if it passes in EVERY condition it appears in (paired / "
+            "common-support — the cleanest Δk basis, at the cost of yield). 'own' Δk "
+            "can rest on different peptides per condition, a confound 'all' removes.")
+        form.addRow("Peptide admission", self.admission_combo)
+
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
         self.workers_spin.setValue(1)
@@ -402,6 +416,7 @@ class ProteinTab(QWidget):
             "min_r2": (r2 if r2 > 0.0 else None),   # 0 = off
             "k_cv_max": float(self.k_cv_spin.value()),
             "rescue_r2": float(self.rescue_r2_spin.value()),
+            "peptide_admission": self.admission_combo.currentText(),
             "workers": int(self.workers_spin.value()),
             "phi_limit": float(self.phi_limit_spin.value()),
             "reference_condition": self.reference_combo.currentText().strip() or None,
@@ -472,7 +487,7 @@ class ProteinTab(QWidget):
                 executor, run_rollup, str(fit_dir), p["model"],
                 p["kp"], p["kr"], p["rp"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_fit_points"], p["min_r2"],
-                p["k_cv_max"], p["rescue_r2"], p["method"],
+                p["k_cv_max"], p["rescue_r2"], p["peptide_admission"], p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
                 p["test_condition"],
                 progress_q,
@@ -535,7 +550,7 @@ class ProteinTab(QWidget):
             {k: params[k] for k in (
                 "model", "method", "parsimony", "kp", "kr", "rp",
                 "min_peptides", "min_points", "min_r2", "k_cv_max", "rescue_r2",
-                "phi_limit", "reference_condition")},
+                "peptide_admission", "phi_limit", "reference_condition")},
             id_source=params["manifest"],
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},

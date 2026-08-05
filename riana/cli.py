@@ -843,6 +843,17 @@ def rollup(
         "(detected from one distinct labeling time — R2 is degenerate there, so "
         "curation rides on this replicate floor + --k-cv, with R2/rescue bypassed), "
         "off otherwise. Set 3+ to require more replicates, or 1 to disable."),
+    peptide_admission: str = typer.Option(
+        "auto", "--peptide-admission", metavar="POLICY",
+        help="How a peptide's per-condition curation result maps across conditions in a "
+        "MULTI-condition rollup (single-condition is unaffected). 'auto' (default) → "
+        "'all' for `--model \"linear simple\"` (the Δk path, where a "
+        "different-peptides-per-condition contrast is a real confound) and 'own' for the "
+        "kinetic models. 'own': strictly per-condition — each condition's k / Δk term "
+        "uses only peptides that pass the gate THERE. 'any': passed-in-one ⇒ kept-in-all "
+        "(anti-conservative; the pre-2026-08 behaviour). 'all': kept only if it passes in "
+        "EVERY condition it appears in (paired / common-support — the cleanest Δk basis, "
+        "same peptides both sides, at the cost of yield)."),
     min_spep: Optional[int] = typer.Option(
         None, "--min-spep", metavar="N",
         help="Optional Spep (labelling-site) admission gate before rollup — drop "
@@ -969,7 +980,8 @@ def rollup(
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
             k_cv_max=float(k_cv), rescue_r2=float(rescue_r2),
-            min_fit_points=min_fit_points, workers=int(workers),
+            min_fit_points=min_fit_points, peptide_admission=str(peptide_admission),
+            workers=int(workers),
             phi_limit=float(phi_limit), linear_weights=str(linear_weights),
             reference_condition=reference_condition,
             test_condition=test_condition,
@@ -983,7 +995,7 @@ def rollup(
     provenance = make_provenance(
         {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
          "min_peptides": min_peptides, "min_points": min_points,
-         "min_fit_points": min_fit_points,
+         "min_fit_points": min_fit_points, "peptide_admission": peptide_admission,
          "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
          "phi_limit": phi_limit, "linear_weights": linear_weights,
          "reference_condition": reference_condition,

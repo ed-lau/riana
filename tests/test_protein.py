@@ -215,11 +215,14 @@ def test_k_cv_admitted_single_timepoint_gate():
     """The single-timepoint k_cv gate admits k_cv < threshold and rejects a wide CI
     or a NaN CI (single-point / non-converged)."""
     pep = pd.DataFrame([
-        {"concat": "A", "k_deg": 0.02, "ci_lo": 0.019, "ci_hi": 0.021},  # k_cv=0.05 keep
-        {"concat": "B", "k_deg": 0.02, "ci_lo": 0.005, "ci_hi": 0.05},   # k_cv=1.1 reject
-        {"concat": "C", "k_deg": 0.02, "ci_lo": np.nan, "ci_hi": np.nan},  # NaN reject
+        {"experiment": "e", "condition": "c",
+         "concat": "A", "k_deg": 0.02, "ci_lo": 0.019, "ci_hi": 0.021},  # k_cv=0.05 keep
+        {"experiment": "e", "condition": "c",
+         "concat": "B", "k_deg": 0.02, "ci_lo": 0.005, "ci_hi": 0.05},   # k_cv=1.1 reject
+        {"experiment": "e", "condition": "c",
+         "concat": "C", "k_deg": 0.02, "ci_lo": np.nan, "ci_hi": np.nan},  # NaN reject
     ])
-    assert _k_cv_admitted(pep, 0.2) == {"A"}
+    assert _k_cv_admitted(pep, 0.2) == {("e", "c", "A")}
 
 
 def test_rollup_single_timepoint_auto_detects_and_curates_on_replicates_and_kcv():
@@ -380,6 +383,8 @@ def test_r2_admit_gate_rescues_tight_ci_and_floors_railed_fits():
     #   railed R²=-0.5 below floor (degenerate k≈0, spuriously tight k_cv=0.10)
     #          -> drop; the floor is what excludes it.
     pep = pd.DataFrame({
+        "experiment": ["e"] * 4,
+        "condition": ["c"] * 4,
         "concat": ["good_2", "noisy_2", "slow_2", "railed_2"],
         "R_squared": [0.95, 0.40, 0.65, -0.50],
         "k_deg": [0.50, 0.50, 0.010, 0.001],
@@ -387,18 +392,20 @@ def test_r2_admit_gate_rescues_tight_ci_and_floors_railed_fits():
         "ci_hi": [0.52, 0.80, 0.011, 0.0011],
     })
     admitted = _r2_admitted(pep, min_r2=0.8, k_cv_max=0.2, rescue_r2=0.6)
-    assert admitted == {"good_2", "slow_2"}
+    assert admitted == {("e", "c", "good_2"), ("e", "c", "slow_2")}
 
 
 def test_r2_admit_gate_disables_rescue_when_k_cv_max_not_positive():
     # k_cv_max <= 0 turns the rescue off -> only the primary R² ≥ min_r2 survives
     # (and the CI columns aren't even required).
     pep = pd.DataFrame({
+        "experiment": ["e", "e"],
+        "condition": ["c", "c"],
         "concat": ["good_2", "slow_2"],
         "R_squared": [0.95, 0.65],
         "k_deg": [0.50, 0.010],
     })
-    assert _r2_admitted(pep, min_r2=0.8, k_cv_max=0.0, rescue_r2=0.6) == {"good_2"}
+    assert _r2_admitted(pep, min_r2=0.8, k_cv_max=0.0, rescue_r2=0.6) == {("e", "c", "good_2")}
 
 
 def test_r2_gate_off_by_default_keeps_everything():
@@ -413,6 +420,103 @@ def test_r2_gate_off_by_default_keeps_everything():
     assert out_off.loc["P0", "n_peptides"] == 3
     out_on = rollup_proteins(pep, frac, min_r2=0.8, n_boot=20).set_index("protein")
     assert out_on.loc["P0", "n_peptides"] == 2  # the R²=0.2 peptide gated out
+
+
+def test_rollup_gates_are_per_condition_not_leaked_across_conditions():
+    """A curation gate is keyed on (experiment, condition, concat): a peptide that
+    clears the R² gate in one condition but FAILS it in another is dropped only in
+    the failing condition — its good-condition pass must not drag its bad-condition
+    rows into the other condition's rollup (which would corrupt the per-condition k
+    and the two-condition Δk contrast). Regression for the condition-blind ``.isin``
+    on bare ``concat`` (which admitted a peptide in every condition once it passed
+    in one)."""
+    k = 0.1
+    times = (0, 1, 2, 3, 4, 6, 8, 10)
+    # PEP passes in ctrl (R²=0.95) but fails in drug (R²=0.30, below the 0.6 rescue
+    # floor even at tight k_cv); QEP passes in both.
+    r2_by = {("PEP_2", "ctrl"): 0.95, ("PEP_2", "drug"): 0.30,
+             ("QEP_2", "ctrl"): 0.95, ("QEP_2", "drug"): 0.95}
+    pep_rows, frac_rows = [], []
+    for (concat, cond), r2 in r2_by.items():
+        pep_rows.append({"concat": concat, "protein id": "sp|P0|X", "condition": cond,
+                         "k_deg": k, "R_squared": r2,
+                         "ci_lo": k * 0.98, "ci_hi": k * 1.02})   # k_cv=0.02 (tight)
+        for t in times:
+            theta = 1.0 - np.exp(-k * t)
+            frac_rows.append({"concat": concat, "protein id": "sp|P0|X",
+                              "condition": cond, "biological_replicate": 1,
+                              "labeling_time": float(t), "fs": theta,
+                              "fs_lower": theta - 0.01, "fs_upper": theta + 0.01})
+    pep, frac = pd.DataFrame(pep_rows), pd.DataFrame(frac_rows)
+    out = rollup_proteins(pep, frac, min_r2=0.8, min_peptides=1, min_points=3,
+                          n_boot=20).set_index("condition")
+    assert int(out.loc["ctrl", "n_peptides"]) == 2   # both peptides pass in ctrl
+    assert int(out.loc["drug", "n_peptides"]) == 1   # only QEP; PEP must NOT leak in
+
+
+def _two_condition_gate_frames():
+    """PEP passes the R² gate in ctrl only (0.95 vs 0.30); QEP passes in both."""
+    k, times = 0.1, (0, 1, 2, 3, 4, 6, 8, 10)
+    r2_by = {("PEP_2", "ctrl"): 0.95, ("PEP_2", "drug"): 0.30,
+             ("QEP_2", "ctrl"): 0.95, ("QEP_2", "drug"): 0.95}
+    pep_rows, frac_rows = [], []
+    for (concat, cond), r2 in r2_by.items():
+        pep_rows.append({"concat": concat, "protein id": "sp|P0|X", "condition": cond,
+                         "k_deg": k, "R_squared": r2, "ci_lo": k * 0.98, "ci_hi": k * 1.02})
+        for t in times:
+            theta = 1.0 - np.exp(-k * t)
+            frac_rows.append({"concat": concat, "protein id": "sp|P0|X", "condition": cond,
+                              "biological_replicate": 1, "labeling_time": float(t),
+                              "fs": theta, "fs_lower": theta - 0.01, "fs_upper": theta + 0.01})
+    return pd.DataFrame(pep_rows), pd.DataFrame(frac_rows)
+
+
+def test_peptide_admission_policies_any_own_all():
+    """--peptide-admission maps a peptide's per-condition gate result across conditions:
+    'own' = strictly per-condition, 'any' = passed-in-one kept-in-all (the old leak, now
+    opt-in), 'all' = kept only if it passes in every condition it appears in."""
+    pep, frac = _two_condition_gate_frames()
+
+    def n_by_cond(policy):
+        out = rollup_proteins(pep, frac, min_r2=0.8, min_peptides=1, min_points=3,
+                              n_boot=20, peptide_admission=policy).set_index("condition")
+        return {c: int(out.loc[c, "n_peptides"]) for c in ("ctrl", "drug")}
+
+    assert n_by_cond("own") == {"ctrl": 2, "drug": 1}   # PEP kept only where it passes
+    assert n_by_cond("any") == {"ctrl": 2, "drug": 2}   # PEP passed ctrl -> kept in both
+    assert n_by_cond("all") == {"ctrl": 1, "drug": 1}   # PEP fails drug -> dropped in both
+
+
+def test_unknown_peptide_admission_raises():
+    pep, frac = _two_condition_gate_frames()
+    with pytest.raises(DataError, match="peptide_admission"):
+        rollup_proteins(pep, frac, min_r2=0.8, peptide_admission="bogus")
+
+
+def test_resolve_admission_auto_per_model():
+    """'auto' resolves to 'all' for the linear-simple Δk model, 'own' for the kinetic
+    models; explicit policies pass through unchanged."""
+    from riana.core.protein import _resolve_admission
+    assert _resolve_admission("auto", "linear simple") == "all"
+    assert _resolve_admission("auto", "simple") == "own"
+    assert _resolve_admission("auto", "guan") == "own"
+    for p in ("own", "any", "all"):
+        assert _resolve_admission(p, "linear simple") == p
+        assert _resolve_admission(p, "simple") == p
+
+
+def test_peptide_admission_auto_defaults_all_for_linear_simple():
+    """model='linear simple' + default 'auto' resolves to 'all' (paired): a peptide that
+    fails the gate in one condition is dropped from BOTH, so the Δk basis is the same
+    peptides on both sides. Explicit 'own' instead keeps it on its passing side."""
+    pep, frac = _two_condition_gate_frames()   # PEP passes ctrl only; QEP passes both
+    auto = rollup_proteins(pep, frac, model="linear simple", reference_condition="ctrl",
+                           min_r2=0.8, min_peptides=1).set_index("condition")
+    own = rollup_proteins(pep, frac, model="linear simple", reference_condition="ctrl",
+                          min_r2=0.8, min_peptides=1,
+                          peptide_admission="own").set_index("condition")
+    assert int(auto.loc["ctrl", "n_peptides"]) == 1   # auto->all: PEP dropped (fails drug)
+    assert int(own.loc["ctrl", "n_peptides"]) == 2    # own: PEP kept where it passes
 
 
 def test_rollup_workers_give_identical_result():
