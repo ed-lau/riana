@@ -55,6 +55,22 @@ two narrower weighting/collapse bugs on opt-in paths.
   missing-variance fallback is now the pooled prior `s0²` (the df→0 limit of the eBayes
   moderation), putting the point on the same scale as its siblings.
 
+### `linear simple` Δk — opt-in per-point Var(θ) weighting (`wls-var`) — 2026-07-30
+
+#### Added
+
+- **`riana rollup --linear-weights wls-var`** — an opt-in refinement of the WLS Δk fit that
+  multiplies the delta-method transform weight `(1−θ̂)²` by the per-point precision `1/Var̂(θ)`,
+  nudging the estimator toward the MLE. The weighted rollup collapse now surfaces the per-cell
+  `Var(θ)` and its Satterthwaite df as two new columns — **`fs_var` / `fs_df`** — in
+  `riana_rollup_fractions.txt`; `fit_linear_deltak` moderates `Var̂(θ)` eBayes-style toward a
+  pooled `s0²` with a robust (Winsorized) fitFDist `d0` (fixed-2 fallback), so a noisy per-point
+  variance cannot dominate. Falls back to `wls` when the points carry no `theta_var`; `wls`
+  (default) and `ols` are byte-identical to before. Improves biological-replicate consistency
+  ~10% on rich 9–12-timepoint curves and ~2% on sparse 3-timepoint DIA (the benefit scales with
+  curve richness), so it stays opt-in — single-peptide proteins use pooled pseudoreplicates and
+  see no gain. See `reports/2026-07-24_linear_wls_per_point_var.md`.
+
 ### Single-timepoint fits — direct k solve + fit-step detection — 2026-07-21
 
 Single-timepoint data (TMT, dimethyl, any one-labeling-time run) is a flagship 1.2.0

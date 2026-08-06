@@ -98,11 +98,9 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
 
 **3. Easy wins pulled into 1.2.0** *(maintainer-prioritized)*
 
-- **Per-point `Var(θᵢ)` → depth-aware WLS weight** (Track B / §6). The linear-simple WLS
-  shipped with delta-method weights `(1−θ̂)²`; the ideal weight is `(1−θ̂)²/Var(θᵢ)`. The
-  substrate already exists — the per-point prediction-interval width (`fs_lower`/`fs_upper`)
-  is a `Var(θᵢ)` proxy (same `(hi−lo)/3.29` the weighted rollup already uses) — so this is a
-  column-plumbing + weight change, not new statistics. Pushes the estimator toward the MLE.
+- **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** as opt-in
+  `--linear-weights wls-var` (`c82cc55`; new `fs_var` / `fs_df` columns in
+  `riana_rollup_fractions`). See `CHANGELOG.md`.
 - **PyInstaller / py2app standalone GUI bundle** (Track E) — a `.app`/`.exe` so non-Python
   users can launch `riana gui` (and macOS gets a real Dock icon). Lower-effort than Electron.
 - **`mypy --strict` on `riana/algorithms/`** (chores) — smallest blast radius, start here.
@@ -163,7 +161,7 @@ Three levers are easy to confuse; document them wherever they surface (CLI help 
   it, and rollup re-exposes it for explicit-file inputs.
 - **`--min-fit-points`** — *peptide-level biological-replicate floor* (rollup). Keep only
   peptidoforms fit on ≥ N distinct `(biorep, timepoint)` points. **Auto = 2 for a single-timepoint
-  experiment, off otherwise.** *Not exposed in the GUI yet (a 1.2.0 gap to close).*
+  experiment, off otherwise.** Exposed in the GUI (Protein tab **"Min fit points"**, `0 = auto`).
 - **`--min-points`** — *protein-level refit floor* (rollup; GUI label **"Min refit points"**,
   default 3). Min collapsed `(t, θ)` points for the protein-level refit. **Distinct from
   `--min-fit-points`** — the naming collision is a known UX wart; consider renaming to
@@ -205,7 +203,7 @@ concurrency + `--resume`, the manifest project chain, the scan↔precursor intak
 Shipped (CHANGELOG): adaptive N_ISO at integrate (opt-in `--iso auto`), H4′ mix-then-truncate
 FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precache (~8×) and the
 `searchsorted` masking vectorization. **Open:**
-- **[1.2.0 easy win] Per-point `Var(θᵢ)` → depth-aware WLS weight** (see the scope block + §6).
+- **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** (opt-in `--linear-weights wls-var`; see `CHANGELOG.md`).
 - **Cross-proportion-stable peak picker** (Phase C v2) — the `apex_search_half_width`/`consensus`
   levers for label-invariant boundary stability are untested in production (§2c / M3 carry-over).
 - **Robust observed-vs-IsoSpec matcher** — soft-trim / per-channel-SNR / Huber downweighting of a
@@ -311,10 +309,11 @@ stays a linear `integrate → fit → rollup` chain glued by the manifest — or
 - **Linear Δk model — heteroscedasticity FIXED (2026-07-13), one gap remains.** `linear simple`
   now fits by **WLS** (`--linear-weights wls`, default; delta-method weights `(1−θ̂)²` from the
   fitted value); the old OLS was anti-conservative (Type-I ~28% at α=0.05) and biased −14% in the
-  fast tail; t=0 excluded (`reports/2026-07-13_linear_model_wls.md`). **Still open:** the ideal
-  weight is `(1−θ̂)²/Var(θᵢ)`, needing a per-point `Var(θᵢ)` (the **1.2.0 easy win** above; proxy
-  = the PI width already emitted). A **joint nonlinear fit + Wald contrast** (exact MLE + exact
-  inference) is the purist alternative — filed, not built, buys back only the last ~3% of efficiency.
+  fast tail; t=0 excluded (`reports/2026-07-13_linear_model_wls.md`). The ideal weight
+  `(1−θ̂)²/Var(θᵢ)` **SHIPPED** as opt-in `--linear-weights wls-var` (`c82cc55`; per-point
+  `Var(θ)` from the emitted `fs_var` / `fs_df`). **Still open (purist alternative):** a **joint
+  nonlinear fit + Wald contrast** (exact MLE + exact inference) — filed, not built, buys back
+  only the last ~3% of efficiency.
 - **Single-timepoint fits** run futile bounded-NLS today and mislead the GUI (R²≈0/NaN); the
   fit-step detection + direct solve (§3 scope item 1) closes this.
 - **Memory** is bounded — streaming/indexed mzML, one fraction at a time (`io/mzml.py`).

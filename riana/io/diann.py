@@ -41,10 +41,10 @@ Field mapping (DIA-NN parquet → :class:`PSMRecord`):
 ``UniMod:1``, Phospho ``UniMod:21``) integrates at the *modified* m/z and the
 envelope sees the mod's atoms. The fixed Carbamidomethyl(C) (``UniMod:4``) is
 stripped, not tokenized — it is folded per-cysteine in ``mass_calc``. A
-peptidoform carrying any mod outside the fixed + starter sets (e.g. Oxidation
-``UniMod:35``) is dropped when ``drop_variable_mods`` is true (default); on the
-cardiac DIA set that is ~1.8% of rows (precursors seen *only* as an oxidized
-form).
+peptidoform carrying any mod outside the fixed + starter sets (e.g. Deamidation
+``UniMod:7``) is dropped when ``drop_variable_mods`` is true (default). (Met-Ox
+``UniMod:35`` *is* in the starter set, so it is kept and fit-merged onto the
+unmodified curve, not dropped.)
 
 Decoy filtering: rows with ``Decoy == 1`` are dropped by default. DIA-NN's
 report is already FDR-filtered (Q.Value ≤ 0.01), so in practice every row is a
@@ -170,7 +170,7 @@ def read_diann(
         drop_decoys: when true (default), rows with ``Decoy == 1`` are skipped.
         drop_variable_mods: when true (default), a peptidoform carrying a mod the
             v1 forward model can't account for (anything outside the fixed +
-            starter UniMod sets, e.g. Oxidation) is dropped; starter-set mods are
+            starter UniMod sets, e.g. Deamidation) is dropped; starter-set mods are
             always folded into the sequence as ``[UNIMOD:N]`` tokens (see module
             docstring). With it off, such a peptidoform is kept bare.
 

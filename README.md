@@ -45,7 +45,7 @@ riana integrate <mzml_dir> report.mzTab --sdrf samplesheet.sdrf.tsv \
 
 # 2. Fit the kinetic curve per peptidoform (grouped by the manifest)
 riana fit --manifest ./out/riana_manifest.tsv \
-    --coefficients commerford --ria 0.06 --depth 3 --out ./out
+    --coefficients deberneh_2025_rss --ria 0.06 --depth 3 --out ./out
 
 # 3. Roll peptides up to proteins
 riana rollup --manifest ./out/riana_manifest.tsv \
@@ -67,13 +67,17 @@ riana integrate <mzml_dir> <percolator_psms.txt> \
     --sample time1 --iso "0 1 2 3 4 5" --q_value 0.01 --mass_tol 25 --out ./out
 
 riana fit ./out/time0_riana.txt ./out/time1_riana.txt ./out/time3_riana.txt \
-    --model simple --label hw --coefficients commerford --ria 0.06 --out ./out
+    --model simple --label hw --coefficients deberneh_2025_rss --ria 0.06 --out ./out
 ```
 
-Fitting is heavy-water (D₂O) only and needs a per-amino-acid labeling-site table
-via `--coefficients` — a bundled preset (`commerford` literature, or the `ac16` /
-`ipsc` / `cm` calibration tables) or a path to your own `(amino_acid,
-coefficient)` CSV.
+Fitting supports both metabolic-water labels — heavy water (D₂O, `--label hw`, the
+default) and ¹⁸O water (`--label o18`) — each with its own `--coefficients` table
+family. For **D₂O**, pass a per-amino-acid labeling-site table: a bundled preset
+(`deberneh_2025_rss` [recommended], `ilchenko_2019`, `commerford_1983`, or the
+`alamillo_2025_{ac16,ipsc,cm}` calibration tables) or a path to your own
+`(amino_acid, coefficient)` CSV. For **¹⁸O**, pass a length-model table
+(`juber_2026_o18_ac16` [in-vitro], `rachdaoui_2009_o18` [in-vivo mouse], or a
+`(feature, coefficient)` CSV).
 
 By default integration uses an apex-centred narrow window
 (`--integration-half-width 0.15`, dial it to your chromatographic peak width);

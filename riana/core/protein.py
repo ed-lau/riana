@@ -458,8 +458,10 @@ def _rollup_linear(
 
 def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
     """Long/tidy table of the collapsed ``(t, θ)`` points behind each protein
-    refit — the inverse-variance-weighted fraction-new the GUI curve plots,
-    one row per ``(experiment, condition, protein, labeling_time)``. Built from
+    refit — the inverse-variance-weighted fraction-new the GUI curve plots, one row
+    per collapsed ``(biological_replicate, labeling_time)`` point within each
+    ``(experiment, condition, protein)`` (so several rows can share a
+    ``labeling_time`` when a protein has multiple bioreps). Built from
     ``result.attrs["protein_points"]`` (empty when none were attached).
     """
     rows = []

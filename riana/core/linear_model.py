@@ -62,9 +62,10 @@ _LOGGER = logging.getLogger(__name__)
 #: ``(experiment, protein, condition)``.
 #:
 #: **CI provenance — analytic, NOT bootstrap.** ``ci_lo`` / ``ci_hi`` (per-condition
-#: k) and ``delta_k_se`` / ``delta_k_p`` (the Δk contrast) come from the OLS
-#: coefficient covariance via statsmodels (``conf_int`` / ``t_test``), i.e. a
-#: closed-form t-distribution interval. This is deliberately different from the
+#: k) and ``delta_k_se`` / ``delta_k_p`` (the Δk contrast) come from the
+#: least-squares coefficient covariance via statsmodels (``conf_int`` / ``t_test``;
+#: WLS by default, OLS under ``weights="ols"``), i.e. a closed-form t-distribution
+#: interval. This is deliberately different from the
 #: nonlinear models (``simple`` / ``guan`` / ``fornasiero``), whose CIs are a
 #: residual bootstrap in :func:`riana.core.protein._fit_kdeg`. The linearized
 #: model has a closed-form covariance, so bootstrapping it would add nothing —
@@ -192,9 +193,12 @@ def fit_linear_deltak(
             SDRF/project deliberately if that pooling is unwanted. When
             ``test_condition`` is ``None`` the legacy auto mode applies: a contrast
             is emitted only for a protein with exactly two qualifying conditions.
-        weights: ``"wls"`` (default) or ``"ols"`` — see :data:`LINEAR_WEIGHT_SCHEMES`
-            and the "Weighting" note in the module docstring. ``"ols"`` reproduces the
-            pre-2026-07 unweighted estimator (anti-conservative; for audit only).
+        weights: ``"wls"`` (default), ``"ols"``, or ``"wls-var"`` — see
+            :data:`LINEAR_WEIGHT_SCHEMES` and the "Weighting" note in the module
+            docstring. ``"ols"`` reproduces the pre-2026-07 unweighted estimator
+            (anti-conservative; for audit only). ``"wls-var"`` additionally folds in
+            the per-point ``Var̂(θ)`` (needs ``theta_var`` / ``theta_df`` columns;
+            falls back to ``"wls"`` without them).
 
     Returns:
         One row per ``(experiment, protein, condition)`` with ``k_deg`` (= −slope)

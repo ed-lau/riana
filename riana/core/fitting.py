@@ -33,8 +33,8 @@ PROJECT_REVIEW.md §2b fixes landing here:
   - Fixed-site-count model replaced: ``calculate_label_n`` is no longer
     called — Spep comes from the cell-line coefficient table
 
-The legacy ``riana_fit.py`` stays as the ``--engine legacy`` regression
-gate through Week 4; Phase F5 wires ``--engine new`` to dispatch here.
+This is the only fit engine: M4 retired the flat 0.9.0 ``riana_fit.py`` and the
+``--engine legacy``/``--engine new`` split along with it.
 """
 
 from __future__ import annotations

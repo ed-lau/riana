@@ -1,7 +1,9 @@
 # `linear simple` Δk — per-point Var(θ) WLS: a large but conditional gain; moderate the variance first
 
 **Date:** 2026-07-24 · **Data:** synthetic Monte-Carlo + real `runs/{lve_atr_clean,
-boomi_ipsc_d2o, juber_ac16_d2o}` · **Status: MEASURED — not shipped.** The effect is real
+boomi_ipsc_d2o, juber_ac16_d2o}` · **Status (as written): MEASURED — not shipped.**
+**UPDATE 2026-07-30: the eBayes-moderated path SHIPPED as opt-in `--linear-weights wls-var`**
+(`c82cc55`; `fs_var`/`fs_df` columns) — `wls` stays the default. The effect is real
 and large, but the naive estimate inflates Type-I; a variance-moderation step is required
 before it can become a default. **The shipped `wls` (IRLS) remains the standing default and
 recommendation.** Bench: `tests/benchmark/bench_linear_weights.py` (`varweight` / `measure`).
@@ -16,9 +18,6 @@ recommendation.** Bench: `tests/benchmark/bench_linear_weights.py` (`varweight` 
 > and **Var(θ_i) = σ_θ,i²** is the "PI-width variance" — the quantity the rollup's inverse-variance
 > collapse already uses. (It is a *prediction* interval on θ, not a *confidence* interval on k̂ —
 > the latter is `ci_lo`/`ci_hi`, which feeds the `k_cv` gate.)
-> **Accents:** `^` (hat) = a raw estimate from the data (e.g. `Var̂(θ_i)`, the PI-width variance;
-> `k̂`); `~` (tilde) = its **eBayes-moderated** version (`Ṽar(θ_i)`). Both estimate the same true
-> `Var(θ_i)`.
 
 ## TL;DR
 

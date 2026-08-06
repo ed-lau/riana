@@ -329,8 +329,8 @@ class FitConfig:
     Spep from a ``--coefficients`` table, per-timepoint FS by full-envelope
     least-squares, bootstrap kinetic-fit CIs (the M3 Week 4 science fixes). The
     per-AA coefficient table is the single source of cell/tissue specificity —
-    ``label`` only selects the labeling chemistry (``hw``; ``o18`` is a
-    post-M4 placeholder).
+    ``label`` only selects the labeling chemistry (``hw`` D₂O or ``o18`` ¹⁸O; both
+    implemented).
     """
 
     #: -m / --model. Kinetic: "simple", "guan", "fornasiero"; or "calibration"
@@ -338,12 +338,12 @@ class FitConfig:
     #: calibration runs).
     model: str = "simple"
     #: -l / --label. The labeling chemistry. ``"hw"`` (heavy water / D₂O,
-    #: default) is the only path the M4 fit engine implements — cell/tissue
-    #: specificity comes from the per-AA ``--coefficients`` table, not the
-    #: label. ``"o18"`` (¹⁸O) is recognized but its fit path is being
-    #: reimplemented post-M4 (``fit_run`` raises a clear error). Amino-acid /
-    #: SILAC labeling was dropped from fitting (and the SILAC dual-channel
-    #: ``-X/-F`` extraction knobs were retired in M7).
+    #: default) and ``"o18"`` (¹⁸O; length-model Spep + 3-isotope-O envelope,
+    #: shipped and validated in 1.1.0) are both implemented — cell/tissue
+    #: specificity comes from the per-AA (hw) or length-model (o18)
+    #: ``--coefficients`` table, not the label. Amino-acid / SILAC labeling was
+    #: dropped from fitting (and the SILAC dual-channel ``-X/-F`` extraction knobs
+    #: were retired in M7).
     label: str = "hw"
     #: --kp. Precursor rate constant for the two-compartment models.
     k_p: float = 0.5

@@ -25,9 +25,10 @@ starter-set peptidoform — N-term Acetyl (``UNIMOD:1``), Phospho-S/T/Y
 envelope sees the mod's atoms. The fixed Carbamidomethyl(C) (``UNIMOD:4``) is
 NOT tokenized: it is folded per-cysteine in ``mass_calc`` and a token would
 double-count it. A peptidoform carrying any mod outside
-``constants.FIXED_UNIMODS`` ∪ ``STARTER_VARIABLE_UNIMODS`` (e.g. Oxidation
-``UNIMOD:35``) is **dropped** when ``drop_variable_mods`` is true (default) —
-the v1 forward model can't account for it yet. Mirrors the DIA-NN path
+``constants.FIXED_UNIMODS`` ∪ ``STARTER_VARIABLE_UNIMODS`` (e.g. Deamidation
+``UNIMOD:7``) is **dropped** when ``drop_variable_mods`` is true (default) —
+the v1 forward model can't account for it yet. (Met-Ox ``UNIMOD:35`` *is* in the
+starter set, so it is kept and fit-merged onto the unmodified curve, not dropped.) Mirrors the DIA-NN path
 (:mod:`riana.io.diann`), so a variable-mod search (e.g. ``timeseries_lve_atr``)
 gets the same peptidoform handling on both the DDA and DIA surfaces.
 - ``opt_global_q-value`` → ``percolator_q_value`` (named ``percolator_*``
