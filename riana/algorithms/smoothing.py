@@ -14,15 +14,18 @@ choice.
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
+import numpy.typing as npt
 import scipy.signal
 
 
 def savgol(
-    intensity: np.ndarray,
+    intensity: npt.NDArray[np.float64],
     window: int,
     polyorder: int = 2,
-) -> np.ndarray:
+) -> npt.NDArray[np.float64]:
     """Savitzky–Golay smoothing with ``polyorder ≥ 2`` enforced.
 
     Mirrors the legacy ``mode='nearest'`` boundary handling so a like-for-like
@@ -53,6 +56,9 @@ def savgol(
     arr = np.asarray(intensity, dtype=np.float64)
     if arr.size < window or not np.any(arr > 0):
         return arr.copy()
-    return scipy.signal.savgol_filter(
-        arr, window_length=window, polyorder=polyorder, mode="nearest"
+    return cast(
+        "npt.NDArray[np.float64]",
+        scipy.signal.savgol_filter(
+            arr, window_length=window, polyorder=polyorder, mode="nearest"
+        ),
     )

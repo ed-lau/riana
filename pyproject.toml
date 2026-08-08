@@ -61,6 +61,10 @@ dev = [
     # (CI test job + tox), not in addopts, so single-file / -x / pdb runs stay serial.
     "pytest-xdist>=3",
     "pyarrow>=14",
+    # Static type checking. Scoped to riana/algorithms/ for now ([tool.mypy] below);
+    # the CI `typecheck` job runs a bare `mypy` (config-driven). Widen `files` as the
+    # rest of the tree is annotated.
+    "mypy>=1.11",
 ]
 # DIA intake (M6b). Reading the DIA-NN report.parquet needs pyarrow; kept
 # optional so a DDA-only install stays lightweight (io.diann imports it lazily
@@ -106,3 +110,19 @@ addopts = "-ra"
 markers = [
     "slow: heavy end-to-end / large-fixture test (big-mzML integration, full pipeline). Skip the slow tier with -m 'not slow' for a fast inner-loop run.",
 ]
+
+[tool.mypy]
+# Typed-code rollout (post-M4 chore). Start `--strict` on the leaf ``algorithms/``
+# package — the smallest blast radius — and widen ``files`` outward over time.
+# ``follow_imports = "silent"`` reads imported ``riana`` modules for their types but
+# reports errors only in ``files``, so the strict gate stays scoped until the rest of
+# the tree is annotated.
+python_version = "3.10"
+files = ["riana/algorithms"]
+strict = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+# Scientific dependencies that ship no type stubs / ``py.typed`` marker.
+module = ["IsoSpecPy.*", "pybaselines.*", "scipy.*"]
+ignore_missing_imports = true

@@ -29,13 +29,14 @@ narrow windows). See PROJECT_REVIEW for the full rationale.
 from __future__ import annotations
 
 import numpy as np
+import numpy.typing as npt
 
 
 def noise_floor(
-    intensity: np.ndarray,
+    intensity: npt.NDArray[np.float64],
     *,
     quantile: float = 0.10,
-) -> np.ndarray:
+) -> npt.NDArray[np.float64]:
     """Flat noise-floor baseline from a low quantile of the trace.
 
     The instrument noise floor at a given m/z window is approximately
@@ -71,7 +72,7 @@ def noise_floor(
     return np.full(arr.size, floor, dtype=np.float64)
 
 
-def snip(intensity: np.ndarray, n_iter: int = 40) -> np.ndarray:
+def snip(intensity: npt.NDArray[np.float64], n_iter: int = 40) -> npt.NDArray[np.float64]:
     """SNIP baseline via :mod:`pybaselines`.
 
     Args:
@@ -89,10 +90,10 @@ def snip(intensity: np.ndarray, n_iter: int = 40) -> np.ndarray:
 
 
 def asls(
-    intensity: np.ndarray,
+    intensity: npt.NDArray[np.float64],
     lam: float = 1e6,
     p: float = 0.01,
-) -> np.ndarray:
+) -> npt.NDArray[np.float64]:
     """Asymmetric Least Squares baseline via :mod:`pybaselines`.
 
     Args:

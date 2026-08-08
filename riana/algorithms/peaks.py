@@ -24,9 +24,11 @@ inside the integrator's per-PSM loop.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 import scipy.signal
 
 
@@ -52,8 +54,8 @@ class PeakBoundary:
 
 
 def detect_peak(
-    rt: np.ndarray,
-    intensity: np.ndarray,
+    rt: npt.NDArray[np.float64],
+    intensity: npt.NDArray[np.float64],
     *,
     scan_prior_rt: float,
     rel_height: float = 0.05,
@@ -119,8 +121,8 @@ def detect_peak(
 
 
 def find_apex(
-    rt: np.ndarray,
-    intensity: np.ndarray,
+    rt: npt.NDArray[np.float64],
+    intensity: npt.NDArray[np.float64],
     *,
     scan_prior_rt: float,
     prominence_k: float = 3.0,
@@ -174,8 +176,8 @@ def find_apex(
 
 
 def consensus_apex(
-    rt: np.ndarray,
-    channel_traces,
+    rt: npt.NDArray[np.float64],
+    channel_traces: Iterable[npt.NDArray[np.float64]],
     *,
     scan_prior_rt: float,
     prominence_k: float = 3.0,
@@ -223,7 +225,7 @@ def consensus_apex(
 def coelution_ok(
     iso0: PeakBoundary,
     iso1: PeakBoundary | None,
-    rt: np.ndarray,
+    rt: npt.NDArray[np.float64],
     *,
     cycle_tolerance: int = 2,
 ) -> bool:
@@ -250,7 +252,7 @@ def coelution_ok(
     return bool(abs(rt[iso1.apex_idx] - rt[iso0.apex_idx]) <= cycle_tolerance * cycle)
 
 
-def snr(intensity: np.ndarray, baseline: np.ndarray) -> float:
+def snr(intensity: npt.NDArray[np.float64], baseline: npt.NDArray[np.float64]) -> float:
     """Signal-to-noise: apex above baseline / MAD of (intensity − baseline)."""
     intensity = np.asarray(intensity, dtype=np.float64)
     baseline = np.asarray(baseline, dtype=np.float64)
@@ -261,7 +263,7 @@ def snr(intensity: np.ndarray, baseline: np.ndarray) -> float:
     return float((intensity.max() - baseline[intensity.argmax()]) / noise)
 
 
-def symmetry(rt: np.ndarray, intensity: np.ndarray, apex_idx: int) -> float:
+def symmetry(rt: npt.NDArray[np.float64], intensity: npt.NDArray[np.float64], apex_idx: int) -> float:
     """Peak symmetry ratio — area before apex / area after apex.
 
     1.0 is perfectly symmetric. Distance from 1.0 in either direction
@@ -272,8 +274,8 @@ def symmetry(rt: np.ndarray, intensity: np.ndarray, apex_idx: int) -> float:
     rt = np.asarray(rt, dtype=np.float64)
     if not 0 < apex_idx < intensity.size - 1:
         return 0.0
-    left = float(np.trapezoid(intensity[: apex_idx + 1], x=rt[: apex_idx + 1]))
-    right = float(np.trapezoid(intensity[apex_idx:], x=rt[apex_idx:]))
+    left = float(np.trapezoid(intensity[: apex_idx + 1], x=rt[: apex_idx + 1]))  # type: ignore[attr-defined]  # np.trapezoid exists at runtime (numpy>=2), missing from bundled stubs
+    right = float(np.trapezoid(intensity[apex_idx:], x=rt[apex_idx:]))  # type: ignore[attr-defined]  # np.trapezoid exists at runtime (numpy>=2), missing from bundled stubs
     if left <= 0 or right <= 0:
         return 0.0
     r = left / right

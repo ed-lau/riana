@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,8 +35,8 @@ class DriftSummary:
 
 
 def weighted_obs_mz(
-    mz_array: np.ndarray,
-    intensity_array: np.ndarray,
+    mz_array: npt.NDArray[np.float64],
+    intensity_array: npt.NDArray[np.float64],
     target_mz: float,
     half_width_ppm: float,
 ) -> tuple[float | None, float | None]:
@@ -72,7 +73,7 @@ def weighted_obs_mz(
     return obs_mz, ppm_error
 
 
-def drift_summary(ppm_errors: np.ndarray) -> DriftSummary:
+def drift_summary(ppm_errors: npt.NDArray[np.float64]) -> DriftSummary:
     """Aggregate per-PSM ppm errors into the fraction-level footer.
 
     NaN entries are treated as "no observation" and excluded.

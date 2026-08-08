@@ -10,12 +10,13 @@ dependency in :func:`calculate_ion_mz` is carried along deliberately; threading
 """
 
 import re
+from collections.abc import Sequence
 from riana import constants, params
 
 
 def _count_residue_atoms(seq: str,
                          iaa: bool = True,
-                         ) -> list:
+                         ) -> list[int]:
     """
     given an peptide sequence, count the atoms of carbon, hydrogen, oxygen, nitrogen, sulfur, phosphorus
     in the residue
@@ -26,7 +27,7 @@ def _count_residue_atoms(seq: str,
     :return:        list: atom counts [C, H, O, N, S, P]
     """
 
-    tot_atoms: list = [0, 0, 0, 0, 0, 0]
+    tot_atoms: list[int] = [0, 0, 0, 0, 0, 0]
 
     for char in seq:
         try:
@@ -61,8 +62,8 @@ def _count_residue_atoms(seq: str,
 
 def count_atoms(sequence: str,
                 iaa: bool = True,
-                mods: list = (),
-                ) -> list:
+                mods: Sequence[int] = (),
+                ) -> list[int]:
     """
     wrapper for _count_residue_atoms that returns the full peptide atom count
 
@@ -93,7 +94,7 @@ def count_atoms(sequence: str,
     return atoms
 
 
-def _calc_atom_mass(atoms: list,
+def _calc_atom_mass(atoms: list[int],
                     ) -> float:
     """
     given a list of atoms [C, H, O, N, S, P], return accurate mass
@@ -112,7 +113,7 @@ def _calc_atom_mass(atoms: list,
     # Get dot product between atom list and mass vector
     mass = sum([atoms[i] * mass_vec[i] for i in range(len(atoms))])
 
-    return mass
+    return float(mass)
 
 
 # A ``[UNIMOD:N]`` token inside a peptidoform sequence (M7). Variable mods are
@@ -169,7 +170,7 @@ def calculate_ion_mz(seq: str,
 
     assert type(charge) == int, "Charge must be integer."
 
-    mass = 0
+    mass: float = 0
 
     # First, strip all mass shifts and add them to the starting mass. A bracket
     # is either a ``[UNIMOD:N]`` token (M7 variable mod — mass from the curated

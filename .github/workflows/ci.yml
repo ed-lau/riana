@@ -54,6 +54,27 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  typecheck:
+    name: Type check (mypy --strict, scoped)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install riana with dev extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run mypy
+        # Config-driven ([tool.mypy] in pyproject.toml): --strict, scoped to
+        # riana/algorithms/ for now. Widen `files` as the tree is annotated.
+        run: mypy
+
   gui:
     # PySide6 is a [gui] extra (not core); pytest-qt is installed ad-hoc here
     # (test tool, kept out of published extras). The main matrix --ignores

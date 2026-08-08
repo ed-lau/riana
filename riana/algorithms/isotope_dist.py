@@ -25,9 +25,14 @@ The legacy fixed-site-count fsynthesis (``core/fsynthesis.py``,
 ``core/fitting.py`` calls into this solver layer instead.
 """
 
+from __future__ import annotations
+
 import math
+from collections.abc import Sequence
+from typing import Any, cast
 
 import numpy as np
+import numpy.typing as npt
 import IsoSpecPy
 from IsoSpecPy import IsoTotalProb
 
@@ -36,10 +41,10 @@ from riana.algorithms.mass_calc import count_atoms
 
 
 def get_peptide_distribution(peptide: str,
-                             deuterium_enrichment_level: float = None,
+                             deuterium_enrichment_level: float | None = None,
                              label: str = "D2O",
                              num_labeling_sites: int = 0,
-                             mods: list = (),
+                             mods: Sequence[int] = (),
                              ) -> IsoSpecPy.Iso:
 
     """
@@ -85,7 +90,7 @@ def get_peptide_distribution(peptide: str,
     # these via ``mass_calc.unimod_mass``, so the envelope and anchor stay in
     # lockstep. Identical isotope masses are aggregated across all mod instances on
     # the peptidoform (e.g. TMTpro on the N-term AND each lysine).
-    pinned_isotopes: dict = {}
+    pinned_isotopes: dict[float, int] = {}
     for mod_id in mods:
         for count, iso_mass in constants.mod_fixed_isotopes.get(mod_id, ()):
             pinned_isotopes[iso_mass] = pinned_isotopes.get(iso_mass, 0) + count
@@ -167,10 +172,10 @@ FS_BOUNDS = (-0.1, 1.2)
 # Thread-safe enough for ThreadPoolExecutor — concurrent writes of the same
 # key are idempotent at CPython dict level; worst case is duplicated work,
 # not corruption. Call ``clear_envelope_cache()`` between independent runs.
-_envelope_cache: dict = {}
+_envelope_cache: dict[Any, Any] = {}
 #: Memoized natural-abundance (θ=0) envelope WIDTH (init_w), keyed by
 #: (sequence, mods). One small int per peptidoform — see ``init_envelope_width``.
-_init_width_cache: dict = {}
+_init_width_cache: dict[Any, int] = {}
 
 
 def clear_envelope_cache() -> None:
@@ -180,7 +185,7 @@ def clear_envelope_cache() -> None:
     _init_width_cache.clear()
 
 
-def get_envelope(dist, pep_mass: float, n: int = 8) -> list[float]:
+def get_envelope(dist: IsoSpecPy.Iso, pep_mass: float, n: int = 8) -> list[float]:
     """Bin an IsoSpecPy distribution into ``n`` integer-nominal isotope peaks.
 
     ``use_nominal_masses=True`` in :func:`get_peptide_distribution` returns
@@ -203,14 +208,14 @@ def get_envelope(dist, pep_mass: float, n: int = 8) -> list[float]:
 
 def _get_init_env(sequence: str, pep_mass: float,
                   n: int = _DEFAULT_N_ISO,
-                  mods: tuple[int, ...] = ()) -> np.ndarray:
+                  mods: tuple[int, ...] = ()) -> npt.NDArray[np.float64]:
     """Natural-abundance envelope, cached by (sequence, mods, n)."""
     key = ('init', sequence, mods, n)
     if key not in _envelope_cache:
         dist = get_peptide_distribution(sequence, label="D2O", mods=mods)
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
-    return _envelope_cache[key]
+    return cast("npt.NDArray[np.float64]", _envelope_cache[key])
 
 
 def init_envelope_width(sequence: str, pep_mass: float, *,
@@ -249,7 +254,7 @@ def init_envelope_width(sequence: str, pep_mass: float, *,
 def _get_final_env(sequence: str, pep_mass: float, spep: int,
                    ria_max: float,
                    n: int = _DEFAULT_N_ISO,
-                   mods: tuple[int, ...] = ()) -> np.ndarray:
+                   mods: tuple[int, ...] = ()) -> npt.NDArray[np.float64]:
     """Fully-labeled envelope at precursor enrichment ``ria_max``
     with ``spep`` labile sites.
 
@@ -271,15 +276,15 @@ def _get_final_env(sequence: str, pep_mass: float, spep: int,
         )
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
-    return _envelope_cache[key]
+    return cast("npt.NDArray[np.float64]", _envelope_cache[key])
 
 
 def peptide_spep_loss(
     spep_float: float,
     sequence: str,
     pep_mass: float,
-    obs_matrix: np.ndarray,        # shape (n_prop, n_iso), normalized per row
-    proportions_frac: np.ndarray,  # shape (n_prop,)
+    obs_matrix: npt.NDArray[np.float64],        # shape (n_prop, n_iso), normalized per row
+    proportions_frac: npt.NDArray[np.float64],  # shape (n_prop,)
     ria_max: float = 0.06,
     mods: tuple[int, ...] = (),
 ) -> float:
@@ -335,7 +340,7 @@ _FULL_CLUSTER_N = 24
 def solve_fs_d2o(
     sequence: str,
     pep_mass: float,
-    observed_iso,
+    observed_iso: npt.ArrayLike,
     spep: int,
     ria_max: float = 0.06,
     n_iso: int = _DEFAULT_N_ISO,
@@ -429,8 +434,8 @@ def solve_fs_d2o(
 def fit_peptide_spep(
     sequence: str,
     pep_mass: float,
-    obs_matrix: np.ndarray,
-    proportions_frac: np.ndarray,
+    obs_matrix: npt.NDArray[np.float64],
+    proportions_frac: npt.NDArray[np.float64],
     ria_max: float = 0.06,
 ) -> float:
     """Fit the effective per-peptide labeling-site count Spep.
@@ -475,7 +480,7 @@ def fit_peptide_spep(
 #: iso_max). Distinct peptidoforms ≪ PSM count, so this is bounded; one entry per
 #: peptidoform per run. Per-process under the ``-W`` ProcessPool (each worker
 #: rebuilds its own). Cleared by :func:`clear_envelope_cache`.
-_adaptive_cache: dict = {}
+_adaptive_cache: dict[Any, tuple[float, ...]] = {}
 
 
 def _spep_upper_bound(sequence: str) -> int:
@@ -493,7 +498,7 @@ def _spep_upper_bound(sequence: str) -> int:
     return max(1, int(math.ceil(s)))
 
 
-def _binned_envelope(dist, pep_mass: float, n: int) -> tuple[list[float], list[float]]:
+def _binned_envelope(dist: IsoSpecPy.Iso, pep_mass: float, n: int) -> tuple[list[float], list[float]]:
     """``(avg_mass, abundance)`` per integer-nominal bin ``round(pep_mass)+iso``.
 
     ``avg_mass`` is the abundance-weighted average exact mass within the ±0.5 bin
@@ -633,7 +638,7 @@ def init_channel_masses(
     key = ('init_mass', sequence, mods, int(n))
     cached = _envelope_cache.get(key)
     if cached is not None:
-        return cached
+        return cast("tuple[float, ...]", cached)
     dist = get_peptide_distribution(sequence, label="D2O", mods=tuple(mods))
     init_m, _init_p = _binned_envelope(dist, pep_mass, int(n))
     out = tuple(
@@ -647,7 +652,8 @@ def init_channel_masses(
 def _spacing_components(
     sequence: str, pep_mass: float, spep: int, ria_max: float, n: int,
     mods: tuple[int, ...], label: str,
-):
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64],
+           npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """Cached per-channel (mass, prob) of the init and final envelopes — the pieces
     the mixture-spacing curve is built from. NaN-bin masses fall back to the analytic
     neutron comb. Returns ``(init_m, init_p, final_m, final_p)`` as np arrays."""
@@ -660,30 +666,40 @@ def _spacing_components(
             sequence, deuterium_enrichment_level=ria_max, label=label,
             num_labeling_sites=spep, mods=tuple(mods),
         )
-        im, ip = _binned_envelope(init, pep_mass, int(n))
-        fm, fp = _binned_envelope(final, pep_mass, int(n))
-        im = np.array([m if not math.isnan(m) else pep_mass + j * 1.003354835
-                       for j, m in enumerate(im)])
-        fm = np.array([m if not math.isnan(m) else pep_mass + j * 1.003354835
-                       for j, m in enumerate(fm)])
-        ip = np.asarray(ip, float); fp = np.asarray(fp, float)
+        im_l, ip_l = _binned_envelope(init, pep_mass, int(n))
+        fm_l, fp_l = _binned_envelope(final, pep_mass, int(n))
+        im: npt.NDArray[np.float64] = np.array(
+            [m if not math.isnan(m) else pep_mass + j * 1.003354835
+             for j, m in enumerate(im_l)])
+        fm: npt.NDArray[np.float64] = np.array(
+            [m if not math.isnan(m) else pep_mass + j * 1.003354835
+             for j, m in enumerate(fm_l)])
+        ip: npt.NDArray[np.float64] = np.asarray(ip_l, float)
+        fp: npt.NDArray[np.float64] = np.asarray(fp_l, float)
         ip = ip / ip.sum() if ip.sum() > 0 else ip
         fp = fp / fp.sum() if fp.sum() > 0 else fp
         cached = (im, ip, fm, fp)
         _envelope_cache[key] = cached
-    return cached
+    return cast(
+        "tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], "
+        "npt.NDArray[np.float64], npt.NDArray[np.float64]]",
+        cached,
+    )
 
 
-def _mixture_dspacing(f, im, ip, fm, fp, charge, k):
+def _mixture_dspacing(f: float,
+                      im: npt.NDArray[np.float64], ip: npt.NDArray[np.float64],
+                      fm: npt.NDArray[np.float64], fp: npt.NDArray[np.float64],
+                      charge: int, k: int) -> float:
     """Predicted **ΔSₓ(f, k)** in m/z mDa for the init↔final mixture at fraction
     ``f``: the M0-internal spacing of the per-channel intensity-weighted mixture
     centroid, minus its f=0 value. The nonlinear (concave) curve fs_ds inverts."""
-    def cz(j):
+    def cz(j: int) -> float:
         w = (1.0 - f) * ip[j] + f * fp[j]
-        return ((1.0 - f) * ip[j] * im[j] + f * fp[j] * fm[j]) / w if w > 0 else np.nan
+        return float(((1.0 - f) * ip[j] * im[j] + f * fp[j] * fm[j]) / w) if w > 0 else np.nan
     s_f = cz(k) - cz(0)
     s_0 = im[k] - im[0]          # mixture at f=0 is the init envelope
-    return (s_f - s_0) / max(1, int(charge)) * 1e3
+    return float((s_f - s_0) / max(1, int(charge)) * 1e3)
 
 
 def solve_fs_d2o_ds(
@@ -795,7 +811,7 @@ def spep_from_length_coefficients(
 def _get_o18_final_env(sequence: str, pep_mass: float, spep: int,
                        ria_max: float,
                        n: int = _DEFAULT_N_ISO,
-                       mods: tuple[int, ...] = ()) -> np.ndarray:
+                       mods: tuple[int, ...] = ()) -> npt.NDArray[np.float64]:
     """Fully-labeled ¹⁸O envelope at precursor enrichment ``ria_max`` with
     ``spep`` labile oxygen sites — the o18 analogue of :func:`_get_final_env`.
 
@@ -816,13 +832,13 @@ def _get_o18_final_env(sequence: str, pep_mass: float, spep: int,
         )
         env = np.array(get_envelope(dist, pep_mass, n=n + 2))[:n]
         _envelope_cache[key] = env
-    return _envelope_cache[key]
+    return cast("npt.NDArray[np.float64]", _envelope_cache[key])
 
 
 def solve_fs_o18(
     sequence: str,
     pep_mass: float,
-    observed_iso,
+    observed_iso: npt.ArrayLike,
     spep: int,
     ria_max: float = 0.06,
     n_iso: int = _DEFAULT_N_ISO,
