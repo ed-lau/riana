@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Standalone GUI bundle + strict typing for `algorithms/` — 2026-08-08
+
+#### Added
+
+- **`packaging/` — a PyInstaller build for a standalone Riana bundle** (a macOS `.app`,
+  or a one-dir bundle elsewhere) so non-Python users can launch the GUI. The frozen
+  binary is CLI+GUI (no args → GUI, args → the `riana` CLI). New `[packaging]` extra
+  (`pyinstaller>=6`); build with `packaging/build_app.sh`. The build and a CLI smoke
+  test are automated; GUI-window launch needs manual verification on a machine with a
+  display (see `packaging/README.md`).
+
+#### Changed
+
+- **`mypy --strict` now gates `riana/algorithms/`** — a scoped `[tool.mypy]` config
+  (widen `files` to roll out further), a CI `typecheck` job, and a tox `typecheck` env;
+  `mypy` added to the `[dev]` extra. The package is annotated to zero strict errors, made
+  robust across numpy stub versions (the CI/local numpy differ).
+
+### Fit / rollup / integrate robustness guards (audit tail) — 2026-08-08
+
+#### Fixed
+
+- **Single-timepoint fit at a degenerate time** (`t* ≤ 0` / zero span) returns a null
+  result instead of falling through to `curve_fit`, which reported the arbitrary init
+  `k = 0.5` with a spuriously zero-width CI.
+- **Post-rail-drop depth re-check** counts distinct surviving timepoints, not raw rows, so
+  a biological-replicate peptide rail-dropped below the distinct-timepoint floor is no
+  longer fit as an under-depth curve.
+- **Rollup single-point protein** gets a NaN CI, not a spuriously tight zero-width bootstrap
+  CI (`k_cv = 0`) — mirrors the per-peptide `n ≥ 2` guard.
+- **`IntegrationConfig`** rejects `smoothing_polyorder ≥ smoothing` up front (Savitzky-Golay
+  needs `polyorder < window`) instead of failing deep inside per-run integration.
+- **Isobaric channel collapse** verifies a file's channels agree on labeling time /
+  enrichment / replicate before merging them (labeling time is the fit x-axis).
+- **GUI Protein tab**: the rollup provenance key `k_cv_max` → `k_cv` (+ `min_fit_points` /
+  `test_condition`) so GUI- and CLI-produced rollups hash to the same `config_hash`; and the
+  single-timepoint hint now displays (it was overwritten before it could show).
+
 ### Non-canonical residue intake guard — 2026-08-08
 
 #### Fixed
