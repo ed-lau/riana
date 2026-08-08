@@ -138,6 +138,27 @@ def test_isobaric_tmt_collapses_channels_per_file(tmp_path):
     assert by_file["fileA"].sample == "fileA"  # per-channel source name -> file stem
 
 
+def test_isobaric_channels_disagreeing_on_labeling_time_raise(tmp_path):
+    """Isobaric collapse keeps one channel's file-level fields — labeling_time is the
+    fit x-axis — so it must reject an SDRF whose channels within a file disagree on it
+    (a typo, or an unsupported pulsed-labeling-in-channels layout) rather than silently
+    stamp an arbitrary channel's time."""
+    cols = ["source name", "characteristics[organism]",
+            "characteristics[biological replicate]",
+            "characteristics[labeling time]", "comment[fraction identifier]",
+            "comment[label]", "comment[data file]",
+            "comment[proteomics data acquisition method]",
+            "characteristics[precursor enrichment]", "factor value[treatment]"]
+    rows = [
+        ["s1", "Homo sapiens", "1", "24 hours", "1", "TMT126", "fileA.mzML", "DDA", "0.06", "control"],
+        ["s2", "Homo sapiens", "1", "48 hours", "1", "TMT127N", "fileA.mzML", "DDA", "0.06", "control"],
+    ]
+    p = tmp_path / "bad.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    with pytest.raises(DataError, match="labeling_time"):
+        read_sdrf(p)
+
+
 def test_experiment_label_defaults_to_stem(tmp_path):
     src = (TWO_CONDITION).read_text()
     p = tmp_path / "myproject.sdrf.tsv"

@@ -487,6 +487,22 @@ def test_peptide_admission_policies_any_own_all():
     assert n_by_cond("all") == {"ctrl": 1, "drug": 1}   # PEP fails drug -> dropped in both
 
 
+def test_fit_kdeg_single_point_returns_nan_ci():
+    """_fit_kdeg on a single collapsed (t, θ) point returns a NaN CI, not a zero-width
+    one: the 1-point fit passes through the point exactly, so every bootstrap resample
+    gives the identical k (undefined uncertainty, not zero — which would give k_cv=0 and
+    sail through the --k-cv gate). k itself is still solved directly."""
+    from riana.core import models
+    from riana.core.protein import _fit_kdeg
+    k, r2, lo, hi = _fit_kdeg(
+        np.array([24.0]), np.array([0.38]),
+        model_fn=models.one_exponent, kinetic_kwargs=dict(a_0=0.0, a_max=1.0),
+        n_boot=50, boot_ci_pct=(5.0, 95.0), rng=np.random.default_rng(0))
+    assert np.isfinite(k)          # k solved directly at the single timepoint
+    assert np.isnan(r2)            # R² N/A at one timepoint
+    assert np.isnan(lo) and np.isnan(hi)   # undefined CI, not zero-width
+
+
 def test_unknown_peptide_admission_raises():
     pep, frac = _two_condition_gate_frames()
     with pytest.raises(DataError, match="peptide_admission"):

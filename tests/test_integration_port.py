@@ -423,3 +423,13 @@ def test_scan_id_guard_escape_hatch_disables_check(bsa_mzml):
     )
     df = integrate_run(cfg, psms, bsa_mzml)  # no DataError despite the bad precursor
     assert len(df) == 1
+
+
+def test_smoothing_polyorder_must_be_less_than_window():
+    """savgol requires polyorder < window; IntegrationConfig rejects the bad combo up
+    front rather than letting it fail deep inside per-run integration (where per-run
+    isolation would then skip every run and emit empty output)."""
+    with pytest.raises(ValueError, match="smoothing_polyorder"):
+        IntegrationConfig(smoothing=3, smoothing_polyorder=4)
+    # A valid combo (polyorder < the odd window) constructs fine.
+    IntegrationConfig(smoothing=5, smoothing_polyorder=3)

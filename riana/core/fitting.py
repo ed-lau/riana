@@ -55,7 +55,6 @@ from scipy.optimize import brentq, curve_fit
 
 from riana import constants
 from riana.algorithms.isotope_dist import (
-    FS_BOUNDS,
     init_channel_masses, init_envelope_width,
     solve_fs_d2o, solve_fs_d2o_ds, solve_fs_o18, solve_fs_o18_ds,
     spep_from_coefficients, spep_from_length_coefficients,
@@ -847,7 +846,12 @@ def _fit_one_concat(
         rail_lo = _FS_RAIL_LO if config.fs_rail_lo is None else config.fs_rail_lo
         railed = (fs_arr >= rail_hi) | (fs_arr <= rail_lo)
         fit_mask = fit_mask & ~railed
-    if int(fit_mask.sum()) < config.depth:
+    # depth = DISTINCT surviving timepoints (matches the run-level gate and the
+    # documented semantics), NOT raw rows: on the biorep manifest path replicate rows
+    # per timepoint would otherwise let a peptide that rail-drop reduced below the
+    # distinct-timepoint floor slip through (see the line-842 comment — rail-dropped
+    # points must not count toward depth).
+    if np.unique(t_arr[fit_mask]).size < config.depth:
         return _null_result(concat, protein_id, mod_sites)
 
     # Kinetic-model asymptotes: FS goes 0 → 1 (full pool turned over).
@@ -875,6 +879,12 @@ def _fit_one_concat(
     use_direct = k_direct is not None
     if use_direct:
         k_deg = k_direct
+    elif single_t:
+        # One distinct timepoint but the direct solve is degenerate (t* <= 0 — e.g. only
+        # t=0 replicates survived rail-drop — or a zero span): the design is flat in k, so
+        # curve_fit would return the arbitrary init k with a spuriously tight CI. Not
+        # identifiable → null, rather than fabricate a fit.
+        return _null_result(concat, protein_id, mod_sites)
     else:
         try:
             popt, _ = curve_fit(

@@ -391,6 +391,64 @@ def test_multipoint_fs_rail_drop_excludes_railed_points_from_the_fit():
         assert int(on.loc[other, "n_points"]) == int(off.loc[other, "n_points"])
 
 
+def test_post_rail_drop_depth_recheck_uses_distinct_timepoints():
+    """After FS rail-drop, the depth floor is re-checked on DISTINCT surviving
+    timepoints, not raw rows. A biorep peptide seen at 3 timepoints (so it clears the
+    run-level depth=3 gate) whose entire final timepoint rails out is left with 2
+    distinct timepoints across 4 rows: counting rows (4 >= 3) would wrongly admit an
+    under-depth curve, but counting distinct t (2 < 3) correctly nulls it."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES[:1], 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
+    seq0, ch0 = _TEST_PEPTIDES[0]
+    target = f"{seq0}_{ch0}"
+    # An over-labelled envelope so the FS solve rails to the upper bound (see the
+    # rail-drop test): extrapolate past full labelling.
+    pep_mass0 = calculate_ion_mz(seq0)
+    init0 = _get_init_env(seq0, pep_mass0, n=6)
+    final0 = _get_final_env(seq0, pep_mass0, spep_by_seq[seq0], ria_max=0.06, n=6)
+    over = np.clip(
+        1.6 * (final0 / final0.sum()) - 0.6 * (init0 / init0.sum()), 0.0, None) * 1e6
+    # 3 timepoints x 2 bioreps = 6 rows; rail out BOTH bioreps at the 3rd timepoint.
+    frames = []
+    for idx, ti in enumerate(_TIMES[:3]):
+        for br in (1, 2):
+            d = dfs[idx].copy()
+            d["labeling_time"] = float(ti)
+            d["biological_replicate"] = br
+            if idx == 2:
+                for k in range(6):
+                    d.loc[d["concat"] == target, f"iso{k}"] = over[k]
+            frames.append(d)
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                    ria_max=0.06, min_spep=0)
+    out = fit_run(cfg, frames, coeffs, n_boot=0, time_column="labeling_time")
+    # 2 distinct timepoints survive (t0, t1) over 4 rows -> below depth 3 -> nulled.
+    assert np.isnan(out.loc[target, "k_deg"])
+
+
+def test_single_timepoint_at_t0_is_nulled_not_fit_at_init_k():
+    """A single-timepoint fit whose one distinct time is t*=0 is unidentifiable (every
+    model is flat in k at t=0). It must return a null fit, not fall through to curve_fit
+    and report the arbitrary init k=0.5 with a spuriously zero-width CI."""
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES[:1], 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)
+    dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
+    seq0, ch0 = _TEST_PEPTIDES[0]
+    target = f"{seq0}_{ch0}"
+    # dfs[0] is proportion 0 -> _TIMES[0] == 0; two bioreps at that single t=0.
+    frames = []
+    for br in (1, 2):
+        d = dfs[0].copy()
+        d["labeling_time"] = 0.0
+        d["biological_replicate"] = br
+        frames.append(d)
+    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=1,
+                    ria_max=0.06, min_spep=0)
+    out = fit_run(cfg, frames, coeffs, n_boot=10, time_column="labeling_time")
+    assert np.isnan(out.loc[target, "k_deg"])   # nulled, not the arbitrary init 0.5
+
+
 def test_fs_rail_thresholds_default_and_override():
     """The shipped default rails are the physical-margin 1.05 / −0.05, and
     ``fs_rail_hi`` / ``fs_rail_lo`` override them per fit.

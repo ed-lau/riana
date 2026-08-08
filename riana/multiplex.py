@@ -99,6 +99,8 @@ REGISTRY: tuple[MultiplexLabel, ...] = (DIMETHYL, SILAC)
 _CV_TO_CHANNEL: dict[str, tuple[str, str]] = {}
 _MOD_TO_CHANNEL: dict[int, tuple[str, str]] = {}
 for _lbl in REGISTRY:
+    if not _lbl.intake_wired:
+        continue  # geometry-only label (e.g. SILAC): contributes no CV/mod intake key
     for _ch in _lbl.channels:
         if _ch.cv_term is not None:
             _CV_TO_CHANNEL[_ch.cv_term.upper()] = (_lbl.name, _ch.name)

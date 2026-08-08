@@ -1088,7 +1088,12 @@ def _fit_kdeg(
                 boot.append(float(pb[0]))
             except (RuntimeError, ValueError):
                 continue
-    if len(boot) >= 10:
+    # A residual bootstrap needs >= 2 collapsed points to have any residual variation:
+    # a single point is fit exactly (0 residual dof), so every resample returns the
+    # identical k and the CI collapses to a spuriously tight zero width (k_cv=0, which
+    # sails through the --k-cv gate). Undefined uncertainty, not zero — emit NaN.
+    # Mirrors the per-peptide n_pts >= 2 guard in riana.core.fitting.
+    if n >= 2 and len(boot) >= 10:
         lo, hi = (float(p) for p in np.percentile(boot, boot_ci_pct))
     else:
         lo = hi = float("nan")

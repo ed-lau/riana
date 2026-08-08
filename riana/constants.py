@@ -272,36 +272,3 @@ iso_abundances = [0.9893,  # C12
                   1.0,  # P31 (phosphorus is mononuclidic — only 31P is stable)
                   ]
 
-"""
-Amino acid label mass
-# These are the label mass in amino acid labeling that can be excluded from peptide mass calculation
-# unlike other PTM masses, if speified in the args
-"""
-aa_label_mass = [4.03,
-                 6.02,
-                 8.01,
-                 8.05,
-                 9.06,
-                 10.01,
-                 10.05,
-                 12.04,
-                 14.03,
-                 16.03,
-                 18.02,
-                 20.02,
-                 # 4 decimals
-                 4.0251,
-                 6.0201,
-                 8.0142,
-                 8.0502,
-                 10.0083,
-                 10.0452,
-                 12.0393,
-                 12.0403,
-                 14.0334,
-                 14.0343,
-                 16.0284,
-                 18.0225,
-                 20.0165,
-                 ]
-

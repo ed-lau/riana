@@ -503,22 +503,22 @@ class ProteinTab(QWidget):
             self.model.set_dataframe(result)
             self.curve.show_placeholder("Select a protein row to view its refit.")
             n_fit = int(result["k_deg"].notna().sum())
-            self.summary_label.setText(
-                f"{len(result)} proteins ({p['method']}); "
-                f"{n_fit} with a fitted k_deg."
-            )
+            summary = (f"{len(result)} proteins ({p['method']}); "
+                       f"{n_fit} with a fitted k_deg.")
             # Surface the single-timepoint regime — the core logs it, but that INFO is
-            # emitted in a worker process and never reaches the GUI. If every rolled
-            # protein sits at one labeling timepoint, R² was N/A and curation rode on
-            # k_cv + Min fit points.
-            single_tp = (
-                "n_timepoints" in result.columns and len(result) > 0
-                and bool((result["n_timepoints"].dropna() <= 1).all())
-            )
-            self.results_hint.setText(
-                "Single labeling timepoint — R² is not applicable (bypassed); curation "
-                "was on Max k_cv + Min fit points (replicate floor). Min R² / Rescue R² "
-                "do not apply." if single_tp else "")
+            # emitted in a worker process and never reaches the GUI. Appended to the
+            # SUMMARY, not results_hint: the finally block calls _set_running(False) ->
+            # _check_for_saved_results(), which overwrites results_hint with the
+            # "saved results found" note (the rollup rows _write_output just recorded),
+            # so a hint set here would never show. Guard the empty case too — an
+            # all-refit-failure frame has every n_timepoints NaN, and a bare .all() on
+            # the empty dropna() would spuriously read as single-timepoint.
+            if "n_timepoints" in result.columns:
+                tp = result["n_timepoints"].dropna()
+                if len(tp) > 0 and bool((tp <= 1).all()):
+                    summary += (" Single labeling timepoint — R² N/A (bypassed); "
+                                "curated on Max k_cv + Min fit points (replicate floor).")
+            self.summary_label.setText(summary)
             self._info("done.")
         except asyncio.CancelledError:
             self._info("cancelled.")
@@ -547,10 +547,23 @@ class ProteinTab(QWidget):
             self._info(f"forking a derived project into {out_dir} "
                        f"(input manifest left untouched)")
         provenance = make_provenance(
-            {k: params[k] for k in (
-                "model", "method", "parsimony", "kp", "kr", "rp",
-                "min_peptides", "min_points", "min_r2", "k_cv_max", "rescue_r2",
-                "peptide_admission", "phi_limit", "reference_condition")},
+            {
+                "model": params["model"], "method": params["method"],
+                "parsimony": params["parsimony"], "kp": params["kp"],
+                "kr": params["kr"], "rp": params["rp"],
+                "min_peptides": params["min_peptides"],
+                "min_points": params["min_points"],
+                "min_fit_points": params["min_fit_points"],
+                "min_r2": params["min_r2"],
+                # Emit as "k_cv" (not the build_params key "k_cv_max") to match the CLI
+                # provenance key, so a GUI- and CLI-produced rollup of the same project
+                # hash to the same config_hash.
+                "k_cv": params["k_cv_max"], "rescue_r2": params["rescue_r2"],
+                "peptide_admission": params["peptide_admission"],
+                "phi_limit": params["phi_limit"],
+                "reference_condition": params["reference_condition"],
+                "test_condition": params["test_condition"],
+            },
             id_source=params["manifest"],
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},

@@ -10,16 +10,15 @@ natural-abundance baseline (PROJECT_REVIEW.md §2b). With the v1.1.0 label-taxon
 cleanup the labels are now the strings ``"D2O"`` / ``"O18"`` / ``"AA"``, and the
 test is ``label == "AA"``.
 
-This is a stopgap: M3 Week 4 replaces the ``calculate_fs_m0`` /
-``calculate_label_n`` fixed site-count model entirely with the IsoSpec
-forward/solve model (PROJECT_REVIEW.md §2b, Week 4). The fix here keeps AA
-experiments correct in the interim.
+The fixed-site-count ``m0`` FS model here (``calculate_a0`` / ``calculate_fs_m0``)
+is superseded in production by the IsoSpec forward/solve model
+(``riana.core.fitting`` / ``riana.algorithms.isotope_dist``); it is retained only as
+the reference baseline that ``tests/benchmark/bench_fs_method_compare`` compares the
+production solver against.
 """
 
 from riana.utils import strip_concat
-from riana.algorithms.isotope_dist import get_peptide_distribution
-from riana.algorithms.mass_calc import calculate_ion_mz, count_atoms
-from riana.constants import H_MASS, label_deuterium_de, label_deuterium_commerford
+from riana.algorithms.mass_calc import count_atoms
 from riana import constants
 
 import numpy as np
@@ -52,39 +51,6 @@ def calculate_a0(sequence: str,
         return a0
 
 
-def calculate_label_n(sequence: str,
-                      label: str,
-                      aa_res: str = 'K',
-                      ) -> int:
-    """
-    Calculates labeling sites of the peptide sequence in heavy water
-    or amino acid labeling
-
-    :param sequence:    the peptide sequence
-    :param label:       str: the labeling chemistry — ``"D2O"`` (heavy water),
-                        ``"O18"`` (¹⁸O), or the legacy ``"AA"`` (amino-acid labeling)
-    :param aa_res:      the amino acid being labeled (for ``"AA"`` only)
-    :return:
-    """
-
-    # strip modification site and charge from concat sequence
-    sequence = strip_concat(sequence)
-
-    # if amino acid labeling, return number of labeled residues
-    if label == "AA":
-        # return the sum of each residue in the aa_res
-        return sum([sequence.count(i) for i in aa_res])
-
-    # if heavy water, return the number of labeling sites. The old in-vivo/in-vitro
-    # split (commerford vs. differential-evolution tables) is retired — D₂O
-    # cell-specificity now lives in the fit's coefficient table, not the label.
-    elif label == "D2O":
-        return int(sum([constants.label_deuterium_commerford.get(char) for char in sequence]))
-
-    # else if o18, return the number of labeling sites for o18
-    elif label == "O18":
-        return int(sum([constants.label_oxygens.get(char) for char in sequence]) - 1)
-
 def calculate_fs_m0(a: np.ndarray,
                     seq: str,
                     label: str,
@@ -114,117 +80,3 @@ def calculate_fs_m0(a: np.ndarray,
         return np.repeat(0, len(a)) if isinstance(a, np.ndarray) else 0
     else:
         return (a-a_0)/(a_max-a_0)
-
-
-def calculate_fs_fine_structure(a: np.ndarray,
-                                seq: str,
-                                label: str,
-                                ria_max: float,
-                                formula: str = 'm0_m1',
-                                ) -> float:
-    """
-    Calculates fractional synthesis by calculating the complete isotope envelop using a fine structure calculator,
-    the number of labeling sites, and an artificial element. The empirical mi is then matched the theoretical mi
-    of any isotope ratio in the fine structure calculator given the fractional synthesis rate. This may present a more
-    accurate method of calculating fractional synthesis rates than the calculate_fs_m0 method.
-    :param a:                   m_i at a particular time
-    :param seq:                 the peptide sequence
-    :param label:       str: the labeling chemistry — "D2O" (heavy water), "O18" (¹⁸O), or the legacy "AA" (amino-acid labeling)
-    :param ria_max:             the precursor RIA
-    :param formula:             the formula to calculate the fractional synthesis rate
-    :return:                    the fractional synthesis rate
-    """
-
-    def find_nearest_fs(array, value):
-        """
-        Finds the nearest fractional synthesis rate in the array to the value
-        :param array:
-        :param value:
-        :return:
-        """
-        array = np.asarray(array)
-        idx = (np.abs(array - value)).argmin()
-        return idx
-
-    seq = strip_concat(seq)
-
-    # Calculate the number of labeling sites
-    num_labeling_sites = calculate_label_n(sequence=seq,
-                                           label=label)
-
-    # print(num_labeling_sites)
-
-    # Prelabeling distribution
-    initial = get_peptide_distribution(seq,
-                                       label=label,
-                                       num_labeling_sites=num_labeling_sites,
-                                       )
-
-    # Postlabeling final distribution at 100% FS
-    final = get_peptide_distribution(seq,
-                                     label=label,
-                                     num_labeling_sites=num_labeling_sites,
-                                     deuterium_enrichment_level=ria_max)
-
-    # Get the summed probability of each isotopomer
-    pep_mass = calculate_ion_mz(seq=seq)
-
-    initial_envelop = [
-        sum([p for (m, p) in zip(initial.masses, initial.probs) if np.abs(m - (pep_mass + isotopomer * H_MASS)) <= 0.1])
-        for isotopomer in range(0, 8)]
-
-    final_envelop = [
-        sum([p for (m, p) in zip(final.masses, final.probs) if np.abs(m - (pep_mass + isotopomer * H_MASS)) <= 0.1]) for
-        isotopomer in range(0, 8)]
-
-    # print(f'Initial envelop: {initial_envelop}')
-    # print(f'Final envelop: {final_envelop}')
-
-    # For fractional synthesis from 0% to 100%, mix the initial and final envelop
-    fs_array = []
-
-    # For 0.01 to 1.00, mix the initial and final envelop
-    for fs in np.arange(0, 1.01, 0.01):
-        mixed_envelop = [a * (1 - fs) + b * fs for a, b in zip(initial_envelop, final_envelop)]
-
-        if formula == 'm0_m1':
-            fs_array.extend([mixed_envelop[0] / mixed_envelop[1]])
-
-        elif formula == 'm0_m2':
-            fs_array.extend([mixed_envelop[0] / mixed_envelop[2]])
-
-        elif formula == 'm0_m3':
-            fs_array.extend([mixed_envelop[0] / mixed_envelop[3]])
-
-        elif formula == 'm1_m2':
-            fs_array.extend([mixed_envelop[1] / mixed_envelop[2]])
-
-        elif formula == 'm1_m3':
-            fs_array.extend([mixed_envelop[1] / mixed_envelop[3]])
-
-        elif formula == 'm0_mA':
-            fs_array.extend([mixed_envelop[0] / sum(mixed_envelop[0:6])])
-
-        elif formula == 'm1_mA':
-            fs_array.extend([mixed_envelop[1] / sum(mixed_envelop[0:6])])
-
-        elif formula == 'Auto':
-            if num_labeling_sites < 15:
-                fs_array.extend([mixed_envelop[0] / mixed_envelop[1]])
-            elif num_labeling_sites > 35:
-                fs_array.extend([mixed_envelop[1] / mixed_envelop[3]])
-            else:
-                fs_array.extend([mixed_envelop[0] / mixed_envelop[2]])
-
-    #print(f'FS array: {fs_array}')
-
-    # Then do a reverse lookup of the empirical m_i to get fs.
-    predicted_fs = np.array([find_nearest_fs(fs_array, a_i)/100 for a_i in a])
-    
-    #print(f'Input array: {a}')
-    #print(f'Predicted FS: {predicted_fs}')
-
-    return predicted_fs
-
-
-

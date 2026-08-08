@@ -294,6 +294,14 @@ class IntegrationConfig:
             raise ValueError(
                 f"smoothing_polyorder must be >= 2 (the §2c fix); got {self.smoothing_polyorder}"
             )
+        # savgol requires polyorder < window; catch it up front rather than fail deep
+        # inside per-run integration (where per-run isolation would then skip *every*
+        # run and yield empty output).
+        if self.smoothing is not None and self.smoothing_polyorder >= self.smoothing:
+            raise ValueError(
+                f"smoothing_polyorder ({self.smoothing_polyorder}) must be < the "
+                f"smoothing window ({self.smoothing})"
+            )
         if self.ppm_alert <= 0:
             raise ValueError(f"ppm_alert must be > 0, got {self.ppm_alert}")
         if self.scan_precursor_tol_ppm <= 0:

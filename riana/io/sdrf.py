@@ -385,6 +385,20 @@ def _collapse_isobaric_runs(runs: list[RunIdentity]) -> list[RunIdentity]:
         groups.setdefault(r.data_file, []).append(r)
     collapsed: list[RunIdentity] = []
     for data_file, group in groups.items():
+        # The file-level fields kept from group[0] must actually agree across the
+        # channels (the docstring's premise). labeling_time in particular becomes the
+        # fit x-axis, so a disagreeing SDRF (a typo, or a pulsed-labeling design MS1
+        # cannot resolve into channels) would otherwise be silently stamped with one
+        # arbitrary channel's time. Fail loudly instead.
+        for field in ("labeling_time", "labeling_time_unit",
+                      "precursor_enrichment", "biological_replicate"):
+            values = {getattr(r, field) for r in group}
+            if len(values) > 1:
+                raise DataError(
+                    f"isobaric file {data_file!r} has channels disagreeing on "
+                    f"{field!r} ({sorted(map(str, values))}); MS1 multiplexing "
+                    f"collapses channels to one run, so this field must be shared."
+                )
         condition = "|".join(sorted({r.condition for r in group if r.condition}))
         collapsed.append(replace(group[0], condition=condition, sample=data_file))
     return collapsed
