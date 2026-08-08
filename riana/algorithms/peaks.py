@@ -274,8 +274,8 @@ def symmetry(rt: npt.NDArray[np.float64], intensity: npt.NDArray[np.float64], ap
     rt = np.asarray(rt, dtype=np.float64)
     if not 0 < apex_idx < intensity.size - 1:
         return 0.0
-    left = float(np.trapezoid(intensity[: apex_idx + 1], x=rt[: apex_idx + 1]))  # type: ignore[attr-defined]  # np.trapezoid exists at runtime (numpy>=2), missing from bundled stubs
-    right = float(np.trapezoid(intensity[apex_idx:], x=rt[apex_idx:]))  # type: ignore[attr-defined]  # np.trapezoid exists at runtime (numpy>=2), missing from bundled stubs
+    left = float(np.trapezoid(intensity[: apex_idx + 1], x=rt[: apex_idx + 1]))  # type: ignore[attr-defined, unused-ignore]  # np.trapezoid: absent from pre-2.1 numpy stubs (attr-defined), present in newer (unused-ignore)
+    right = float(np.trapezoid(intensity[apex_idx:], x=rt[apex_idx:]))  # type: ignore[attr-defined, unused-ignore]  # np.trapezoid: absent from pre-2.1 numpy stubs (attr-defined), present in newer (unused-ignore)
     if left <= 0 or right <= 0:
         return 0.0
     r = left / right

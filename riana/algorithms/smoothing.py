@@ -53,9 +53,10 @@ def savgol(
             f"window ({window}) must exceed polyorder ({polyorder})"
         )
 
-    arr = np.asarray(intensity, dtype=np.float64)
+    arr: npt.NDArray[np.float64] = np.asarray(intensity, dtype=np.float64)
     if arr.size < window or not np.any(arr > 0):
-        return arr.copy()
+        empty: npt.NDArray[np.float64] = arr.copy()
+        return empty
     return cast(
         "npt.NDArray[np.float64]",
         scipy.signal.savgol_filter(

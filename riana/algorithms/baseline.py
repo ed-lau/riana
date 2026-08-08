@@ -28,6 +28,7 @@ narrow windows). See PROJECT_REVIEW for the full rationale.
 
 from __future__ import annotations
 
+
 import numpy as np
 import numpy.typing as npt
 
@@ -65,9 +66,10 @@ def noise_floor(
             Default 0.10 — robust to peak occupying up to ~90% of window
             (rare; usually the peak is < 50% of the window).
     """
-    arr = np.asarray(intensity, dtype=np.float64)
+    arr: npt.NDArray[np.float64] = np.asarray(intensity, dtype=np.float64)
     if arr.size == 0:
-        return arr.copy()
+        empty: npt.NDArray[np.float64] = arr.copy()
+        return empty
     floor = float(np.quantile(arr, quantile))
     return np.full(arr.size, floor, dtype=np.float64)
 
@@ -81,12 +83,14 @@ def snip(intensity: npt.NDArray[np.float64], n_iter: int = 40) -> npt.NDArray[np
     """
     from pybaselines import Baseline  # lazy import
 
-    arr = np.asarray(intensity, dtype=np.float64)
+    arr: npt.NDArray[np.float64] = np.asarray(intensity, dtype=np.float64)
     if arr.size == 0:
-        return arr.copy()
+        empty: npt.NDArray[np.float64] = arr.copy()
+        return empty
     fitter = Baseline(x_data=None)
     base, _ = fitter.snip(arr, max_half_window=n_iter)
-    return np.asarray(base, dtype=np.float64)
+    result: npt.NDArray[np.float64] = np.asarray(base, dtype=np.float64)
+    return result
 
 
 def asls(
@@ -104,9 +108,11 @@ def asls(
     """
     from pybaselines import Baseline  # lazy import
 
-    arr = np.asarray(intensity, dtype=np.float64)
+    arr: npt.NDArray[np.float64] = np.asarray(intensity, dtype=np.float64)
     if arr.size == 0:
-        return arr.copy()
+        empty: npt.NDArray[np.float64] = arr.copy()
+        return empty
     fitter = Baseline(x_data=None)
     base, _ = fitter.asls(arr, lam=lam, p=p)
-    return np.asarray(base, dtype=np.float64)
+    result: npt.NDArray[np.float64] = np.asarray(base, dtype=np.float64)
+    return result
