@@ -80,6 +80,12 @@ gui = [
     "qasync>=0.27",
     "pyqtgraph>=0.13",
 ]
+# Standalone GUI bundle build (packaging/). PyInstaller freezes the CLI+GUI into a
+# macOS .app / one-dir bundle so non-Python users can launch `riana gui` — see
+# packaging/README.md. Build with the [gui] extra also installed.
+packaging = [
+    "pyinstaller>=6",
+]
 # NB: pytest-qt is intentionally in NEITHER [dev] nor [gui]. The plugin aborts
 # the whole pytest session at configure when no Qt binding is importable, so it
 # must not be installed in the GUI-less main matrix; and it is a test tool, not a
