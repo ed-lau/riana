@@ -169,6 +169,36 @@ def test_mztab_parses_synthetic_fixture(tmp_path):
     assert all(r.peptide_mass > 0 for r in records)
 
 
+def test_is_canonical_peptide():
+    """The shared intake gate: only the 20 standard AAs pass; non-canonical residues
+    (U/O/B/Z/J/X) fail; mod tokens and the charge suffix are stripped first."""
+    from riana.utils import is_canonical_peptide
+    assert is_canonical_peptide("PEPTIDEK")
+    assert is_canonical_peptide("PEPT[UNIMOD:21]IDEK")   # mod token stripped
+    assert is_canonical_peptide("PEPTIDEK_2")            # charge suffix stripped
+    for bad in ("PEPTUDEK", "PEPTOK", "PEPTBK", "PEPTZK", "PEPTJK", "PEPTXK"):
+        assert not is_canonical_peptide(bad), bad
+    assert not is_canonical_peptide("")                  # empty / all-token
+
+
+def test_mztab_drops_non_canonical_residue_peptides(tmp_path):
+    """A peptide with a non-canonical residue (selenocysteine U) has no defined mass,
+    so it is dropped at intake rather than silently mis-massed with a zero atom vector."""
+    sec_row = (
+        "PSM\tPEPTUDEK\t3\tsp|P00009|SEC_HUMAN\t1\tdb\tnull\t[, , dummy, 1]\t0.001\t"
+        "null\t11.0\t2\t472.74\t472.73\t"
+        "ms_run[1]:controllerType=0 controllerNumber=1 scan=404\tK\tR\t1\t8\t0.01\t"
+        "0.001\t0\tPEPTUDEK\n"
+    )
+    fixture = tmp_path / "sec.mzTab"
+    fixture.write_text(_MINIMAL_MZTAB + sec_row)
+    records, _ = iomztab.read_mztab(fixture, sample="syn")
+    seqs = {r.sequence for r in records}
+    assert "PEPTUDEK" not in seqs   # selenocysteine peptide dropped at intake
+    assert "PEPTIDEK" in seqs       # the canonical peptides are kept
+    assert all(r.peptide_mass > 0 for r in records)
+
+
 def test_mztab_keeps_decoys_when_flag_off(tmp_path):
     fixture = tmp_path / "minimal.mzTab"
     fixture.write_text(_MINIMAL_MZTAB)

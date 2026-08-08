@@ -65,6 +65,7 @@ from riana import constants
 from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
 from riana.records import PSMRecord, RunIdentity
+from riana.utils import is_canonical_peptide
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -227,6 +228,7 @@ def read_diann(
 
     n_before = len(df)
     n_dropped = 0
+    n_noncanon = 0    # peptides with a non-canonical residue (U/O/B/Z/J/X — no mass)
 
     # file_idx by sorted Run order — stable and order-independent of the SDRF.
     runs = sorted(df["Run"].unique())
@@ -259,6 +261,11 @@ def read_diann(
             sequence = str(row.sequence)
         else:
             sequence = encoded
+        # Non-canonical residue (selenocysteine / ambiguity code) → no defined mass;
+        # drop rather than mis-mass it. Vanishingly rare (audit 2026-08).
+        if not is_canonical_peptide(sequence):
+            n_noncanon += 1
+            continue
         charge = int(row.charge)
         peptide_mass = float(
             accmass.calculate_ion_mz(sequence)
@@ -307,6 +314,11 @@ def read_diann(
             "v1 set (kept %d); starter-set mods (N-term Acetyl, Phospho) are "
             "encoded as [UNIMOD:N] and integrated at the modified m/z.",
             n_dropped, n_before, len(records),
+        )
+    if n_noncanon:
+        _LOGGER.info(
+            "io.diann: dropped %d/%d PSMs with a non-canonical residue "
+            "(U/O/B/Z/J/X — no defined mass).", n_noncanon, n_before,
         )
     if mz_ppm_diffs:
         median_ppm = float(np.median(np.abs(mz_ppm_diffs)))

@@ -10,6 +10,21 @@ re-export was dropped with the legacy modules in M4.)
 """
 import re
 
+from riana import constants
+
+
+def is_canonical_peptide(sequence: str) -> bool:
+    """True iff every residue is one of the 20 standard amino acids.
+
+    Strips ``[UNIMOD:n]`` mod tokens and the ``_charge`` suffix first (via
+    :func:`strip_concat`), then checks the bare residues against
+    :data:`riana.constants.CANONICAL_AA`. A peptide carrying a non-canonical residue
+    (U/O/B/Z/J/X) has no defined atom composition, so it cannot be mass-computed and is
+    dropped at intake. Empty / all-token input returns ``False``.
+    """
+    core = re.sub(r"[^A-Z]", "", strip_concat(sequence).upper())
+    return bool(core) and set(core) <= constants.CANONICAL_AA
+
 
 def strip_concat(sequence: str,
                  ) -> str:

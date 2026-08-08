@@ -85,12 +85,18 @@ aa_atoms = {
     'V': [5, 9, 1, 1, 0, 0],
     'W': [11, 10, 1, 2, 0, 0],
     'Y': [9, 9, 2, 1, 0, 0],
-
-    # TODO: include non-canonical AA
-    'U': [0, 0, 0, 0, 0, 0],  # Selenocysteine
-    'X': [0, 0, 0, 0, 0, 0],
-    'B': [0, 0, 0, 0, 0, 0],  # Asn or Asp
 }
+
+#: The 20 standard amino acids — exactly the ``aa_atoms`` keys. Residues outside this
+#: set (U selenocysteine, O pyrrolysine, B/Z/J/X ambiguity codes) have no defined atom
+#: composition, so a peptide containing one cannot be mass-computed. Such peptides are
+#: dropped at intake (:func:`riana.utils.is_canonical_peptide`); any that slip past then
+#: raise ``KeyError`` in ``mass_calc`` (caught → dropped by fit / integration) rather
+#: than the old silent ``[0,0,0,0,0,0]`` mass under-count. (Selenocysteine is genuinely
+#: unrepresentable in this ``[C,H,O,N,S,P]`` vector. A 2026-08 audit found non-canonical
+#: residues in only ~0.12%/0.25% of the human/mouse reviewed proteome — almost all
+#: selenocysteine — and **zero** across ~808k identified PSMs in our data.)
+CANONICAL_AA = frozenset("ACDEFGHIKLMNPQRSTVWY")
 
 # Modification atom compositions ``[C, H, O, N, S, P]``, keyed by **UniMod
 # accession id** — the single curated source for both the integrate-side mass

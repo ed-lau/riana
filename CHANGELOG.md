@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Non-canonical residue intake guard — 2026-08-08
+
+#### Fixed
+
+- **Peptides with a non-canonical residue (selenocysteine `U`, pyrrolysine `O`, or the
+  ambiguity codes `B`/`Z`/`J`/`X`) are now dropped at intake** (mzTab, DIA-NN, Percolator)
+  instead of being silently mis-massed. Those residues had no defined atom composition —
+  `aa_atoms` carried a placeholder `[0,0,0,0,0,0]` for `U`/`X`/`B`, so a `U`-containing
+  peptide's neutral mass was ~150 Da too low, driving a wrong extraction window and FS/k.
+  The placeholder vectors are removed and a shared `riana.utils.is_canonical_peptide` gate
+  skips such PSMs (logged as a count). An audit of the reviewed human/mouse proteomes found
+  non-canonical residues in only ~0.12%/0.25% of proteins (almost all selenocysteine) and
+  **zero** across ~808k identified PSMs in our data, so the practical impact is nil — this
+  closes a silent-wrong-mass hole rather than changing any current result.
+
 ### Rollup curation & weighting correctness fixes — 2026-08-03
 
 A code audit of the post-1.1.0 additions surfaced one results-affecting rollup defect and

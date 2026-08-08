@@ -63,6 +63,7 @@ from riana import constants, multiplex
 from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
 from riana.records import PSMRecord, RunIdentity
+from riana.utils import is_canonical_peptide
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -205,6 +206,7 @@ def read_mztab(
     n_before = len(psm_df)
     n_dropped = 0     # peptidoforms carrying a mod outside the modelled set
     n_unrouted = 0    # (multiplex only) PSMs with no / conflicting channel mod
+    n_noncanon = 0    # peptides with a non-canonical residue (U/O/B/Z/J/X — no mass)
 
     # Per-PSM q-value. quantms 1.8.0 (OpenMS 3.6.0) stopped writing the optional
     # ``opt_global_q-value`` column; the q-value now lives in ``search_engine_score[1]``
@@ -270,6 +272,12 @@ def read_mztab(
         else:
             identity = sample_map.get(file_name) if sample_map is not None else None
             record_sample = identity.sample if identity is not None else (sample or "")
+        # A non-canonical residue (selenocysteine / ambiguity code) has no defined atom
+        # composition, so its mass can't be computed — drop the PSM rather than mis-mass
+        # it. Vanishingly rare (audit 2026-08: 0 across our identified data).
+        if not is_canonical_peptide(bare_sequence):
+            n_noncanon += 1
+            continue
         records.append(
             PSMRecord(
                 scan=scan,
@@ -311,6 +319,11 @@ def read_mztab(
         _LOGGER.info(
             "io.mztab: dropped %d/%d PSMs with no / conflicting sample-axis "
             "multiplexing channel (unroutable to a sample).", n_unrouted, n_before,
+        )
+    if n_noncanon:
+        _LOGGER.info(
+            "io.mztab: dropped %d/%d PSMs with a non-canonical residue "
+            "(U/O/B/Z/J/X — no defined mass).", n_noncanon, n_before,
         )
     return records, file_index_map
 

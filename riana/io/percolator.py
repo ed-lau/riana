@@ -26,6 +26,7 @@ deferred until the first multi-fraction dataset).
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Iterable
@@ -36,6 +37,9 @@ import pandas as pd
 from riana.algorithms import mass_calc as accmass
 from riana.exceptions import DataError
 from riana.records import PSMRecord
+from riana.utils import is_canonical_peptide
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # Crux Percolator emits a fixed-width TSV with these columns; the absence of
@@ -82,6 +86,17 @@ def _read_crux(
         df = pd.read_csv(path, sep="\t")
     except OSError as e:
         raise DataError(f"Failed to load percolator file {path}: {e}") from e
+
+    # Drop peptides with a non-canonical residue (U/O/B/Z/J/X) — no defined mass, so
+    # they can't be integrated; vanishingly rare (audit 2026-08). Filter before the
+    # mass recompute so calculate_ion_mz never sees one.
+    n_before = len(df)
+    df = df[df["sequence"].map(is_canonical_peptide)].reset_index(drop=True)
+    if len(df) < n_before:
+        _LOGGER.info(
+            "io.percolator: dropped %d/%d PSMs with a non-canonical residue "
+            "(U/O/B/Z/J/X — no defined mass).", n_before - len(df), n_before,
+        )
 
     # Recompute peptide mass so cysteine-IAA mass is always counted (Crux's
     # column omits it). Matches the 0.9.0 ReadPercolator behavior bit-for-bit.
@@ -163,7 +178,12 @@ def _read_standalone(
     protein_ids = [",".join(ln.rstrip().split("\t")[5:]) for ln in f_ln[1:]]
 
     records: list[PSMRecord] = []
+    n_noncanon = 0
     for row, prot in zip(head_df.itertuples(index=False), protein_ids):
+        # Non-canonical residue → no defined mass; drop rather than mis-mass it.
+        if not is_canonical_peptide(row.sequence):
+            n_noncanon += 1
+            continue
         peptide_mass = accmass.calculate_ion_mz(row.sequence)
         records.append(
             PSMRecord(
@@ -184,6 +204,11 @@ def _read_standalone(
                 percolator_pep=float(row.pep),
                 distinct_matches=0,
             )
+        )
+    if n_noncanon:
+        _LOGGER.info(
+            "io.percolator: dropped %d PSMs with a non-canonical residue "
+            "(U/O/B/Z/J/X — no defined mass).", n_noncanon,
         )
     return records
 
