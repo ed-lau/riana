@@ -357,7 +357,9 @@ def load_rollup_results(manifest_path: str) -> tuple[pd.DataFrame, dict, dict]:
             n = len(grp)
             var = grp["fs_var"].tolist() if "fs_var" in grp else [float("nan")] * n
             df = grp["fs_df"].tolist() if "fs_df" in grp else [float("nan")] * n
-            points[k] = (grp["labeling_time"].tolist(), grp["fs"].tolist(), var, df)
+            br = (grp["biological_replicate"].tolist()
+                  if "biological_replicate" in grp else [pd.NA] * n)
+            points[k] = (grp["labeling_time"].tolist(), grp["fs"].tolist(), var, df, br)
     return proteins, points, read_provenance_header(prot)
 
 

@@ -449,7 +449,8 @@ def _rollup_linear(
     )
     points = {
         keys: (g["labeling_time"].tolist(), g["theta"].tolist(),
-               g["theta_var"].tolist(), g["theta_df"].tolist())
+               g["theta_var"].tolist(), g["theta_df"].tolist(),
+               g["biological_replicate"].tolist())
         for keys, g in long.groupby(_GROUP_KEYS, sort=False)
     }
     result.attrs["protein_points"] = points
@@ -461,25 +462,30 @@ def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
     refit — the inverse-variance-weighted fraction-new the GUI curve plots, one row
     per collapsed ``(biological_replicate, labeling_time)`` point within each
     ``(experiment, condition, protein)`` (so several rows can share a
-    ``labeling_time`` when a protein has multiple bioreps). Built from
+    ``labeling_time`` when a protein has multiple bioreps). ``biological_replicate``
+    is written so a row is uniquely the collapsed cell — enabling replicate
+    subsetting / biorep-split modelling directly from this file. Built from
     ``result.attrs["protein_points"]`` (empty when none were attached).
     """
     rows = []
     for (exp, cond, prot), pts in result.attrs.get("protein_points", {}).items():
         t_list, fs_list = pts[0], pts[1]
-        # var/df carried from the collapse (a 4-tuple); older 2-tuples pad with NaN.
+        # var/df/biorep carried from the collapse (a 5-tuple); older/short tuples pad.
         n = len(t_list)
         var_list = pts[2] if len(pts) > 2 else [float("nan")] * n
         df_list = pts[3] if len(pts) > 3 else [float("nan")] * n
-        for t, fs, var, df in zip(t_list, fs_list, var_list, df_list):
+        br_list = pts[4] if len(pts) > 4 else [pd.NA] * n
+        for t, fs, var, df, br in zip(t_list, fs_list, var_list, df_list, br_list):
             rows.append({
                 "experiment": exp, "condition": cond, "protein": prot,
+                "biological_replicate": br,
                 "labeling_time": float(t), "fs": float(fs),
                 "fs_var": float(var), "fs_df": float(df),
             })
     return pd.DataFrame(
         rows,
-        columns=[*PROTEIN_KEY_COLUMNS, "labeling_time", "fs", "fs_var", "fs_df"],
+        columns=[*PROTEIN_KEY_COLUMNS, "biological_replicate",
+                 "labeling_time", "fs", "fs_var", "fs_df"],
     )
 
 
@@ -859,16 +865,20 @@ def _refit_table(
     return table, points
 
 
-def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, list]:
+def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, list, list]:
     """Collapse one protein group's peptide θ into ``(t_list, fs_list, var_list,
-    df_list)`` points — the θ (unchanged), its per-point variance ``Var(θ_i)``, and
-    the variance estimate's effective df (for the WLS-Var / eBayes moderation).
+    df_list, br_list)`` points — the θ (unchanged), its per-point variance
+    ``Var(θ_i)``, the variance estimate's effective df (for the WLS-Var / eBayes
+    moderation), and each point's ``biological_replicate``.
 
     ``method="pooled"`` keeps every peptide×timepoint θ (pseudoreplication; each
-    point's var is that peptide's own PI-width variance, df ≈ its fit-point count);
-    ``method="weighted"`` collapses peptides within each (biorep, timepoint) by
-    inverse variance (:func:`_weighted_theta`). Shared by the nonlinear refit
-    (:func:`_refit_one_group`) and the linear collapse (:func:`_collapse_long`).
+    point's var is that peptide's own PI-width variance, df ≈ its fit-point count,
+    br its peptide's replicate); ``method="weighted"`` collapses peptides within each
+    (biorep, timepoint) by inverse variance (:func:`_weighted_theta`), so each point's
+    br is that cell's replicate. Shared by the nonlinear refit (:func:`_refit_one_group`)
+    and the linear collapse (:func:`_collapse_long`). ``br_list`` lets the roll-up
+    fractions record which replicate each collapsed point came from (a within-
+    ``(experiment, condition, timepoint)`` index; see build_rollup_fractions).
     """
     # Per-peptide σ-df ≈ the peptide's fit-point count (its residual-bootstrap df).
     npts = grp.groupby("concat")["labeling_time"].nunique().to_dict()
@@ -878,11 +888,12 @@ def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, l
         sig = (grp["fs_upper"].to_numpy(float) - grp["fs_lower"].to_numpy(float)) / _PI_SPAN_SIGMA
         var = np.where(np.isfinite(sig) & (sig > 0), sig ** 2, np.nan)
         df = np.array([float(npts.get(c, 1)) for c in grp["concat"].to_numpy()])
+        br = grp["biological_replicate"].to_numpy()
         keep = np.isfinite(fs) & np.isfinite(t)
         return (t[keep].tolist(), fs[keep].tolist(),
-                var[keep].tolist(), df[keep].tolist())
-    t_list, fs_list, var_list, df_list = [], [], [], []
-    for (_br, t), cell in grp.groupby(
+                var[keep].tolist(), df[keep].tolist(), br[keep].tolist())
+    t_list, fs_list, var_list, df_list, br_list = [], [], [], [], []
+    for (br, t), cell in grp.groupby(
         ["biological_replicate", "labeling_time"], sort=False
     ):
         dfs = np.array([float(npts.get(c, 1)) for c in cell["concat"].to_numpy()])
@@ -895,7 +906,8 @@ def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, l
             fs_list.append(theta)
             var_list.append(var)
             df_list.append(eff_df)
-    return t_list, fs_list, var_list, df_list
+            br_list.append(br)
+    return t_list, fs_list, var_list, df_list, br_list
 
 
 def _collapse_long(
@@ -909,14 +921,16 @@ def _collapse_long(
     for (exp, cond, prot), grp in fractions.groupby(_GROUP_KEYS, sort=False):
         if grp["concat"].nunique() < min_peptides:
             continue
-        t_list, fs_list, var_list, df_list = _collapse_group(grp, method)
-        for t, fs, var, df in zip(t_list, fs_list, var_list, df_list):
+        t_list, fs_list, var_list, df_list, br_list = _collapse_group(grp, method)
+        for t, fs, var, df, br in zip(t_list, fs_list, var_list, df_list, br_list):
             rows.append({"experiment": exp, "condition": cond, "protein": prot,
                          "labeling_time": float(t), "theta": float(fs),
-                         "theta_var": float(var), "theta_df": float(df)})
+                         "theta_var": float(var), "theta_df": float(df),
+                         "biological_replicate": br})
     return pd.DataFrame(
         rows, columns=["experiment", "condition", "protein",
-                       "labeling_time", "theta", "theta_var", "theta_df"])
+                       "labeling_time", "theta", "theta_var", "theta_df",
+                       "biological_replicate"])
 
 
 def _refit_one_group(
@@ -939,7 +953,7 @@ def _refit_one_group(
     keys, grp = item
     n_rep = int(grp["biological_replicate"].nunique())
     n_tp = int(grp["labeling_time"].nunique())
-    t_list, fs_list, var_list, df_list = _collapse_group(grp, method)
+    t_list, fs_list, var_list, df_list, br_list = _collapse_group(grp, method)
     if len(t_list) < min_points:
         return keys, None, None
     fit = _fit_kdeg(
@@ -958,7 +972,7 @@ def _refit_one_group(
         "n_points": int(len(t_list)), "k_deg": k,
         "ci_lo": lo, "ci_hi": hi, "R_squared": r2,
     }
-    return keys, row, (t_list, fs_list, var_list, df_list)
+    return keys, row, (t_list, fs_list, var_list, df_list, br_list)
 
 
 # --- process-pool plumbing (mirrors core/fitting._init_fit_worker) -----------

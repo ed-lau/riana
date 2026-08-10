@@ -73,6 +73,38 @@ def test_delta_k_sign_and_per_protein_bh():
     assert by.loc["P1", "delta_k_p_adj"] < 0.05
 
 
+def test_bh_is_per_experiment_not_pooled():
+    """Δk BH corrects WITHIN each experiment (each stratum is its own hypothesis
+    family), so a combined multi-experiment fit gives the SAME p_adj as fitting each
+    experiment alone — and NOT the same as one pooled BH over all proteins."""
+    times = [0, 1, 2, 3, 4, 6, 8, 10]
+    rows = []
+    for i, (kc, kk) in enumerate([(0.05, 0.10), (0.05, 0.09), (0.05, 0.07), (0.05, 0.055)]):
+        rows += _curve("A", f"A{i}", "control", kc, times, noise=0.01, seed=i)
+        rows += _curve("A", f"A{i}", "knockout", kk, times, noise=0.01, seed=100 + i)
+    for i, (kc, kk) in enumerate([(0.05, 0.051), (0.05, 0.052), (0.05, 0.05), (0.05, 0.053)]):
+        rows += _curve("B", f"B{i}", "control", kc, times, noise=0.01, seed=200 + i)
+        rows += _curve("B", f"B{i}", "knockout", kk, times, noise=0.01, seed=300 + i)
+    df = pd.DataFrame(rows)
+    out = fit_linear_deltak(df, reference_condition="control")
+    outA = fit_linear_deltak(df[df.experiment == "A"], reference_condition="control")
+
+    def padj(frame):
+        u = frame.dropna(subset=["delta_k_p"]).drop_duplicates(["experiment", "protein"])
+        return dict(zip(zip(u.experiment, u.protein), u.delta_k_p_adj)), u
+
+    all_adj, u = padj(out)
+    a_adj, _ = padj(outA)
+    # combined-fit p_adj for experiment A == fitting A alone (BH scoped to A)
+    for key in a_adj:
+        assert all_adj[key] == pytest.approx(a_adj[key], rel=1e-9)
+    # ...and genuinely differs from a single pooled BH over all 8 proteins
+    from statsmodels.stats.multitest import multipletests
+    pooled = dict(zip(zip(u.experiment, u.protein),
+                      multipletests(u.delta_k_p.to_numpy(), method="fdr_bh")[1]))
+    assert any(abs(pooled[k] - all_adj[k]) > 1e-6 for k in all_adj)
+
+
 def test_single_condition_protein_has_no_delta_k():
     times = [0, 1, 2, 3, 4, 6, 8]
     out = fit_linear_deltak(pd.DataFrame(

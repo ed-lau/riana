@@ -408,16 +408,21 @@ def fit_linear_deltak(
     if out.empty:
         return out[LINEAR_COLUMNS]
 
-    # Benjamini-Hochberg across proteins (one p per protein, not per row).
+    # Benjamini-Hochberg PER EXPERIMENT (one p per protein, not per row). Each
+    # experiment is its own hypothesis family — e.g. control-vs-KO in one tissue is
+    # a distinct study from another tissue — so a stratified (--experiment-column)
+    # rollup corrects within each stratum, not across the pooled set. A single-
+    # experiment rollup (the common case) is unchanged (one family).
     prot_p = (
         out.loc[out["delta_k_p"].notna(), ["experiment", "protein", "delta_k_p"]]
         .drop_duplicates(["experiment", "protein"])
     )
     if not prot_p.empty:
         from statsmodels.stats.multitest import multipletests
-        prot_p = prot_p.assign(
-            delta_k_p_adj=multipletests(
-                prot_p["delta_k_p"].to_numpy(), method="fdr_bh")[1])
+        prot_p = prot_p.assign(delta_k_p_adj=np.nan)
+        for exp, grp in prot_p.groupby("experiment"):
+            prot_p.loc[grp.index, "delta_k_p_adj"] = multipletests(
+                grp["delta_k_p"].to_numpy(), method="fdr_bh")[1]
         adj = dict(zip(zip(prot_p["experiment"], prot_p["protein"]),
                        prot_p["delta_k_p_adj"]))
         out["delta_k_p_adj"] = [

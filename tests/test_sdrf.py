@@ -168,6 +168,61 @@ def test_experiment_label_defaults_to_stem(tmp_path):
     assert read_sdrf(p, experiment="override").experiment == "override"
 
 
+def _stratified_sdrf(tmp_path) -> Path:
+    """A 2-tissue × 2-condition turnover SDRF for --experiment-column tests."""
+    cols = ["source name", "characteristics[organism]",
+            "characteristics[organism part]",
+            "characteristics[biological replicate]",
+            "characteristics[labeling time]", "comment[data file]",
+            "comment[proteomics data acquisition method]",
+            "characteristics[precursor enrichment]", "factor value[condition]"]
+    rows = [
+        ["s1", "Mus musculus", "Left atrium", "1", "1 day", "a1.mzML", "DIA", "0.046", "control"],
+        ["s2", "Mus musculus", "Left atrium", "1", "1 day", "a2.mzML", "DIA", "0.046", "knockout"],
+        ["s3", "Mus musculus", "Left ventricle", "1", "1 day", "b1.mzML", "DIA", "0.046", "control"],
+        ["s4", "Mus musculus", "Left ventricle", "1", "1 day", "b2.mzML", "DIA", "0.046", "knockout"],
+    ]
+    p = tmp_path / "strat.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    return p
+
+
+def test_experiment_column_stratifies_runs_per_row(tmp_path):
+    p = _stratified_sdrf(tmp_path)
+    # default: one experiment (the stem) on every run
+    assert {r.experiment for r in read_sdrf(p).runs} == {"strat"}
+    # --experiment-column: per-row experiment from the named column
+    t = read_sdrf(p, experiment_column="characteristics[organism part]")
+    by_file = {r.data_file: r.experiment for r in t.runs}
+    assert by_file == {"a1": "Left atrium", "a2": "Left atrium",
+                       "b1": "Left ventricle", "b2": "Left ventricle"}
+    # condition (the contrast axis) is unaffected by the stratifier
+    assert {r.condition for r in t.runs} == {"control", "knockout"}
+
+
+def test_experiment_column_missing_raises(tmp_path):
+    p = _stratified_sdrf(tmp_path)
+    with pytest.raises(DataError, match="not found"):
+        read_sdrf(p, experiment_column="characteristics[nope]")
+
+
+def test_experiment_column_empty_cell_raises(tmp_path):
+    cols = ["source name", "characteristics[organism]",
+            "characteristics[organism part]",
+            "characteristics[biological replicate]",
+            "characteristics[labeling time]", "comment[data file]",
+            "comment[proteomics data acquisition method]",
+            "characteristics[precursor enrichment]", "factor value[condition]"]
+    rows = [
+        ["s1", "Mus musculus", "Left atrium", "1", "1 day", "a1.mzML", "DIA", "0.046", "control"],
+        ["s2", "Mus musculus", "not available", "1", "1 day", "a2.mzML", "DIA", "0.046", "control"],
+    ]
+    p = tmp_path / "gap.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    with pytest.raises(DataError, match="empty"):
+        read_sdrf(p, experiment_column="characteristics[organism part]")
+
+
 # --- validation --------------------------------------------------------------
 
 

@@ -228,11 +228,48 @@ FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precac
 Shipped (CHANGELOG): M5 per-timepoint fraction-new, the fit-model set (simple/guan/fornasiero/
 calibration), protein rollup, the `linear simple` cross-condition Δk (WLS default), the ¹⁸O
 rewrite, M7 PTM-aware envelope, 2D-LC fraction collapse, TMT/TMTpro, dimethyl channel→sample
-intake, and the multi-point FS rail-drop. **Open:**
+intake, the multi-point FS rail-drop, and (2026-08-09) multi-factor stratification
+(`integrate --experiment-column`), `rollup --plot` / `--experiment`, and per-experiment Δk BH. **Open:**
 - **>2-condition Δk — full all-pairwise / Tukey.** The interim selectable pair shipped
   (`--test-condition`/`--reference-condition`, contrasted from the joint all-condition fit). The
   all-pairwise + multiplicity-correction extension builds additively on the same joint fit —
   blocked on a good ≥3-condition dataset.
+- **[DRAFTED 2026-08-09, implementation DEFERRED to next session] Two-factor (stratum × condition)
+  interaction test.** A multi-factor design (e.g. chamber × condition) wants, per protein, both the
+  per-stratum Δk *and* whether the condition effect **differs across strata** (an interaction: "is the
+  ATF6-KO effect chamber-specific?"). Validated on `runs/timeseries_atf6`
+  (`notebooks/atf6_biology.ipynb` §3, prototype `scratchpad/two_factor.py`): only Cops3 and Smyd1 show
+  a significant chamber×KO interaction — most of the proteome responds chamber-uniformly.
+  - **Estimator — settled.** The existing joint fit already fits a protein's cells with ONE shared
+    residual variance; crossing the two factors into a combined cell factor
+    (`φ ~ 0 + day:C("stratum|condition")`) makes the *same* estimator yield per-stratum Δk (verified
+    **identical** to the per-experiment rollup, Pearson r = 1.0000) **plus** an interaction F-test. So
+    this is a **contrast/reporting layer over the existing WLS estimator, not a new model**.
+  - **Design choices to settle at implementation:**
+    1. *How the two factors arrive.* Today `experiment = stratum` keeps strata as **separate fits**
+       (per-stratum variance) — which is exactly why the per-chamber rollup **cannot** test the
+       interaction (no shared variance across strata). Two routes: **(a)** a rollup-time regroup that
+       pools the per-experiment substrate (`riana_rollup_fractions.txt`, `experiment = stratum`) back
+       into one cross-stratum fit per protein — reuses existing outputs, what the prototype does,
+       lower friction; **(b)** a genuine second identity field carried from intake (generalize beyond
+       the `"|"`-joined `condition`), `experiment = study`. Lean (a).
+    2. *Variance assumption.* The joint fit pools one σ̂² across all strata×conditions, but atf6's
+       per-stratum σ genuinely differs (atria vs ventricles / data quality) → a shared-variance F-test
+       assumes a homoscedasticity it may lack. Choice: shared-variance (simpler, more power) vs a
+       heteroscedasticity-robust interaction (per-stratum variance, HC/Welch-type). Gate on a
+       residual-homogeneity check. (Related to the limma/Satterthwaite item above.)
+    3. *What to report.* Per-stratum Δk (have it) + an **omnibus** interaction F (all Δk equal?)
+       and/or **specific pairwise** interaction contrasts (Δk_A − Δk_B); BH the per-protein interaction
+       p across proteins (one family).
+    4. *CLI surface.* Lean a `rollup --interaction` flag adding `interaction_F` / `interaction_p` /
+       `interaction_p_adj` columns (one row per protein) alongside the per-experiment Δk — reuses the
+       rollup substrate. Alternatives: a separate `riana interaction` subcommand, or a post-hoc tool.
+    5. *GUI surface.* The interaction is inherently **cross-stratum**, so it needs a small-multiple
+       per-stratum panel per protein (like the Cops3 figure in the notebook), not the current
+       one-`(experiment, protein)` plot. Lean a new **Interaction tab** (sortable by
+       `interaction_p_adj`, click → the per-stratum panel); alternative is a toggle on the Protein tab.
+    6. *Scope.* Two conditions per stratum initially (matches the current Δk); >2 conditions
+       generalizes the omnibus/pairwise set later (ties to the all-pairwise item above).
 - **[INVESTIGATE] Residual-variance moderation for the Δk t-test (limma-exact / Satterthwaite).**
   The `linear simple` contrast uses the per-protein WLS residual df `N − p`; a protein with few
   collapsed points has a noisy `σ̂²` → an unstable t. Complementary to the per-point-variance /

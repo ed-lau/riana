@@ -105,6 +105,15 @@ def integrate(
         "written/updated. Without --sdrf, id_path is a Percolator file (the "
         "demoted single-mzML tier).",
     ),
+    experiment_column: Optional[str] = typer.Option(
+        None, "--experiment-column", metavar="COL",
+        help="[--sdrf path] SDRF column whose per-row value becomes each run's "
+        "`experiment` (e.g. 'characteristics[organism part]'), stratifying a "
+        "multi-factor sheet into separate experiments. Riana groups fits/rollups "
+        "on (experiment, condition), so the linear-simple Δk then contrasts "
+        "conditions WITHIN each experiment (e.g. control-vs-KO within each tissue). "
+        "Default: the SDRF file stem on every run (one experiment).",
+    ),
     sample: str = typer.Option(
         "time0", "-s", "--sample",
         help="Sample name for the Percolator (no-SDRF) path; must end with a "
@@ -309,7 +318,7 @@ def integrate(
     if sdrf is not None:
         from riana.io.sdrf import read_sdrf
         try:
-            sdrf_table = read_sdrf(sdrf)
+            sdrf_table = read_sdrf(sdrf, experiment_column=experiment_column)
         except DataError as exc:
             raise typer.BadParameter(str(exc)) from exc
     _default_mass_tol = IntegrationConfig.__dataclass_fields__["mass_tol_ppm"].default
@@ -411,6 +420,12 @@ def integrate(
                 f"SDRF {sdrf}: {len(sdrf_table.runs)} runs, "
                 f"{sdrf_table.experiment_type}, {sdrf_table.acquisition}"
             )
+            if experiment_column is not None:
+                from collections import Counter
+                dist = Counter(r.experiment for r in sdrf_table.runs)
+                logger.info(
+                    "experiment ← %s: %s",
+                    experiment_column, dict(sorted(dist.items())))
             integrate_project(
                 config, sdrf_table, mzml_path, id_path, out,
                 max_workers=int(workers), resume=bool(resume), logger=logger,
@@ -891,6 +906,18 @@ def rollup(
         help="Drop match-between-runs fraction points (evidence='mbr') before the "
         "protein refit. MBR points are used by default; the n_mbr / n_clean output "
         "columns report the composition either way."),
+    experiment: Optional[str] = typer.Option(
+        None, "--experiment", metavar="EXP",
+        help="Restrict the rollup to a single experiment (e.g. one tissue when the "
+        "manifest was stratified via `integrate --experiment-column`). Default: all "
+        "experiments in one pass, each contributing per-experiment rows to the one "
+        "output table (Δk is always within-experiment)."),
+    plot: bool = typer.Option(
+        False, "--plot",
+        help="['linear simple' only] Also write per-protein φ-space Δk comparison "
+        "curves to a PDF per experiment (riana_rollup_curves[_<exp>].pdf) — the "
+        "batch analog of the GUI's one-at-a-time view. One page per protein, sorted "
+        "by delta_k_p_adj."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -971,6 +998,15 @@ def rollup(
 
     peptides = pd.read_table(pep_path, comment="#")
     fractions = pd.read_table(frac_path, comment="#")
+    if experiment is not None:
+        avail = sorted(set(fractions.get("experiment", pd.Series(dtype=str)).dropna()))
+        if experiment not in avail:
+            raise typer.BadParameter(
+                f"--experiment {experiment!r} not in the fit outputs. "
+                f"Available: {avail}", param_hint="--experiment")
+        peptides = peptides[peptides["experiment"] == experiment]
+        fractions = fractions[fractions["experiment"] == experiment]
+        logger.info("restricted to experiment=%s", experiment)
     from riana.progress import ProgressReporter
     progress = ProgressReporter(0, "rollup", logger)
     try:
@@ -1018,6 +1054,24 @@ def rollup(
                             float_format=ESTIMATE_FLOAT_FORMAT)
         logger.info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
         written.append(frac_path)
+
+    # --plot: per-experiment PDFs of the linear-simple Δk curves (the batch analog
+    # of the GUI's one-at-a-time φ-space view).
+    if plot:
+        from riana.core.protein import LINEAR_MODEL
+        if model != LINEAR_MODEL:
+            logger.warning(
+                "--plot is only implemented for --model 'linear simple' (got %r); "
+                "skipping.", model)
+        elif rollup_fractions.empty:
+            logger.warning("--plot: no rollup fractions to plot; skipping.")
+        else:
+            from riana.core.rollup_plot import render_linear_pdf
+            pdfs = render_linear_pdf(
+                result, rollup_fractions, Path(out), phi_limit=float(phi_limit),
+                workers=int(workers),
+                progress=lambda p, n: logger.info("wrote %s (%d proteins)", p, n))
+            written.extend(pdfs)
 
     # Record the stage='rollup' rows so the manifest indexes the whole chain (the
     # derived project's manifest on a fork, not the input one).

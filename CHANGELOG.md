@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### `biological_replicate` in the rollup fractions — 2026-08-10
+
+#### Added
+
+- **`riana_rollup_fractions.txt` now carries a `biological_replicate` column** — the collapse already
+  keys each point on `(biological_replicate, labeling_time)`, but only wrote the timepoint. Writing the
+  replicate too makes each row uniquely the collapsed cell
+  `(experiment, condition, protein, labeling_time, biological_replicate)`, enabling replicate subsetting
+  and biorep-split / mixed-effects modelling **directly from this file** (previously the peptide-level
+  `riana_fit_fractions.txt` was needed, e.g. for the wls-var biorep-split A/B). Threaded through
+  `_collapse_group` (both `weighted` and `pooled`), `_collapse_long`, the `protein_points` attrs (linear
+  and kinetic paths), and `build_rollup_fractions`; the GUI reads it by name and is back-compatible.
+  (`biological_replicate` is a within-`(condition, timepoint)` index as written by the SDRF, not a
+  cross-timepoint pairing.)
+
+### Multi-factor designs: `--experiment-column`, `rollup --plot`, per-experiment Δk BH — 2026-08-09
+
+#### Added
+
+- **`integrate --experiment-column COL`** — set each run's `experiment` from an SDRF
+  column (e.g. `characteristics[organism part]`) instead of the one file-stem label, so
+  a multi-factor sheet is stratified into separate experiments. Riana groups fits/rollups
+  on `(experiment, condition)`, so the `linear simple` Δk then contrasts conditions
+  *within* each experiment (e.g. control-vs-KO within each tissue). Flows through `fit`
+  and `rollup` unchanged (they already read `experiment` from the manifest). Default is
+  the SDRF file stem (previous behaviour).
+- **`rollup --plot`** (`linear simple` only) — write per-protein φ-space Δk comparison
+  curves to a PDF per experiment (`riana_rollup_curves[_<experiment>].pdf`), the batch/CLI
+  analog of the GUI's one-at-a-time view (revives the old argparse `--plotcurves`). One
+  page per protein, sorted by `delta_k_p_adj`; matplotlib is already a core dependency.
+  New module `riana.core.rollup_plot`. Rendering honours `-W/--workers` — per-experiment
+  PDFs are independent, so they render one-per-process (≈3.3× on a 4-experiment set); a
+  single-experiment PDF renders serially (pages reuse one figure and pre-grouped frames).
+- **`rollup --experiment EXP`** — restrict a rollup to one experiment (the focused
+  counterpart to the default all-experiments-in-one-pass behaviour).
+
+#### Changed
+
+- **`linear simple` Δk BH is now per-experiment** (results-affecting for multi-experiment
+  rollups only). Benjamini-Hochberg is applied within each experiment's protein set — each
+  experiment is its own hypothesis family (control-vs-KO in one tissue is a distinct study
+  from another) — rather than pooled across all `(experiment, protein)` pairs. A
+  single-experiment rollup (the common case) is unchanged.
+
 ### Standalone GUI bundle + strict typing for `algorithms/` — 2026-08-08
 
 #### Added

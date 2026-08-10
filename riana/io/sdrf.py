@@ -147,17 +147,29 @@ class SdrfTable:
         return tuple(m for m in self.modifications if m.mod_type.lower() == "fixed")
 
 
-def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> SdrfTable:
+def read_sdrf(
+    path: str | os.PathLike[str],
+    experiment: str | None = None,
+    experiment_column: str | None = None,
+) -> SdrfTable:
     """Parse an SDRF TSV into an :class:`SdrfTable`.
 
     Args:
         path: the ``*.sdrf.tsv`` file.
-        experiment: the top-level experiment label stamped on every
-            :class:`RunIdentity`. Defaults to the SDRF file stem (with a
-            trailing ``.sdrf`` stripped).
+        experiment: the top-level experiment label. Defaults to the SDRF file
+            stem (with a trailing ``.sdrf`` stripped). Used for every run unless
+            *experiment_column* overrides it per row.
+        experiment_column: name of an SDRF column (e.g.
+            ``"characteristics[organism part]"``) whose per-row value becomes each
+            run's ``experiment`` — so a multi-factor sheet can be stratified into
+            separate experiments (Riana groups fits/rollups on
+            ``(experiment, condition)``, contrasting conditions *within* each
+            experiment). ``None`` (default) → the single *experiment* label on
+            every run. The table's own ``experiment`` field stays the scalar label.
 
     Raises:
-        DataError: missing required columns, neither/both experiment-type
+        DataError: missing required columns (incl. a named *experiment_column*),
+            an empty *experiment_column* cell, neither/both experiment-type
             columns present, a non-numeric independent value, or a duplicate
             data file (an ambiguous mzML join).
     """
@@ -172,6 +184,11 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
 
     _require_column(col_index, _SOURCE_NAME_COL, path)
     _require_column(col_index, _DATA_FILE_COL, path)
+    if experiment_column is not None and experiment_column not in col_index:
+        raise DataError(
+            f"SDRF {path}: --experiment-column {experiment_column!r} not found. "
+            f"Available columns: {sorted(col_index)}"
+        )
 
     has_time = _LABELING_TIME_COL in col_index
     has_mix = _MIXING_PROPORTION_COL in col_index
@@ -256,8 +273,19 @@ def read_sdrf(path: str | os.PathLike[str], experiment: str | None = None) -> Sd
             v for c in factor_cols if (v := cell(c)) and v.lower() not in _NOT_APPLICABLE
         )
 
+        # Per-row experiment stratifier (--experiment-column) or the single label.
+        if experiment_column is not None:
+            row_experiment = cell(experiment_column)
+            if not row_experiment or row_experiment.lower() in _NOT_APPLICABLE:
+                raise DataError(
+                    f"{path} line {line_no}: --experiment-column "
+                    f"{experiment_column!r} is empty; every run must carry a value."
+                )
+        else:
+            row_experiment = experiment
+
         identity = RunIdentity(
-            experiment=experiment,
+            experiment=row_experiment,
             sample=cell(_SOURCE_NAME_COL),
             data_file=data_file,
             biological_replicate=_parse_int(

@@ -211,6 +211,44 @@ def test_weighted_refit_recovers_planted_k():
     assert out.loc["P0", "n_points"] == 5         # collapsed (biorep, t) cells
 
 
+def test_rollup_fractions_carry_biological_replicate():
+    """`build_rollup_fractions` writes `biological_replicate` per collapsed cell, so
+    (experiment, condition, protein, labeling_time, biological_replicate) uniquely
+    keys a row — enabling replicate subsetting / biorep-split modelling from the file."""
+    from riana.core.protein import build_rollup_fractions
+    pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
+    out = rollup_proteins(pep, frac, n_boot=20)
+    rf = build_rollup_fractions(out)
+    assert "biological_replicate" in rf.columns
+    assert set(rf["biological_replicate"]) == {1, 2, 3}
+    # one row per (biorep, timepoint) cell → the 5-tuple key is unique
+    key = ["experiment", "condition", "protein", "labeling_time", "biological_replicate"]
+    assert not rf.duplicated(key).any()
+    assert len(rf) == 3 * 5   # 3 bioreps × 5 timepoints
+
+
+def test_rollup_fractions_biorep_on_pooled_and_linear_paths():
+    """Both the pooled kinetic collapse and the linear-simple path carry biorep."""
+    from riana.core.protein import build_rollup_fractions
+    pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
+    pooled = build_rollup_fractions(rollup_proteins(pep, frac, method="pooled", n_boot=20))
+    assert set(pooled["biological_replicate"]) == {1, 2, 3}
+    # linear simple: two conditions so a Δk substrate exists
+    pep2, frac2 = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
+    for df in (pep2, frac2):
+        df["condition"] = "control"
+    pepK, fracK = _make_frames({"sp|P0|X": 0.9}, bioreps=(1, 2, 3))
+    for df in (pepK, fracK):
+        df["condition"] = "ko"
+    pep_all = pd.concat([pep2, pepK], ignore_index=True)
+    frac_all = pd.concat([frac2, fracK], ignore_index=True)
+    lin = build_rollup_fractions(
+        rollup_proteins(pep_all, frac_all, model="linear simple",
+                        reference_condition="control", n_boot=20))
+    assert "biological_replicate" in lin.columns
+    assert set(lin["biological_replicate"]) == {1, 2, 3}
+
+
 def test_k_cv_admitted_single_timepoint_gate():
     """The single-timepoint k_cv gate admits k_cv < threshold and rejects a wide CI
     or a NaN CI (single-point / non-converged)."""

@@ -353,3 +353,92 @@ python -m tests.benchmark.bench_linear_weights moderate --spread 1.0 --d0-grid 0
 python -m tests.benchmark.bench_linear_weights all --regime both --spread 1.0 --plot out_dir
 python -m tests.benchmark.bench_linear_weights efficiency --regime hetero --spread 1.0
 ```
+
+---
+
+## UPDATE 2026-08-09 — `runs/timeseries_atf6`: a new 5-tp DIA, 4-chamber test point for `wls` vs `wls-var`
+
+**Data:** the full ATF6 dataset (`data/timeseries_atf6`; the complete set of which the old
+`timeseries_dia` was the LV-control subset). A 4×5×2×3 factorial — **4 heart chambers**
+(LA/RA/LV/RV) × **5 D₂O timepoints** (1/3/7/10/14 d) × **2 conditions** (control / ATF6-KO)
+× **3 biological replicates**, 120 mouse-heart DIA runs (DIA-NN 2.5.0), RIA 4.6 %. Integrated
++ fit with current defaults (`--coefficients deberneh_2025_rss`, `simple`, `hw`), rolled up
+`--model "linear simple" --reference-condition control` with `experiment = chamber`
+(`integrate --experiment-column "characteristics[organism part]"`) so the Δk is control-vs-KO
+**within each chamber** (33 k peptidoforms, 4 679 proteins over the collapse). Δk BH is
+**per-experiment** (each chamber its own hypothesis family — the shipped default). This adds a data
+point **between** the sparse 3-tp DIA (`timeseries_dia`, +2 %) and the rich 9–12-tp sets
+(boomi/lauren, +10 %) that anchored the "gain scales with curve richness" thesis.
+
+### 1. Where atf6 sits — `measure`
+
+| quantity | atf6 (collapsed cells) | reads as |
+|---|---|---|
+| heteroscedasticity SD(log σ) | **0.91** (p90/p10 11×) | strongly hetero — on par with lve 1.03 / juber 1.04 (≫ bench 0.7) → the prize exists |
+| effective df (timepoints/peptide) | **median 3** (p10 2, p90 5); 32 % single-peptide cells | LOW — DIA curves are gappy, so the *nominal* 5 tp become ~3 usable → the noisy-estimate regime |
+| dispersion (empirical/stated σ²) | median **1.31** (p90/p10 11×) | σ under-stated + heterogeneous → the eBayes-moderation regime, not raw per-point var |
+
+So atf6 is the "**big heteroscedastic prize, but low-df noisy variance estimate**" case the shipped
+eBayes-moderated `wls-var` is built for — high spread (like the rich sets) but low df (like the
+sparse ones).
+
+### 2. Direct A/B on the production rollup (`wls` vs `wls-var`, identical inputs/gates)
+
+- **Point estimates unchanged:** per-condition `k_deg` Pearson **0.990**, Spearman 0.998, median
+  |Δ| 0.0005 (0.5 % rel). `wls-var` does not move the rates — it re-weights the **inference**.
+- **Power:** significant per-chamber Δk (`delta_k_p_adj < 0.05`, per-experiment BH) rises
+  **37 → 65** — a **near-superset** (1 `wls`-only, +29 `wls-var`-only). Per chamber:
+  LA 18→31, LV 9→14, RA 2→5, RV 8→15.
+
+A ~1.8× significance jump demands the reproducibility check below before it can be read as power.
+
+### 3. Reproducibility — biorep leave-one-out (the real-replicate test)
+
+Re-ran the rollup 3× per weight, each omitting one biological replicate (the collapse then sees
+2 of 3 bioreps; peptide gates unchanged), and measured cross-fold consistency of the estimates:
+
+| metric (cross-fold, n) | `wls` | `wls-var` | change |
+|---|---|---|---|
+| `k_deg` CV — median (7 219 curves) | 0.0371 | **0.0364** | **−1.8 %** (more reproducible) |
+| `delta_k` SD — median (3 508 proteins) | 0.00309 | **0.00298** | −3.6 % |
+| `delta_k` sign-consistent across all 3 folds | 57.4 % | **59.9 %** | **+2.5 pp** |
+
+**Reproducibility IMPROVES under `wls-var`** — it does not degrade. Had the +29 extra hits been
+Type-I inflation, `wls-var`'s estimates would scatter *more* across biorep folds and its Δk signs
+would flip *more* often; instead both tighten. So the extra sensitivity is legitimate power from
+the per-point-precision weighting, not over-rejection — consistent with the eBayes moderation
+holding Type-I in check on real data.
+
+### 4. Placement on the richness curve
+
+The **+1.8 %** k-reproducibility gain sits just above the sparse-DIA point (+2 % was the *biorep
+consistency* metric on `timeseries_dia`) and well below the rich 9–12-tp sets (+10 %). This tracks
+**effective df, not nominal timepoints**: atf6 has 5 nominal timepoints but only ~3 usable per
+peptide (gappy DIA), so it behaves like the sparse end even though its heteroscedasticity is as
+strong as the rich sets. **Takeaway:** `wls-var`'s efficiency gain is governed by curve *df*, and
+DIA's gappiness caps it — the strong heteroscedasticity alone is not enough. `wls` remains the safe
+default; `wls-var` is a real, reproducibility-positive power gain to opt into on DIA turnover data,
+with the caveat that the yield of new significant calls (~1.8×) outruns the point-reproducibility
+gain (~2 %), so the extra calls are best treated as *power-recovered, still worth orthogonal
+confirmation* rather than a free doubling of discoveries.
+
+### Reproduce
+
+```bash
+# integrate → relabel experiment=chamber → fit → rollup (wls + wls-var)
+python -m riana integrate data/timeseries_atf6/mzml \
+    data/timeseries_atf6/quantms_results/quant_tables/diann_report.parquet \
+    --sdrf data/timeseries_atf6/samplesheet_atf6.sdrf.tsv -o runs/timeseries_atf6 -W 6
+python scratchpad/relabel_manifest.py runs/timeseries_atf6/riana_manifest.tsv \
+    data/timeseries_atf6/samplesheet_atf6.sdrf.tsv --fix-headers
+python -m riana fit --manifest runs/timeseries_atf6/riana_manifest.tsv \
+    --coefficients deberneh_2025_rss --model simple --label hw -o runs/timeseries_atf6 -W 12
+python -m riana rollup --manifest runs/timeseries_atf6/riana_manifest.tsv \
+    --model "linear simple" --reference-condition control -W 12            # wls (default)
+python -m riana rollup runs/timeseries_atf6 --model "linear simple" \
+    --reference-condition control --linear-weights wls-var -o runs/timeseries_atf6/wlsvar -W 12
+
+# regime + biorep-LOO reproducibility A/B
+python -m tests.benchmark.bench_linear_weights measure --runs runs/timeseries_atf6
+#   (folds: 3× leave-one-biorep-out rollups per weight; see notebooks/wls_var_investigation.ipynb)
+```
