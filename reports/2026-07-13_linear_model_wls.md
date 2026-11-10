@@ -3,6 +3,8 @@
 **Date:** 2026-07-13 · **Data:** `runs/lve_atr_clean` (atrium vs control, 686 proteins,
 12 timepoints 0–30 d) · **Status: SHIPPED** — `--linear-weights wls` is the default
 (`--linear-weights ols` restores the old fit for audit); t = 0 excluded. See `CHANGELOG.md`.
+**Appendix (2026-11-10):** the as-shipped code, mapped line by line to the R `lm` + `emtrends`
+reference, with a numerical parity check against R — see the end of this report.
 
 > **Notation.** θ and FS are the same quantity — the fraction new (RIANA calls it `theta` in
 > `core/linear_model`, `fs` in the data columns). **σ_θ** is the SD of the measurement error in
@@ -213,3 +215,141 @@ rate). The linear k finally agrees with the nonlinear k (ρ 0.93, ratio 1.000), 
 
 **Not recommended:** `weights=(1-θ_obs)²` (the naive inverse-variance form) — it fixes
 calibration but biases k low by ~3 % overall and ~9 % in the fast tail.
+
+---
+
+## Appendix (2026-11-10) — the as-shipped implementation, the R reference, and a parity check
+
+This appendix records what the code does, so the estimator can be audited against the R
+workup it was ported from. Line numbers refer to **`riana/core/linear_model.py` at commit
+`af20701`** (branch `1.2.0`). The rationale in the sections above is unchanged.
+
+### The R reference
+
+The model was ported from `data/notebook/03_R_linearmodel_reference.Rmd` (local, not in the
+repository). Its per-protein fit is:
+
+```r
+fit_interaction <- lm(protein_clearance ~ 0 + day + day:treatment, data = subset_data)
+em <- emtrends(fit_interaction, pairwise ~ treatment, var = "day")
+...
+p_adj_ISO = p.adjust(p_ISO, method = "BH")
+```
+
+### R ↔ Python, step by step
+
+| Step | R reference | Python (`linear_model.py` @ `af20701`) |
+|---|---|---|
+| Clearance | `log(1 − FS_mean)`; FS rounded to 2 dp, then clamped to [0.01, 0.99] | `to_phi`: θ clipped to [0.001, 0.999], no rounding (L292) |
+| Saturated tail | kept | dropped where φ ≤ `phi_limit` (default −4, θ ≈ 0.98) (L294) |
+| t = 0 | kept | dropped, except under `ols` (L306) |
+| Model | `lm(φ ~ 0 + day + day:treatment)`: reference slope + difference | `ols`/`wls("phi ~ 0 + day:C(condition)")`: one slope per condition (L333) |
+| Weights | none (OLS) | `wls` (default): `(1 − θ̂)² = exp(2·max(φ̂, phi_limit))` from a first OLS pass, one step (L349–350). `ols`: none. `wls-var`: also ÷ moderated Var(θ) (opt-in) |
+| Per-condition k and 95% CI | `emtrends(...)$emtrends`: `day.trend`, `lower.CL`, `upper.CL` | `res.params`, `res.conf_int()`; k = −slope, so the bounds swap (L373–374) |
+| Δk, SE, p | `emtrends(..., pairwise ~ treatment)$contrasts`: t-test at residual df | `res.t_test(c)` with c = +1 test, −1 reference; Δk = −effect (L384–393) |
+| Multiplicity | `p.adjust(p, "BH")` over one table (one strain × compartment) | BH over one p per protein, separately in each experiment (L440–449) |
+
+The two model formulas span the same columns, so they give identical fitted values, residual
+df, σ̂², per-condition slopes and contrasts; only the raw coefficients are labelled
+differently. With more than two conditions, `emtrends(pairwise ~ …)` adjusts the pairwise p by
+Tukey; Python's named `--reference-condition`/`--test-condition` pair is one unadjusted
+contrast.
+
+### Code excerpt (abridged — long comments trimmed, `…` marks omitted lines)
+
+Per-condition preparation (θ → φ, plateau truncation, t = 0):
+
+```python
+290          for cond, cg in grp.groupby("condition", sort=True):
+291              day0 = cg["labeling_time"].to_numpy()
+292              phi = to_phi(cg["theta"].to_numpy(),
+293                           theta_floor=theta_floor, theta_ceiling=theta_ceiling)
+294              t, p = truncate_plateau(day0, phi, phi_limit=phi_limit)
+ …
+306              keep = np.ones(len(t), dtype=bool) if weights == "ols" else (t > 0)
+307              t, p = t[keep], p[keep]
+308              if len(t) >= min_points_per_condition:
+309                  per_cond[str(cond)] = (t, p)
+```
+
+The joint fit — OLS, then one weighted step:
+
+```python
+333          formula = "phi ~ 0 + day:C(condition)"
+334          try:
+335              res = smf.ols(formula, data=fit_df).fit()
+336              if weights == "wls":
+ …
+349                  w = np.exp(2.0 * np.maximum(res.fittedvalues.to_numpy(), phi_limit))
+350                  res = smf.wls(formula, data=fit_df, weights=w).fit()
+```
+
+Per-condition k with CI, and the Δk contrast (the `emtrends` equivalent):
+
+```python
+373          slope = res.params
+374          ci = res.conf_int()
+ …
+384          def _contrast(ref: str, other: str) -> tuple[float, float, float]:
+385              names = list(slope.index)
+386              c_vec = np.zeros(len(names))
+387              c_vec[names.index(coef[other])] = 1.0   # slope_test
+388              c_vec[names.index(coef[ref])] = -1.0    # − slope_reference
+389              tt = res.t_test(c_vec)
+390              # k = −slope, so Δk = k_test − k_ref = −(slope_test − slope_ref).
+391              return (-float(np.ravel(tt.effect)[0]),
+392                      float(np.ravel(tt.sd)[0]),
+393                      float(np.ravel(tt.pvalue)[0]))
+ …
+402          elif (len(conds) == 2 and all(coef[c] in slope.index for c in conds)
+403                and (reference_condition is None or reference_condition in conds)):
+ …
+408              ref = reference_condition if reference_condition is not None else conds[0]
+409              other = next(c for c in conds if c != ref)
+410              delta_k, delta_se, delta_p = _contrast(ref, other)
+```
+
+Benjamini–Hochberg, one p per protein, within each experiment:
+
+```python
+447          for exp, grp in prot_p.groupby("experiment"):
+448              prot_p.loc[grp.index, "delta_k_p_adj"] = multipletests(
+449                  grp["delta_k_p"].to_numpy(), method="fdr_bh")[1]
+```
+
+The θ points come from the per-(biological replicate, timepoint) inverse-variance collapse in
+`riana/core/protein.py` (`_collapse_group`, L868), which `fit_linear_deltak` receives from
+`_rollup_linear` (L433).
+
+### Parity check against R (2026-11-10)
+
+**Method.** `runs/linear_model_parity/export.py` writes the exact points `fit_linear_deltak`
+fits (after φ, plateau and t = 0 filtering) for every chamber × protein in
+`runs/timeseries_atf6` with both conditions, plus the Python outputs.
+`runs/linear_model_parity/r_reference.R` fits the same points with the reference
+`lm(φ ~ 0 + day + day:condition)` + `emtrends(pairwise ~ condition, var = "day")`, and for
+`wls` with the same `lm` given the one-step weights. BH is applied per chamber in both. Because
+R receives Python's filtered points, the check covers the estimator, CIs, contrast and BH, not
+the data-prep differences in the table above.
+
+**Result.** 3,510 chamber × protein fits (7,020 condition rows, 101,778 points):
+
+| Output | `ols`: max abs diff | `wls`: max abs diff |
+|---|---|---|
+| k_deg | 1.7e-14 | 6.2e-14 |
+| ci_lo / ci_hi | 1.1e-12 | 2.8e-12 |
+| delta_k | 2.6e-15 | 1.5e-14 |
+| delta_k_se | 4.3e-15 | 1.3e-14 |
+| delta_k_p | 1.5e-14 | 1.5e-14 |
+| delta_k_p_adj | 1.7e-14 | 3.3e-14 |
+| Proteins with BH p < 0.05 | 883 (R: 883) | 37 (R: 37) |
+
+The Python implementation reproduces R's `lm` + `emtrends` + BH to machine precision, both
+unweighted and weighted.
+
+A side result: the unweighted fit (the original R workflow) calls **883** chamber × protein Δk
+significant on ATF6, against **37** for the shipped weighted fit. ATF6 is strongly
+heteroscedastic DIA data (`reports/2026-07-24_linear_wls_per_point_var.md`), the regime where
+the main report shows OLS is anti-conservative.
+
+`wls-var` (opt-in) has no counterpart in the R reference and is not covered by this check.

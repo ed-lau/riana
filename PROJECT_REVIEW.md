@@ -245,6 +245,15 @@ intake, the multi-point FS rail-drop, and (2026-08-09) multi-factor stratificati
     (`φ ~ 0 + day:C("stratum|condition")`) makes the *same* estimator yield per-stratum Δk (verified
     **identical** to the per-experiment rollup, Pearson r = 1.0000) **plus** an interaction F-test. So
     this is a **contrast/reporting layer over the existing WLS estimator, not a new model**.
+  - **Superseded 2026-11-10 — the cross-stratum fit needs a random animal effect**
+    (`reports/2026-11-10_random_animal_lme_feasibility.md`). When strata are tissues of the same
+    animals (ATF6: 4 chambers per animal) the cross-stratum fit is a split-plot. Without an animal
+    term the genotype main effect is pseudo-replicated (186 → 1 BH hits) and the interaction is
+    under-powered (3 → 132). Engine: statsmodels `MixedLM` on weight-transformed data (BFGS) +
+    `nlme` containment df, validated against `nlme`. It also settles choice 2 below (`varIdent`
+    adds little; the fixed `(1−θ̂)²` weight is supported, δ̂ ≈ −1.1). New choices: additive vs
+    ratio-scale interaction (132 vs 82 hits), and the animal key (composite vs threading
+    `characteristics[individual]`).
   - **Design choices to settle at implementation:**
     1. *How the two factors arrive.* Today `experiment = stratum` keeps strata as **separate fits**
        (per-stratum variance) — which is exactly why the per-chamber rollup **cannot** test the
