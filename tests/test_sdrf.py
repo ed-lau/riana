@@ -248,6 +248,37 @@ def test_experiment_column_keeps_factor_that_varies_within_a_stratum(tmp_path, c
     assert "varies within a stratum" in caplog.text
 
 
+def test_stratifier_candidates_lists_usable_columns(tmp_path):
+    """The GUI's Experiment choices: characteristics/factor columns with a value on
+    every row and 2+ distinct values — not the curve axes, replicate, enrichment,
+    a constant column, or one with a blank cell (read_sdrf would reject it)."""
+    from riana.io.sdrf import stratifier_candidates
+
+    cols = ["source name", "characteristics[organism]", "Characteristics[Organism Part]",
+            "characteristics[individual]", "characteristics[strain]",
+            "characteristics[biological replicate]", "characteristics[labeling time]",
+            "characteristics[precursor enrichment]", "comment[data file]",
+            "comment[proteomics data acquisition method]", "factor value[condition]"]
+    rows = [
+        ["s1", "Mus musculus", "LA", "m1", "C57", "1", "1 day", "0.046", "a1.mzML", "DIA", "control"],
+        ["s2", "Mus musculus", "LA", "m2", "C57", "2", "3 day", "0.046", "a2.mzML", "DIA", "knockout"],
+        ["s3", "Mus musculus", "LV", "m1", "not available", "1", "1 day", "0.046", "b1.mzML", "DIA", "control"],
+        ["s4", "Mus musculus", "LV", "m2", "C57", "2", "3 day", "0.046", "b2.mzML", "DIA", "knockout"],
+    ]
+    p = tmp_path / "cand.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    assert stratifier_candidates(p) == [
+        ("characteristics[organism part]", 2),
+        ("characteristics[individual]", 2),
+        ("factor value[condition]", 2),
+    ]
+    # Each offered column is accepted by read_sdrf as-is.
+    for name, n in stratifier_candidates(p):
+        assert len({r.experiment for r in read_sdrf(p, experiment_column=name).runs}) == n
+    with pytest.raises(DataError, match="not found"):
+        stratifier_candidates(tmp_path / "nope.sdrf.tsv")
+
+
 def test_experiment_column_missing_raises(tmp_path):
     p = _stratified_sdrf(tmp_path)
     with pytest.raises(DataError, match="not found"):

@@ -401,6 +401,47 @@ def read_sdrf(
     )
 
 
+# The curve's own axes and per-run replicate/enrichment values — splitting runs into
+# experiments on one of these would break every (condition) curve apart.
+_NOT_STRATIFIERS = frozenset({
+    _LABELING_TIME_COL,
+    _MIXING_PROPORTION_COL,
+    "characteristics[biological replicate]",
+    "characteristics[precursor enrichment]",
+})
+
+
+def stratifier_candidates(path: str | os.PathLike[str]) -> list[tuple[str, int]]:
+    """SDRF columns usable as ``--experiment-column`` (the GUI's choices).
+
+    Every ``characteristics[...]`` / ``factor value[...]`` column that has a value
+    on every row (:func:`read_sdrf` rejects an empty stratifier cell) and at least
+    two distinct values, minus the curve axes and the replicate / enrichment
+    columns. Returns ``[(column, n_distinct_values)]`` in header order, with
+    lower-cased column names as :func:`read_sdrf` matches them.
+
+    Raises:
+        DataError: the file is missing, unreadable or empty.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise DataError(f"SDRF not found: {path}")
+    header, rows = _read_tsv(path)
+    col_index = _index_columns(header)
+    out: list[tuple[str, int]] = []
+    for name in col_index:  # insertion order = header order
+        if (not name.startswith(("characteristics[", "factor value["))
+                or name in _NOT_STRATIFIERS):
+            continue
+        values = [_row_cell(row, col_index, name) for row in rows]
+        if any(v.lower() in _NOT_APPLICABLE for v in values):
+            continue
+        n = len(set(values))
+        if n >= 2:
+            out.append((name, n))
+    return out
+
+
 def _collapse_isobaric_runs(runs: list[RunIdentity]) -> list[RunIdentity]:
     """Collapse an isobaric SDRF's per-channel rows into one run per data file.
 

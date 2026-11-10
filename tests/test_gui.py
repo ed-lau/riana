@@ -467,7 +467,8 @@ def test_key_form_fields_have_tooltips(main_window):
     """Coverage guard: the main-path inputs all carry help (feeds the hint bar)."""
     it, mt, pt = (main_window.integrate_tab, main_window.model_tab,
                   main_window.protein_tab)
-    for w in (it.mzml_edit, it.id_edit, it.sdrf_edit, it.out_edit, it.qvalue_spin,
+    for w in (it.mzml_edit, it.id_edit, it.sdrf_edit, it.experiment_combo,
+              it.out_edit, it.qvalue_spin,
               it.peak_rt_combo, it.ihw_edit,
               mt.manifest_edit, mt.coeff_combo, mt.label_combo, mt.depth_spin,
               mt.ria_spin, mt.qvalue_spin,
@@ -852,6 +853,77 @@ def test_integrate_tab_reflects_sdrf_mass_tolerance(main_window, tmp_path):
     tab.sdrf_edit.setText(str(sdrf))
     tab._resolve_sdrf_mass_tol()
     assert tab.mass_tol_spin.value() == 25
+
+
+def _tissue_sdrf(tmp_path, parts=("Left atrium", "Left ventricle"), name="tissue"):
+    cols = ["source name", "characteristics[organism part]",
+            "characteristics[labeling time]", "comment[data file]",
+            "comment[proteomics data acquisition method]", "factor value[condition]"]
+    rows = [[f"s{i}", part, "1 day", f"r{i}.mzML", "DIA", cond]
+            for i, (part, cond) in enumerate(
+                (p, c) for p in parts for c in ("control", "knockout"))]
+    sdrf = tmp_path / f"{name}.sdrf.tsv"
+    sdrf.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    return sdrf
+
+
+def test_integrate_tab_experiment_dropdown_fills_from_sdrf(main_window, tmp_path):
+    """Picking an SDRF offers its stratifier columns; the default (first) item is
+    one experiment (None), a pick survives a re-read, and a new SDRF without the
+    picked column falls back to the default."""
+    tab = main_window.integrate_tab
+    assert tab.experiment_combo.count() == 1
+    assert tab.selected_experiment_column() is None
+
+    tab.sdrf_edit.setText(str(_tissue_sdrf(tmp_path)))
+    tab._on_sdrf_changed()
+    offered = [tab.experiment_combo.itemData(i)
+               for i in range(tab.experiment_combo.count())]
+    assert offered == [None, "characteristics[organism part]",
+                       "factor value[condition]"]
+    assert tab.selected_experiment_column() is None       # default unchanged
+
+    tab.experiment_combo.setCurrentIndex(1)
+    tab._on_sdrf_changed()                                # re-read keeps the pick
+    assert tab.selected_experiment_column() == "characteristics[organism part]"
+
+    one_tissue = _tissue_sdrf(tmp_path, parts=("Left atrium",), name="one")
+    tab.sdrf_edit.setText(str(one_tissue))
+    tab._on_sdrf_changed()
+    assert tab.selected_experiment_column() is None       # no longer offered
+
+
+def test_integrate_tab_run_passes_experiment_column_to_planner(main_window, monkeypatch):
+    """The dropdown's choice reaches the SDRF planner (the GUI analog of
+    `integrate --experiment-column`)."""
+    import asyncio
+
+    from riana.gui import integrate_tab as it_mod
+
+    seen = {}
+
+    def fake_plan(config, sdrf_path, mzml_dir, mztab_path, experiment_column=None):
+        seen["experiment_column"] = experiment_column
+        return []                                          # → "No runs" early exit
+
+    monkeypatch.setattr(it_mod, "plan_sdrf_integration", fake_plan)
+    tab = main_window.integrate_tab
+    asyncio.run(tab._run_sdrf(tab.build_config(), "s.tsv", "mz", "id", 1,
+                              "characteristics[organism part]"))
+    assert seen["experiment_column"] == "characteristics[organism part]"
+
+
+def test_plan_sdrf_integration_threads_experiment_column(monkeypatch, tmp_path):
+    """The worker passes the stratifier to read_sdrf, so each RunTask carries
+    its per-tissue experiment."""
+    import riana.core.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "plan_integration",
+                        lambda config, sdrf, mzml_dir, mztab: sdrf.runs)
+    runs = plan_sdrf_integration(IntegrationConfig(), str(_tissue_sdrf(tmp_path)),
+                                 "mz", "id", "characteristics[organism part]")
+    assert {r.experiment for r in runs} == {"Left atrium", "Left ventricle"}
+    assert {r.condition for r in runs} == {"control", "knockout"}
 
 
 def test_model_tab_has_manifest_field(main_window):

@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Callable
 
@@ -148,10 +149,22 @@ class IntegrateTab(QWidget):
         self.sdrf_edit.setToolTip(
             "SDRF samplesheet — drives the identity/manifest path (timepoints, conditions, RIA, mass tolerance all come from it).")
         self.sdrf_edit.setPlaceholderText("SDRF .tsv — drives the identity / manifest path")
-        # Reflect the SDRF's precursor mass tolerance in the spinbox on entry
-        # (the spinbox is built below; the slot reads it at call time).
-        self.sdrf_edit.editingFinished.connect(self._resolve_sdrf_mass_tol)
+        # Reflect the SDRF's precursor mass tolerance in the spinbox and its
+        # stratifier columns in the Experiment dropdown on entry (both widgets
+        # exist by the time the slot runs).
+        self.sdrf_edit.editingFinished.connect(self._on_sdrf_changed)
         form.addRow("SDRF", self._path_row(self.sdrf_edit, self._pick_sdrf))
+
+        self.experiment_combo = QComboBox()
+        self.experiment_combo.setToolTip(
+            "Split the runs into separate experiments by an SDRF column (e.g. "
+            "characteristics[organism part]) so conditions are compared WITHIN "
+            "each one — e.g. control vs KO in each tissue. Default: one experiment "
+            "named after the SDRF file. Filled from the SDRF's columns that have "
+            "2+ values; the number in brackets is how many experiments it makes. "
+            "Same as the CLI's --experiment-column.")
+        self._fill_experiment_combo([])
+        form.addRow("Experiment from", self.experiment_combo)
 
         self.iso_edit = QLineEdit("5")
         self.iso_edit.setToolTip(
@@ -540,7 +553,46 @@ class IntegrateTab(QWidget):
         )
         if path:
             self.sdrf_edit.setText(path)
-            self._resolve_sdrf_mass_tol()
+            self._on_sdrf_changed()
+
+    def _on_sdrf_changed(self) -> None:
+        self._resolve_sdrf_mass_tol()
+        self._populate_experiment_columns()
+
+    _ONE_EXPERIMENT_LABEL = "(SDRF file name — one experiment)"
+
+    def _fill_experiment_combo(self, candidates: list[tuple[str, int]]) -> None:
+        """Rebuild the Experiment dropdown: the one-experiment default first
+        (data ``None``), then each candidate column (data = the column name).
+        A prior pick that is still offered stays selected."""
+        combo = self.experiment_combo
+        prior = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(self._ONE_EXPERIMENT_LABEL, None)
+        for name, n in candidates:
+            combo.addItem(f"{name}  ({n})", name)
+        keep = combo.findData(prior) if prior is not None else -1
+        combo.setCurrentIndex(keep if keep >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _populate_experiment_columns(self) -> None:
+        """Offer the SDRF's stratifier columns. Silent on a missing/unreadable
+        SDRF (just the default stays); the run path surfaces real errors."""
+        path = self.sdrf_edit.text().strip()
+        candidates: list[tuple[str, int]] = []
+        if path and Path(path).is_file():
+            try:
+                from riana.io.sdrf import stratifier_candidates
+                candidates = stratifier_candidates(path)
+            except Exception:
+                candidates = []
+        self._fill_experiment_combo(candidates)
+
+    def selected_experiment_column(self) -> str | None:
+        """The chosen ``--experiment-column`` (``None`` = one experiment)."""
+        data = self.experiment_combo.currentData()
+        return str(data) if data else None
 
     def _resolve_sdrf_mass_tol(self) -> None:
         """Reflect the SDRF's ``comment[precursor mass tolerance]`` in the mass
@@ -680,24 +732,30 @@ class IntegrateTab(QWidget):
         os.makedirs(config.out_dir, exist_ok=True)
         self._set_running(True)
         try:
-            await self._run_sdrf(config, sdrf_path, mzml_dir, id_path, workers)
+            await self._run_sdrf(config, sdrf_path, mzml_dir, id_path, workers,
+                                 self.selected_experiment_column())
         except Exception as exc:  # surface worker/IO errors instead of crashing
             self._fail(f"{type(exc).__name__}: {exc}")
         finally:
             self._set_running(False)
 
-    async def _run_sdrf(self, config, sdrf_path, mzml_dir, mztab_path, workers):
+    async def _run_sdrf(self, config, sdrf_path, mzml_dir, mztab_path, workers,
+                        experiment_column=None):
         """SDRF/manifest path — the *same* core/pipeline plan + per-run unit the
         CLI uses, dispatched over this tab's shared pool (no nested pools)."""
         loop = asyncio.get_running_loop()
         self._info(f"planning runs from SDRF {sdrf_path} …")
         tasks = await loop.run_in_executor(
             self.pool, plan_sdrf_integration, config, sdrf_path, mzml_dir,
-            mztab_path,
+            mztab_path, experiment_column,
         )
         if not tasks:
             self._fail("No runs to integrate from the SDRF / mzTab.")
             return
+        if experiment_column is not None:
+            dist = Counter(t.identity.experiment for t in tasks)
+            self._info(f"experiment ← {experiment_column}: "
+                       f"{dict(sorted(dist.items()))}")
         for t in tasks:
             self._fraction_mzml[t.file_idx] = t.mzml_path
 

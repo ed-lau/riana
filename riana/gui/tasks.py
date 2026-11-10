@@ -112,6 +112,7 @@ def plan_sdrf_integration(
     sdrf_path: str,
     mzml_dir: str,
     mztab_path: str,
+    experiment_column: str | None = None,
 ) -> list:
     """Read the SDRF and plan the per-run integrate tasks (worker side).
 
@@ -121,11 +122,13 @@ def plan_sdrf_integration(
     :class:`riana.core.pipeline.RunTask` (picklable) the Integrate tab then
     dispatches over its *own* shared pool — so the GUI gets cross-file
     parallelism without nesting a process pool inside ``integrate_project``.
+    *experiment_column* is the CLI's ``--experiment-column`` (``None`` = one
+    experiment named after the SDRF file).
     """
     from riana.core.pipeline import plan_integration
     from riana.io.sdrf import read_sdrf
 
-    sdrf = read_sdrf(sdrf_path)
+    sdrf = read_sdrf(sdrf_path, experiment_column=experiment_column)
     return plan_integration(config, sdrf, mzml_dir, mztab_path)
 
 

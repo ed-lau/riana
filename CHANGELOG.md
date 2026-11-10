@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### GUI — split runs into experiments by an SDRF column — 2026-11-10
+
+#### Added
+
+- **Integrate tab "Experiment from" dropdown** — the GUI counterpart of
+  `integrate --experiment-column`, previously CLI-only (so standalone-app users could
+  not compare conditions within each tissue). Picking an SDRF fills it with the
+  columns that can split the runs, each with the number of experiments it makes
+  (e.g. `characteristics[organism part]  (4)`). The first entry, one experiment named
+  after the SDRF file, is the default and the previous behaviour. Offered columns are
+  the `characteristics[...]` / `factor value[...]` columns with a value on every row
+  and 2+ distinct values, minus labeling time, mixing proportion, biological replicate
+  and precursor enrichment (splitting on those would break the curves). The run log
+  shows the run count per experiment, as the CLI does. Fit and protein tabs already
+  handled multi-experiment projects. New `riana.io.sdrf.stratifier_candidates`.
+
 ### Stratified Δk — consistent condition labels, no silent sign flip — 2026-11-10
 
 #### Fixed
