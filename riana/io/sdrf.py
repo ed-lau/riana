@@ -166,6 +166,10 @@ def read_sdrf(
             ``(experiment, condition)``, contrasting conditions *within* each
             experiment). ``None`` (default) → the single *experiment* label on
             every run. The table's own ``experiment`` field stays the scalar label.
+            Matched case-insensitively. A ``factor value[...]`` column for the same
+            variable (e.g. ``factor value[organism part]``) is left out of
+            ``condition`` so the labels match across experiments — see
+            :func:`_drop_stratifier_factors`.
 
     Raises:
         DataError: missing required columns (incl. a named *experiment_column*),
@@ -184,6 +188,9 @@ def read_sdrf(
 
     _require_column(col_index, _SOURCE_NAME_COL, path)
     _require_column(col_index, _DATA_FILE_COL, path)
+    if experiment_column is not None:
+        # col_index keys are lower-cased; match the user's spelling the same way.
+        experiment_column = experiment_column.strip().lower()
     if experiment_column is not None and experiment_column not in col_index:
         raise DataError(
             f"SDRF {path}: --experiment-column {experiment_column!r} not found. "
@@ -202,6 +209,10 @@ def read_sdrf(
     experiment_type = "turnover" if has_time else "calibration"
 
     factor_cols = [name for name in col_index if name.startswith("factor value[")]
+    if experiment_column is not None:
+        factor_cols = _drop_stratifier_factors(
+            factor_cols, experiment_column, col_index, rows, path
+        )
     mod_cols = col_index.get("comment[modification parameters]", [])
 
     # Isobaric (TMT/iTRAQ) SDRF? Then one data file legitimately recurs once per
@@ -446,6 +457,69 @@ def _read_tsv(path: Path) -> tuple[list[str], list[list[str]]]:
     header = lines[0].split("\t")
     rows = [ln.split("\t") for ln in lines[1:] if ln.strip()]
     return header, rows
+
+
+_BRACKET_RE = re.compile(r"^[^\[]*\[\s*(.*?)\s*\]\s*$")
+
+
+def _bracket_name(col: str) -> str | None:
+    """The bracketed variable of an SDRF column (``characteristics[organism part]``
+    → ``organism part``), whitespace-normalised; ``None`` for an unbracketed one."""
+    m = _BRACKET_RE.match(col)
+    return " ".join(m.group(1).split()) if m else None
+
+
+def _row_cell(row: list[str], col_index: dict[str, list[int]], name: str) -> str:
+    cols = col_index.get(name)
+    if not cols:
+        return ""
+    return row[cols[0]].strip() if cols[0] < len(row) else ""
+
+
+def _drop_stratifier_factors(
+    factor_cols: list[str],
+    experiment_column: str,
+    col_index: dict[str, list[int]],
+    rows: list[list[str]],
+    path: Path,
+) -> list[str]:
+    """Leave the ``--experiment-column`` stratifier's own factor column out of the
+    ``condition`` label.
+
+    SDRF mirrors a studied variable as both ``characteristics[X]`` and
+    ``factor value[X]``. Stratifying by X while still joining ``factor value[X]``
+    into the condition makes the labels differ per experiment (``LA|control`` vs
+    ``LV|control``), so no single ``--reference-condition`` names the baseline of
+    every experiment. A factor column is dropped when it names the same variable
+    as the stratifier (or *is* the stratifier) **and** takes one value per stratum
+    — it then carries no within-experiment contrast, so dropping it cannot merge
+    two distinct conditions. One that varies within a stratum is kept (warned).
+    """
+    strat = _bracket_name(experiment_column)
+    kept: list[str] = []
+    for col in factor_cols:
+        if col != experiment_column and (strat is None or _bracket_name(col) != strat):
+            kept.append(col)
+            continue
+        per_stratum: dict[str, set[str]] = {}
+        for row in rows:
+            v = _row_cell(row, col_index, col)
+            per_stratum.setdefault(_row_cell(row, col_index, experiment_column), set()).add(
+                "" if v.lower() in _NOT_APPLICABLE else v
+            )
+        if all(len(vs) == 1 for vs in per_stratum.values()):
+            _LOGGER.info(
+                "SDRF %s: %r left out of the condition label — it duplicates the "
+                "--experiment-column stratifier %r.", path, col, experiment_column,
+            )
+        else:
+            kept.append(col)
+            _LOGGER.warning(
+                "SDRF %s: %r names the same variable as --experiment-column %r but "
+                "varies within a stratum, so it stays in the condition label; check "
+                "that the two columns agree.", path, col, experiment_column,
+            )
+    return kept
 
 
 def _index_columns(header: list[str]) -> dict[str, list[int]]:

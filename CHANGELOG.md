@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Stratified Δk — consistent condition labels, no silent sign flip — 2026-11-10
+
+#### Fixed
+
+- **`integrate --experiment-column` now leaves the stratifier's own `factor value[...]`
+  column out of the condition label.** SDRF convention lists a studied variable as both
+  `characteristics[X]` and `factor value[X]`. Stratifying by tissue while still joining
+  `factor value[organism part]` into `condition` produced per-experiment labels
+  (`LA|control`, `LV|control`, …), so no single `--reference-condition` named the
+  baseline of every experiment. A factor column is dropped when it names the same
+  variable as the stratifier (or is the stratifier) **and** has one value per stratum,
+  so two distinct conditions can never merge. One that varies within a stratum is kept,
+  with a warning. `--experiment-column` is also matched case-insensitively now. SDRFs
+  whose tissue is only a `characteristics[...]` column (e.g. ATF6) are unaffected.
+- **`linear simple` Δk no longer swaps a named reference for the alphabetical default**
+  (RESULTS-AFFECTING in the cases below). With `--reference-condition` alone, a protein
+  whose two conditions did not include the named reference was contrasted against its
+  alphabetically-first condition instead. With the stratum-prefixed labels above, passing
+  `--reference-condition "LA|control"` gave LV/RA/RV a Δk of `control − KO` (sign
+  reversed) while LA got `KO − control`. A 3-condition run could likewise contrast two
+  non-reference conditions. Such proteins now get no Δk. A multi-experiment rollup also
+  logs a warning naming the experiments that lack a named reference/test condition.
+  Re-fitting the canonical ATF6 rollup points gives unchanged results (same rows and
+  NaN pattern).
+
 ### `biological_replicate` in the rollup fractions — 2026-08-10
 
 #### Added

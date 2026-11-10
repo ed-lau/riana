@@ -200,6 +200,54 @@ def test_experiment_column_stratifies_runs_per_row(tmp_path):
     assert {r.condition for r in t.runs} == {"control", "knockout"}
 
 
+def _tissue_factor_sdrf(tmp_path, lv_tissue_factor: str = "Left ventricle") -> Path:
+    """Like ``_stratified_sdrf`` but the tissue is ALSO a factor value (SDRF
+    convention for a studied variable), listed before the genotype factor."""
+    cols = ["source name", "characteristics[organism part]",
+            "characteristics[labeling time]", "comment[data file]",
+            "comment[proteomics data acquisition method]",
+            "characteristics[precursor enrichment]",
+            "factor value[organism part]", "factor value[condition]"]
+    rows = [
+        ["s1", "Left atrium", "1 day", "a1.mzML", "DIA", "0.046", "Left atrium", "control"],
+        ["s2", "Left atrium", "1 day", "a2.mzML", "DIA", "0.046", "Left atrium", "knockout"],
+        ["s3", "Left ventricle", "1 day", "b1.mzML", "DIA", "0.046", "Left ventricle", "control"],
+        ["s4", "Left ventricle", "1 day", "b2.mzML", "DIA", "0.046", lv_tissue_factor, "knockout"],
+    ]
+    p = tmp_path / "tissue.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    return p
+
+
+def test_experiment_column_drops_matching_factor_from_condition(tmp_path):
+    """Stratifying by tissue leaves ``factor value[organism part]`` out of the
+    condition, so the labels are the same in every experiment (one
+    --reference-condition then names the baseline of all of them)."""
+    p = _tissue_factor_sdrf(tmp_path)
+    # Without a stratifier the tissue stays in the label (unchanged behaviour).
+    assert {r.condition for r in read_sdrf(p).runs} == {
+        "Left atrium|control", "Left atrium|knockout",
+        "Left ventricle|control", "Left ventricle|knockout"}
+    # Stratifying by the characteristics column, by the factor column itself, or
+    # with different capitalisation all drop it.
+    for col in ("characteristics[organism part]", "factor value[organism part]",
+                "Characteristics[Organism Part]"):
+        t = read_sdrf(p, experiment_column=col)
+        assert {(r.experiment, r.condition) for r in t.runs} == {
+            ("Left atrium", "control"), ("Left atrium", "knockout"),
+            ("Left ventricle", "control"), ("Left ventricle", "knockout")}, col
+
+
+def test_experiment_column_keeps_factor_that_varies_within_a_stratum(tmp_path, caplog):
+    """A same-named factor column that disagrees with the stratifier is kept (and
+    warned about): dropping it could merge two distinct conditions."""
+    p = _tissue_factor_sdrf(tmp_path, lv_tissue_factor="Right ventricle")
+    with caplog.at_level("WARNING", logger="riana.io.sdrf"):
+        t = read_sdrf(p, experiment_column="characteristics[organism part]")
+    assert "Right ventricle|knockout" in {r.condition for r in t.runs}
+    assert "varies within a stratum" in caplog.text
+
+
 def test_experiment_column_missing_raises(tmp_path):
     p = _stratified_sdrf(tmp_path)
     with pytest.raises(DataError, match="not found"):

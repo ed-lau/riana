@@ -182,6 +182,39 @@ def test_unknown_contrast_condition_raises():
         fit_linear_deltak(df, reference_condition="nope")
 
 
+def test_named_reference_absent_from_an_experiment_gives_no_delta_k(caplog):
+    """Stratum-prefixed labels ("LA|control", "LV|control"): naming "LA|control"
+    must NOT fall back to LV's alphabetically-first condition ("LV|ATF6-KO") —
+    that silently flipped LV's Δk sign. LV gets no Δk and a warning instead."""
+    times = [0, 1, 2, 3, 4, 6, 8]
+    rows = []
+    for exp in ("LA", "LV"):
+        rows += _curve(exp, "P1", f"{exp}|control", 0.05, times, noise=0.003, seed=1)
+        rows += _curve(exp, "P1", f"{exp}|ATF6-KO", 0.10, times, noise=0.003, seed=2)
+    with caplog.at_level("WARNING", logger="riana.core.linear_model"):
+        out = fit_linear_deltak(pd.DataFrame(rows), reference_condition="LA|control")
+    dk = out.drop_duplicates("experiment").set_index("experiment")["delta_k"]
+    assert dk["LA"] == pytest.approx(0.05, abs=0.02)   # KO − control, KO faster
+    assert np.isnan(dk["LV"])                          # was ≈ −0.05 (sign-flipped)
+    assert "absent from 1 of 2 experiments" in caplog.text
+    assert "LV" in caplog.text
+
+
+def test_named_reference_missing_from_protein_is_not_replaced():
+    """Three conditions, reference only: a protein with just the two NON-reference
+    conditions used to get an arbitrary contrast between them; now no Δk."""
+    times = [0, 1, 2, 3, 4, 6, 8]
+    df = pd.DataFrame(
+        _curve("e", "P1", "control", 0.05, times, noise=0.003, seed=1)
+        + _curve("e", "P1", "drugA", 0.10, times, noise=0.003, seed=2)
+        + _curve("e", "P2", "drugA", 0.10, times, noise=0.003, seed=3)
+        + _curve("e", "P2", "drugB", 0.05, times, noise=0.003, seed=4)
+    )
+    out = fit_linear_deltak(df, reference_condition="control").set_index("protein")
+    assert out.loc["P1", "delta_k"].iloc[0] == pytest.approx(0.05, abs=0.02)
+    assert out.loc["P2", "delta_k"].isna().all()
+
+
 def test_same_reference_and_test_condition_raises():
     """A self-contrast (reference == test) is rejected — it would degenerate into a
     spurious slope-vs-zero test (delta_k = −k, p ≈ 0), not a Δk between conditions."""

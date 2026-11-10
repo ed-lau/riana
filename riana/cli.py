@@ -112,6 +112,9 @@ def integrate(
         "multi-factor sheet into separate experiments. Riana groups fits/rollups "
         "on (experiment, condition), so the linear-simple Δk then contrasts "
         "conditions WITHIN each experiment (e.g. control-vs-KO within each tissue). "
+        "A matching 'factor value[...]' column (e.g. 'factor value[organism part]') "
+        "is left out of the condition label, so labels such as 'control' are the "
+        "same in every experiment. "
         "Default: the SDRF file stem on every run (one experiment).",
     ),
     sample: str = typer.Option(

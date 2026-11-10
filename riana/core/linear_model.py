@@ -182,7 +182,10 @@ def fit_linear_deltak(
         reference_condition: the baseline of the Δk contrast — ``delta_k`` is
             ``k(test) − k(reference)``. Defaults to the alphabetically-first
             condition; pass e.g. ``"control"`` to make a treatment read positive
-            when faster.
+            when faster. A named reference is never swapped for the default: a
+            protein (or a whole experiment) without it gets no Δk, and a
+            multi-experiment rollup logs a warning naming the experiments that
+            lack it.
         test_condition: the comparison condition of the Δk contrast. When BOTH
             ``reference_condition`` and ``test_condition`` are given, the contrast is
             that **named pair**, computed from the joint (all-condition) fit — so it
@@ -261,6 +264,22 @@ def fit_linear_deltak(
             "coefficients land on one slope and degenerate into a spurious "
             "slope-vs-zero test (delta_k = −k, p ≈ 0), not a difference."
         )
+    # Present somewhere is not present everywhere: in a multi-experiment rollup a
+    # named condition missing from an experiment leaves that experiment with no Δk.
+    # Say so instead of letting it read as "nothing significant there".
+    named = [str(c) for c in (reference_condition, test_condition) if c is not None]
+    if named and points["experiment"].nunique() > 1:
+        by_exp = points.groupby("experiment")["condition"].agg(
+            lambda s: sorted(set(s.astype(str))))
+        lacking = {str(e): cs for e, cs in by_exp.items()
+                   if any(c not in cs for c in named)}
+        if lacking:
+            _LOGGER.warning(
+                "Δk condition(s) %s absent from %d of %d experiments — no Δk there. "
+                "Conditions in those experiments: %s. (Labels that differ per "
+                "experiment usually mean the stratifier is also a 'factor value' "
+                "column in the SDRF.)",
+                named, len(lacking), len(by_exp), lacking)
 
     rows: list[dict] = []
     grouped = points.groupby(["experiment", "protein"], sort=False)
@@ -380,8 +399,13 @@ def fit_linear_deltak(
                     and coef[test_condition] in slope.index):
                 delta_k, delta_se, delta_p = _contrast(
                     reference_condition, test_condition)
-        elif len(conds) == 2 and all(coef[c] in slope.index for c in conds):
-            ref = reference_condition if reference_condition in conds else conds[0]
+        elif (len(conds) == 2 and all(coef[c] in slope.index for c in conds)
+              and (reference_condition is None or reference_condition in conds)):
+            # A NAMED reference must be one of the two. Falling back to the
+            # alphabetical default here would silently flip Δk's sign for this
+            # protein relative to the rest (e.g. stratum-prefixed labels such as
+            # "LV|ATF6-KO" < "LV|control" when the reference is "LA|control").
+            ref = reference_condition if reference_condition is not None else conds[0]
             other = next(c for c in conds if c != ref)
             delta_k, delta_se, delta_p = _contrast(ref, other)
 
