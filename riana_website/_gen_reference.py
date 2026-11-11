@@ -58,23 +58,51 @@ def _paragraphs(s: str | None) -> str:
     return "\n\n".join(_text(b) for b in blocks if b)
 
 
-def _value(param) -> str:
-    if getattr(param, "is_flag", False):
+# The page is built from the *declarations* in riana/cli.py — each parameter's
+# typer.Option(...) / typer.Argument(...) object and its type hint — rather than from
+# the click objects Typer builds from them. The declarations are Typer's public API;
+# the built objects' internals change between Typer releases (0.29 dropped `.type`).
+
+def _unwrap(hint):
+    """``(base type, is_list)`` from a type hint: strips ``Optional``, notes ``List``."""
+    import typing
+
+    args = [a for a in typing.get_args(hint) if a is not type(None)]
+    origin = typing.get_origin(hint)
+    if origin is typing.Union and len(args) == 1:
+        return _unwrap(args[0])
+    if origin in (list, typing.List):
+        return (args[0] if args else str), True
+    return hint, False
+
+
+def _value(info, hint) -> str:
+    base, many = _unwrap(hint)
+    if base is bool:
         return "flag"
-    choices = getattr(param.type, "choices", None)
-    if choices:
-        return " \\| ".join(f"`{c}`" for c in choices)
-    name = (param.metavar or getattr(param.type, "name", "") or "").upper()
-    if param.nargs == -1:
-        name += " …"
-    return f"`{name}`" if name else ""
+    if info.metavar:
+        name = info.metavar
+    elif base is int:
+        name = "INTEGER"
+    elif base is float:
+        name = "FLOAT"
+    elif base is Path:
+        file_ok, dir_ok = getattr(info, "file_okay", True), getattr(info, "dir_okay", True)
+        name = "FILE" if file_ok and not dir_ok else "DIRECTORY" if dir_ok and not file_ok else "PATH"
+    else:
+        name = "TEXT"
+    return f"`{name.upper()}{' …' if many else ''}`"
 
 
-def _default(param) -> str:
-    if param.required:
+def _required(info) -> bool:
+    return info.default is ...
+
+
+def _default(info, hint) -> str:
+    if _required(info):
         return "required"
-    d = param.default
-    if getattr(param, "is_flag", False):
+    d = info.default
+    if _unwrap(hint)[0] is bool:
         return "on" if d else "off"
     if d is None or d == () or d == []:
         return "–"
@@ -83,54 +111,70 @@ def _default(param) -> str:
     return f"`{d}`"
 
 
-def _names(param) -> str:
-    names = [f"`{o}`" for o in param.opts]
-    if param.secondary_opts:
-        names += [f"`{o}`" for o in param.secondary_opts]
-    return ", ".join(names)
+def _names(info, pname: str) -> str:
+    decls = [n for d in (info.param_decls or ()) for n in d.split("/")] \
+        or ["--" + pname.replace("_", "-")]
+    return ", ".join(f"`{n}`" for n in decls)
 
 
-def _usage(name: str, cmd) -> str:
+def _params(callback):
+    """``[(name, info, hint, is_argument)]`` in signature order (hidden ones dropped)."""
+    import inspect
+    import typing
+
+    import typer.models as tm
+
+    hints = typing.get_type_hints(callback)
+    out = []
+    for name, p in inspect.signature(callback).parameters.items():
+        info = p.default
+        if isinstance(info, (tm.ArgumentInfo, tm.OptionInfo)) and not info.hidden:
+            out.append((name, info, hints.get(name, str), isinstance(info, tm.ArgumentInfo)))
+    return out
+
+
+def _usage(name: str, params) -> str:
     pieces = [f"riana {name}", "[OPTIONS]"]
-    for p in cmd.params:
-        if p.param_type_name != "argument":
-            continue
-        arg = p.name.upper() + (" ..." if p.nargs == -1 else "")
-        pieces.append(arg if p.required else f"[{arg}]")
+    for pname, info, hint, is_arg in params:
+        if is_arg:
+            arg = pname.upper() + (" ..." if _unwrap(hint)[1] else "")
+            pieces.append(arg if _required(info) else f"[{arg}]")
     return " ".join(pieces)
 
 
-def _command(name: str, cmd) -> str:
-    out = [f"## `riana {name}`", "", _paragraphs(cmd.help), "",
-           "```", _usage(name, cmd), "```", ""]
-    args = [p for p in cmd.params if p.param_type_name == "argument"]
-    opts = [p for p in cmd.params
-            if p.param_type_name == "option" and not getattr(p, "hidden", False)]
+def _command(name: str, callback, help_text: str | None) -> str:
+    import inspect
+
+    params = _params(callback)
+    out = [f"## `riana {name}`", "", _paragraphs(help_text or inspect.getdoc(callback)),
+           "", "```", _usage(name, params), "```", ""]
+    args = [p for p in params if p[3]]
     if args:
         out += ["### Arguments", "", "| Argument | Value | Description |", "|---|---|---|"]
-        out += [f"| `{p.name.upper()}` | {_value(p)} | {_cell(getattr(p, 'help', '') or '')} |"
-                for p in args]
+        out += [f"| `{n.upper()}` | {_value(i, h)} | {_cell(i.help or '')} |"
+                for n, i, h, _ in args]
         out.append("")
     panels: dict[str, list] = {}
-    for p in opts:
-        panels.setdefault(getattr(p, "rich_help_panel", None) or "Options", []).append(p)
-    for panel, params in panels.items():
+    for p in params:
+        if not p[3]:
+            panels.setdefault(p[1].rich_help_panel or "Options", []).append(p)
+    for panel, rows in panels.items():
         out += [f"### {panel}", "", "| Option | Value | Default | Description |",
                 "|---|---|---|---|"]
-        out += [f"| {_names(p)} | {_value(p)} | {_default(p)} | {_cell(p.help or '')} |"
-                for p in params]
+        out += [f"| {_names(i, n)} | {_value(i, h)} | {_default(i, h)} | {_cell(i.help or '')} |"
+                for n, i, h, _ in rows]
         out.append("")
     return "\n".join(out)
 
 
 def build_reference() -> str:
     """The full page text."""
-    import typer
-
     from riana.cli import app
 
-    group = typer.main.get_command(app)
-    sections = [_command(name, cmd) for name, cmd in group.commands.items()]
+    sections = [
+        _command(ci.name or ci.callback.__name__.replace("_", "-"), ci.callback, ci.help)
+        for ci in app.registered_commands
+    ]
     return HEADER + "\n" + "\n".join(sections).rstrip() + "\n"
 
 
