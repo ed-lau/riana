@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Rollup — experiment × condition interaction with a random animal effect — 2026-11-10
+
+#### Added
+
+- **`rollup --interaction`** (`linear simple`, two or more experiments). Tests whether the
+  condition effect differs between experiments that are strata of the **same animals**, such as
+  heart chambers split with `integrate --experiment-column`. Per protein, one fit across the
+  experiments with a **random slope per animal**; without it, chambers of one animal count as
+  independent replicates.
+  - *Model:* per-experiment reference slopes, the test-condition shift and its
+    per-experiment deviations; the shipped `(1 − θ̂)²` weight (δ fixed at −1); REML via
+    statsmodels `MixedLM` on weight-transformed data (BFGS). Same collapsed points and filters
+    as the per-experiment Δk.
+  - *Animal* = condition × labeling time × biological replicate, so `biological_replicate` must
+    name the same animal in every experiment.
+  - *Tests*, each BH-adjusted across proteins:
+    - **interaction, ratio scale (primary)** — is k_test / k_reference the same in every
+      experiment? Tested on the conservative between-animal df;
+    - **interaction, additive scale** — are the Δk equal? This is the test `nlme`'s `anova`
+      gives;
+    - **mean Δk across experiments**, at between-animal df.
+
+    Denominator df follow `nlme`'s containment rule.
+  - *Output:* writes `riana_rollup_interaction.txt` (one row per protein × experiment, with
+    per-experiment k, Δk and k ratio from the joint fit). It is recorded in the manifest, and
+    the interaction settings go in the provenance header. Honours `-W`.
+  - *Validation:* matches R `nlme` on ATF6 and on a stored reference dataset (estimates within
+    2e-3, F within 2 %, df identical). On ATF6 it finds 39 chamber-specific KO effects across
+    977 proteins on the ratio scale (137 on the additive scale) and one significant overall KO
+    effect.
+  - Background: `reports/2026-11-10_random_animal_lme_feasibility.md`. New module
+    `riana.core.interaction_model`.
+
+#### Changed
+
+- **`notebooks/atf6_biology.ipynb`**: the "global turnover brake under ATF6-KO" is withdrawn.
+  At the animal level, KO vs control is −1.5 % ± 3.7 % (p = 0.69). §3 now uses the shipped
+  interaction model instead of the prototype without an animal term. New §5.1 reviews the
+  biology of the top-ranked proteins (left-atrium top 10 and interaction top 10), with
+  references.
+
 ### GUI — split runs into experiments by an SDRF column — 2026-11-10
 
 #### Added

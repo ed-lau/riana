@@ -1,7 +1,10 @@
 # Random animal effects (nlme-style mixed model) — feasibility on ATF6, and what it means for the statistics
 
 **Date:** 2026-11-10 · **Data:** `runs/timeseries_atf6` (ATF6-KO vs control, 4 heart chambers,
-5 timepoints, 30 animals; canonical `wls` rollup) · **Status: FEASIBILITY — nothing shipped.**
+5 timepoints, 30 animals; canonical `wls` rollup) · **Status: SHIPPED 2026-11-10** as
+`rollup --interaction` (`riana.core.interaction_model`): ratio-scale interaction as the primary test
+on the conservative between-animal df, δ fixed at −1, animal = condition × day × replicate. On ATF6
+it finds 39 chamber-specific KO effects across 977 proteins (see `CHANGELOG.md`).
 Prompted by the statistical review of the titin manuscript, which asked for an `nlme::lme`
 analysis with a `varExp` variance function, a strain effect, and a random mouse slope.
 

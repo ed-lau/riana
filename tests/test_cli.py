@@ -312,3 +312,84 @@ def test_gui_subcommand_is_registered():
     result = runner.invoke(app, ["gui", "--help"])
     assert result.exit_code == 0
     assert "GUI" in result.output
+
+
+# --------------------------------------------------------------------------- #
+# rollup --interaction
+# --------------------------------------------------------------------------- #
+def _multi_tissue_fit_dir(tmp_path: Path, tissues=("LA", "LV")) -> Path:
+    """`riana fit` outputs for tissues of the same animals: 2 conditions × 4 days ×
+    3 animals, each animal sampled in every tissue (one shared random slope)."""
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    ratio = {"LA": 0.7, "LV": 1.0, "RA": 0.9}
+    pep_rows, frac_rows = [], []
+    for p, (prot, k0) in enumerate((("sp|P11111|A", 0.08), ("sp|P22222|B", 0.05))):
+        for cond in ("control", "KO"):
+            for t in (1.0, 3.0, 7.0, 14.0):
+                for br in (1, 2, 3):
+                    u = rng.normal(0, 0.004)
+                    for tissue in tissues:
+                        k = k0 * (ratio[tissue] if cond == "KO" else 1.0) + u
+                        for j in range(2):
+                            th = 1 - np.exp(-k * t) + rng.normal(0, 0.01)
+                            frac_rows.append({
+                                "concat": f"PEP{p}{j}_2", "protein id": prot,
+                                "experiment": tissue, "condition": cond,
+                                "biological_replicate": br, "labeling_time": t,
+                                "fs": th, "fs_lower": th - 0.01, "fs_upper": th + 0.01})
+        for tissue in tissues:
+            for cond in ("control", "KO"):
+                for j in range(2):
+                    pep_rows.append({"concat": f"PEP{p}{j}_2", "protein id": prot,
+                                     "experiment": tissue, "condition": cond,
+                                     "k_deg": k0, "ci_lo": 0.9 * k0, "ci_hi": 1.1 * k0,
+                                     "R_squared": 0.99})
+    fit_dir = tmp_path / "fit"
+    fit_dir.mkdir()
+    pd.DataFrame(pep_rows).to_csv(fit_dir / "riana_fit_peptides.txt", sep="\t", index=False)
+    pd.DataFrame(frac_rows).to_csv(fit_dir / "riana_fit_fractions.txt", sep="\t", index=False)
+    return fit_dir
+
+
+def test_rollup_interaction_writes_joint_fit_table(tmp_path):
+    fit_dir = _multi_tissue_fit_dir(tmp_path, tissues=("LA", "LV", "RA"))
+    out = tmp_path / "out"
+    result = runner.invoke(app, [
+        "rollup", str(fit_dir), "--model", "linear simple",
+        "--reference-condition", "control", "--interaction", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    inter = pd.read_table(out / "riana_rollup_interaction.txt", comment="#")
+    assert set(inter.protein) == {"P11111", "P22222"}
+    assert set(inter.experiment) == {"LA", "LV", "RA"}
+    ratio = inter[inter.protein == "P11111"].set_index("experiment").k_ratio
+    assert ratio["LA"] == pytest.approx(0.7, abs=0.08)
+    assert ratio["LV"] == pytest.approx(1.0, abs=0.08)
+    header = (out / "riana_rollup_interaction.txt").read_text()
+    assert "# interaction_reference control" in header
+    assert "# interaction_test KO" in header
+    # the per-experiment rollup is written as usual alongside
+    assert (out / "riana_rollup_proteins.txt").exists()
+
+
+@pytest.mark.parametrize("extra, message", [
+    (["--model", "simple"], "needs --model 'linear simple'"),
+    (["--model", "linear simple", "--experiment", "LA"], "drop --experiment"),
+    (["--model", "linear simple", "--test-condition", "drug",
+      "--reference-condition", "control"], "not among the conditions"),
+])
+def test_rollup_interaction_rejects_bad_requests(tmp_path, extra, message):
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    result = runner.invoke(app, ["rollup", str(fit_dir), "--interaction",
+                                 "-o", str(tmp_path / "out"), *extra])
+    assert result.exit_code != 0
+    assert message in _norm(result.output)
+
+
+def test_rollup_interaction_needs_two_experiments(tmp_path):
+    fit_dir = _multi_tissue_fit_dir(tmp_path, tissues=("LA",))
+    result = runner.invoke(app, ["rollup", str(fit_dir), "--model", "linear simple",
+                                 "--interaction", "-o", str(tmp_path / "out")])
+    assert result.exit_code != 0
+    assert "two or more experiments" in _norm(result.output)

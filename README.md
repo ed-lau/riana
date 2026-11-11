@@ -56,6 +56,10 @@ Add `--mbr` to `integrate` to recover time points lost to stochastic MS2
 sampling (gated match-between-runs, DDA only). For a two-condition experiment,
 `rollup --model "linear simple" --reference-condition <name>` fits turnover in
 φ-space and reports a per-protein Δk with Benjamini–Hochberg-adjusted p-values.
+When the experiments are tissues of the same animals (split with
+`integrate --experiment-column`), adding `--interaction` also tests whether the
+condition effect differs between them, in one fit per protein with a random
+animal effect (`riana_rollup_interaction.txt`).
 
 ### Single-fraction (Percolator) path
 
@@ -117,6 +121,8 @@ Outputs (each with a provenance header):
   and the per-timepoint fraction-new with prediction intervals
 - `riana_rollup_proteins.txt` / `riana_rollup_fractions.txt` — protein-level k
   (and Δk under the `linear simple` model)
+- `riana_rollup_interaction.txt` — with `rollup --interaction`: per-experiment k
+  and Δk from the joint fit, and the experiment × condition interaction tests
 
 ## Pipeline
 

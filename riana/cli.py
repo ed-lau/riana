@@ -781,6 +781,50 @@ def fit(
 # --------------------------------------------------------------------------- #
 # rollup
 # --------------------------------------------------------------------------- #
+def _resolve_interaction_conditions(
+    model: str,
+    experiment: Optional[str],
+    fractions,
+    reference: Optional[str],
+    test: Optional[str],
+) -> tuple[str, str]:
+    """Validate ``rollup --interaction`` up front and pick its (reference, test) pair:
+    ``--reference-condition`` (default: alphabetically first, as for the Δk) and
+    ``--test-condition`` (default: the other condition when there are exactly two)."""
+    from riana.core.protein import LINEAR_MODEL
+
+    hint = "--interaction"
+    if model != LINEAR_MODEL:
+        raise typer.BadParameter(
+            f"--interaction needs --model '{LINEAR_MODEL}' (got {model!r}).",
+            param_hint=hint)
+    if experiment is not None:
+        raise typer.BadParameter(
+            "--interaction compares experiments; drop --experiment.", param_hint=hint)
+    exps = (sorted(set(fractions["experiment"].dropna().astype(str)))
+            if "experiment" in fractions.columns else [])
+    if len(exps) < 2:
+        raise typer.BadParameter(
+            f"--interaction needs two or more experiments (found {exps}); split them "
+            "with `integrate --experiment-column`.", param_hint=hint)
+    conds = (sorted(set(fractions["condition"].dropna().astype(str)))
+             if "condition" in fractions.columns else [])
+    ref = reference if reference is not None else (conds[0] if conds else None)
+    if test is None:
+        others = [c for c in conds if c != ref]
+        if len(others) != 1:
+            raise typer.BadParameter(
+                f"--interaction compares two conditions; the data have {conds}. Name "
+                "them with --reference-condition and --test-condition.", param_hint=hint)
+        test = others[0]
+    for role, cond in (("reference", ref), ("test", test)):
+        if cond not in conds:
+            raise typer.BadParameter(
+                f"--interaction {role} condition {cond!r} is not among the conditions "
+                f"in the data ({conds}).", param_hint=hint)
+    return str(ref), str(test)
+
+
 @app.command()
 def rollup(
     fit_dir: Optional[Path] = typer.Argument(
@@ -921,6 +965,18 @@ def rollup(
         "curves to a PDF per experiment (riana_rollup_curves[_<exp>].pdf) — the "
         "batch analog of the GUI's one-at-a-time view. One page per protein, sorted "
         "by delta_k_p_adj."),
+    interaction: bool = typer.Option(
+        False, "--interaction",
+        help="['linear simple', 2+ experiments] Also test whether the condition effect "
+        "differs between experiments that are strata of the SAME animals (e.g. tissues "
+        "split with `integrate --experiment-column`). One joint fit per protein with a "
+        "random slope per animal; animal = condition × labeling time × biological "
+        "replicate, so biological_replicate must identify the same animal in every "
+        "experiment. Writes riana_rollup_interaction.txt: per-experiment k and Δk from "
+        "the joint fit, the interaction test on the ratio scale (k_test/k_reference; "
+        "primary) and on the additive scale, and the mean Δk across experiments, each "
+        "BH-adjusted across proteins. Compares --reference-condition with "
+        "--test-condition (or the other condition when there are exactly two)."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -1010,6 +1066,9 @@ def rollup(
         peptides = peptides[peptides["experiment"] == experiment]
         fractions = fractions[fractions["experiment"] == experiment]
         logger.info("restricted to experiment=%s", experiment)
+    if interaction:
+        int_ref, int_test = _resolve_interaction_conditions(
+            model, experiment, fractions, reference_condition, test_condition)
     from riana.progress import ProgressReporter
     progress = ProgressReporter(0, "rollup", logger)
     try:
@@ -1031,14 +1090,19 @@ def rollup(
         raise typer.BadParameter(str(exc)) from exc
 
     out_path = Path(out) / "riana_rollup_proteins.txt"
+    settings = {
+        "model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
+        "min_peptides": min_peptides, "min_points": min_points,
+        "min_fit_points": min_fit_points, "peptide_admission": peptide_admission,
+        "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
+        "phi_limit": phi_limit, "linear_weights": linear_weights,
+        "reference_condition": reference_condition,
+        "test_condition": test_condition}
+    if interaction:  # only when on, so existing rollups keep their config hash
+        settings.update(interaction=True, interaction_reference=int_ref,
+                        interaction_test=int_test)
     provenance = make_provenance(
-        {"model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
-         "min_peptides": min_peptides, "min_points": min_points,
-         "min_fit_points": min_fit_points, "peptide_admission": peptide_admission,
-         "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
-         "phi_limit": phi_limit, "linear_weights": linear_weights,
-         "reference_condition": reference_condition,
-         "test_condition": test_condition},
+        settings,
         id_source=id_source,
         extra={"method": method, "parsimony": parsimony, "model": model},
     )
@@ -1057,6 +1121,30 @@ def rollup(
                             float_format=ESTIMATE_FLOAT_FORMAT)
         logger.info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
         written.append(frac_path)
+
+    # --interaction: the experiment × condition test, a joint random-animal fit per
+    # protein over the same collapsed points (riana.core.interaction_model).
+    if interaction:
+        if rollup_fractions.empty:
+            logger.warning("--interaction: no rollup points to fit; skipping.")
+        else:
+            from riana.core.interaction_model import fit_interaction
+            int_progress = ProgressReporter(0, "interaction", logger)
+            inter = fit_interaction(
+                rollup_fractions.rename(columns={"fs": "theta"}),
+                reference_condition=int_ref, test_condition=int_test,
+                phi_limit=float(phi_limit), workers=int(workers),
+                progress_callback=int_progress)
+            int_progress.close()
+            inter_path = Path(out) / "riana_rollup_interaction.txt"
+            write_dataframe_tsv(inter_path, inter, provenance, include_index=False,
+                                float_format=ESTIMATE_FLOAT_FORMAT)
+            per_prot = inter.drop_duplicates("protein")
+            logger.info(
+                "wrote %s (%s vs %s: %d proteins; interaction_p_adj < 0.05 for %d, "
+                "ratio scale)", inter_path, int_test, int_ref, len(per_prot),
+                int((per_prot["interaction_p_adj"] < 0.05).sum()))
+            written.append(inter_path)
 
     # --plot: per-experiment PDFs of the linear-simple Δk curves (the batch analog
     # of the GUI's one-at-a-time φ-space view).
