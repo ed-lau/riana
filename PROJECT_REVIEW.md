@@ -123,6 +123,13 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   precursor at *t* derived — `RIA_max·(1−e^{−k_p·t})` from a user-set `k_p`, or per-point from
   the data — **and can `k_p` be fit from the data** rather than hand-set? (`memory/precursor_enrichment_open_questions.md`.) This is the highest-value deferred science; blocked mainly on a
   dataset with resolvable early-timepoint precursor curves.
+- **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
+  2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
+  and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
+  how the shipped baseline (`wls`, `wls-var`) behaves across complex samples. Its benefit depends
+  on the per-protein residual df and dispersion, which vary by design. **See the box below** for
+  what to measure first, the build/skip rule, and implementation notes. Not data-blocked:
+  characterization can start on the existing runs and grows as new datasets arrive.
 - **Proper demultiplexing (Basisty *TurnoveR*-style).** The endgame for multiplexing: forward-model
   the light FS and **subtract** the predicted light spillover from the heavy peaks *before*
   solving heavy FS (e.g. light iso6 overlapping heavy iso9), rather than dropping the heavy
@@ -152,6 +159,78 @@ The 2026-06 build cycle (`memory/m8_adaptive_niso_robust_envelope.md`;
   (verify current status). (3) A **per-peptide scoring-width optimizer** — score each peptide on
   `min(its envelope, cap)` so a flat `--fs` doesn't under-score genuinely-wide peptides (the
   "genuine per-peptide channel optimizer" Track B item; gated on the Track D animal bench).
+
+##### Δk residual-variance moderation — characterize the baseline first
+
+**What it is.** The `linear simple` Δk test estimates each protein's residual variance `s²_g`
+from that protein's own collapsed points, with `d_g = N_g − p_g` df (`N_g` points after the
+φ/t filters, `p_g` condition slopes). limma (Smyth 2004) moderates it across proteins:
+`s̃²_g = (d₀·s₀² + d_g·s²_g)/(d₀ + d_g)`, and the moderated t has `d_g + d₀` df, with `(d₀, s₀²)`
+from a (robust) fitFDist over the proteins. limma-trend makes `s₀²` a function of a covariate.
+
+**How it differs from what shipped.** `wls-var` (opt-in, 2026-07-30) moderates the *per-point*
+Var(θ) that sets the point weights; the contrast keeps `N − p` df, and `s²_g` stays per protein.
+Residual moderation acts on `s²_g` itself and is the only lever that changes the df. Under the
+shipped weights `s²_g` is a dispersion relative to the delta-method weights (it also carries
+biological and animal-to-animal variation); moderating it remains valid. The two can be combined.
+
+**Why it is deferred.** It only matters where `d_g` is small and proteins' dispersions are
+similar (large `d₀`). Rich time series give `N − p` ≈ 20+ (the 2026-07-24 report: "nothing to
+augment there"); single-timepoint TMT/dimethyl, sparse DIA, proteins missing timepoints, and
+designs with many conditions give far fewer. We do not yet know where real projects fall.
+
+**Step 1 — characterize the baseline (the gate).** For each dataset × design, from the shipped
+`wls` (and `wls-var`) rollups, record in a `reports/` entry (one table, extended per dataset):
+
+1. **Residual df** per tested protein: median `d_g`, and the share with `d_g ≤ 3`, `≤ 5`, `≤ 10`.
+2. **Dispersion:** the distribution of `s²_g`, and a robust fitFDist `(d₀, s₀²)` per experiment
+   and pooled. `d₀` against the median `d_g` predicts how far moderation would move each test.
+3. **Mean–dispersion trend:** `s²_g` against `n_peptides`, mean θ, k and `N_g` (decides plain
+   limma vs limma-trend).
+4. **Null calibration** of the current test: within-condition splits (two pseudo-conditions from
+   one condition's biological replicates) or condition labels permuted across animals within each
+   timepoint; the p-value histogram and the share below 0.05 (should be ≈ α).
+5. **Reproducibility:** biological-replicate leave-one-out agreement of Δk and of significance
+   (the protocol of `notebooks/wls_var_investigation.ipynb`).
+6. **Yield:** BH hits at 0.05, per experiment.
+
+Existing runs to start from, spanning the designs: `runs/timeseries_atf6` (in-vivo DIA, 4 tissues
+× 5 timepoints × 3 animals, 2 conditions); `runs/lve_atr_clean` (in-vivo DDA, ventricle vs
+atrium); `runs/boomi_ipsc_d2o` / `_o18`, `runs/juber_ac16_d2o` / `_o18`, `runs/timeseries_lauren9`,
+`runs/timeseries_lauren5_7_ipsc_mesoderm_o18` (cell culture, rich D₂O / ¹⁸O series);
+`runs/dimethyl_duplex` (single timepoint, dimethyl); `runs/splatd2o_tmt16`, `runs/splatd2o_cm_tmt18`
+(single timepoint, TMT; rolled up with the kinetic model only so far, and pooled plexes may not
+allow a Δk); `runs/timeseries_dia` (sparse 3-timepoint DIA; not rolled up). Add complex samples as
+they arrive (more tissues, more than two conditions, longitudinal sampling).
+
+**Enabling change (small, no change to results):** write each protein's residual variance and its
+df beside `delta_k_se` in `riana_rollup_proteins.txt` (e.g. `delta_k_s2`, `delta_k_df`). Items
+1–3 currently have to be recomputed outside Riana. Do this first when the work resumes.
+
+**Build / skip rule (proposed; confirm when the table exists).** Build it (opt-in first) if, in a
+design Riana supports, a material share of tested proteins (≥ ~20 %) has `d_g ≤ 5` **and** the
+robust `d₀` is comparable to or larger than their `d_g`, **or** the null splits show the current
+test is miscalibrated in a way moderation would fix. If `d_g` is large everywhere, record the
+evidence here and close the item.
+
+**Implementation notes (for later).**
+
+- *Where:* `riana/core/linear_model.fit_linear_deltak`, after the per-protein fits and before BH.
+  Reuse the robust `_fit_fdist` already there (it estimates the `wls-var` prior). Estimate
+  `(d₀, s₀²)` per experiment, matching per-experiment BH, unless item 2 shows a shared prior is
+  better.
+- *Surface:* an opt-in rollup flag (and a Protein-tab checkbox). Moderated SE / df / p in the Δk
+  columns. `d₀` and `s₀²` go in the provenance header. Regenerate the CLI Reference
+  (`tests/test_docs.py`).
+- *Weights:* must work with `wls` and `wls-var` (and `ols` for audit).
+- *Validation:* add a residual-moderation arm to `tests/benchmark/bench_linear_weights.py`. It has
+  none today; its `moderate` subcommand moderates per-point Var(θ). Cover sparse-design
+  scenarios (Type-I, power, coverage). Check R parity with limma: `lmFit` on the protein × sample
+  φ matrix with weights `(1−θ̂)²` and design `0 + day:condition`, then `contrasts.fit` +
+  `eBayes(robust = TRUE)`. The collapsed points share a sample axis (biological replicate ×
+  timepoint), so the limma layout fits.
+- *Out of scope:* the interaction model. Its variance components (animal, residual) are per
+  protein; moderating them across proteins is a different problem.
 
 #### Curation-gate reference (fit & rollup) — be explicit
 
@@ -243,15 +322,14 @@ and (2026-11-10) the experiment × condition interaction with a random animal ef
   `CHANGELOG.md`). Open: *>2 conditions* — two conditions per run today
   (`--reference-condition` / `--test-condition`). **Deferred until a dataset with three or more
   conditions exists to test on**; ties to the all-pairwise item above.
-- **[INVESTIGATE] Residual-variance moderation for the Δk t-test (limma-exact / Satterthwaite).**
-  The `linear simple` contrast uses the per-protein WLS residual df `N − p`; a protein with few
-  collapsed points has a noisy `σ̂²` → an unstable t. Complementary to the per-point-variance /
-  eBayes-weight work (`reports/2026-07-24_linear_wls_per_point_var.md`) — that *weights* points for
-  efficiency and keeps the contrast df at `N − p`; this would instead **moderate each protein's
-  regression `σ̂²` across proteins (limma eBayes) and use an augmented / Satterthwaite contrast df**,
-  for sparse-protein inference stability. A different object (the regression residual variance, not
-  the input weights) and the only lever here that actually changes the df. Not built; prototype in
-  `bench_linear_weights.py`.
+- **[HIGH PRIORITY — DEFERRED] Residual-variance moderation for the Δk t-test (limma-style).**
+  A protein with few collapsed points has a noisy residual variance and an unstable t. Moderating
+  it across proteins with an augmented df would stabilise them. This is distinct from the shipped
+  per-point `wls-var` weights (`reports/2026-07-24_linear_wls_per_point_var.md`). Deferred
+  2026-11-11 until the baseline is characterized across complex samples; the plan, the build/skip
+  rule and implementation notes are in the *Δk residual-variance moderation* box under §3
+  "Deferred beyond 1.2.0". Not built and not prototyped: `bench_linear_weights.py moderate`
+  moderates per-point Var(θ), not the residual variance.
 - **A1 — dimethyl S=1 spillover gate** (thin primitive + `spillover` column; see the scope block).
 - **Deamidation** (deferred; own side project).
 - **Precursor-enrichment (RIA) modelling** (deferred; MAJOR, data-blocked; see the scope block).
@@ -327,7 +405,10 @@ stays a linear `integrate → fit → rollup` chain glued by the manifest — or
   `(1−θ̂)²/Var(θᵢ)` **SHIPPED** as opt-in `--linear-weights wls-var` (`c82cc55`; per-point
   `Var(θ)` from the emitted `fs_var` / `fs_df`). **Still open (purist alternative):** a **joint
   nonlinear fit + Wald contrast** (exact MLE + exact inference) — filed, not built, buys back
-  only the last ~3% of efficiency.
+  only the last ~3% of efficiency. **Also open:** each protein's Δk test uses its own residual
+  variance, which is noisy when a protein has few points (single-timepoint and sparse designs).
+  Moderation across proteins is high priority but deferred (§3, the *Δk residual-variance
+  moderation* box).
 - **Single-timepoint fits** run futile bounded-NLS today and mislead the GUI (R²≈0/NaN); the
   fit-step detection + direct solve (§3 scope item 1) closes this.
 - **Memory** is bounded — streaming/indexed mzML, one fraction at a time (`io/mzml.py`).
