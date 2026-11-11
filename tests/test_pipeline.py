@@ -712,3 +712,28 @@ def test_identity_to_extra_omits_none():
     assert extra["mixing_proportion"] == "0.5"
     assert "labeling_time" not in extra  # None omitted
     assert "precursor_enrichment" not in extra
+
+
+def test_fit_project_long_carries_individual_from_the_manifest(tmp_path):
+    """The SDRF individual reaches riana_fit_fractions.txt (after
+    biological_replicate) via the fit's point key; without one, no column."""
+    from dataclasses import replace
+    coeffs = _coeffs()
+    rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs))
+    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+                       ria_max=0.06)
+    plain = tmp_path / "plain_manifest.tsv"
+    append_manifest(plain, rows)
+    long = fit_project(config, plain, coeffs, n_boot=0).attrs["fractions_long"]
+    assert "individual" not in long.columns
+
+    named = [ManifestRow(r.stage, r.output_path, replace(
+        r.identity, individual=f"m{int(r.identity.labeling_time * 1e4)}"))
+        for r in rows]
+    mf = tmp_path / "named_manifest.tsv"
+    append_manifest(mf, named)
+    long = fit_project(config, mf, coeffs, n_boot=0).attrs["fractions_long"]
+    cols = list(long.columns)
+    assert cols[cols.index("biological_replicate") + 1] == "individual"
+    expected = {float(r.identity.labeling_time): r.identity.individual for r in named}
+    assert (long["individual"] == long["labeling_time"].map(expected)).all()

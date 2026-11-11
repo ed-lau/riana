@@ -385,6 +385,7 @@ def identity_to_extra(identity: RunIdentity) -> dict[str, str]:
         "sample": identity.sample,
         "data_file": identity.data_file,
         "biological_replicate": str(identity.biological_replicate),
+        "individual": identity.individual,
         "technical_replicate": str(identity.technical_replicate),
         "fraction": str(identity.fraction),
         "labeling_time": identity.labeling_time,
@@ -556,12 +557,51 @@ def fit_project(
             f"{n} duplicate {tuple(CURVE_KEY_COLUMNS)} rows in the fit output — "
             "a curve-key collision (two conditions tagged the same?)."
         )
-    out.attrs["fractions_long"] = (
+    out.attrs["fractions_long"] = _attach_individual(
         pd.concat(long_frames, ignore_index=True)
         if long_frames
-        else build_fractions_long([])
+        else build_fractions_long([]),
+        _individual_map(integrate_rows),
     )
     return out
+
+
+def _individual_map(rows: list[ManifestRow]) -> dict[tuple, str]:
+    """``(experiment, condition, x, biological_replicate)`` → ``individual``.
+
+    The fit's point key (fractions of one sample merge on it), so an animal is a
+    function of it. Runs without an individual are skipped; a key whose runs name
+    different individuals is dropped (ambiguous — the SDRF reader already warns).
+    """
+    out: dict[tuple, str] = {}
+    ambiguous: set[tuple] = set()
+    for row in rows:
+        ident = row.identity
+        x = ident.independent_value
+        if not ident.individual or x is None:
+            continue
+        key = (ident.experiment, ident.condition, float(x),
+               int(ident.biological_replicate))
+        if out.setdefault(key, ident.individual) != ident.individual:
+            ambiguous.add(key)
+    for key in ambiguous:
+        del out[key]
+    return out
+
+
+def _attach_individual(long: pd.DataFrame, individuals: dict[tuple, str]) -> pd.DataFrame:
+    """Add an ``individual`` column after ``biological_replicate`` (``""`` where a
+    point's runs named none). A no-op when no run names an individual, so outputs
+    of SDRFs without ``characteristics[individual]`` are unchanged."""
+    if not individuals or long.empty:
+        return long
+    keys = zip(long["experiment"], long["condition"],
+               long["labeling_time"].astype(float),
+               long["biological_replicate"].astype(int))
+    long = long.copy()
+    long.insert(long.columns.get_loc("biological_replicate") + 1, "individual",
+                [individuals.get(k, "") for k in keys])
+    return long
 
 
 # --------------------------------------------------------------------------- #

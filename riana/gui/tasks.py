@@ -16,6 +16,7 @@ pure and Qt-free, they are unit-tested headlessly with no display.
 
 from __future__ import annotations
 
+import os
 from typing import Sequence
 
 import pandas as pd
@@ -387,3 +388,45 @@ def load_integrate_results(out_dir: str) -> pd.DataFrame:
     frames = [pd.read_table(r.output_path, comment="#")
               for r in rows if Path(r.output_path).exists()]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def run_interaction(
+    rollup_fractions: pd.DataFrame,
+    reference_condition: str,
+    test_condition: str,
+    phi_limit: float = -4.0,
+    workers: int = 1,
+    progress_queue=None,
+) -> tuple[pd.DataFrame, str]:
+    """The experiment × condition interaction over the collapsed rollup points.
+
+    Mirrors ``rollup --interaction``: the shared
+    :func:`riana.core.interaction_model.fit_interaction` on
+    ``riana_rollup_fractions.txt``'s points (``fs`` as θ). Like :func:`run_rollup`,
+    dispatch on a main-process thread when ``workers > 1`` (no nested pools).
+    Returns ``(table, animal_key)`` — the key returned explicitly because
+    ``DataFrame.attrs`` is not guaranteed to survive the pickle back to the GUI.
+    """
+    from riana.core.interaction_model import fit_interaction
+
+    table = fit_interaction(
+        rollup_fractions.rename(columns={"fs": "theta"}),
+        reference_condition=reference_condition, test_condition=test_condition,
+        phi_limit=float(phi_limit), workers=int(workers),
+        progress_callback=_queue_progress_callback(progress_queue))
+    return table, str(table.attrs.get("animal_key", "composite"))
+
+
+def load_rollup_interaction(manifest_path: str) -> tuple[pd.DataFrame | None, dict]:
+    """A saved ``riana_rollup_interaction.txt`` (from ``rollup --interaction`` or the
+    Rollup tab) and its provenance header; ``(None, {})`` when the manifest's rollup
+    rows record none."""
+    from riana.io.manifest import read_manifest
+    from riana.io.writers import read_provenance_header
+
+    rows = read_manifest(manifest_path, stage="rollup")
+    path = next((r.output_path for r in rows
+                 if r.output_path.endswith("rollup_interaction.txt")), None)
+    if path is None or not os.path.exists(path):
+        return None, {}
+    return pd.read_table(path, comment="#"), read_provenance_header(path)

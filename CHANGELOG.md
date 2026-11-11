@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Interaction follow-ups — animal IDs, Satterthwaite df, singular fits, GUI — 2026-11-11
+
+#### Added
+
+- **Animal IDs from the SDRF.** `characteristics[individual]` is read at intake
+  (`RunIdentity.individual`), kept in the manifest and the per-run provenance header, and
+  written as an `individual` column in `riana_fit_fractions.txt` and
+  `riana_rollup_fractions.txt`. The column appears only when the SDRF has animal IDs, so
+  other projects' outputs are unchanged. `rollup --interaction` keys its random animal
+  effect on it, falling back to condition × labeling time × biological replicate where it
+  is absent. It also allows longitudinal designs, where one animal is sampled at several
+  timepoints. The header of `riana_rollup_interaction.txt` records which key was used
+  (`# animal_key individual | composite | individual+composite`).
+  - *Intake checks (warnings):* runs that the fit merges as fractions of one sample but
+    that name different individuals (their IDs are ignored); runs without an individual
+    when others have one; and, at the interaction fit, one individual under both
+    conditions (IDs restarting within each group).
+  - `characteristics[individual]` is not offered as an "Experiment from" / `--experiment-column`
+    choice: its levels are the animals whose tissues are the experiments.
+- **GUI: Interaction option on the Rollup tab** (`linear simple`). It runs the same fit as
+  `rollup --interaction` after the rollup and writes the same file and manifest row. A new
+  *Interaction* results tab lists one row per protein (the three tests and each
+  experiment's k ratio, most significant first). Selecting a row draws one φ-space panel
+  per experiment, with both conditions' points and the joint-fit lines. Load results
+  restores it.
+
+#### Changed
+
+- **Ratio-scale interaction test: Satterthwaite denominator df** (lmerTest's `contestMD`
+  method) instead of the conservative between-animal df. Checked against lmerTest 3.2.1
+  to within 4e-5 (relative). On ATF6: 86 chamber-specific KO effects instead of 39 (all
+  39 kept; median df 80 instead of 29). The additive (137) and overall (1) tests keep
+  `nlme`'s containment df and are unchanged. The ratio-scale top 10 is the same ten
+  proteins.
+- **Singular fits are kept.** When the REML optimum is σ²_animal = 0, statsmodels stops
+  there unconverged with wrong fixed effects, so those proteins were dropped (8 on ATF6).
+  They are now fitted directly at σ²_animal = 0, as lme4 does. That fit is the weighted
+  least-squares solution, `sigma_animal` is 0, and the ratio-test df is N − p, as lmerTest
+  gives (all 8 checked). All 982 qualifying ATF6 proteins now fit.
+- The interaction fit no longer depends on how animals are named: they are coded in data
+  order before the fit. Previously, borderline proteins could converge differently when
+  only the labels changed.
+
+#### Not yet supported
+
+- **More than two conditions** in the interaction (one reference and one test condition per
+  run). Deferred until a dataset with three or more conditions is available to test on.
+
 ### Rollup — experiment × condition interaction with a random animal effect — 2026-11-10
 
 #### Added

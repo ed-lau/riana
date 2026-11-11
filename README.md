@@ -59,7 +59,14 @@ sampling (gated match-between-runs, DDA only). For a two-condition experiment,
 When the experiments are tissues of the same animals (split with
 `integrate --experiment-column`), adding `--interaction` also tests whether the
 condition effect differs between them, in one fit per protein with a random
-animal effect (`riana_rollup_interaction.txt`).
+animal effect (`riana_rollup_interaction.txt`; also the Rollup tab's
+*Interaction* option in `riana gui`). The animal is read from the SDRF's
+`characteristics[individual]`: give each animal one ID on all of its rows
+(every tissue), unique across groups. Without that column Riana uses condition ×
+labeling time × biological replicate, which assumes each replicate number names
+the same animal in every tissue and that each animal is sampled once
+(cross-sectional); a longitudinal design needs real IDs. The interaction compares
+two conditions per run; designs with more are not supported yet.
 
 ### Single-fraction (Percolator) path
 
@@ -105,8 +112,8 @@ Inputs:
 
 - **mzML** (gzipped or plain) — MS1 spectra, streamed one fraction at a time
 - **SDRF** `.sdrf.tsv` — the sample sheet that carries run identity (condition,
-  biological replicate, labeling time, acquisition, precursor enrichment); the
-  primary intake key
+  biological replicate, labeling time, acquisition, precursor enrichment, and
+  optionally `characteristics[individual]`, the animal); the primary intake key
 - **mzTab** (quantms / OpenMS) — the DDA peptide identifications
 - **DIA-NN** `report.parquet` — the DIA identifications (apex RT resolved to the
   nearest MS1 scan); needs the `[dia]` extra
@@ -123,6 +130,7 @@ Outputs (each with a provenance header):
   (and Δk under the `linear simple` model)
 - `riana_rollup_interaction.txt` — with `rollup --interaction`: per-experiment k
   and Δk from the joint fit, and the experiment × condition interaction tests
+  (ratio scale with Satterthwaite df, additive scale, and the mean Δk)
 
 ## Pipeline
 

@@ -4,7 +4,10 @@
 5 timepoints, 30 animals; canonical `wls` rollup) · **Status: SHIPPED 2026-11-10** as
 `rollup --interaction` (`riana.core.interaction_model`): ratio-scale interaction as the primary test
 on the conservative between-animal df, δ fixed at −1, animal = condition × day × replicate. On ATF6
-it finds 39 chamber-specific KO effects across 977 proteins (see `CHANGELOG.md`).
+it finds 39 chamber-specific KO effects across 977 proteins (see `CHANGELOG.md`). **Updated
+2026-11-11:** the ratio-scale test now uses Satterthwaite df (lmerTest-checked; 86 effects across
+982 proteins, all 39 kept), the animal is read from `characteristics[individual]`, and singular
+(σ²_animal = 0) fits are kept; the numbers below are the 2026-11-10 analysis.
 Prompted by the statistical review of the titin manuscript, which asked for an `nlme::lme`
 analysis with a `varExp` variance function, a strain effect, and a random mouse slope.
 

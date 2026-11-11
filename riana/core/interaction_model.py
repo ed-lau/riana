@@ -23,29 +23,38 @@ filters (plateau, t > 0) as :func:`riana.core.linear_model.fit_linear_deltak`::
 - ``Var(ε) ∝ 1/(1 − θ̂)²`` — the shipped delta-method weight from a first OLS pass (nlme
   ``varExp(form = ~fitted(.))`` with δ fixed at −1; ATF6 estimates δ ≈ −1.1).
 
-**Animal** = (condition, labeling_time, biological_replicate), so ``biological_replicate``
-must identify the same animal in every experiment of one condition × timepoint (as an SDRF
-stratified by tissue does when each animal keeps one replicate index across its tissues).
-Experiments that are *different* animals (e.g. separate cohorts) do not fit this model.
+**Animal** = the ``individual`` column (SDRF ``characteristics[individual]``, threaded
+through fit and rollup) where present. Otherwise the (condition, labeling_time,
+biological_replicate) composite, which assumes ``biological_replicate`` names the same animal
+in every experiment of one condition × timepoint (as an SDRF stratified by tissue does when
+each animal keeps one replicate index across its tissues) and that each animal is sampled at
+one timepoint. Real IDs also allow longitudinal designs (one animal at several timepoints:
+the random slope is then a genuine within-animal slope). Experiments that are *different*
+animals (e.g. separate cohorts) do not fit this model.
 
 **Fit.** REML with statsmodels ``MixedLM`` on the √w-transformed data, which is nlme
 ``lme(..., weights = varFixed(~1/w))``. BFGS, not statsmodels' default L-BFGS: on these small
-variances (~1e-5) L-BFGS stops at a wrong point while reporting convergence. Denominator df
-follow nlme's containment rule (:func:`containment_df`). Checked against nlme on ATF6
-(estimates within 1.5e-3, F within 1.3 %, df identical).
+variances (~1e-5) L-BFGS stops at a wrong point while reporting convergence. Checked against
+nlme on ATF6 (estimates within 1.5e-3, F within 1.3 %, df identical). When the REML optimum
+is σ²_animal = 0 (a *singular* fit; ~1 % of ATF6 proteins) statsmodels stops there
+unconverged with wrong fixed effects, so that fit is computed directly (:func:`_singular_fit`:
+the weighted least-squares solution, as lme4 returns); ``sigma_animal`` is then 0.
 
 **Tests reported per protein** (BH across proteins, one family per test):
 
 - ``interaction_*`` (ratio scale, primary) — is ``k_test / k_reference`` the same in every
   experiment? A uniform proportional effect is not an interaction on this scale, though it
   gives a larger absolute Δk in faster-turnover experiments. Wald F on the log ratios (delta
-  method). The contrast draws on between-animal (``β_shift``) and within-animal coefficients,
-  which nlme would not give one df; the smaller (between-animal) df is used, which is
-  conservative.
-- ``interaction_additive_*`` — are the Δk equal across experiments (``γ = 0``)? Exact
-  within-animal df; the test nlme's ``anova`` gives for the interaction columns.
+  method). The contrast mixes between-animal (``β_shift``) and within-animal coefficients, so
+  no containment df fits it; its denominator df is Satterthwaite's
+  (:func:`satterthwaite_ddf`, lmerTest's ``contestMD`` method; checked against lmerTest
+  3.2.1). Where that is undefined the smaller, between-animal containment df is used.
+- ``interaction_additive_*`` — are the Δk equal across experiments (``γ = 0``)? nlme's
+  containment df (:func:`containment_df`, exact within-animal df); the test nlme's ``anova``
+  gives for the interaction columns.
 - ``mean_delta_k_*`` — Δk averaged over experiments (= −β_shift), the condition main effect,
-  at between-animal df. Per-experiment Δk *tests* stay in ``riana_rollup_proteins.txt``.
+  at the between-animal containment df. Per-experiment Δk *tests* stay in
+  ``riana_rollup_proteins.txt``.
 """
 
 from __future__ import annotations
@@ -105,6 +114,143 @@ def containment_df(X: np.ndarray, groups: np.ndarray) -> np.ndarray:
                     len(X) - n_groups - p_within + 1).astype(float)
 
 
+def satterthwaite_ddf(
+    L: np.ndarray,
+    X: np.ndarray,
+    y: np.ndarray,
+    z: np.ndarray,
+    groups: np.ndarray,
+    sigma2_animal: float,
+    sigma2_resid: float,
+) -> float:
+    """Satterthwaite denominator df for the F test of ``L β`` in a REML fit of
+    ``y = Xβ + z·u_group + ε`` (``u ~ N(0, σ²_animal)``, ``ε ~ N(0, σ²_resid·I)``).
+
+    lmerTest's ``contestMD`` construction: with ``L V Lᵀ = P diag(d) Pᵀ`` and
+    ``V = (Xᵀ Σ⁻¹ X)⁻¹``, each eigen-contrast ``l_m = P_mᵀ L`` gets
+    ``ν_m = 2 d_m² / (g_mᵀ A g_m)``, where ``g_m`` is the gradient of ``l_m V l_mᵀ``
+    in the variance parameters and ``A`` the inverse observed REML information; the
+    ν_m combine as ``2E / (E − q)`` with ``E = Σ ν_m / (ν_m − 2)`` (2 if any ν_m ≤ 2).
+    At ``σ²_animal = 0`` (a singular fit) only ``σ²_resid`` counts, giving ``N − p``
+    as lmerTest does. Returns ``nan`` where the information is not positive definite.
+    """
+    L = np.atleast_2d(np.asarray(L, dtype=float))
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float)
+    z = np.asarray(z, dtype=float)
+    if not (sigma2_resid > 0 and sigma2_animal >= 0):
+        return float("nan")
+    # Σ is block-diagonal by animal, so everything is accumulated per block (each a
+    # few points) instead of with dense N × N matrices. Per block, with D_a = z zᵀ and
+    # D_e = I (∂Σ/∂σ²_animal, ∂Σ/∂σ²_resid), Σ⁻¹ by Sherman–Morrison.
+    codes = pd.factorize(pd.Series(groups))[0]
+    order = np.argsort(codes, kind="stable")
+    bounds = np.flatnonzero(np.diff(codes[order])) + 1
+    blocks = []
+    p = X.shape[1]
+    XtSX = np.zeros((p, p))
+    XtSy = np.zeros(p)
+    for idx in np.split(order, bounds):
+        Xg, yg, zg = X[idx], y[idx], z[idx]
+        c = sigma2_animal / (sigma2_resid + sigma2_animal * (zg @ zg))
+        Sg = (np.eye(len(idx)) - c * np.outer(zg, zg)) / sigma2_resid
+        SXg = Sg @ Xg
+        XtSX += Xg.T @ SXg
+        XtSy += SXg.T @ yg
+        blocks.append((Xg, yg, Sg, SXg, (np.outer(zg, zg), np.eye(len(idx)))))
+    try:
+        V = np.linalg.inv(XtSX)
+    except np.linalg.LinAlgError:
+        return float("nan")
+    b = V @ XtSy
+    # P = Σ⁻¹ − Σ⁻¹X V XᵀΣ⁻¹.  tr(PΣ_kPΣ_l) = Σ_g tr(A_k A_l) − 2 tr(V M_kl)
+    # + tr(V B_k V B_l), with A_k = Σ_g⁻¹D_k, M_kl = Σ XᵀA_kA_lΣ⁻¹X, B_k = XᵀΣ⁻¹D_kΣ⁻¹X.
+    T1 = np.zeros((2, 2))
+    M = np.zeros((2, 2, p, p))
+    B = np.zeros((2, p, p))
+    w = [[], []]                                   # D_k · Py, per block
+    XtSw = np.zeros((2, p))
+    for Xg, yg, Sg, SXg, D in blocks:
+        rg = Sg @ (yg - Xg @ b)                    # Py on this block
+        A = [Sg @ Dk for Dk in D]
+        for k in range(2):
+            B[k] += SXg.T @ D[k] @ SXg
+            wk = D[k] @ rg
+            w[k].append(wk)
+            XtSw[k] += SXg.T @ wk
+            for l in range(2):
+                T1[k, l] += np.trace(A[k] @ A[l])
+                M[k, l] += Xg.T @ A[k] @ A[l] @ SXg
+    # At a singular fit (σ²_animal = 0) only σ²_resid is estimated (lmerTest), which
+    # makes every ν_m = N − p.
+    par = [0, 1] if sigma2_animal > 0 else [1]
+    info = np.empty((len(par), len(par)))
+    for i, k in enumerate(par):
+        for j, l in enumerate(par):
+            trPP = T1[k, l] - 2 * np.trace(V @ M[k, l]) + np.trace(V @ B[k] @ V @ B[l])
+            # yᵀPΣ_kPΣ_lPy = (D_k Py)ᵀ P (D_l Py)
+            corr = V @ XtSw[l]
+            quad = sum(wk @ (Sg @ wl - SXg @ corr)
+                       for wk, wl, (_, _, Sg, SXg, _) in zip(w[k], w[l], blocks))
+            info[i, j] = -0.5 * trPP + quad
+    if not np.all(np.isfinite(info)) or np.linalg.eigvalsh(info).min() <= 0:
+        return float("nan")
+    A_cov = np.linalg.inv(info)
+    dV = [V @ B[k] @ V for k in par]                    # ∂V/∂θ_k
+    d, Pe = np.linalg.eigh(L @ V @ L.T)
+    keep = d > max(np.finfo(float).eps * d.max(), 0.0)
+    nu = []
+    for m in np.flatnonzero(keep):
+        lm = Pe[:, m] @ L
+        g = np.array([lm @ dVk @ lm for dVk in dV])
+        nu.append(2.0 * d[m] ** 2 / (g @ A_cov @ g))
+    nu = np.asarray(nu)
+    if nu.size == 0 or not np.all(np.isfinite(nu)):
+        return float("nan")
+    if nu.size == 1:
+        return float(nu[0])
+    if np.all(np.abs(np.diff(nu)) < 1e-8):
+        return float(nu.mean())
+    if np.any(nu <= 2):
+        return 2.0
+    E = float(np.sum(nu / (nu - 2)))
+    return 2 * E / (E - nu.size)
+
+
+#: σ²_animal at or below this fraction of σ²_resid is treated as the boundary (0).
+_SINGULAR_TOL = 1e-8
+
+
+def _singular_fit(
+    X: np.ndarray, y: np.ndarray, z: np.ndarray, groups: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float] | None:
+    """The REML fit at σ²_animal = 0 (a "singular" fit): OLS on the scaled data,
+    ``σ²_resid = RSS / (N − p)``. Returns ``(β, Cov β, σ²_resid)`` when zero is the
+    REML optimum — the score in σ²_animal there, ``½(yᵀPΣ_aPy − tr PΣ_a)``, is not
+    positive — else ``None`` (an interior optimum the optimizer failed to reach).
+    """
+    N, p = X.shape
+    if N <= p:
+        return None
+    try:
+        XtX_inv = np.linalg.inv(X.T @ X)
+    except np.linalg.LinAlgError:
+        return None
+    b = XtX_inv @ (X.T @ y)
+    r = y - X @ b
+    s2e = float(r @ r) / (N - p)
+    if not s2e > 0:
+        return None
+    codes = pd.factorize(pd.Series(groups))[0]
+    zr = np.bincount(codes, weights=z * r)                       # z_gᵀ r_g
+    Xz = np.column_stack([np.bincount(codes, weights=z * X[:, j]) for j in range(p)])
+    tr_PSa = (float(z @ z) - float(np.einsum("gi,ij,gj->", Xz, XtX_inv, Xz))) / s2e
+    score = 0.5 * (float(zr @ zr) / s2e ** 2 - tr_PSa)
+    if score > 0:
+        return None
+    return b, s2e * XtX_inv, s2e
+
+
 def _prepare(
     points: pd.DataFrame,
     reference: str,
@@ -129,9 +275,45 @@ def _prepare(
     p = p[n >= min_points_per_condition]
     paired = p.groupby(["protein", "experiment"])["condition"].transform("nunique")
     p = p[paired == 2].copy()
-    p["animal"] = (p["condition"] + "|" + p["labeling_time"].astype(float).astype(str)
-                   + "|" + p["biological_replicate"].astype(str))
+    composite = ("composite:" + p["condition"] + "|"
+                 + p["labeling_time"].astype(float).astype(str)
+                 + "|" + p["biological_replicate"].astype(str))
+    if "individual" in p.columns:
+        from riana.core.protein import individual_label
+        named = p["individual"].map(individual_label)
+        p["animal"] = np.where(named != "", "individual:" + named, composite)
+    else:
+        p["animal"] = composite
     return p
+
+
+def _check_animals(p: pd.DataFrame) -> str:
+    """Log how animals were identified; return the key used (for provenance):
+    ``"individual"``, ``"composite"`` or ``"individual+composite"``."""
+    named = p["animal"].str.startswith("individual:")
+    if not named.any():
+        return "composite"
+    a = p.loc[named]
+    per_animal = a.groupby("animal").agg(
+        conditions=("condition", "nunique"), times=("labeling_time", "nunique"))
+    n_multi_cond = int((per_animal["conditions"] > 1).sum())
+    if n_multi_cond:
+        _LOGGER.warning(
+            "--interaction: %d individual(s) appear under both conditions and are "
+            "treated as one animal each. If animal IDs restart within each group "
+            "(1, 2, 3 per condition), make them unique in characteristics[individual].",
+            n_multi_cond)
+    n_long = int((per_animal["times"] > 1).sum())
+    if n_long:
+        _LOGGER.info("--interaction: %d individual(s) sampled at several labeling "
+                     "times (longitudinal).", n_long)
+    if named.all():
+        return "individual"
+    _LOGGER.warning(
+        "--interaction: %d of %d points have no individual; those use the "
+        "(condition, labeling time, biological replicate) composite.",
+        int((~named).sum()), len(p))
+    return "individual+composite"
 
 
 def _fit_protein(
@@ -157,7 +339,9 @@ def _fit_protein(
         + [day * is_test]
         + [day * is_test * C[sidx, j] for j in range(S - 1)])
     y = g["phi"].to_numpy(dtype=float)
-    animal = g["animal"].to_numpy()
+    # Integer codes in order of appearance, so the fit does not depend on how the
+    # animals are named (statsmodels orders groups by label).
+    animal = pd.factorize(g["animal"])[0]
     p = X.shape[1]                                             # 2S
     shared = int((pd.Series(animal).value_counts() >= 2).sum())
     if shared < min_shared_animals or len(y) <= p + 1:
@@ -170,24 +354,34 @@ def _fit_protein(
     # the model to unit-variance errors.
     b0 = np.linalg.lstsq(X, y, rcond=None)[0]
     sw = np.exp(np.maximum(X @ b0, phi_limit))
+    Xt, yt, zt = X * sw[:, None], y * sw, day * sw
+    res = None
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            res = MixedLM(y * sw, X * sw[:, None], groups=animal,
-                          exog_re=(day * sw)[:, None]).fit(reml=True, method=["bfgs", "nm"])
+            res = MixedLM(yt, Xt, groups=animal, exog_re=zt[:, None]).fit(
+                reml=True, method=["bfgs", "nm"])
     except Exception as exc:  # noqa: BLE001 - statsmodels raises various
         _LOGGER.debug("interaction fit failed for %s: %s", prot, exc)
-        return []
-    if not res.converged:
-        _LOGGER.debug("interaction fit did not converge for %s", prot)
-        return []
-
-    b = np.asarray(res.fe_params, dtype=float)
-    V = np.asarray(res.cov_params(), dtype=float)[:p, :p]
+    s2a = float(np.asarray(res.cov_re)[0, 0]) if res is not None else float("nan")
+    if res is not None and res.converged and s2a > _SINGULAR_TOL * float(res.scale):
+        b = np.asarray(res.fe_params, dtype=float)
+        V = np.asarray(res.cov_params(), dtype=float)[:p, :p]
+        s2e = float(res.scale)
+    else:
+        # statsmodels does not settle on σ²_animal = 0 (it stops there unconverged,
+        # with wrong fixed effects): take the singular fit directly when zero is the
+        # REML optimum, as lme4 does.
+        boundary = _singular_fit(Xt, yt, zt, animal)
+        if boundary is None:
+            _LOGGER.debug("interaction fit did not converge for %s", prot)
+            return []
+        b, V, s2e = boundary
+        s2a = 0.0
     dfs = containment_df(X, animal)
     ref_slope = b[:S]
     test_slope = ref_slope + b[S] + C @ b[S + 1:]
-    sigma_animal = float(np.sqrt(max(float(np.asarray(res.cov_re)[0, 0]), 0.0)))
+    sigma_animal = float(np.sqrt(max(s2a, 0.0)))
 
     def wald(est: np.ndarray, cov: np.ndarray) -> float:
         try:
@@ -209,6 +403,7 @@ def _fit_protein(
 
     # Ratio-scale interaction: equal log(k_test / k_ref) across experiments.
     rat_F = rat_df2 = rat_p = np.nan
+    ddf_fallback = False
     if np.all(ref_slope < 0) and np.all(test_slope < 0):
         J = np.zeros((S, p))                       # ∂ log(test_s / ref_s) / ∂b
         for s in range(S):
@@ -219,8 +414,13 @@ def _fit_protein(
         DJ = D @ J
         r = np.log(test_slope / ref_slope)
         rat_F = wald(D @ r, DJ @ V @ DJ.T)
-        used = np.abs(DJ).max(axis=0) > 1e-12 * np.abs(DJ).max()
-        rat_df2 = float(dfs[used].min())
+        rat_df2 = satterthwaite_ddf(DJ, Xt, yt, zt, animal, s2a, s2e)
+        if not np.isfinite(rat_df2) or rat_df2 <= 0:
+            # Undefined (information not positive definite): the conservative
+            # between-animal containment df.
+            used = np.abs(DJ).max(axis=0) > 1e-12 * np.abs(DJ).max()
+            rat_df2 = float(dfs[used].min())
+            ddf_fallback = True
         rat_p = float(stats.f.sf(rat_F, S - 1, rat_df2)) if np.isfinite(rat_F) else np.nan
 
     protein_level = {
@@ -232,6 +432,7 @@ def _fit_protein(
         "interaction_df2": rat_df2, "interaction_p": rat_p,
         "interaction_additive_F": add_F, "interaction_additive_df2": add_df2,
         "interaction_additive_p": add_p,
+        "_ddf_fallback": ddf_fallback,
     }
     rows = []
     for s, name in enumerate(strata):
@@ -281,8 +482,9 @@ def fit_interaction(
 
     Args:
         points: long table with ``experiment``, ``condition``, ``protein``,
-            ``biological_replicate``, ``labeling_time``, ``theta`` — the collapsed
-            rollup points (``riana_rollup_fractions.txt`` with ``fs`` as ``theta``).
+            ``biological_replicate``, ``labeling_time``, ``theta`` and optionally
+            ``individual`` — the collapsed rollup points
+            (``riana_rollup_fractions.txt`` with ``fs`` as ``theta``).
         reference_condition / test_condition: the two conditions compared; Δk and
             the ratio are ``test`` relative to ``reference``. Other conditions are
             ignored.
@@ -297,7 +499,8 @@ def fit_interaction(
 
     Returns:
         One row per ``(protein, experiment)`` in :data:`INTERACTION_COLUMNS`; empty
-        when no protein qualifies.
+        when no protein qualifies. ``attrs["animal_key"]`` records how animals were
+        identified (``"individual"``, ``"composite"`` or ``"individual+composite"``).
 
     Raises:
         DataError: missing columns, or a condition not present in the data, or the
@@ -324,6 +527,7 @@ def fit_interaction(
     p = _prepare(points, reference, test, phi_limit=phi_limit,
                  theta_floor=theta_floor, theta_ceiling=theta_ceiling,
                  min_points_per_condition=min_points_per_condition)
+    animal_key = _check_animals(p) if not p.empty else "composite"
     groups = [(str(k), g) for k, g in p.groupby("protein", sort=True)
               if g["experiment"].nunique() >= 2]
     args = (reference, test, phi_limit, min_shared_animals)
@@ -340,10 +544,15 @@ def fit_interaction(
             (_fit_protein(prot, g, *args) for prot, g in groups),
             len(groups), progress_callback))
 
+    n_fallback = sum(bool(rows[0]["_ddf_fallback"]) for rows in computed if rows)
+    if n_fallback:
+        _LOGGER.info("--interaction: Satterthwaite df undefined for %d protein(s); "
+                     "their ratio-scale test uses the between-animal df.", n_fallback)
     out = pd.DataFrame([r for rows in computed for r in rows],
                        columns=[c for c in INTERACTION_COLUMNS if c not in _ADJUSTED])
     for adj, raw in _ADJUSTED.items():
         out[adj] = np.nan
+    out.attrs["animal_key"] = animal_key
     if out.empty:
         return out[INTERACTION_COLUMNS]
 

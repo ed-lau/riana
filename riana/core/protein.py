@@ -374,13 +374,15 @@ def rollup_proteins(
         stats[col] = stats[col].fillna(0).astype(int)
 
     if model == LINEAR_MODEL:
-        return _rollup_linear(
+        result = _rollup_linear(
             stats, fractions, method=method, min_peptides=min_peptides,
             min_points=min_points, phi_limit=phi_limit,
             linear_weights=linear_weights,
             reference_condition=reference_condition,
             test_condition=test_condition,
             progress_callback=progress_callback)
+        result.attrs["point_individuals"] = _point_individuals(fractions)
+        return result
 
     model_fn = _MODELS[model]
     refit, points = _refit_table(
@@ -403,6 +405,7 @@ def rollup_proteins(
     # The collapsed (t, θ) points behind each refit, for the GUI curve view.
     # Keyed by (experiment, condition, protein).
     result.attrs["protein_points"] = points
+    result.attrs["point_individuals"] = _point_individuals(fractions)
     return result
 
 
@@ -457,6 +460,32 @@ def _rollup_linear(
     return result
 
 
+def individual_label(value: object) -> str:
+    """An ``individual`` cell as text: ``""`` when missing; an integral float that a
+    TSV round-trip made of an ID column with gaps (``843.0``) back to ``"843"``."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return ""
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _point_individuals(fractions: pd.DataFrame) -> dict[tuple, str]:
+    """``(experiment, condition, labeling_time, biological_replicate)`` → the
+    ``individual`` of that point, from the fit fractions (empty when the fit had no
+    ``individual`` column — an SDRF without ``characteristics[individual]``)."""
+    if "individual" not in fractions.columns or fractions.empty:
+        return {}
+    cols = [*GROUP_KEY_COLUMNS, "labeling_time", "biological_replicate", "individual"]
+    out: dict[tuple, str] = {}
+    for exp, cond, t, br, ind in fractions[cols].drop_duplicates().itertuples(
+            index=False, name=None):
+        name = individual_label(ind)
+        if name and not pd.isna(br):
+            out[(exp, cond, float(t), int(br))] = name
+    return out
+
+
 def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
     """Long/tidy table of the collapsed ``(t, θ)`` points behind each protein
     refit — the inverse-variance-weighted fraction-new the GUI curve plots, one row
@@ -482,11 +511,20 @@ def build_rollup_fractions(result: pd.DataFrame) -> pd.DataFrame:
                 "labeling_time": float(t), "fs": float(fs),
                 "fs_var": float(var), "fs_df": float(df),
             })
-    return pd.DataFrame(
+    out = pd.DataFrame(
         rows,
         columns=[*PROTEIN_KEY_COLUMNS, "biological_replicate",
                  "labeling_time", "fs", "fs_var", "fs_df"],
     )
+    # ``individual`` (the animal; keys the --interaction random effect) only when
+    # the fit carried one, so rollups of SDRFs without it are unchanged.
+    individuals = result.attrs.get("point_individuals") or {}
+    if individuals and not out.empty:
+        out.insert(out.columns.get_loc("biological_replicate") + 1, "individual", [
+            individuals.get((e, c, float(t), int(br)), "") if not pd.isna(br) else ""
+            for e, c, t, br in zip(out["experiment"], out["condition"],
+                                   out["labeling_time"], out["biological_replicate"])])
+    return out
 
 
 # --------------------------------------------------------------------------- #

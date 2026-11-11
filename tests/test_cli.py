@@ -317,9 +317,11 @@ def test_gui_subcommand_is_registered():
 # --------------------------------------------------------------------------- #
 # rollup --interaction
 # --------------------------------------------------------------------------- #
-def _multi_tissue_fit_dir(tmp_path: Path, tissues=("LA", "LV")) -> Path:
+def _multi_tissue_fit_dir(tmp_path: Path, tissues=("LA", "LV"),
+                          individual: bool = False) -> Path:
     """`riana fit` outputs for tissues of the same animals: 2 conditions × 4 days ×
-    3 animals, each animal sampled in every tissue (one shared random slope)."""
+    3 animals, each animal sampled in every tissue (one shared random slope).
+    ``individual`` adds the SDRF animal ID column the fit writes when present."""
     import numpy as np
 
     rng = np.random.default_rng(0)
@@ -338,7 +340,9 @@ def _multi_tissue_fit_dir(tmp_path: Path, tissues=("LA", "LV")) -> Path:
                                 "concat": f"PEP{p}{j}_2", "protein id": prot,
                                 "experiment": tissue, "condition": cond,
                                 "biological_replicate": br, "labeling_time": t,
-                                "fs": th, "fs_lower": th - 0.01, "fs_upper": th + 0.01})
+                                "fs": th, "fs_lower": th - 0.01, "fs_upper": th + 0.01,
+                                **({"individual": f"{cond}-d{t:g}-{br}"}
+                                   if individual else {})})
         for tissue in tissues:
             for cond in ("control", "KO"):
                 for j in range(2):
@@ -369,8 +373,30 @@ def test_rollup_interaction_writes_joint_fit_table(tmp_path):
     header = (out / "riana_rollup_interaction.txt").read_text()
     assert "# interaction_reference control" in header
     assert "# interaction_test KO" in header
+    assert "# animal_key composite" in header
     # the per-experiment rollup is written as usual alongside
     assert (out / "riana_rollup_proteins.txt").exists()
+
+
+def test_rollup_interaction_keys_animals_on_individual(tmp_path):
+    """With an `individual` column in the fit fractions, the rollup fractions carry
+    it and the interaction fit keys its random effect on it (same animals here, so
+    the same numbers as the composite)."""
+    out_a, out_b = tmp_path / "a", tmp_path / "b"
+    args = ["--model", "linear simple", "--reference-condition", "control",
+            "--interaction"]
+    for out, individual in ((out_a, False), (out_b, True)):
+        src = tmp_path / f"src_{out.name}"
+        src.mkdir()
+        fit_dir = _multi_tissue_fit_dir(src, ("LA", "LV"), individual=individual)
+        result = runner.invoke(app, ["rollup", str(fit_dir), *args, "-o", str(out)])
+        assert result.exit_code == 0, result.output
+    rf = pd.read_table(out_b / "riana_rollup_fractions.txt", comment="#")
+    assert rf["individual"].str.match(r"(control|KO)-d\d+-\d").all()
+    assert "# animal_key individual" in (out_b / "riana_rollup_interaction.txt").read_text()
+    a = pd.read_table(out_a / "riana_rollup_interaction.txt", comment="#")
+    b = pd.read_table(out_b / "riana_rollup_interaction.txt", comment="#")
+    pd.testing.assert_frame_equal(a, b)
 
 
 @pytest.mark.parametrize("extra, message", [

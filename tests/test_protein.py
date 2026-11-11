@@ -643,3 +643,21 @@ def test_unknown_model_parsimony_method_raise():
         rollup_proteins(pep, frac, parsimony="razor")
     with pytest.raises(DataError, match="method"):
         rollup_proteins(pep, frac, method="bogus")
+
+
+def test_rollup_fractions_carry_individual_when_the_fit_did():
+    """``individual`` (the animal) is mapped onto each collapsed point by
+    (experiment, condition, labeling_time, biological_replicate); an ID column a
+    TSV round-trip turned into floats (gaps → NaN, 843 → 843.0) reads back as text."""
+    from riana.core.protein import build_rollup_fractions
+    pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
+    assert "individual" not in build_rollup_fractions(
+        rollup_proteins(pep, frac, n_boot=20)).columns
+    ids = {1: 843.0, 2: 844.0, 3: np.nan}
+    frac = frac.assign(individual=frac["biological_replicate"].map(ids))
+    for kw in ({}, {"method": "pooled"}):
+        rf = build_rollup_fractions(rollup_proteins(pep, frac, n_boot=20, **kw))
+        cols = list(rf.columns)
+        assert cols[cols.index("biological_replicate") + 1] == "individual"
+        assert (rf["individual"] == rf["biological_replicate"].map(
+            {1: "843", 2: "844", 3: ""})).all()

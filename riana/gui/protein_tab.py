@@ -21,6 +21,7 @@ drives the whole ``integrate → fit → rollup`` chain, exactly as the CLI's
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import multiprocessing
 import os
 from concurrent.futures import Future
@@ -29,6 +30,7 @@ from typing import Callable
 
 import pandas as pd
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -42,7 +44,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QStackedWidget,
     QTableView,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -50,9 +54,15 @@ from qasync import asyncSlot
 from PySide6.QtCore import QModelIndex, Qt
 
 from riana.gui.curve_view import CurveView
+from riana.gui.interaction_view import InteractionView
 from riana.gui.models import DataFrameTableModel
 from riana.gui.progress import ProgressPump
-from riana.gui.tasks import load_rollup_results, run_rollup
+from riana.gui.tasks import (
+    load_rollup_interaction,
+    load_rollup_results,
+    run_interaction,
+    run_rollup,
+)
 from riana.io.writers import (
     ESTIMATE_FLOAT_FORMAT,
     make_provenance,
@@ -76,6 +86,10 @@ class ProteinTab(QWidget):
         self._result_df: pd.DataFrame | None = None
         self._points: dict = {}
         self._last_params: dict | None = None
+        #: the interaction table (one row per protein × experiment) and its
+        #: (reference, test) pair, when the rollup ran with Interaction on.
+        self._interaction: pd.DataFrame | None = None
+        self._interaction_pair: tuple[str, str] | None = None
         #: whether the selected manifest already has saved rollup results.
         self._results_available = False
         self._build_ui()
@@ -173,6 +187,18 @@ class ProteinTab(QWidget):
             "only the conditions you mean to compare in the SDRF. Blank = auto (Δk "
             "only for a protein with exactly two conditions).")
         form.addRow("Test cond. (linear)", self.test_combo)
+        self.interaction_check = QCheckBox("experiment × condition")
+        self.interaction_check.setToolTip(
+            "['linear simple', 2+ experiments] Also test whether the condition effect "
+            "differs between experiments that are strata of the SAME animals (e.g. "
+            "tissues split with Integrate's 'Experiment from'). One joint fit per "
+            "protein with a random slope per animal — the SDRF's "
+            "characteristics[individual], else condition × labeling time × biological "
+            "replicate. Writes riana_rollup_interaction.txt (the CLI's `rollup "
+            "--interaction`) and fills the Interaction results tab. Compares the "
+            "Reference with the Test condition (or the other condition when there are "
+            "exactly two).")
+        form.addRow("Interaction (linear)", self.interaction_check)
 
         self.min_peptides_spin = QSpinBox()
         self.min_peptides_spin.setToolTip(
@@ -321,7 +347,8 @@ class ProteinTab(QWidget):
         linear = model == "linear simple"
         for w in (self.kp_spin, self.kr_spin, self.rp_spin):
             self._form.setRowVisible(w, not linear)
-        for w in (self.phi_limit_spin, self.reference_combo, self.test_combo):
+        for w in (self.phi_limit_spin, self.reference_combo, self.test_combo,
+                  self.interaction_check):
             self._form.setRowVisible(w, linear)
 
     def _build_results(self) -> QWidget:
@@ -350,10 +377,34 @@ class ProteinTab(QWidget):
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSortingEnabled(True)
         self.table.selectionModel().currentRowChanged.connect(self._on_row_changed)
-        results_split.addWidget(self.table)
+
+        # Interaction results: one row per protein (protein-level tests + each
+        # experiment's k ratio); selecting one draws its per-experiment φ panels.
+        self.interaction_table = QTableView()
+        self.interaction_model = DataFrameTableModel()
+        self.interaction_table.setModel(self.interaction_model)
+        self.interaction_table.setSelectionBehavior(
+            QTableView.SelectionBehavior.SelectRows)
+        self.interaction_table.setSortingEnabled(True)
+        self.interaction_table.selectionModel().currentRowChanged.connect(
+            self._on_interaction_row_changed)
+
+        self.result_tabs = QTabWidget()
+        self.result_tabs.addTab(self.table, "Proteins")
+        self.result_tabs.addTab(self.interaction_table, "Interaction")
+        self.result_tabs.setTabEnabled(1, False)
+        self.result_tabs.setTabToolTip(
+            1, "Experiment × condition interaction (Rollup with Interaction checked, "
+               "'linear simple' only).")
+        self.result_tabs.currentChanged.connect(self._on_result_tab_changed)
+        results_split.addWidget(self.result_tabs)
 
         self.curve = CurveView()
-        results_split.addWidget(self.curve)
+        self.interaction_view = InteractionView()
+        self.plot_stack = QStackedWidget()
+        self.plot_stack.addWidget(self.curve)
+        self.plot_stack.addWidget(self.interaction_view)
+        results_split.addWidget(self.plot_stack)
         results_split.setSizes([320, 300])
         layout.addWidget(results_split, stretch=1)
         return panel
@@ -421,6 +472,8 @@ class ProteinTab(QWidget):
             "phi_limit": float(self.phi_limit_spin.value()),
             "reference_condition": self.reference_combo.currentText().strip() or None,
             "test_condition": self.test_combo.currentText().strip() or None,
+            "interaction": (self.interaction_check.isChecked()
+                            and self.model_combo.currentText() == "linear simple"),
             "out_dir": self.out_edit.text().strip() or ".",
         }
 
@@ -433,6 +486,7 @@ class ProteinTab(QWidget):
         self.log.clear()
         self.model.set_dataframe(pd.DataFrame())
         self.curve.show_placeholder("Rolling up…")
+        self._set_interaction(None, None)
         self._result_df = None
         self._points = {}
         self._cancelled = False
@@ -453,6 +507,14 @@ class ProteinTab(QWidget):
                        f"'{p['reference_condition']}', and a condition compared to "
                        "itself has no Δk.")
             return
+        int_pair = None
+        if p["interaction"]:
+            try:
+                int_pair = interaction_pair(
+                    str(manifest), p["reference_condition"], p["test_condition"])
+            except ValueError as exc:
+                self._fail(str(exc))
+                return
         # Locate the fit outputs from the manifest's stage='fit' rows — the same
         # resolver `rollup --manifest` uses. Raises DataError (no fit rows yet /
         # missing outputs) which we surface inline. The manifest read is tiny, so
@@ -496,10 +558,29 @@ class ProteinTab(QWidget):
             if self._cancelled:
                 self._info("cancelled.")
                 return
-            self._write_output(result, p)
+            from riana.core.protein import build_rollup_fractions
+            rollup_fractions = build_rollup_fractions(result)
+            interaction = None
+            if int_pair is not None:
+                if rollup_fractions.empty:
+                    self._info("interaction: no rollup points to fit; skipped.")
+                else:
+                    self._info(f"fitting the interaction ({int_pair[1]} vs "
+                               f"{int_pair[0]}) …")
+                    self._future = loop.run_in_executor(
+                        executor, run_interaction, rollup_fractions, int_pair[0],
+                        int_pair[1], p["phi_limit"], p["workers"], progress_q)
+                    interaction = await self._future
+                    if self._cancelled:
+                        self._info("cancelled.")
+                        return
+            self._write_output(result, p, rollup_fractions=rollup_fractions,
+                               interaction=interaction, interaction_pair=int_pair)
             self._result_df = result
             self._points = points
             self._last_params = p
+            if interaction is not None:
+                self._set_interaction(interaction[0], int_pair)
             self.model.set_dataframe(result)
             self.curve.show_placeholder("Select a protein row to view its refit.")
             n_fit = int(result["k_deg"].notna().sum())
@@ -532,7 +613,15 @@ class ProteinTab(QWidget):
             self.progress.setValue(1)
             self._set_running(False)
 
-    def _write_output(self, result: pd.DataFrame, params: dict) -> None:
+    def _write_output(
+        self,
+        result: pd.DataFrame,
+        params: dict,
+        *,
+        rollup_fractions: pd.DataFrame | None = None,
+        interaction: tuple[pd.DataFrame, str] | None = None,
+        interaction_pair: tuple[str, str] | None = None,
+    ) -> None:
         # Default / same-folder Output dir updates the project in place next to the
         # manifest (recording stage='rollup' rows — the integrate→fit→rollup
         # chain); a *different* Output dir forks a self-contained derived project
@@ -546,24 +635,28 @@ class ProteinTab(QWidget):
         if Path(out_dir).resolve() != manifest.resolve().parent:
             self._info(f"forking a derived project into {out_dir} "
                        f"(input manifest left untouched)")
+        settings = {
+            "model": params["model"], "method": params["method"],
+            "parsimony": params["parsimony"], "kp": params["kp"],
+            "kr": params["kr"], "rp": params["rp"],
+            "min_peptides": params["min_peptides"],
+            "min_points": params["min_points"],
+            "min_fit_points": params["min_fit_points"],
+            "min_r2": params["min_r2"],
+            # Emit as "k_cv" (not the build_params key "k_cv_max") to match the CLI
+            # provenance key, so a GUI- and CLI-produced rollup of the same project
+            # hash to the same config_hash.
+            "k_cv": params["k_cv_max"], "rescue_r2": params["rescue_r2"],
+            "peptide_admission": params["peptide_admission"],
+            "phi_limit": params["phi_limit"],
+            "reference_condition": params["reference_condition"],
+            "test_condition": params["test_condition"],
+        }
+        if interaction_pair is not None:  # as the CLI: only when on (config hash)
+            settings.update(interaction=True, interaction_reference=interaction_pair[0],
+                            interaction_test=interaction_pair[1])
         provenance = make_provenance(
-            {
-                "model": params["model"], "method": params["method"],
-                "parsimony": params["parsimony"], "kp": params["kp"],
-                "kr": params["kr"], "rp": params["rp"],
-                "min_peptides": params["min_peptides"],
-                "min_points": params["min_points"],
-                "min_fit_points": params["min_fit_points"],
-                "min_r2": params["min_r2"],
-                # Emit as "k_cv" (not the build_params key "k_cv_max") to match the CLI
-                # provenance key, so a GUI- and CLI-produced rollup of the same project
-                # hash to the same config_hash.
-                "k_cv": params["k_cv_max"], "rescue_r2": params["rescue_r2"],
-                "peptide_admission": params["peptide_admission"],
-                "phi_limit": params["phi_limit"],
-                "reference_condition": params["reference_condition"],
-                "test_condition": params["test_condition"],
-            },
+            settings,
             id_source=params["manifest"],
             extra={"method": params["method"], "parsimony": params["parsimony"],
                    "model": params["model"]},
@@ -574,7 +667,8 @@ class ProteinTab(QWidget):
         self._info(f"wrote {out_path}")
         written = [out_path]
 
-        rollup_fractions = build_rollup_fractions(result)
+        if rollup_fractions is None:
+            rollup_fractions = build_rollup_fractions(result)
         if not rollup_fractions.empty:
             frac_path = out_dir / "riana_rollup_fractions.txt"
             write_dataframe_tsv(frac_path, rollup_fractions, provenance,
@@ -582,6 +676,21 @@ class ProteinTab(QWidget):
                                 float_format=ESTIMATE_FLOAT_FORMAT)
             self._info(f"wrote {frac_path} ({len(rollup_fractions)} points)")
             written.append(frac_path)
+
+        if interaction is not None:
+            table, animal_key = interaction
+            inter_path = out_dir / "riana_rollup_interaction.txt"
+            write_dataframe_tsv(
+                inter_path, table,
+                dataclasses.replace(provenance, extra={**provenance.extra,
+                                                       "animal_key": animal_key}),
+                include_index=False, float_format=ESTIMATE_FLOAT_FORMAT)
+            per_protein = table.drop_duplicates("protein")
+            self._info(
+                f"wrote {inter_path} ({len(per_protein)} proteins, animals by "
+                f"{animal_key}; ratio-scale interaction p_adj < 0.05 for "
+                f"{int((per_protein['interaction_p_adj'] < 0.05).sum())})")
+            written.append(inter_path)
 
         record_stage_rows(str(target_manifest), "rollup", written, result, provenance)
         self._info(f"recorded {len(written)} rollup rows in {target_manifest}")
@@ -592,6 +701,50 @@ class ProteinTab(QWidget):
         if self._future is not None:
             self._future.cancel()
         self._info("cancelling …")
+
+    # --- interaction results ------------------------------------------------ #
+    def _set_interaction(self, table: pd.DataFrame | None,
+                         pair: tuple[str, str] | None) -> None:
+        """Show (or clear, with ``None``) the interaction results tab."""
+        self._interaction = table
+        self._interaction_pair = pair
+        has = table is not None and not table.empty and pair is not None
+        self.interaction_model.set_dataframe(
+            interaction_summary(table) if has else pd.DataFrame())
+        self.result_tabs.setTabEnabled(1, has)
+        if not has and self.result_tabs.currentIndex() == 1:
+            self.result_tabs.setCurrentIndex(0)
+        self.interaction_view.show_placeholder(
+            "Select a protein row to view it per experiment.")
+
+    def _on_result_tab_changed(self, index: int) -> None:
+        self.plot_stack.setCurrentIndex(1 if index == 1 else 0)
+
+    def _on_interaction_row_changed(self, current: QModelIndex,
+                                    _previous: QModelIndex) -> None:
+        if (not current.isValid() or self._running or self._interaction is None
+                or self._interaction_pair is None):
+            return
+        row = self.interaction_model.dataframe.iloc[current.row()]
+        prot = row["protein"]
+        reference, test = self._interaction_pair
+        rows = self._interaction[self._interaction["protein"] == prot]
+        panels = []
+        for _, r in rows.sort_values("experiment").iterrows():
+            exp = r["experiment"]
+            points = {}
+            for cond in (reference, test):
+                pts = self._points.get((exp, cond, prot))
+                if pts is not None:
+                    points[cond] = (list(pts[0]), list(pts[1]))
+            panels.append({"experiment": exp, "k_ratio": _safe_float(r["k_ratio"]),
+                           "k_reference": _safe_float(r["k_reference"]),
+                           "k_test": _safe_float(r["k_test"]), "points": points})
+        p = self._last_params or {}
+        self.interaction_view.plot_protein(
+            str(prot), panels, reference=reference, test=test,
+            phi_limit=float(p.get("phi_limit", -4.0)),
+            summary=_interaction_caption(row))
 
     # --- per-protein refit curve on selection (pure, no worker) ------------- #
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
@@ -682,6 +835,8 @@ class ProteinTab(QWidget):
             self._info(f"loading saved rollup results from {manifest} …")
             proteins, points, header = await loop.run_in_executor(
                 self.pool, load_rollup_results, manifest)
+            interaction, int_header = await loop.run_in_executor(
+                self.pool, load_rollup_interaction, manifest)
             # The refit / φ-space curve needs the model that produced the results;
             # take it from the provenance header, the rest from the form.
             params = self.build_params()
@@ -689,6 +844,9 @@ class ProteinTab(QWidget):
             self._result_df = proteins
             self._points = points
             self._last_params = params
+            pair = (int_header.get("interaction_reference"),
+                    int_header.get("interaction_test"))
+            self._set_interaction(interaction, pair if all(pair) else None)
             self.model.set_dataframe(proteins)
             self.curve.show_placeholder("Select a protein row to view its refit.")
             n_fit = int(proteins["k_deg"].notna().sum())
@@ -721,6 +879,65 @@ class ProteinTab(QWidget):
     def _fail(self, message: str) -> None:
         self.error_label.setText(message)
         self._info(f"error: {message}")
+
+
+def interaction_pair(
+    manifest_path: str, reference: str | None, test: str | None,
+) -> tuple[str, str]:
+    """The (reference, test) pair for the Interaction option, checked against the
+    project's runs (Qt-free; the GUI counterpart of the CLI's up-front check).
+    Reference defaults to the alphabetically-first condition, Test to the other one
+    when there are exactly two. Raises ``ValueError`` with a form-worded message."""
+    from riana.io.manifest import read_manifest
+
+    idents = [r.identity for r in read_manifest(manifest_path, stage="integrate")]
+    exps = sorted({i.experiment for i in idents})
+    if len(exps) < 2:
+        raise ValueError(
+            f"Interaction needs two or more experiments; this project has {exps}. "
+            "Split the runs with Integrate's 'Experiment from' (e.g. by organism part).")
+    conds = sorted({i.condition for i in idents if i.condition})
+    ref = reference or (conds[0] if conds else None)
+    if test is None:
+        others = [c for c in conds if c != ref]
+        if len(others) != 1:
+            raise ValueError(
+                f"Interaction compares two conditions; this project has {conds}. "
+                "Pick the Reference and Test conditions.")
+        test = others[0]
+    for role, cond in (("Reference", ref), ("Test", test)):
+        if cond not in conds:
+            raise ValueError(
+                f"{role} condition {cond!r} is not among this project's conditions "
+                f"({conds}).")
+    return str(ref), str(test)
+
+
+def interaction_summary(table: pd.DataFrame) -> pd.DataFrame:
+    """One row per protein for the Interaction results tab: the protein-level
+    tests plus each experiment's k ratio (``k_ratio_<experiment>``), most
+    significant (ratio scale) first."""
+    cols = ["protein", "n_experiments", "n_animals", "sigma_animal",
+            "interaction_F", "interaction_df1", "interaction_df2", "interaction_p",
+            "interaction_p_adj", "interaction_additive_p_adj", "mean_delta_k",
+            "mean_delta_k_p_adj"]
+    per = table.drop_duplicates("protein")[cols]
+    ratios = (table.pivot(index="protein", columns="experiment", values="k_ratio")
+              .add_prefix("k_ratio_"))
+    return (per.merge(ratios, left_on="protein", right_index=True)
+            .sort_values("interaction_p", na_position="last", kind="mergesort")
+            .reset_index(drop=True))
+
+
+def _interaction_caption(row) -> str:
+    """The panel header: the protein's three tests, adjusted."""
+    def fmt(v) -> str:
+        f = _safe_float(v)
+        return "–" if f is None else f"{f:.2g}"
+    return (f"interaction p_adj {fmt(row.get('interaction_p_adj'))} (ratio), "
+            f"{fmt(row.get('interaction_additive_p_adj'))} (additive);  "
+            f"mean Δk {fmt(row.get('mean_delta_k'))}/day, "
+            f"p_adj {fmt(row.get('mean_delta_k_p_adj'))}")
 
 
 def _row(layout) -> QWidget:

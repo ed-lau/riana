@@ -50,6 +50,12 @@ class RunIdentity:
     #: ``characteristics[biological replicate]`` — genuine replicates (distinct
     #: animals/cultures). Load-bearing for the biorep-aware protein refit.
     biological_replicate: int = 1
+    #: ``characteristics[individual]`` — the animal (or donor) the sample came
+    #: from; empty when the SDRF has no such column or the cell is not available.
+    #: Keys the random animal effect of ``rollup --interaction``: one animal's
+    #: tissues (experiments) share it. Without it the interaction model falls back
+    #: to the (condition, labeling time, biological replicate) composite.
+    individual: str = ""
     #: ``comment[technical replicate]``.
     technical_replicate: int = 1
     #: ``comment[fraction identifier]`` — fractions of one sample are merged at

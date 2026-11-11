@@ -21,6 +21,7 @@ window). Reproduce 0.9.0 integration with ``--peak-rt ms2
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 from pathlib import Path
@@ -970,9 +971,10 @@ def rollup(
         help="['linear simple', 2+ experiments] Also test whether the condition effect "
         "differs between experiments that are strata of the SAME animals (e.g. tissues "
         "split with `integrate --experiment-column`). One joint fit per protein with a "
-        "random slope per animal; animal = condition × labeling time × biological "
-        "replicate, so biological_replicate must identify the same animal in every "
-        "experiment. Writes riana_rollup_interaction.txt: per-experiment k and Δk from "
+        "random slope per animal. The animal is the SDRF's characteristics[individual] "
+        "when present; otherwise condition × labeling time × biological replicate, so "
+        "biological_replicate must then identify the same animal in every experiment. "
+        "Writes riana_rollup_interaction.txt: per-experiment k and Δk from "
         "the joint fit, the interaction test on the ratio scale (k_test/k_reference; "
         "primary) and on the additive scale, and the mean Δk across experiments, each "
         "BH-adjusted across proteins. Compares --reference-condition with "
@@ -1137,12 +1139,18 @@ def rollup(
                 progress_callback=int_progress)
             int_progress.close()
             inter_path = Path(out) / "riana_rollup_interaction.txt"
-            write_dataframe_tsv(inter_path, inter, provenance, include_index=False,
+            # How animals were identified is a property of the data, not a setting:
+            # recorded in the header, outside the config hash.
+            animal_key = inter.attrs.get("animal_key", "composite")
+            int_provenance = dataclasses.replace(
+                provenance, extra={**provenance.extra, "animal_key": animal_key})
+            write_dataframe_tsv(inter_path, inter, int_provenance, include_index=False,
                                 float_format=ESTIMATE_FLOAT_FORMAT)
             per_prot = inter.drop_duplicates("protein")
             logger.info(
-                "wrote %s (%s vs %s: %d proteins; interaction_p_adj < 0.05 for %d, "
-                "ratio scale)", inter_path, int_test, int_ref, len(per_prot),
+                "wrote %s (%s vs %s: %d proteins, animals by %s; interaction_p_adj "
+                "< 0.05 for %d, ratio scale)", inter_path, int_test, int_ref,
+                len(per_prot), animal_key,
                 int((per_prot["interaction_p_adj"] < 0.05).sum()))
             written.append(inter_path)
 

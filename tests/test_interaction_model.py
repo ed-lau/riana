@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import riana.core.interaction_model as interaction_model
 from riana.core.interaction_model import (
     INTERACTION_COLUMNS,
     containment_df,
     fit_interaction,
+    satterthwaite_ddf,
 )
 
 
@@ -54,6 +56,12 @@ NLME = {
     "add_F": 88.98039809, "add_df2": 56,
     "sigma_animal": 0.005234727122,
 }
+# Satterthwaite denominator df on the same dataset, from R (lme4 2.0.1, lmerTest 3.2.1):
+#   lmer(phi*sw ~ 0 + X*sw + (0 + day*sw | animal), REML = TRUE)  (= the √w-scaled fit)
+#   contestMD(m, L) with L = the ratio test's delta-method contrast (2 × 6), and with
+#   L = the shift column alone (1 × 6, the one-df branch).
+# Script: runs/interaction_satterthwaite/{export.py, lmertest_ref.R} (gitignored).
+LMERTEST = {"ratio_ddf": 66.280716, "shift_ddf": 23.139048}
 
 
 def _protein(out: pd.DataFrame, prot: str = "P1") -> pd.Series:
@@ -90,8 +98,9 @@ def test_matches_nlme_reference():
     assert row.interaction_additive_F == pytest.approx(NLME["add_F"], rel=2e-2)
     assert row.interaction_additive_df2 == NLME["add_df2"]
     assert row.sigma_animal == pytest.approx(NLME["sigma_animal"], rel=1e-2)
-    # ratio-scale test: conservative (between-animal) df, S − 1 numerator df
-    assert row.interaction_df1 == 2 and row.interaction_df2 == NLME["shift_df"]
+    # ratio-scale test: S − 1 numerator df, Satterthwaite denominator df (lmerTest)
+    assert row.interaction_df1 == 2
+    assert row.interaction_df2 == pytest.approx(LMERTEST["ratio_ddf"], rel=1e-4)
     assert row.n_experiments == 3 and row.n_animals == 30
     # per-experiment Δk and ratio are consistent with k_reference / k_test
     assert out.delta_k.to_numpy() == pytest.approx(
@@ -177,3 +186,100 @@ def test_no_qualifying_protein_returns_empty_schema():
     d = split_plot_points({"A": 0.08}, {"A": 0.8}, seed=2)       # one experiment only
     out = fit_interaction(d, reference_condition="control", test_condition="KO")
     assert out.empty and list(out.columns) == INTERACTION_COLUMNS
+
+
+def test_satterthwaite_one_df_branch_matches_lmertest(monkeypatch):
+    """The 1-df branch (a single contrast row), on the inputs the ratio test used."""
+    seen = []
+    orig = interaction_model.satterthwaite_ddf
+
+    def spy(L, X, y, z, groups, s2a, s2e):
+        seen.append((X, y, z, groups, s2a, s2e))
+        return orig(L, X, y, z, groups, s2a, s2e)
+
+    monkeypatch.setattr(interaction_model, "satterthwaite_ddf", spy)
+    fit_interaction(split_plot_points(PARITY_K, PARITY_RATIO, seed=7),
+                    reference_condition="control", test_condition="KO")
+    X, y, z, groups, s2a, s2e = seen[0]
+    L = np.zeros((1, X.shape[1]))
+    L[0, 3] = 1.0                                     # the shift column (S = 3)
+    assert orig(L, X, y, z, groups, s2a, s2e) == pytest.approx(
+        LMERTEST["shift_ddf"], rel=1e-4)
+
+
+def test_satterthwaite_undefined_returns_nan():
+    """No variance at all: Σ is singular, so there is no df (the fit then falls
+    back to the between-animal containment df)."""
+    X = np.column_stack([np.ones(6), np.arange(6.0)])
+    ddf = satterthwaite_ddf(np.eye(2), X, np.arange(6.0), np.ones(6),
+                            np.repeat([0, 1, 2], 2), 0.0, 0.0)
+    assert np.isnan(ddf)
+
+
+def _with_individual(d: pd.DataFrame, fmt: str) -> pd.DataFrame:
+    return d.assign(individual=[
+        fmt.format(c=c, t=t, r=r) for c, t, r in
+        zip(d.condition, d.labeling_time, d.biological_replicate)])
+
+
+def test_individual_one_to_one_with_composite_gives_identical_fit():
+    d = split_plot_points(PARITY_K, PARITY_RATIO, seed=7)
+    base = fit_interaction(d, reference_condition="control", test_condition="KO")
+    named = fit_interaction(_with_individual(d, "{c}_d{t:g}_r{r}"),
+                            reference_condition="control", test_condition="KO")
+    pd.testing.assert_frame_equal(base, named)
+    assert base.attrs["animal_key"] == "composite"
+    assert named.attrs["animal_key"] == "individual"
+
+
+def test_individual_ids_restarting_per_condition_are_flagged(caplog):
+    """IDs 1..n reused in both conditions merge two animals: warn."""
+    d = split_plot_points({"A": 0.08, "B": 0.06}, {"A": 0.8, "B": 0.8}, seed=6)
+    with caplog.at_level("WARNING", logger="riana.core.interaction_model"):
+        out = fit_interaction(_with_individual(d, "d{t:g}_r{r}"),
+                              reference_condition="control", test_condition="KO")
+    assert "appear under both conditions" in caplog.text
+    assert _protein(out).n_animals == 15               # 30 animals collapsed to 15
+
+
+def test_longitudinal_individuals_fit_as_one_animal_over_days(caplog):
+    """An animal sampled at every day (serial sampling): one random slope across its
+    days, so fewer, larger animal groups."""
+    d = split_plot_points({"A": 0.08, "B": 0.06}, {"A": 0.7, "B": 0.9}, seed=9)
+    with caplog.at_level("INFO", logger="riana.core.interaction_model"):
+        out = fit_interaction(_with_individual(d, "{c}_m{r}"),
+                              reference_condition="control", test_condition="KO")
+    assert "longitudinal" in caplog.text
+    row = _protein(out)
+    assert row.n_animals == 6
+    assert np.isfinite(row.interaction_p)
+
+
+def test_partial_individuals_fall_back_to_composite(caplog):
+    d = split_plot_points({"A": 0.08, "B": 0.06}, {"A": 0.8, "B": 0.8}, seed=6)
+    named = _with_individual(d, "{c}_d{t:g}_r{r}")
+    named.loc[named.labeling_time == 1.0, "individual"] = np.nan
+    with caplog.at_level("WARNING", logger="riana.core.interaction_model"):
+        out = fit_interaction(named, reference_condition="control", test_condition="KO")
+    assert "have no individual" in caplog.text
+    assert out.attrs["animal_key"] == "individual+composite"
+    assert _protein(out).n_animals == 30
+
+
+def test_singular_fit_is_kept_as_the_weighted_least_squares_solution():
+    """REML optimum at σ²_animal = 0: statsmodels stops there unconverged with wrong
+    fixed effects. The protein is kept with the singular fit lme4 returns — the
+    per-experiment WLS slopes (= the shipped linear model's k) — and the ratio test's
+    Satterthwaite df is N − p (lmerTest at a singular fit)."""
+    from riana.core.linear_model import fit_linear_deltak
+    d = split_plot_points({"A": 0.08, "B": 0.06}, {"A": 0.8, "B": 0.9},
+                          sd_animal=0.0, seed=0)
+    out = fit_interaction(d, reference_condition="control", test_condition="KO")
+    row = _protein(out)
+    assert row.sigma_animal == 0.0
+    assert row.interaction_df2 == pytest.approx(out.n_points.sum() - 4)   # N − 2S
+    lin = fit_linear_deltak(d, reference_condition="control").set_index(
+        ["experiment", "condition"]).k_deg
+    for _, r in out.iterrows():
+        assert r.k_reference == pytest.approx(lin[(r.experiment, "control")], rel=1e-9)
+        assert r.k_test == pytest.approx(lin[(r.experiment, "KO")], rel=1e-9)

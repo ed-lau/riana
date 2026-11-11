@@ -1444,3 +1444,120 @@ def test_curve_view_legend_is_outside_the_plot_viewbox(main_window):
 
 def test_main_window_sets_app_icon(main_window):
     assert not main_window.windowIcon().isNull()
+
+
+# --- experiment × condition interaction (Rollup tab) --------------------------- #
+def _interaction_fixture():
+    """A fitted interaction table + the matching collapsed points dict."""
+    from riana.core.interaction_model import fit_interaction
+    from tests.test_interaction_model import split_plot_points
+
+    d = split_plot_points({"LA": 0.10, "LV": 0.06}, {"LA": 0.7, "LV": 1.0}, seed=7)
+    table = fit_interaction(d, reference_condition="control", test_condition="KO")
+    points = {}
+    for (exp, cond, prot), g in d.groupby(["experiment", "condition", "protein"]):
+        points[(exp, cond, prot)] = (g["labeling_time"].tolist(), g["theta"].tolist())
+    return table, points
+
+
+def test_protein_tab_interaction_option_is_linear_only(main_window):
+    tab = main_window.protein_tab
+    tab.interaction_check.setChecked(True)
+    tab.model_combo.setCurrentText("simple")
+    assert not tab.interaction_check.isVisibleTo(tab)
+    assert tab.build_params()["interaction"] is False   # ignored off the linear model
+    tab.model_combo.setCurrentText("linear simple")
+    assert tab.interaction_check.isVisibleTo(tab)
+    assert tab.build_params()["interaction"] is True
+
+
+def test_interaction_pair_checks_the_project(tmp_path):
+    from riana.gui.protein_tab import interaction_pair
+    from riana.io.manifest import ManifestRow, append_manifest
+    from riana.records import RunIdentity
+
+    def manifest(name, exps, conds):
+        mf = tmp_path / f"{name}.tsv"
+        append_manifest(mf, [
+            ManifestRow("integrate", f"{name}_{e}_{c}.txt", RunIdentity(
+                experiment=e, sample=f"{e}{c}", data_file=f"{e}{c}",
+                labeling_time=1.0, condition=c))
+            for e in exps for c in conds])
+        return str(mf)
+
+    two = manifest("two", ["LA", "LV"], ["control", "KO"])
+    assert interaction_pair(two, None, None) == ("KO", "control")   # alphabetical ref
+    assert interaction_pair(two, "control", None) == ("control", "KO")
+    with pytest.raises(ValueError, match="two or more experiments"):
+        interaction_pair(manifest("one", ["LA"], ["control", "KO"]), "control", None)
+    three = manifest("three", ["LA", "LV"], ["control", "KO", "drug"])
+    with pytest.raises(ValueError, match="Pick the Reference and Test"):
+        interaction_pair(three, "control", None)
+    assert interaction_pair(three, "control", "drug") == ("control", "drug")
+    with pytest.raises(ValueError, match="not among"):
+        interaction_pair(two, "control", "drug")
+
+
+def test_protein_tab_interaction_tab_plots_per_experiment_panels(main_window):
+    """The Interaction tab lists one row per protein; selecting one draws a φ panel
+    per experiment (both conditions' points + joint-fit lines) below."""
+    from pyqtgraph import PlotDataItem
+
+    tab = main_window.protein_tab
+    assert not tab.result_tabs.isTabEnabled(1)
+    table, points = _interaction_fixture()
+    tab._points = points
+    tab._last_params = tab.build_params()
+    tab._set_interaction(table, ("control", "KO"))
+    assert tab.result_tabs.isTabEnabled(1)
+    summary = tab.interaction_model.dataframe
+    assert list(summary.protein) == ["P1"]
+    assert {"k_ratio_LA", "k_ratio_LV", "interaction_p_adj"} <= set(summary.columns)
+
+    tab.result_tabs.setCurrentIndex(1)
+    assert tab.plot_stack.currentWidget() is tab.interaction_view
+    tab.interaction_table.setCurrentIndex(tab.interaction_model.index(0, 0))
+    assert len(tab.interaction_view.panels) == 2
+    for panel in tab.interaction_view.panels:
+        items = [it for it in panel.items if isinstance(it, PlotDataItem)]
+        assert len(items) >= 4          # 2 conditions × (points + line)
+    assert "k ratio" in tab.interaction_view.panels[0].titleLabel.text
+    # φ ticks read as φ (no "×0.001" SI rescaling on the labelled axis)
+    assert not tab.interaction_view.panels[0].getAxis("left").autoSIPrefix
+    # one shared y range that holds every point (no panel clipped)
+    from riana.core.linear_model import to_phi
+    lowest = min(float(to_phi(np.asarray(v[1])).min()) for v in points.values())
+    ranges = {tuple(round(x, 9) for x in pl.viewRange()[1])
+              for pl in tab.interaction_view.panels}
+    assert len(ranges) == 1 and next(iter(ranges))[0] <= lowest
+
+    tab._set_interaction(None, None)     # a new run clears it
+    assert not tab.result_tabs.isTabEnabled(1)
+    assert tab.plot_stack.currentWidget() is tab.curve
+
+
+def test_protein_tab_writes_and_reloads_the_interaction(main_window, tmp_path):
+    """With Interaction on, the tab writes riana_rollup_interaction.txt (the CLI's
+    header keys + animal_key), records it as a rollup row, and the loader finds it."""
+    from riana.gui.tasks import load_rollup_interaction, run_rollup
+    from riana.io.manifest import read_manifest
+
+    mf = _build_manifest_project(tmp_path)
+    result, _pts = run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    table, _points = _interaction_fixture()
+    tab = main_window.protein_tab
+    params = tab.build_params()
+    params.update(manifest=str(mf), out_dir=str(tmp_path))
+    tab._write_output(result, params, interaction=(table, "individual"),
+                      interaction_pair=("control", "KO"))
+
+    path = tmp_path / "riana_rollup_interaction.txt"
+    header = path.read_text()
+    assert "# interaction_reference control" in header
+    assert "# animal_key individual" in header
+    assert any(r.output_path.endswith("rollup_interaction.txt")
+               for r in read_manifest(mf, stage="rollup"))
+    loaded, int_header = load_rollup_interaction(str(mf))
+    assert loaded is not None and len(loaded) == len(table)
+    assert (int_header["interaction_reference"], int_header["interaction_test"]) == (
+        "control", "KO")

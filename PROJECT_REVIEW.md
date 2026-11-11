@@ -236,19 +236,12 @@ and (2026-11-10) the experiment × condition interaction with a random animal ef
   (`--test-condition`/`--reference-condition`, contrasted from the joint all-condition fit). The
   all-pairwise + multiplicity-correction extension builds additively on the same joint fit —
   blocked on a good ≥3-condition dataset.
-- **Experiment × condition interaction — follow-ups.** The model shipped 2026-11-10 as
-  `rollup --interaction` (`riana.core.interaction_model`; random animal slope, ratio-scale primary
-  test; `CHANGELOG.md`, `reports/2026-11-10_random_animal_lme_feasibility.md`). Open:
-  - *GUI.* An Interaction tab (sortable by `interaction_p_adj`; click → per-experiment small-multiple
-    φ panel, like the Cops3/Smyd1 figure in `notebooks/atf6_biology.ipynb`). CLI-only today.
-  - *df for the ratio-scale test.* It uses the conservative between-animal df (ATF6: 39 hits across
-    977 proteins; 54 vs 82 on the 580 all-chamber proteins at between vs within df). A Satterthwaite
-    df would land in between.
-  - *Animal key.* The composite (condition, labeling time, biological replicate) assumes the replicate
-    index names the same animal in every experiment. Threading `characteristics[individual]` from
-    intake would make it explicit and allow longitudinal designs.
-  - *>2 conditions.* Two conditions per run today (`--reference-condition` / `--test-condition`);
-    ties to the all-pairwise item above.
+- **Experiment × condition interaction — remaining.** Shipped 2026-11-10/11 as
+  `rollup --interaction` and the GUI Rollup tab's *Interaction* option (animal from
+  `characteristics[individual]`, Satterthwaite df on the ratio-scale test, singular fits kept;
+  `CHANGELOG.md`). Open: *>2 conditions* — two conditions per run today
+  (`--reference-condition` / `--test-condition`). **Deferred until a dataset with three or more
+  conditions exists to test on**; ties to the all-pairwise item above.
 - **[INVESTIGATE] Residual-variance moderation for the Δk t-test (limma-exact / Satterthwaite).**
   The `linear simple` contrast uses the per-protein WLS residual df `N − p`; a protein with few
   collapsed points has a noisy `σ̂²` → an unstable t. Complementary to the per-point-variance /
@@ -282,6 +275,10 @@ the Δmass/`fs_ds` overlay, isotopomer bar chart, fixed hint area, CLI progress 
 on all three tabs, and determinate progress bars. **Open:**
 - **[1.2.0 easy win] Package `riana gui` as a standalone app** — PyInstaller / py2app bundle
   (`.app`/`.exe`, real macOS Dock icon). Nearer-term than the Electron rewrite.
+- **Rollup tab: show the project's experiments and conditions before a run** (low priority,
+  user-suggested 2026-11-11) — e.g. "4 experiments (LA, LV, RA, RV) × 2 conditions" under the
+  manifest field, read from the manifest's integrate rows, so the Reference / Test / Interaction
+  choices are made knowing the design.
 - **Surface per-run SDRF sample / fraction in the Integrate view.**
 - **Faithful-to-smoothing chromatogram trace** — re-apply S-G at click, or an optional
   `--save-traces` `<stem>_riana_traces.parquet` sidecar (also removes the ~10 s re-read).

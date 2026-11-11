@@ -133,3 +133,20 @@ def test_legacy_protein_stage_reads_as_rollup(tmp_path):
     assert rows[0].stage == "rollup"          # aliased
     assert rows[0].created_at == ""           # absent in the old file
     assert len(read_manifest(mf, stage="rollup")) == 1
+
+
+def test_individual_roundtrips_and_is_empty_in_older_manifests(tmp_path):
+    from dataclasses import replace
+    mf = tmp_path / "riana_manifest.tsv"
+    append_manifest(mf, [ManifestRow(
+        "integrate", "out/t1_riana.txt",
+        replace(_turnover("s1", "t1", 1.0), individual="843"))])
+    assert read_manifest(mf)[0].identity.individual == "843"
+    # A manifest written before the column existed still reads (individual "").
+    lines = mf.read_text().splitlines()
+    header = lines[1].split("\t")
+    i = header.index("individual")
+    old = [lines[0]] + ["\t".join(c for j, c in enumerate(ln.split("\t")) if j != i)
+                        for ln in lines[1:]]
+    mf.write_text("\n".join(old) + "\n")
+    assert read_manifest(mf)[0].identity.individual == ""

@@ -15,6 +15,7 @@ SDRF column                                     :class:`~riana.records.RunIdenti
 ``comment[data file]`` (ext stripped)           ``data_file`` — the mzML join key
 ``source name``                                 ``sample``
 ``characteristics[biological replicate]``       ``biological_replicate``
+``characteristics[individual]`` *(optional)*    ``individual`` — the animal
 ``comment[technical replicate]``                ``technical_replicate``
 ``comment[fraction identifier]``                ``fraction``
 ``characteristics[labeling time]``  *(turnover)*  ``labeling_time`` (+unit)
@@ -79,6 +80,7 @@ _NOT_APPLICABLE = {"", "not applicable", "not available", "na", "n/a", "null"}
 
 _LABELING_TIME_COL = "characteristics[labeling time]"
 _MIXING_PROPORTION_COL = "characteristics[mixing proportion]"
+_INDIVIDUAL_COL = "characteristics[individual]"
 _DATA_FILE_COL = "comment[data file]"
 _SOURCE_NAME_COL = "source name"
 _LABEL_COL = "comment[label]"
@@ -302,6 +304,7 @@ def read_sdrf(
             biological_replicate=_parse_int(
                 cell("characteristics[biological replicate]"), default=1
             ),
+            individual=_optional_text(cell(_INDIVIDUAL_COL)),
             technical_replicate=_parse_int(
                 cell("comment[technical replicate]"), default=1
             ),
@@ -369,6 +372,12 @@ def read_sdrf(
             path, len(runs), len(seen_data_files),
             sorted({ch for _, ch in channel_map}),
         )
+    clashes = _check_individuals(runs, path)
+    if clashes:
+        runs = [replace(r, individual="") if _point_key(r) in clashes else r
+                for r in runs]
+        channel_map = {k: (replace(v, individual="") if _point_key(v) in clashes
+                           else v) for k, v in channel_map.items()}
 
     # Precursor mass tolerance (search window) → integration tolerance. Uniform
     # across runs in practice; if rows disagree, use the smallest (tightest) and
@@ -407,6 +416,7 @@ _NOT_STRATIFIERS = frozenset({
     _LABELING_TIME_COL,
     _MIXING_PROPORTION_COL,
     "characteristics[biological replicate]",
+    _INDIVIDUAL_COL,
     "characteristics[precursor enrichment]",
 })
 
@@ -480,7 +490,12 @@ def _collapse_isobaric_runs(runs: list[RunIdentity]) -> list[RunIdentity]:
                     f"collapses channels to one run, so this field must be shared."
                 )
         condition = "|".join(sorted({r.condition for r in group if r.condition}))
-        collapsed.append(replace(group[0], condition=condition, sample=data_file))
+        # One MS1 measurement averages the channels' animals: keep the individual
+        # only when every channel names the same one.
+        individuals = {r.individual for r in group}
+        individual = individuals.pop() if len(individuals) == 1 else ""
+        collapsed.append(replace(group[0], condition=condition, sample=data_file,
+                                 individual=individual))
     return collapsed
 
 
@@ -610,6 +625,49 @@ def _parse_float(value: str, col: str, path: Path, line_no: int) -> float:
         raise DataError(
             f"{path} line {line_no}: '{col}' value {value!r} is not numeric."
         ) from None
+
+
+def _optional_text(value: str) -> str:
+    """A free-text cell, stripped; ``""`` for empty / not-available values."""
+    value = value.strip()
+    return "" if value.lower() in _NOT_APPLICABLE else value
+
+
+def _point_key(r: RunIdentity) -> tuple:
+    return (r.experiment, r.condition, r.independent_value, r.biological_replicate)
+
+
+def _check_individuals(runs: list[RunIdentity], path: Path) -> set[tuple]:
+    """Validate ``characteristics[individual]`` against the fit's point key.
+
+    The fit merges runs sharing ``(experiment, condition, x, biological replicate)``
+    as fractions of one sample, so such runs must come from one animal. Returns the
+    point keys whose runs name different individuals — the animal is unknowable
+    there, so the caller blanks them (the interaction model then uses the composite
+    key, matching how the fit merged them). Warns about those, and when only some
+    runs carry an individual.
+    """
+    named = [r for r in runs if r.individual]
+    if not named:
+        return set()
+    if len(named) < len(runs):
+        _LOGGER.warning(
+            "SDRF %s: %d of %d runs have no characteristics[individual]; the "
+            "interaction model keys those on (condition, labeling time, biological "
+            "replicate) instead.", path, len(runs) - len(named), len(runs))
+    by_point: dict[tuple, set[str]] = {}
+    for r in named:
+        by_point.setdefault(_point_key(r), set()).add(r.individual)
+    clashes = {k: v for k, v in by_point.items() if len(v) > 1}
+    if clashes:
+        (exp, cond, x, rep), names = next(iter(clashes.items()))
+        _LOGGER.warning(
+            "SDRF %s: %d (experiment, condition, labeling time, biological "
+            "replicate) point(s) name more than one individual, e.g. %s/%s/%s/rep "
+            "%s → %s. The fit merges these runs as fractions of one sample; give "
+            "each animal its own biological replicate number. Their individual is "
+            "ignored.", path, len(clashes), exp, cond or "-", x, rep, sorted(names))
+    return set(clashes)
 
 
 def _parse_optional_float(value: str) -> float | None:

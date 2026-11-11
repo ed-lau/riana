@@ -250,8 +250,9 @@ def test_experiment_column_keeps_factor_that_varies_within_a_stratum(tmp_path, c
 
 def test_stratifier_candidates_lists_usable_columns(tmp_path):
     """The GUI's Experiment choices: characteristics/factor columns with a value on
-    every row and 2+ distinct values — not the curve axes, replicate, enrichment,
-    a constant column, or one with a blank cell (read_sdrf would reject it)."""
+    every row and 2+ distinct values — not the curve axes, replicate, individual
+    (the animal: its tissues are the experiments), enrichment, a constant column,
+    or one with a blank cell (read_sdrf would reject it)."""
     from riana.io.sdrf import stratifier_candidates
 
     cols = ["source name", "characteristics[organism]", "Characteristics[Organism Part]",
@@ -269,7 +270,6 @@ def test_stratifier_candidates_lists_usable_columns(tmp_path):
     p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
     assert stratifier_candidates(p) == [
         ("characteristics[organism part]", 2),
-        ("characteristics[individual]", 2),
         ("factor value[condition]", 2),
     ]
     # Each offered column is accepted by read_sdrf as-is.
@@ -365,3 +365,69 @@ def test_error_on_mixed_acquisition(tmp_path):
     """)
     with pytest.raises(DataError, match="acquisition"):
         read_sdrf(p)
+
+
+def _animal_sdrf(tmp_path, rows) -> Path:
+    """Two tissues of the same animals: (tissue, replicate, individual, time, file)."""
+    cols = ["source name", "characteristics[organism part]",
+            "characteristics[biological replicate]", "characteristics[individual]",
+            "characteristics[labeling time]", "comment[data file]",
+            "comment[proteomics data acquisition method]", "factor value[condition]"]
+    body = [[f"s{i}", tissue, rep, ind, time, f"{f}.mzML", "DIA", "control"]
+            for i, (tissue, rep, ind, time, f) in enumerate(rows)]
+    p = tmp_path / "animals.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *body]) + "\n")
+    return p
+
+
+def test_individual_is_read_and_shared_across_tissues(tmp_path):
+    p = _animal_sdrf(tmp_path, [
+        ("LA", "1", "843", "1 day", "a1"), ("LV", "1", "843", "1 day", "b1"),
+        ("LA", "2", "844", "1 day", "a2"), ("LV", "2", "844", "1 day", "b2"),
+    ])
+    runs = read_sdrf(p, experiment_column="characteristics[organism part]").runs
+    assert {r.data_file: r.individual for r in runs} == {
+        "a1": "843", "b1": "843", "a2": "844", "b2": "844"}
+
+
+def test_individual_absent_or_not_available_is_empty(tmp_path, caplog):
+    p = _animal_sdrf(tmp_path, [
+        ("LA", "1", "843", "1 day", "a1"), ("LA", "2", "not available", "1 day", "a2"),
+    ])
+    with caplog.at_level("WARNING", logger="riana.io.sdrf"):
+        runs = read_sdrf(p).runs
+    assert [r.individual for r in runs] == ["843", ""]
+    assert "1 of 2 runs have no characteristics[individual]" in caplog.text
+    # No column at all: empty.
+    assert {r.individual for r in read_sdrf(TURNOVER).runs} == {""}
+
+
+def test_individuals_clashing_on_one_fit_point_are_ignored(tmp_path, caplog):
+    """Runs sharing (experiment, condition, time, replicate) merge as fractions of
+    one sample at fit, so two animals there is a sheet error: warn, drop them."""
+    p = _animal_sdrf(tmp_path, [
+        ("LA", "1", "843", "1 day", "a1"), ("LA", "1", "999", "1 day", "a1f2"),
+        ("LA", "2", "844", "1 day", "a2"),
+    ])
+    with caplog.at_level("WARNING", logger="riana.io.sdrf"):
+        runs = read_sdrf(p).runs
+    assert {r.data_file: r.individual for r in runs} == {
+        "a1": "", "a1f2": "", "a2": "844"}
+    assert "name more than one individual" in caplog.text
+
+
+def test_isobaric_collapse_keeps_individual_only_when_channels_agree(tmp_path):
+    cols = ["source name", "characteristics[biological replicate]",
+            "characteristics[individual]", "characteristics[labeling time]",
+            "comment[label]", "comment[data file]",
+            "comment[proteomics data acquisition method]", "factor value[treatment]"]
+    rows = [
+        ["s1", "1", "m1", "24 hours", "TMT126", "fileA.mzML", "DDA", "control"],
+        ["s2", "1", "m1", "24 hours", "TMT127N", "fileA.mzML", "DDA", "control"],
+        ["s3", "2", "m2", "24 hours", "TMT126", "fileB.mzML", "DDA", "control"],
+        ["s4", "2", "m3", "24 hours", "TMT127N", "fileB.mzML", "DDA", "control"],
+    ]
+    p = tmp_path / "tmt_ind.sdrf.tsv"
+    p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
+    by_file = {r.data_file: r.individual for r in read_sdrf(p).runs}
+    assert by_file == {"fileA": "m1", "fileB": ""}
