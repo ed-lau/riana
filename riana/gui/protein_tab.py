@@ -394,7 +394,7 @@ class ProteinTab(QWidget):
         self.result_tabs.addTab(self.interaction_table, "Interaction")
         self.result_tabs.setTabEnabled(1, False)
         self.result_tabs.setTabToolTip(
-            1, "Experiment × condition interaction (Rollup with Interaction checked, "
+            1, "Experiment × condition interaction (Run with Interaction checked, "
                "'linear simple' only).")
         self.result_tabs.currentChanged.connect(self._on_result_tab_changed)
         results_split.addWidget(self.result_tabs)

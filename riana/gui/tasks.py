@@ -419,7 +419,7 @@ def run_interaction(
 
 def load_rollup_interaction(manifest_path: str) -> tuple[pd.DataFrame | None, dict]:
     """A saved ``riana_rollup_interaction.txt`` (from ``rollup --interaction`` or the
-    Rollup tab) and its provenance header; ``(None, {})`` when the manifest's rollup
+    Protein tab) and its provenance header; ``(None, {})`` when the manifest's rollup
     rows record none."""
     from riana.io.manifest import read_manifest
     from riana.io.writers import read_provenance_header

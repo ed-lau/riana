@@ -101,10 +101,11 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
 - **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** as opt-in
   `--linear-weights wls-var` (`c82cc55`; new `fs_var` / `fs_df` columns in
   `riana_rollup_fractions`). See `CHANGELOG.md`.
-- **PyInstaller / py2app standalone GUI bundle** (Track E) — a `.app`/`.exe` so non-Python
-  users can launch `riana gui` (and macOS gets a real Dock icon). Lower-effort than Electron.
-- **`mypy --strict` on `riana/algorithms/`** (chores) — smallest blast radius, start here.
-- **User-facing docs refresh** (chores) — the prose docs are post-M3 stale.
+- **PyInstaller standalone GUI bundle — SHIPPED** (`packaging/`, 2026-08-08).
+- **`mypy --strict` on `riana/algorithms/` — SHIPPED** (CI `typecheck` job, 2026-08-08).
+- **User-facing docs refresh — SHIPPED** (2026-11-11): Quarto site rewritten for 1.2, generated
+  CLI Reference page (`riana_website/_gen_reference.py`, kept current by `tests/test_docs.py`),
+  README slimmed to a landing page.
 
 #### Deferred beyond 1.2.0 (with rationale)
 
@@ -237,7 +238,7 @@ and (2026-11-10) the experiment × condition interaction with a random animal ef
   all-pairwise + multiplicity-correction extension builds additively on the same joint fit —
   blocked on a good ≥3-condition dataset.
 - **Experiment × condition interaction — remaining.** Shipped 2026-11-10/11 as
-  `rollup --interaction` and the GUI Rollup tab's *Interaction* option (animal from
+  `rollup --interaction` and the GUI Protein tab's *Interaction* option (animal from
   `characteristics[individual]`, Satterthwaite df on the ratio-scale test, singular fits kept;
   `CHANGELOG.md`). Open: *>2 conditions* — two conditions per run today
   (`--reference-condition` / `--test-condition`). **Deferred until a dataset with three or more
@@ -275,7 +276,7 @@ the Δmass/`fs_ds` overlay, isotopomer bar chart, fixed hint area, CLI progress 
 on all three tabs, and determinate progress bars. **Open:**
 - **[1.2.0 easy win] Package `riana gui` as a standalone app** — PyInstaller / py2app bundle
   (`.app`/`.exe`, real macOS Dock icon). Nearer-term than the Electron rewrite.
-- **Rollup tab: show the project's experiments and conditions before a run** (low priority,
+- **Protein (rollup) tab: show the project's experiments and conditions before a run** (low priority,
   user-suggested 2026-11-11) — e.g. "4 experiments (LA, LV, RA, RV) × 2 conditions" under the
   manifest field, read from the manifest's integrate rows, so the Reference / Test / Interaction
   choices are made knowing the design.
@@ -288,9 +289,9 @@ on all three tabs, and determinate progress bars. **Open:**
 
 Done: v1.0.0 release + Zenodo, the repo-hygiene audit, Snakefile retirement, manifest
 schema-versioning, the parallel≡serial reproducibility test, and **`pytest-xdist` + the `slow`
-tier** (shipped on 1.2.0). **Open:**
-- **[1.2.0] `mypy --strict` rollout** — start on `riana/algorithms/` (smallest blast radius).
-- **[1.2.0] User-facing docs refresh** — post-M3 stale; a full pass is its own chunk.
+tier**, `mypy --strict` on `riana/algorithms/`, and the user-facing docs refresh (all shipped on
+1.2.0). **Open:**
+- **`mypy --strict` beyond `algorithms/`** — extend the scoped CI check package by package.
 - **Benchmark CI smoke tier** — a subsampled fast bench tier to catch science regressions
   (e.g. within-protein-θ drift) that unit tests miss.
 - **SDRF as a partial config source** — auto-load `comment[modification parameters]` into the fit

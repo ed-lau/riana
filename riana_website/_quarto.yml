@@ -9,7 +9,7 @@ website:
 
   page-navigation: true
 
-  title: "RIANA v1.0.0"
+  title: "RIANA"
   description: "Relative Isotope Abundance Analyzer"
   site-url: "https://ed-lau.github.io/riana/"
 
@@ -24,7 +24,7 @@ website:
 
   page-footer:
     right: "This page is built with [Quarto](https://quarto.org/)."
-    left: "&copy; Copyright 2021–2025 [Lau Lab Colorado](https://laulab.net)"
+    left: "&copy; Copyright 2021–2026 [Lau Lab Colorado](https://laulab.net)"
     #background: "#F7F9FB"
 
   navbar:
@@ -32,7 +32,7 @@ website:
     search: true
     tools:
       - icon: github
-        href: https://github.com/ed-lau/jcast
+        href: https://github.com/ed-lau/riana
         text: "GitHub repository"
 
       - icon: twitter
@@ -41,9 +41,11 @@ website:
       - text: "Home"
         file: index.qmd
       - text: "Quick Start"
-        file: install.qmd 
+        file: install.qmd
       - text: "Documentation"
-        file: about.qmd 
+        file: about.qmd
+      - text: "CLI Reference"
+        file: reference.qmd
       - text: "Change Log"
         file: change.qmd
       - text: "FAQs"

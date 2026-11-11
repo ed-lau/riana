@@ -1446,7 +1446,7 @@ def test_main_window_sets_app_icon(main_window):
     assert not main_window.windowIcon().isNull()
 
 
-# --- experiment × condition interaction (Rollup tab) --------------------------- #
+# --- experiment × condition interaction (Protein tab) -------------------------- #
 def _interaction_fixture():
     """A fitted interaction table + the matching collapsed points dict."""
     from riana.core.interaction_model import fit_interaction

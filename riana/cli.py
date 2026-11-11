@@ -153,7 +153,7 @@ def integrate(
     ),
     peak_rt: str = typer.Option(
         "apex", "--peak-rt",
-        help="Window anchor: 'apex' (default, spike winner), 'ms2' (0.9.0 "
+        help="Window anchor: 'apex' (default: the tallest peak near the identification), 'ms2' (0.9.0 "
         "parity), or 'consensus' (median apex over m0..m3; prefer at high D2O).",
     ),
     integration_half_width: str = typer.Option(
@@ -216,7 +216,7 @@ def integrate(
         1, "-W", "--workers", metavar="N",
         help="Runs to integrate concurrently on the --sdrf path (one mzML in "
         "memory per worker; 2-4 suits a many-timepoint time series) [default: "
-        "1]. The parallelism lever — per-run extraction is GIL-bound serial."),
+        "1]. Extraction within a run is serial, so this is the way to use more cores."),
     no_id_check: bool = typer.Option(
         False, "--no-id-check", rich_help_panel=_ADV,
         help="Disable the intake scan↔precursor guard — the per-run check that "
@@ -253,15 +253,22 @@ def integrate(
         4.0, "--mbr-min-snr", metavar="SNR", rich_help_panel=_MBR,
         help="Drop MBR transfers whose apex SNR (prominence/local-noise) is below "
         "this (inf SNR — a sparse MAD=0 trace — also fails). Default 4 (0 = ungated): "
-        "the fit A/B showed ungated MBR is harmful but SNR≥4 makes it net-positive "
-        "at in-vivo R² gates with no clean-curve pollution."),
+        "in testing, ungated transfers hurt the fits, while SNR ≥ 4 improved them "
+        "without degrading clean curves."),
     mbr_min_scans: int = typer.Option(
         3, "--mbr-min-scans", metavar="N", rich_help_panel=_MBR,
         help="Drop MBR transfers with fewer than N nonzero scans in the integration "
         "window (a sparse XIC can't define a reliable peak). Default 3 (0 = off); "
         "keeps ~98% of real-quality peaks. The companion to --mbr-min-snr."),
 ) -> None:
-    """Integrate isotopomer abundance over retention time."""
+    """Integrate isotopomer abundance over retention time.
+
+    Extracts each identified peptide's MS1 isotopomer envelope (m0, m1, …) from the mzML
+    and integrates it around the chromatographic apex. With --sdrf, identifications come
+    from a quantms mzTab (DDA) or DIA-NN report.parquet (DIA) and each run's identity
+    (condition, replicate, labeling time, enrichment) from the SDRF; writes one
+    <run>_riana.txt per run and the riana_manifest.tsv that fit and rollup read.
+    """
     import dataclasses
     import json
 
@@ -537,7 +544,7 @@ def fit(
     ria: Optional[float] = typer.Option(
         None, "-r", "--ria",
         help="Precursor enrichment (asymptotic labeled fraction, e.g. 0.06 for "
-        "6%% v/v). Default: per-experiment from the manifest's "
+        "6% v/v). Default: per-experiment from the manifest's "
         "precursor_enrichment (the SDRF value); given here, it overrides that "
         "for every curve. The legacy non-manifest path falls back to 0.06."),
     out: Path = typer.Option(
@@ -559,8 +566,8 @@ def fit(
     exclude_mbr: bool = typer.Option(
         False, "--exclude-mbr",
         help="Drop match-between-runs data points (evidence='mbr') before "
-        "fitting. MBR points are used by default; this is the with/without-MBR "
-        "A/B lever. The n_mbr / n_clean output columns report the split either way."),
+        "fitting. MBR points are used by default; use this to compare with and without "
+        "MBR. The n_mbr / n_clean output columns report the split either way."),
     min_spep: Optional[int] = typer.Option(
         None, "--min-spep", metavar="N",
         help="Curation floor on a peptidoform's labelling-site count (Spep): drop "
@@ -582,11 +589,17 @@ def fit(
         help="Drop per-timepoint FS points beyond a 0.05 margin of the physical [0,1] "
         "range (over-labelled ≥1.05 or below-natural ≤−0.05) before counting fit "
         "points / depth — such a point is a failed solve, not a real measurement. On by "
-        "default for all fits (benchmark-picked rails; see the 2026-07-05 report); "
+        "default for all fits (margins chosen by benchmark); "
         "--no-fs-rail-drop reproduces the pre-1.2.0 numbers (rail-hits then fall to the "
         "R² gate)."),
 ) -> None:
-    """Fit kinetic models to a D2O-labeling integrate time series."""
+    """Fit kinetic models to a labeling time series (heavy water or ¹⁸O water).
+
+    Solves each peptidoform's fraction of new protein (θ) at every timepoint from its
+    isotopomer envelope, then fits a kinetic model for its turnover rate k. With
+    --manifest, runs are grouped into curves by (experiment, condition). Writes
+    riana_fit_peptides.txt and riana_fit_fractions.txt.
+    """
     import dataclasses
 
     import pandas as pd
@@ -836,8 +849,9 @@ def rollup(
     manifest: Optional[Path] = typer.Option(
         None, "--manifest", exists=True, dir_okay=False, readable=True,
         help="riana_manifest.tsv (the SDRF/project path). Finds the fit outputs "
-        "from its stage='fit' rows, writes riana_rollup_proteins.txt next to the "
-        "manifest, and records a stage='protein' row. -o is ignored here."),
+        "from its stage='fit' rows and writes the rollup next to the manifest, "
+        "recording stage='rollup' rows. With -o pointing elsewhere it forks a "
+        "self-contained derived project there and leaves the input manifest untouched."),
     model: str = typer.Option(
         "simple", "-m", "--model",
         help="Kinetic model for the protein refit — match how the peptides were "
@@ -903,8 +917,8 @@ def rollup(
         None, "--min-fit-points", metavar="N",
         help="Peptide-level biological-replicate gate: keep only peptidoforms fit "
         "on >= N points. Default auto = 2 for a SINGLE-TIMEPOINT experiment "
-        "(detected from one distinct labeling time — R2 is degenerate there, so "
-        "curation rides on this replicate floor + --k-cv, with R2/rescue bypassed), "
+        "(detected from one distinct labeling time — R² is degenerate there, so "
+        "curation rides on this replicate floor + --k-cv, with R²/rescue bypassed), "
         "off otherwise. Set 3+ to require more replicates, or 1 to disable."),
     peptide_admission: str = typer.Option(
         "auto", "--peptide-admission", metavar="POLICY",
@@ -928,7 +942,7 @@ def rollup(
         help="Peptide R² admission gate before rollup (default 0.8). Keep a "
         "peptide if R² ≥ this, OR (flat-curve rescue) R² ≥ --rescue-r2 and "
         "k_cv < --k-cv. The gate is needed for good within-protein geom-CV (the "
-        "inverse-variance weighting alone under-curates; see reports/). Pass 0 "
+        "inverse-variance weighting alone under-curates). Pass 0 "
         "(or any value ≤ 0) to disable it entirely."),
     k_cv: float = typer.Option(
         0.2, "--k-cv",
@@ -984,11 +998,13 @@ def rollup(
 ) -> None:
     """Roll per-peptide fits up to protein turnover.
 
-    Two estimates per (experiment, condition, protein): the median of the
-    peptides' k_deg, and a biorep-aware per-timepoint inverse-variance weighted
-    refit over the M5 fraction-new substrate. Reads the `riana fit` outputs —
-    from *fit_dir*, or via --manifest (the project path) — and writes
-    ``riana_rollup_proteins.txt`` (+ stage='rollup' manifest rows on the --manifest path).
+    Per (experiment, condition, protein): collapses the peptides' θ within each
+    biological replicate and timepoint (inverse-variance weighted) and refits k; the
+    median of the peptides' k is reported alongside. With --model "linear simple" it
+    also tests the turnover difference between two conditions (Δk), and with
+    --interaction whether that difference varies between experiments. Reads the
+    `riana fit` outputs from FIT_DIR or via --manifest and writes
+    riana_rollup_proteins.txt and riana_rollup_fractions.txt.
     """
     import pandas as pd
 
@@ -1189,12 +1205,14 @@ def rollup(
 # --------------------------------------------------------------------------- #
 @app.command()
 def gui() -> None:
-    """Launch the PySide6 GUI (requires the optional ``[gui]`` extra).
+    """Launch the desktop app (needs the optional gui extra: pip install "riana\\[gui]").
 
-    The GUI forms build the *same* frozen IntegrationConfig/FitConfig as the CLI,
-    so both surfaces validate identically. PySide6/qasync/pyqtgraph are imported
-    lazily here so they never load on the core CLI path.
+    Integrate, Model (fit) and Protein (rollup) tabs over the same engine as the
+    command line, with interactive chromatogram, curve and φ-space plots.
     """
+    # The forms build the same frozen IntegrationConfig / FitConfig as the CLI, so
+    # both surfaces validate identically; PySide6 / qasync / pyqtgraph are imported
+    # lazily so they never load on the core CLI path.
     # Import from riana.gui.app (not the lazy riana.gui wrapper): this is the
     # import that actually pulls in PySide6/qasync/pyqtgraph, so a missing
     # [gui] extra is caught here with a clean message instead of a traceback.

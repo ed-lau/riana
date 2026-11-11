@@ -2,70 +2,113 @@
 title: "Frequently Asked Questions"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
-abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
+abstract: "Common questions about running RIANA and reading its results."
+description: "Common questions about running RIANA and reading its results."
 author: "Edward Lau"
-date: "`r Sys.Date()`"
+date: last-modified
 image-caption: "RIANA logo"
 image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 ---
 
-## FAQs
+## Setting up
 
-### Integrate
+#### Q: Which identification tools does RIANA work with?
 
-#### Q: What does the `-D --mass_difference` argument do for the integrate function?
+A: quantms for DDA (RIANA reads its mzTab) and DIA-NN for DIA (its `report.parquet`, with the `[dia]`
+extra), both described by an SDRF sample sheet. A Percolator `target.psms.txt` works for a single
+run. RIANA does not search spectra itself.
 
-A: The `--mass_difference` argument sets the accurate mass spacing between successive isotopomer channels. It defaults to
-**1.003355**, the ^13^C − ^12^C mass difference, which is the correct unit spacing for heavy-water labeling (the labeled
-peptide's envelope advances in ~1 Da neutron-mass steps). RIANA uses it to compute the accurate m/z of each successive
-isotopomer for extraction. (The earlier `D`/`C13`/`SILAC` token options were removed; supply a float directly.)
+#### Q: Which SDRF columns does RIANA need?
 
-### Fit
+A: At minimum the data file, the labeling time (or, for a calibration, the mixing proportion) and
+a condition (`factor value[...]`); biological replicate and precursor enrichment are strongly
+recommended. The [Quick Start](install.qmd#the-sdrf-sample-sheet) lists every column RIANA reads.
 
-#### Q: What are the kinetic models being specified by the different fit options?
+#### Q: How do I set the labeling sites for my cell type or tissue?
 
-A: The `simple`, `guan`, and `fornasiero` options for the `--model` argument refer to a simple exponential (one-pool) model,
-a two-compartment model, and a two-compartment model that includes label reutilization. For protein-level analysis,
-`riana rollup` additionally offers `"linear simple"`, a linearized φ-space fit that supports a cross-condition Δk test.
-See the [Documentation](about.qmd) page for details.
+A: Through `--coefficients`, not the label. `--label` only chooses the chemistry (`hw` for heavy
+water, the default, or `o18` for ^18^O water); each needs a matching table. For heavy water use
+`deberneh_2025_rss` (recommended), `ilchenko_2019`, `commerford_1983` or a cell-culture calibration
+(`alamillo_2025_ac16`, `alamillo_2025_ipsc`, `alamillo_2025_cm`); for ^18^O use
+`juber_2026_o18_ac16` or `rachdaoui_2009_o18`. You can also pass your own CSV.
 
-#### Q: What does the `-l --label` argument do, and how do I set the labeling sites?
+#### Q: Where does the precursor enrichment come from?
 
-A: `--label` selects the labeling chemistry — `hw` (heavy water / D~2~O, the default and only validated path; `o18` is in
-progress). Cell-type or tissue specificity is **not** set through the label; it comes from the per-amino-acid
-labeling-site (Spep) table supplied with `--coefficients`. Pass a bundled preset — `commerford` (literature mammalian
-values) or the `ac16` / `ipsc` / `cm` cell-line calibration tables — or a path to your own `(amino_acid, coefficient)`
-CSV. (The earlier amino-acid / SILAC fitting path and the `hw_cell` / `params.py` mechanism were removed in 1.0.0.)
-
-#### Q: Does RIANA perform protein-level curve fitting?
-
-A: Yes — `riana rollup` aggregates the peptide-level fits to proteins. Shared peptides are resolved by parsimony
-(`--parsimony unique|isoform`) and protein rate constants are estimated by an inverse-variance-weighted per-timepoint
-collapse (`--method weighted`) or a pooled fit (`--method pooled`). The earlier practice of taking a median or harmonic
-mean of peptide-level rate constants (as in our [2022 publication](https://doi.org/10.1016/j.mcpro.2022.100252)) is still
-available as a column on the output, but the weighted refit is the default.
-
-#### Q: How do I retrieve half-life information on the peptide and protein?
-
-A: The half-life of a peptide or protein can be calculated from the output `k` parameter using the equation:
-
-$$ t_{1/2} = ln(2)/k $$
+A: From the SDRF's `characteristics[precursor enrichment]` (e.g. `0.046` for 4.6 % body-water
+D~2~O), per experiment. `riana fit --ria` overrides it for every curve; without either, 0.06 is used.
 
 
-#### Q: How is fractional synthesis calculated, and can I restrict the isotopomers used?
+## Fitting
 
-A: In 1.0.0 fractional synthesis (θ) is solved against the **full m0–m5 isotopomer envelope** using an IsoSpec forward
-model — RIANA fits θ as the mixture of the natural-abundance and fully-labeled envelopes that best matches the observed
-pattern, given a per-peptide labeling-site estimate (see [Documentation](about.qmd)). This supersedes the earlier
-fine-structure ratio selection (`m0_mA`, `Auto`; Currie et al. *J Proteome Res* 2025). The `--fs` flag is reserved for a
-future channel-subset option (restricting the envelope to chosen isotopomers to dodge co-eluting interference) and is
-currently inactive.
+#### Q: Which kinetic models are available?
+
+A: `simple` (one compartment), `guan` (two compartments, with a precursor rate constant) and
+`fornasiero` (adds precursor reutilization), plus `calibration` for mixing experiments. At the
+protein level, `riana rollup --model "linear simple"` fits a linearized simple model that supports
+comparing conditions. See the [Documentation](about.qmd#kinetic-models).
+
+#### Q: How is the fraction of new protein calculated, and can I restrict the isotopomers used?
+
+A: RIANA solves θ against the whole m0–m5 isotopomer envelope with an IsoSpec forward model: θ is
+the mixture of the old (natural-abundance) and fully labeled envelopes that best matches the
+observed one, given the peptide's number of labeling sites. To use only the leading isotopomers,
+for example when heavier channels carry interference, pass `riana fit --fs 3` (m0–m3) or
+`--fs auto`. This supersedes the ratio-selection method of Currie et al. (*J Proteome Res* 2025).
+
+#### Q: Why were some of my peptides not fitted?
+
+A: A peptidoform needs enough labeling sites to shift its envelope measurably (`--min-spep`,
+default 8 for D~2~O), and enough distinct timepoints (`--depth`, default 3). Timepoints whose θ
+falls outside the physical range are dropped as failed solves. The fit log reports how many
+peptidoforms the labeling-site gate removed.
+
+#### Q: How do I get half-lives?
+
+A: From the rate constant: $t_{1/2} = \ln(2) / k$, in the units of your labeling time.
 
 
-### General
+## Proteins and comparisons
+
+#### Q: How are protein turnover rates calculated?
+
+A: `riana rollup` keeps peptides unique to one protein that pass the R² gate (R² ≥ 0.8, with a
+rescue for flat curves whose k is still well determined), combines their θ within each biological
+replicate and timepoint by inverse-variance weighting, and refits k. The median of the peptides' k
+(as in our [2022 publication](https://doi.org/10.1016/j.mcpro.2022.100252)) is reported alongside.
+
+#### Q: How do I compare turnover between two conditions?
+
+A: `riana rollup --model "linear simple" --reference-condition control`. Each protein gets
+`delta_k` = k(test) − k(reference), a p-value and a Benjamini–Hochberg-adjusted `delta_k_p_adj`.
+With more than two conditions, add `--test-condition` to name the pair. If your runs span several
+tissues, split them with `integrate --experiment-column` and the comparison is made within each.
+
+#### Q: My tissues come from the same animals. Can I test whether a condition affects them differently?
+
+A: Yes, with `riana rollup --model "linear simple" --interaction` (or the *Interaction* option on
+the desktop app's Protein tab). It fits each protein across tissues with a random effect for the
+animal and tests whether the k ratio between conditions differs between tissues. Give each animal
+one `characteristics[individual]` ID on all its rows in the SDRF. See the
+[Documentation](about.qmd#tissues-of-the-same-animals---interaction).
+
+#### Q: Can RIANA analyze TMT or dimethyl-labeled samples?
+
+A: Yes. TMT/TMTpro channels share one MS1 peak, so RIANA measures the average turnover of a
+file's channels; dimethyl channels are separate peaks and are treated as separate samples. Declare
+the channels in the SDRF's `comment[label]` column. These designs often use a single labeling time;
+RIANA then solves k directly from θ.
+
+
+## General
+
+#### Q: Is there a graphical interface?
+
+A: `riana gui` (install `riana[gui]`) opens a desktop app with Integrate, Model and Protein tabs. It
+runs the same engine as the command line and can display a project's saved results without
+recomputing them.
 
 #### Q: How can I contribute to RIANA?
 
-A: Contact us at [edward.lau@cuanschutz.edu]
+A: Report bugs or open pull requests at <https://github.com/ed-lau/riana/issues>, or contact us at
+<edward.lau@cuanschutz.edu>.

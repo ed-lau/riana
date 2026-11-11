@@ -2,10 +2,10 @@
 title: "Quick Start"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
-abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
+abstract: "Installing RIANA and running a turnover project from an SDRF sample sheet."
+description: "Install RIANA, describe an experiment with an SDRF sample sheet, and run integrate, fit and rollup."
 author: "Edward Lau"
-date: "`r Sys.Date()`"
+date: last-modified
 image-caption: "RIANA logo"
 image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
@@ -13,114 +13,166 @@ image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 
 ## Installing RIANA
 
-Install Python 3.10+ and pip. See instructions on the Python website for your operating system.
+RIANA needs Python 3.10 or newer. We recommend a virtual environment.
 
-Riana can be installed from PyPI via pip or directly from GitHub. We recommend using a virtual environment.
-
-```
+```bash
 $ pip install riana
 ```
 
-The desktop GUI and the DIA-NN parquet reader ship as optional extras:
+Two optional extras add the desktop app and the DIA-NN reader:
 
 ```bash
 $ pip install "riana[gui]"   # PySide6 desktop app (riana gui)
 $ pip install "riana[dia]"   # DIA-NN report.parquet intake
 ```
 
-Launch riana as a console entry point (Usage/Help):
+Check the installation and list the commands:
 
 ```bash
 $ riana --help
 ```
 
-To run the Riana test dataset (a single-fraction bovine serum albumin file from a Q-Exactive) and write
-the results to an `out/test/` directory:
+From a clone of the repository, a single bovine serum albumin run (Q-Exactive) integrates in
+seconds and writes `out/test/time0_riana.txt`:
 
 ```bash
-$ riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt -q 0.1 -i "0 1 2 3 4 5" -o out/test/
+$ riana integrate tests/data/sample1/ tests/data/sample1/percolator.target.psms.txt -q 0.1 -o out/test/
 ```
 
 
-## Processing Data
+## Preparing the inputs
 
-### Project set up
+RIANA does not search spectra itself. Run the identification upstream: **quantms** for DDA (it
+writes an mzTab) or **DIA-NN** for DIA (it writes a `report.parquet`). RIANA reads those
+identifications and extracts the MS1 isotopomers from the mzML files itself.
 
 :::{.callout-tip}
 ## Mass spectrometry files
 
-RIANA requires the input mass spectrometry files to be in the mzML format. If you are not familiar with mzML files or
-received raw mass spectrometry files in vendor-specific formats (e.g., Thermo .raw),
-you can convert them to mzML using various tools, such as the `msconvert` tool from the ProteoWizard suite. Please refer to
-the [ProteoWizard documentation](https://proteowizard.sourceforge.io/) for details.
-
+RIANA reads mzML (plain or gzipped). Convert vendor files (e.g., Thermo `.raw`) with `msconvert`
+from [ProteoWizard](https://proteowizard.sourceforge.io/), with peak picking on, so MS1 is
+centroided: the integration mass window assumes centroid data and is taken from the SDRF's
+precursor mass tolerance by default.
 :::
 
-RIANA does not perform the database search itself — peptide identification is owned upstream by established tools.
-For DDA, run **quantms** (which wraps the search, FDR control, and produces an mzTab); for DIA, run **DIA-NN** (which
-produces a `report.parquet`). Both are described by an **SDRF** sample sheet that also carries each run's metadata
-(condition, biological replicate, labeling time, acquisition, precursor enrichment). RIANA then reads those
-identifications and extracts the MS1 isotopomers itself.
+### The SDRF sample sheet
 
-### Recommended: the SDRF + manifest project workflow
+An [SDRF](https://github.com/bigbio/proteomics-sample-metadata) sample sheet (`.sdrf.tsv`, one row
+per run, or per channel for multiplexed runs) describes the experiment. quantms uses the same
+sheet. RIANA reads these columns and ignores the rest:
 
-Point `integrate` at the folder of mzML files, the identification file, and the SDRF. RIANA writes one
-identity-stamped `<run>_riana.txt` per run plus a `riana_manifest.tsv` that chains the downstream steps, so `fit` and
-`rollup` re-group runs from the manifest rather than from filenames:
+| Column | Used for |
+|---|---|
+| `comment[data file]` | Joins the row to its mzML file (extension ignored). |
+| `source name` | The sample. |
+| `characteristics[labeling time]` | The labeling time, e.g. `7 day` (time-series experiments). |
+| `characteristics[mixing proportion]` | Instead of labeling time, for labeled/unlabeled mixing calibrations. |
+| `characteristics[biological replicate]` | Biological replicate number; replicates stay separate points in the fit. |
+| `characteristics[individual]` | Optional: the animal a sample came from (see below). |
+| `factor value[...]` | The condition (several factor columns are joined with `|`). |
+| `characteristics[precursor enrichment]` | Precursor enrichment, e.g. `0.046` for 4.6 % body-water D~2~O. |
+| `comment[proteomics data acquisition method]` | DDA or DIA. |
+| `comment[precursor mass tolerance]` | Integration mass window, e.g. `10 ppm`. |
+| `comment[fraction identifier]`, `comment[technical replicate]` | Fractions and technical replicates of one sample, combined before fitting. |
+| `comment[modification parameters]` | Modifications searched. |
+| `comment[label]` | Multiplexing channel (TMT, dimethyl). |
+
+Exactly one of labeling time or mixing proportion must be present.
+
+**Animals.** If one animal provides several samples (e.g. four heart chambers), give it the same
+`characteristics[individual]` on all of its rows, with IDs unique across groups. RIANA uses it for
+the random animal effect of the interaction test (below). Without it, RIANA identifies an animal by
+condition × labeling time × biological replicate, which is right only if each replicate number names
+the same animal in every tissue and each animal is sampled at one time. Serial sampling of the same
+animal needs real IDs.
+
+
+## Running a project
+
+Point `integrate` at the folder of mzML files, the identification file and the SDRF. RIANA writes one
+`<run>_riana.txt` per run plus a `riana_manifest.tsv` that indexes the project. `fit` and `rollup`
+read the manifest, so runs are grouped by their SDRF identity rather than by file name, and write
+their outputs next to it (`-o` elsewhere forks a copy of the project there instead).
 
 ```bash
 # 1. Integrate every run (one mzML in memory per worker)
 $ riana integrate /path/to/mzml report.mzTab --sdrf samplesheet.sdrf.tsv \
     --workers 4 --out ./out
 
-# 2. Fit the kinetic curve per peptidoform
+# 2. Fit each peptidoform's turnover curve
 $ riana fit --manifest ./out/riana_manifest.tsv \
-    --coefficients commerford --ria 0.06 --depth 3 --out ./out
+    --coefficients deberneh_2025_rss --depth 3 --workers 4
 
-# 3. Roll peptides up to proteins (+ optional cross-condition Δk)
-$ riana rollup --manifest ./out/riana_manifest.tsv \
-    --parsimony unique --method weighted --out ./out
+# 3. Roll peptides up to proteins
+$ riana rollup --manifest ./out/riana_manifest.tsv --workers 4
 ```
 
-For DIA, supply the DIA-NN `report.parquet` as the identification file (the SDRF declares the acquisition as DIA); RIANA
-resolves each apex retention time to the nearest MS1 scan and extracts the envelope the same way. Add `--mbr` to
-`integrate` to recover time points lost to stochastic MS2 sampling (DDA only). For a two-condition design,
-`rollup --model "linear simple" --reference-condition <name>` reports a per-protein Δk.
+For DIA, pass the DIA-NN `report.parquet` as the identification file; the SDRF declares the
+acquisition as DIA. For DDA, `integrate --mbr` recovers timepoints a peptide missed by chance
+(match-between-runs). `--coefficients` picks the labeling-site table; `deberneh_2025_rss` is
+recommended for D~2~O, and ^18^O water uses its own tables (`--label o18`, see the
+[Documentation](about.qmd)). The precursor enrichment comes from the SDRF; `--ria` overrides it.
 
-:::{.callout-tip}
-## Mass spectrometry files
+### Comparing two conditions
 
-RIANA requires the input mass spectrometry files to be in the mzML format. If you received raw files in vendor-specific
-formats (e.g., Thermo `.raw`), convert them with `msconvert` from the ProteoWizard suite. Use centroided MS1 (peak
-picking); the integration mass window is calibrated for centroid data and is read from the SDRF's precursor mass
-tolerance by default.
-:::
+```bash
+$ riana rollup --manifest ./out/riana_manifest.tsv \
+    --model "linear simple" --reference-condition control
+```
 
-### Single-fraction (Percolator) path
+`linear simple` fits each protein's conditions together and reports, per protein, the turnover
+difference `delta_k` = k(test) − k(reference) with a p-value and a Benjamini–Hochberg-adjusted
+`delta_k_p_adj`. With more than two conditions, name the pair with `--test-condition`.
 
-Without `--sdrf`, the identification file is read as a Percolator `target.psms.txt` for a single mzML — a simpler,
-demoted tier useful for testing:
+### Several tissues from the same animals
+
+Split the runs into one experiment per tissue at integration, then compare conditions within each:
+
+```bash
+$ riana integrate /path/to/mzml report.parquet --sdrf samplesheet.sdrf.tsv \
+    --experiment-column "characteristics[organism part]" --workers 4 --out ./out
+$ riana fit --manifest ./out/riana_manifest.tsv --coefficients deberneh_2025_rss
+$ riana rollup --manifest ./out/riana_manifest.tsv --model "linear simple" \
+    --reference-condition control --interaction --plot
+```
+
+- Δk is computed and BH-adjusted within each tissue.
+- `--plot` writes a PDF of φ-space curves per tissue.
+- `--interaction` also fits each protein across the tissues, with a random effect for the animal,
+  and tests whether the condition effect differs between them (`riana_rollup_interaction.txt`).
+  It compares two conditions.
+
+### The desktop app
+
+`riana gui` opens the same steps as forms: **Integrate** (with an *Experiment from* choice for
+splitting runs by an SDRF column), **Model** (fit) and **Protein** (rollup, with the *Interaction*
+option for `linear simple`). Each tab can load a project's saved results without recomputing, and
+shows chromatograms, fitted curves and φ-space plots for the selected row.
+
+### Single-run (Percolator) path
+
+Without `--sdrf`, the identification file is read as a Percolator `target.psms.txt` for one mzML,
+and the sample name carries the timepoint:
 
 ```bash
 $ riana integrate /path/to/mzml percolator.target.psms.txt --sample time1 -o ./out
 $ riana fit ./out/time0_riana.txt ./out/time1_riana.txt ./out/time3_riana.txt \
-    --coefficients commerford --ria 0.06 --out ./out
+    --coefficients deberneh_2025_rss --ria 0.06 --out ./out
 ```
+
 
 ## Output
 
-RIANA `integrate` writes a `<run>_riana.txt` per run — the identifications appended with one column per integrated
-isotopomer (`iso0`, `iso1`, …, the integrated area of each isotopomer over the retention-time window) plus per-isotopomer
-mass-accuracy columns, all under a provenance header. The `-w` flag additionally writes the pre-integration
-intensity-over-retention-time trace.
+Every output file starts with a provenance header (RIANA version, settings, input).
 
-RIANA `fit` writes `riana_fit_peptides.txt` (best-fit `k_deg`, R², and confidence bounds per peptidoform) and
-`riana_fit_fractions.txt` (the per-timepoint fraction-new θ with prediction intervals). RIANA `rollup` writes
-`riana_rollup_proteins.txt` (protein-level `k_deg`, and Δk under the `linear simple` model) and
-`riana_rollup_fractions.txt`. The `riana_manifest.tsv` indexes every stage of the project.
+| File | Contents |
+|---|---|
+| `<run>_riana.txt` | One row per identification, one column per integrated isotopomer (`iso0`, `iso1`, …), plus mass-accuracy columns. |
+| `riana_manifest.tsv` | The project index: each run's identity and every stage's outputs. |
+| `riana_fit_peptides.txt` | Per peptidoform: `k_deg`, its confidence interval, R², and point counts. |
+| `riana_fit_fractions.txt` | Per peptidoform and timepoint: the fraction of new protein (θ, column `fs`) with its prediction interval. |
+| `riana_rollup_proteins.txt` | Per protein (and experiment, condition): `k_deg`, and `delta_k` / `delta_k_p_adj` under `linear simple`. |
+| `riana_rollup_fractions.txt` | The collapsed per-replicate, per-timepoint θ each protein was fitted on. |
+| `riana_rollup_interaction.txt` | With `--interaction`: per-tissue k and Δk from the joint fit, and the interaction tests. |
 
-Fitted curves are inspected interactively in the GUI (`riana gui`) rather than written as static plot files.
-
-
-
-    
+Half-life is `ln(2) / k_deg`. Every option is listed in the [CLI Reference](reference.qmd).

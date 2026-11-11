@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Documentation refresh — 2026-11-11
+
+#### Changed
+
+- **Website (`riana_website/`) rewritten for 1.2.** Quick Start (install, the SDRF columns Riana
+  reads including `characteristics[individual]`, the project workflow, comparing conditions,
+  multi-tissue designs, the desktop app, the output files), Documentation (how integrate, fit and
+  rollup work, the Δk model and the interaction test), FAQs, and Change Log entries for 1.1.0 and
+  1.2.0. The site deploys from `master`, so it goes live with the 1.2.0 release.
+- **New CLI Reference page generated from the CLI** (`riana_website/reference.qmd`, written by
+  `riana_website/_gen_reference.py`). It lists every command, argument and option with its
+  default; `tests/test_docs.py` fails when it is out of date. It replaces the hand-written option
+  summaries.
+- **README slimmed to a landing page**: what Riana does, install, a three-command quickstart,
+  citations, and links to the site for everything else.
+- **CLI help text.** The command descriptions shown by `--help` are rewritten for users (`fit` no
+  longer says D₂O-only; `rollup` and `gui` no longer show developer notes). Internal references
+  were removed from option help.
+
+#### Fixed
+
+- `riana gui --help` dropped the extra's name (`[gui]` was read as terminal markup).
+- `fit --ria` help printed `6%%`.
+- `rollup --manifest` help said it records a `stage='protein'` row and ignores `-o`; it records
+  `stage='rollup'` rows, and `-o` elsewhere forks a derived project.
+- The site's GitHub link pointed to another repository; a citation link was malformed; author
+  names in the Hammond 2022 citation are corrected.
+
 ### Interaction follow-ups — animal IDs, Satterthwaite df, singular fits, GUI — 2026-11-11
 
 #### Added
@@ -28,7 +56,7 @@ The 1.2.0 development line (branch `1.2.0`).
     conditions (IDs restarting within each group).
   - `characteristics[individual]` is not offered as an "Experiment from" / `--experiment-column`
     choice: its levels are the animals whose tissues are the experiments.
-- **GUI: Interaction option on the Rollup tab** (`linear simple`). It runs the same fit as
+- **GUI: Interaction option on the Protein (rollup) tab** (`linear simple`). It runs the same fit as
   `rollup --interaction` after the rollup and writes the same file and manifest row. A new
   *Interaction* results tab lists one row per protein (the three tests and each
   experiment's k ratio, most significant first). Selecting a row draws one φ-space panel

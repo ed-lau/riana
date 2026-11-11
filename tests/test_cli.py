@@ -311,7 +311,8 @@ def test_gui_subcommand_is_registered():
     """
     result = runner.invoke(app, ["gui", "--help"])
     assert result.exit_code == 0
-    assert "GUI" in result.output
+    assert "desktop app" in result.output
+    assert "riana[gui]" in result.output        # the extra survives Rich markup
 
 
 # --------------------------------------------------------------------------- #

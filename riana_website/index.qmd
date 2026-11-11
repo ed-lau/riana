@@ -3,9 +3,9 @@ title: "RIANA - Relative Isotope Abundance Analyzer"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
 abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
+description: "RIANA measures protein turnover from mass spectrometry experiments with metabolic heavy water (D2O) or 18O water labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
 author: "Edward Lau"
-date: "`r Sys.Date()`"
+date: last-modified
 image-caption: "RIANA logo"
 image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
@@ -20,17 +20,21 @@ image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 
 ## About RIANA
 
-RIANA (**R**elative **I**sotope **A**bundance A**na**lyzer) is a software to automate the analysis of mass spectrometry-
-based protein turnover measurement experiments.
+RIANA (**R**elative **I**sotope **A**bundance A**na**lyzer) measures protein turnover from mass
+spectrometry experiments with metabolic stable-isotope labeling. It integrates each peptide's MS1
+isotopomer envelope, solves the fraction of newly synthesized protein at each labeling time, fits a
+kinetic model for the turnover rate constant, and rolls peptides up to proteins.
 
-RIANA quantifies protein turnover from metabolic **heavy water (D~2~O)** labeling experiments. The MS1 isotopomer
-integration is label-agnostic, while kinetic fitting is currently D~2~O-only (^18^O support is in progress; the earlier
-amino-acid / SILAC fitting path was retired in 1.0.0).
-
-RIANA is orchestration-agnostic: peptide identification is owned upstream by established tools (**quantms** for DDA,
-**DIA-NN** for DIA), and RIANA is a linear `integrate → fit → rollup` pipeline — MS1 peak integration, per-peptidoform
-kinetic fitting, and protein-level roll-up with optional cross-condition turnover (Δk) testing. Both a command-line
-interface and a desktop GUI (`riana gui`) are provided.
+- **Labels:** heavy water (D~2~O) and ^18^O water, each with its own labeling-site tables.
+- **Identifications** come from established upstream tools: **quantms** mzTab (DDA) or **DIA-NN**
+  `report.parquet` (DIA), described by an **SDRF** sample sheet. A Percolator file serves a single run.
+- **Designs:** labeling time series, single-timepoint and multiplexed labeling (TMT/TMTpro, dimethyl),
+  several conditions, and several tissues from the same animals.
+- **Statistics:** a per-protein turnover difference between two conditions (Δk) with
+  Benjamini–Hochberg adjustment, and, for tissues of the same animals, a test of whether that
+  difference varies between tissues, with a random animal effect.
+- **Interfaces:** a `integrate → fit → rollup` command line and a desktop app (`riana gui`) over
+  the same engine.
 
 ![Workflow](images/workflow.png)
 
@@ -40,25 +44,25 @@ interface and a desktop GUI (`riana gui`) are provided.
 ::: {.column-margin}
 **Latest Updates**
 
-v1.0.0
+v1.2.0 (in development)
 --
-* Major rewrite: typed streaming pipeline, apex-window peak detection, IsoSpec forward-model fractional synthesis.
-* New `riana rollup` for protein-level turnover + a cross-condition Δk test (`--model "linear simple"`).
-* SDRF + manifest project workflow; quantms mzTab (DDA) and DIA-NN parquet (DIA) intake; gated match-between-runs (`--mbr`).
-* New PySide6 desktop GUI: `riana gui`.
+* Single-timepoint and multiplexed labeling (TMT/TMTpro, dimethyl).
+* Weighted Δk model; tissue-by-tissue comparisons; an interaction test with a random animal effect.
+* Standalone desktop app bundle.
 
-v0.9.0
+v1.1.0
 --
-* Stabilization release; mass-tolerance now means ±N ppm.
+* ^18^O water fitting; newer D~2~O labeling-site tables.
+* Default curation gates (labeling-site floor, rollup R² ≥ 0.8).
 
 > See [Change Log](change.qmd) for details.
 
 :::
-The latest version and source code of RIANA can be found on github: <https://github.com/ed-lau/riana>.
+RIANA is installed from PyPI (`pip install riana`); the source code is on GitHub:
+<https://github.com/ed-lau/riana>.
 
-See the [Quick Start](install.qmd) and [Documentation](about.qmd) for instructions.
-
-
+See the [Quick Start](install.qmd) to set up a project, the [Documentation](about.qmd) for how each
+step works, and the [CLI Reference](reference.qmd) for every option.
 
 
 ## Contributors
@@ -73,15 +77,20 @@ If you use RIANA or the associated methods in your research, please consider cit
 
 Original publication, heavy water and SILAC comparison:
 
-1. **Harmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult animals**
-Hammond DE, Simpson DM, Franco C, Wright Muelas M, Wasters J, Ludwig RW, PRescott MC, Hurst JL, Beynon RJ, E Lau *Molecular & Cellular Proteomics* 2022, 100252 [doi:10.1016/j.mcpro.2022.100252](https://doi.org/10.1016/j.mcpro.2022.100252) Epub 2022 May 28. PMID: 35636728; PMCID: PMC9249856.
+1. **Harmonizing Labeling and Analytical Strategies to Obtain Protein Turnover Rates in Intact Adult Animals**
+Hammond DE, Simpson DM, Franco C, Wright Muelas M, Waters J, Ludwig RW, Prescott MC, Hurst JL, Beynon RJ, Lau E. *Molecular & Cellular Proteomics* 2022;21(7):100252. [doi:10.1016/j.mcpro.2022.100252](https://doi.org/10.1016/j.mcpro.2022.100252) Epub 2022 May 28. PMID: 35636728; PMCID: PMC9249856.
 
 Rule-based mass isotopomer selection method for heavy water:
 
 2. **Improved Method to Determine Protein Turnover Rates with Heavy Water Labeling by Mass Isotopomer Ratio Selection**
-Currie J, Ng DCM, Pandi B, Black A, Manda V, Durham C, Pavelka J, Lam MPY, Lau E.  *Journal of Proteome Research* 2025 Apr 4;24(4):1992-2005. [doi: 10.1021/acs.jproteome.4c01012](https://doi.org/10.1021/acs.jproteome.4c01012) Epub 2025 Mar 18. PMID: 40100644; PMCID: PMC11977540.
+Currie J, Ng DCM, Pandi B, Black A, Manda V, Durham C, Pavelka J, Lam MPY, Lau E. *Journal of Proteome Research* 2025 Apr 4;24(4):1992-2005. [doi:10.1021/acs.jproteome.4c01012](https://doi.org/10.1021/acs.jproteome.4c01012) Epub 2025 Mar 18. PMID: 40100644; PMCID: PMC11977540.
 
 Application of heavy water labeling to cell culture:
 
 3. **Deuterium Labeling Enables Proteome Wide Turnover Kinetics Analysis in Cell Culture**
-Alamillo L, Ng DCM, Currie J, Black A, Pandi B, Manda V, Pavelka J, Schaal P, Travers JG, McKinsey TA, Lam MPY, Lau E.  *Cell Rep Methods* 2025 Jul 21;5(7):101104. [doi: 10.1016/j.crmeth.2025.101104]((https://doi.org/10.1016/j.crmeth.2025.101104)). Epub 2025 Jul 10. PMID: 40645189; PMCID: PMC12296481.
+Alamillo L, Ng DCM, Currie J, Black A, Pandi B, Manda V, Pavelka J, Schaal P, Travers JG, McKinsey TA, Lam MPY, Lau E. *Cell Reports Methods* 2025 Jul 21;5(7):101104. [doi:10.1016/j.crmeth.2025.101104](https://doi.org/10.1016/j.crmeth.2025.101104) Epub 2025 Jul 10. PMID: 40645189; PMCID: PMC12296481.
+
+Protocol for cell culture:
+
+4. **Protocol to Measure Protein Half-Life in Cell Culture Using Heavy Water**
+Alamillo L, et al. *STAR Protocols* 2026. [doi:10.1016/j.xpro.2026.104426](https://doi.org/10.1016/j.xpro.2026.104426)

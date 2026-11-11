@@ -1,11 +1,11 @@
 ---
-title: "Documentations"
+title: "Documentation"
 format: html
 keywords: "Protein turnover, Proteomics, Mass spectrometry"
-abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
-description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
+abstract: "How RIANA integrates isotopomers, fits turnover and rolls peptides up to proteins."
+description: "How RIANA integrates isotopomers, solves fractional synthesis, fits kinetic models, and tests turnover differences between conditions and tissues."
 author: "Edward Lau"
-date: "`r Sys.Date()`"
+date: last-modified
 image-caption: "RIANA logo"
 image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
@@ -13,148 +13,142 @@ image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 
 ## Basics
 
-RIANA has three components — `integrate`, `fit`, and `rollup` — called as `riana integrate`, `riana fit`, and
-`riana rollup`, plus a desktop GUI launched with `riana gui`. For the help message of each component, type
-`riana <command> --help`.
+RIANA has three steps, run as `riana integrate`, `riana fit` and `riana rollup`, and a desktop
+app, `riana gui`, that runs the same steps from forms. A project is set up from an SDRF sample
+sheet (see the [Quick Start](install.qmd)). This page explains what each step does; the
+[CLI Reference](reference.qmd) lists every option, and `riana <command> --help` prints the same.
 
 
-### Integrate
-The `integrate` component reads mass spectrometry data files (.mzML) together with peptide identifications. Identifications
-come from quantms **mzTab** (DDA) or **DIA-NN** `report.parquet` (DIA) keyed off an **SDRF** sample sheet (`--sdrf`), or — for a
-single mzML — directly from a **Percolator** `target.psms.txt`.
+## Integrate
 
-RIANA filters identifications on the `-q` (q-value) threshold. For each qualifying peptide-charge concatamer (including
-each distinct modified peptidoform), RIANA calculates the accurate mass and m/z of the unlabeled (m0) isotopomer and of
-each successive isotopomer specified by `-i` (default `0 1 2 3 4 5`, the m0–m5 envelope the D~2~O fit consumes).
+`integrate` reads the mzML files with the peptide identifications: a quantms **mzTab** (DDA) or a
+DIA-NN **report.parquet** (DIA) for a project described by an SDRF (`--sdrf`), or a Percolator
+`target.psms.txt` for a single run. Identifications above the q-value threshold (`-q`, default
+0.01) are dropped. Each modified peptidoform is integrated at its own mass.
 
-RIANA then locates the peptide in the mzML and extracts the intensity-over-retention-time of each isotopomer. By default it
-centres a **narrow window on the chromatographic apex** (`--peak-rt apex`, `--integration-half-width 0.15`) and integrates
-the area by the trapezoid method — replacing the older fixed-width retention-time rectangle, which is still available via
-`--peak-rt ms2 --integration-half-width 1.0`. On the SDRF path one identity-stamped `<run>_riana.txt` is written per run,
-along with a stage-aware `riana_manifest.tsv` that chains the downstream steps.
+For each peptide and charge, RIANA computes the m/z of the unlabeled isotopomer (m0) and of the
+following ones (`--iso`, default `5` = m0–m5, the envelope the D~2~O fit uses; `auto` picks the
+channels per peptide from its expected labeled envelope). It extracts each isotopomer's intensity
+over retention time within the mass tolerance (`--mass_tol`, default from the SDRF, else 10 ppm),
+finds the chromatographic apex near the identification and integrates a narrow window around it
+(`--integration-half-width`, default 0.15 min; set it to your peak width). The 0.9.0 fixed-width
+window is still available with `--peak-rt ms2 --integration-half-width 1.0`. DIA identifications
+are placed at the MS1 scan nearest DIA-NN's apex retention time.
 
-The intensity-over-rt data prior to integration can also be saved with the `-w` flag.
+On the SDRF path, RIANA writes one `<run>_riana.txt` per run and records it in
+`riana_manifest.tsv`. With an mzTab it first checks that each mzML matches its identifications (the
+identified scans must carry the identified precursor m/z), which catches mismatched file pairings. `--experiment-column` splits the runs into experiments by an
+SDRF column (e.g. one per tissue), and `--mbr` (DDA only) transfers an identification into runs of
+the same curve that missed it, keeping only transfers with a clear peak.
 
-![Retrieved chromatograms of isotopomers m0-m6 for a peptide. Note the gradual decrease of the relative intensity of
-the m0 peak (lightest in color) as labeling proceeds (from left to right) ](images/integration.png)
-
-### Fit
-The `fit` component takes in the integration results from multiple mass spectrometry experiments, and fits the relative
- isotope abundance data across labeling time points to a specified kinetic model.
-
-Three models ar ecurrently supported. In the `simple` model, the fraction of new protein over labeling time behavior
-of a peptide is described by an exponential decay equation with one parameter ($k$):
-
-$$ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot 1 - e^{-k t} $$
-
-where $A_{t=0}$ is the initial relative abundance of the m0 peak over the m~i~ peaks, and is set to 1 in amino acid
-labeling experiments. $A_{t\rightarrow \infty}$ is calculated based on the plateau relative isotope abundance, which is based
-on the number of labeling sites in a peptide and the precursor plateau enrichment. The latter is supplied through
-the `-r` argument in `riana fit`.
-
-[Guan et al. 2012 [PMID: 22444387](https://pubmed.ncbi.nlm.nih.gov/22444387/)]{.aside}
-
-The two-compartment model is implemented as in Guan et al. 2012. The fraction of new protein over labeling time behavior
-of a peptide is described by a two-exponent model with the protein turnover rate constant ($k$) as well as the precursor
-availability rate constant ($k_p$):
-
-$$ A_t = A_{t=0} + (A_{t\rightarrow \infty} - A_{t=0}) \cdot \frac{1 - ( e^{-kt}k_p - e^{-k_pt}k)}{k_p - k } $$
-
-[Fornasiero et al. 2018 [PMID: 30315172](https://pubmed.ncbi.nlm.nih.gov/30315172/)]{.aside}
-
-The Fornasiero model two-compartment, three-exponent model additionally attempts to account for the effect of precursor
- reutilization from proteome-wide protein degradation. The two additional parameters `--kr` and `--rp` must be provided
- to denote the reutilization rate constant and the proportion of protein-bound vs. free precursors. Details are
- described in the original publication.
+![Retrieved chromatograms of isotopomers m0–m6 for a peptide. The relative intensity of the m0 peak
+(lightest) falls as labeling proceeds (left to right).](images/integration.png)
 
 
+## Fit
 
-Fractional synthesis is solved against the **full m0–m5 isotopomer envelope** using an IsoSpec forward model: RIANA
-estimates each peptide's effective number of labeling sites (Spep) from a per-amino-acid coefficient table and fits θ as
-the mixture of the natural-abundance and fully-labeled envelopes that best matches the observed isotopomer pattern. The
-per-amino-acid table is supplied with `--coefficients` — a bundled preset (`commerford` literature values, or the `ac16`
-/ `ipsc` / `cm` cell-line calibration tables) or a path to your own `(amino_acid, coefficient)` CSV. This replaces the
-earlier fixed-labeling-site analytic calculation, which biased recovered rate constants low.
+`fit` turns each peptidoform's isotopomer envelopes over the labeling time into a turnover rate.
+With `--manifest`, runs are grouped into one curve per (experiment, condition), replicates kept as
+separate points.
 
-### Rollup
-The `rollup` component aggregates peptide-level fits to **protein-level** turnover, reading from the project manifest. Shared
-peptides are resolved by parsimony (`--parsimony unique|isoform`), and protein rate constants are estimated by an
-inverse-variance-weighted per-timepoint collapse (`--method weighted`) or a pooled fit (`--method pooled`). With
-`--model "linear simple"`, RIANA instead fits turnover in φ = log(1 − θ) space and, for a two-condition design, reports a
-per-protein **Δk** with a shared-variance p-value and Benjamini–Hochberg adjustment — the cross-condition turnover test.
+### Fraction of new protein
+
+At each timepoint RIANA solves θ, the fraction of the peptide that is newly synthesized, from the
+whole isotopomer envelope. An IsoSpec forward model predicts the envelope of old (natural-abundance)
+and fully labeled new peptide; θ is the mixture of the two that best matches the observed envelope.
+The labeled envelope depends on how many labeling sites the peptide has, which RIANA estimates from
+its sequence with a coefficient table (`--coefficients`) and on the precursor enrichment (from the
+SDRF, or `--ria`):
+
+- **Heavy water** (`--label hw`, default): a per-amino-acid table of deuterium-labeling sites.
+  Presets: `deberneh_2025_rss` (recommended), `ilchenko_2019`, `commerford_1983`, and the
+  cell-culture calibrations `alamillo_2025_ac16`, `alamillo_2025_ipsc`, `alamillo_2025_cm`; or a
+  CSV of `(amino_acid, coefficient)`.
+- **^18^O water** (`--label o18`): a peptide-length model. Presets: `juber_2026_o18_ac16` (cell
+  culture) and `rachdaoui_2009_o18` (mouse); or a CSV of `(feature, coefficient)`.
+
+`--fs` restricts the solve to the leading isotopomers (e.g. `3` = m0–m3) when the heavier channels
+carry co-eluting interference.
+
+### Kinetic models
+
+θ over labeling time t is fitted for the turnover rate constant k:
+
+- `simple` (default), one compartment: $\theta(t) = 1 - e^{-kt}$
+- `guan`, two compartments with precursor rate constant $k_p$ (`--kp`), as in Guan et al. 2012
+  ([PMID 22444387](https://pubmed.ncbi.nlm.nih.gov/22444387/)):
+  $$\theta(t) = 1 - \frac{k_p e^{-kt} - k e^{-k_p t}}{k_p - k}$$
+- `fornasiero`, which adds precursor reutilization from protein degradation (`--kr`, `--rp`), as in
+  Fornasiero et al. 2018 ([PMID 30315172](https://pubmed.ncbi.nlm.nih.gov/30315172/)).
+- `calibration`, for mixing experiments: θ against the known labeled proportion, a line through the
+  origin whose slope is the recovery (chosen automatically when the SDRF has a mixing proportion).
+
+Confidence intervals come from a residual bootstrap. With a single labeling time (e.g. a TMT or
+dimethyl experiment) k is solved directly from θ.
+
+### Curation at fit
+
+- `--depth` (default 3): a peptidoform must be seen at this many distinct timepoints.
+- `--min-spep`: drop peptides with too few labeling sites for their envelope to shift measurably
+  (default 8 for D~2~O, 6 for ^18^O).
+- Timepoints whose θ falls outside the physical range (beyond −0.05 or 1.05) are failed solves and
+  are dropped before fitting.
+- Fractions and technical replicates of one sample are summed before θ is solved
+  (`--fraction-collapse`).
+
+
+## Rollup
+
+`rollup` turns peptide fits into protein turnover.
+
+**Attribution.** Only peptides unique to one protein contribute (`--parsimony unique`); `isoform`
+also folds isoform-shared peptides into the canonical entry.
+
+**Admission.** A peptide enters the protein fit if its own fit has R² ≥ 0.8 (`--min-r2`), or, for a
+flat curve with a low R², if k is still tightly estimated (relative uncertainty below `--k-cv`).
+In a multi-condition rollup the gate is applied per condition, and under `linear simple` a peptide
+is used only if it passes in every condition (`--peptide-admission`), so both conditions rest on
+the same peptides.
+
+**Protein k.** Within each biological replicate and timepoint, the peptides' θ are combined by
+inverse-variance weighting, and k is refitted on those points (`--method weighted`; `pooled` fits
+every peptide point instead). The median of the peptides' k is reported alongside.
+
+### Comparing conditions (`linear simple`)
+
+`--model "linear simple"` linearizes the simple model, φ = log(1 − θ) = −k t, and fits a protein's
+conditions together by weighted least squares (weights from the delta method, which keeps the noisy
+near-plateau points from dominating; points past `--phi-limit` are dropped). It reports each
+condition's k and the difference Δk = k(test) − k(reference), with a t-test and Benjamini–Hochberg
+adjustment within each experiment. `--reference-condition` and `--test-condition` choose the pair;
+`--linear-weights wls-var` additionally weights points by their measured precision. `--plot` writes
+the φ-space curves to a PDF per experiment.
+
+### Tissues of the same animals (`--interaction`)
+
+When the experiments are tissues sampled from the same animals, the per-tissue Δk answer "does the
+condition change turnover in this tissue?". `--interaction` asks whether the effect differs between
+tissues. Each protein is fitted across tissues at once, with a random slope per animal: an animal's
+tissues share its overall labeling and turnover, so treating them as independent would overstate
+the evidence. The animal is the SDRF's `characteristics[individual]`, else condition × labeling time
+× biological replicate. Three tests are reported per protein, each BH-adjusted across proteins:
+
+- **Interaction, ratio scale (primary):** is k(test)/k(reference) the same in every tissue? A
+  condition that slows every tissue by the same proportion is not an interaction on this scale.
+  Denominator degrees of freedom by Satterthwaite's method.
+- **Interaction, additive scale:** are the Δk equal across tissues?
+- **Mean Δk** across tissues: the overall condition effect, tested between animals.
+
+The fit matches R's `nlme` and `lme4`/`lmerTest` on reference data. In the desktop app, check
+*Interaction* on the Protein tab.
+
 
 :::{.callout-tip}
 ## Modifications
 
-Variable-modification peptidoforms are integrated at their own m/z and isotopomer envelope. Phospho and side-chain
-(K-)acetyl peptidoforms roll up as distinct proteoforms (e.g. `P12345_pS235`, `P12345_acK106`); constitutive or chemical
-modifications (protein N-terminal acetyl, methionine oxidation) fold into the bare protein, with oxidized and unoxidized
-forms merged onto one turnover curve since oxidation does not reset the labeling clock.
-
+Variable-modification peptidoforms are integrated at their own m/z and isotopomer envelope.
+Phosphorylated and lysine-acetylated peptidoforms roll up as distinct proteoforms (e.g.
+`P12345_pS235`, `P12345_acK106`). Modifications that do not change the protein's identity or reset
+its labeling clock fold into the bare protein: protein N-terminal acetylation, methionine oxidation
+(oxidized and unoxidized forms are merged onto one curve), and TMT/TMTpro tags.
 :::
-
-## All Options
-
-The option lists below are summarized; run `riana <command> --help` for the authoritative, complete set (the
-integrate help groups power-user dials under an **Advanced integration** panel and the match-between-runs options under a
-**Match-between-runs (MBR)** panel).
-
-### RIANA integrate
-
-```
-riana integrate MZML_PATH ID_PATH [OPTIONS]
-
-  MZML_PATH               folder containing the mzML file(s)
-  ID_PATH                 mzTab (DDA) / DIA-NN report.parquet (DIA) with --sdrf, else a Percolator psms.txt
-
-  --sdrf PATH             SDRF sample sheet — the primary, identity-keyed intake path
-  -s, --sample TEXT       sample name for the no-SDRF Percolator path (must end in a number) [time0]
-  -i, --iso TEXT          isotopomers to integrate, comma/space separated [0 1 2 3 4 5]
-  -q, --q_value FDR       integrate only PSMs below this q-value [0.01]
-  -m, --mass_tol PPM      ±ppm mass tolerance; taken from the SDRF when present [10]
-  --peak-rt TEXT          window anchor: apex (default), ms2 (0.9.0 parity), or consensus
-  --integration-half-width MIN|auto   integration half-width in RT min [0.15], or 'auto'
-  -W, --workers N         runs integrated concurrently on the --sdrf path [1]
-  --mbr                   enable gated match-between-runs (DDA path)
-  -o, --out PATH          output directory [.]
-  # Advanced: --baseline, --apex-selection, --apex-search-half-width, --extraction_half_width,
-  #   --smoothing (+ --smoothing-polyorder), --mass_difference, --ppm-alert, --prominence-k,
-  #   --width-rel-height, --apex-n-consensus, --no-rt-check (+ --scan-rt-tol), -w/--write_intensities
-  #   To reproduce 0.9.0: --peak-rt ms2 --integration-half-width 1.0
-```
-
-### RIANA fit
-
-```
-riana fit [RIANA_PATH ...] [OPTIONS]
-
-  RIANA_PATH              one or more <run>_riana.txt files (single-mzML path); or use --manifest
-  --manifest PATH         the project manifest from integrate --sdrf (groups runs into curves)
-  --coefficients TEXT     REQUIRED per-amino-acid Spep table: preset (commerford|ac16|ipsc|cm) or a CSV path
-  -m, --model TEXT        simple | guan | fornasiero [simple]
-  -l, --label TEXT        hw (heavy water, default) | o18 (in progress)
-  --kp / --kr / --rp      fixed precursor parameters for the two-compartment models
-  -q, --q_value FDR       fit only points below this q-value [0.01]
-  -d, --depth INT         fit only peptidoforms seen at >= this many distinct labeling timepoints [3]
-  -r, --ria FLOAT         precursor enrichment (RIA max), e.g. 0.06 for 6% D2O [0.06]
-  --exclude-mbr           drop match-between-runs points before fitting
-  -W, --workers N         process-level parallelism [1]
-  -o, --out PATH          output directory [.]
-```
-
-### RIANA rollup
-
-```
-riana rollup [FIT_DIR] [OPTIONS]
-
-  FIT_DIR                 directory of fit outputs; or use --manifest
-  --manifest PATH         the project manifest (roots outputs at the project dir)
-  --parsimony TEXT        unique (default) | isoform — shared-peptide attribution
-  --method TEXT           weighted (inverse-variance per-timepoint collapse) | pooled
-  -m, --model TEXT        simple | guan | fornasiero | "linear simple"
-  --reference-condition TEXT   reference condition for the linear-simple Δk contrast
-  --phi-limit FLOAT       plateau-truncation threshold in φ-space (linear simple only) [-4]
-  --min-peptides / --min-points / --min-r2     admission gates
-  -W, --workers N         process-level parallelism [1]
-  -o, --out PATH          output directory [.]
-```

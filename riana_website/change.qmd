@@ -5,11 +5,48 @@ keywords: "Protein turnover, Proteomics, Mass spectrometry"
 abstract: "This page provides the documentation for the RIANA package, which is a tool for the analysis of stable isotope labeling experiments for protein turnover measurements."
 description: "RIANA enables protein turnover data analysis from mass spectrometry-based proteomics experiments using metabolic heavy water (D2O) labeling, with DDA (quantms) and DIA (DIA-NN) identification intake."
 author: "Edward Lau"
-date: "`r Sys.Date()`"
+date: last-modified
 image-caption: "RIANA logo"
 image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 ---
+
+## Update v1.2.0 (in development)
+
+The full list is in the repository `CHANGELOG.md`.
+
+* **Single-timepoint and multiplexed labeling.** TMT/TMTpro (channels share one MS1 peak, so a
+  file's channels are measured together) and dimethyl channels (separate samples, read from the
+  SDRF's `comment[label]`). With one labeling time, k is solved directly from θ.
+* **Weighted Δk model (changes results).** `rollup --model "linear simple"` now fits by weighted
+  least squares; the unweighted fit gave too many false positives. `--linear-weights ols` restores
+  it for comparison, and `wls-var` additionally weights points by their measured precision.
+  `--test-condition` names the pair to compare when there are more than two conditions.
+* **Several tissues or strata in one project.** `integrate --experiment-column` (*Experiment from*
+  in the app) splits runs into experiments by an SDRF column; Δk is BH-adjusted within each
+  experiment (changes results for multi-experiment projects); `rollup --plot` writes the φ-space
+  curves to PDF.
+* **Interaction with a random animal effect.** `rollup --interaction` (the Protein tab's
+  *Interaction* option) tests whether a condition's effect differs between tissues of the same
+  animals. Animals are read from `characteristics[individual]`.
+* **Curation (changes results).** Rollup gates are applied per condition, and under `linear simple`
+  a peptide is used only if it passes in every condition (`--peptide-admission`). Out-of-range θ
+  points are dropped before fitting (`--no-fs-rail-drop` restores the old behaviour). Peptides with
+  non-standard residues (U, O, B, Z, J, X) are dropped at intake.
+* **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
+
+## Update v1.1.0
+
+* **^18^O water fitting** (`--label o18`) with its own labeling tables.
+* **Newer D~2~O labeling-site tables;** `deberneh_2025_rss` is the recommended default.
+* **Default curation (changes results):** a minimum number of labeling sites at fit (`--min-spep`,
+  8 for D~2~O, 6 for ^18^O) and a rollup peptide gate of R² ≥ 0.8 with a rescue for flat curves whose
+  k is still well determined. `--min-spep 0 --min-r2 0` and `--coefficients commerford_1983`
+  reproduce 1.0.0.
+* A calibration model for labeled/unlabeled mixing experiments, and LC fractions combined before
+  fitting.
+* Desktop app: display a project's saved results, progress bars, faster tables; a different output
+  folder on the manifest path forks a copy of the project.
 
 ## Update v1.0.0
 
