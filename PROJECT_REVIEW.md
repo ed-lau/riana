@@ -238,8 +238,58 @@ evidence here and close the item.
 ##### Slow precursor — per-point envelope solve and the fit/rollup model redesign
 
 **Status.** Design agreed with the user 2026-11-11 from the feasibility study
-(`reports/2026-11-11_non_first_order_linearization_feasibility.md`). Productionize **after** the
-report's §6 checks on a real slow-precursor dataset finish. Not built.
+(`reports/2026-11-11_non_first_order_linearization_feasibility.md`). **Fit stage BUILT
+2026-11-12** (items 1–3, 3a, 3b, the item-4 k_p switch and the item-6 header):
+`riana/algorithms/precursor.py`, `fit --kp`, SDRF `characteristics[precursor rate constant]` →
+manifest `precursor_rate_constant`. Choices made while building:
+- *Var(f).* Not the envelope Jacobian of item 3: the peptide's label-content residual-bootstrap
+  band (as θ's band today) divided by the gain ∂A/∂f at f̂. **But `wls-var` on f is
+  miscalibrated** (Monte Carlo below) — the rollup on f uses `wls`; items 3 and 7 are revised.
+- *Header:* `fs_basis theta|f|mixed` and `k_p_applied` per curve (the config's own `k_p` line is
+  the deprecated guan/fornasiero parameter).
+- *Scope:* D₂O only; `fs_ds` not computed on f; a curve's runs must agree on k_p; `--kp inf`
+  forces the steady path; never applied to calibration runs or under guan/fornasiero.
+- *Cost:* same as the θ fit (convolution envelopes per peptide × timepoint, not cached run-wide).
+- On the real dataset k, R² and gate yield matched the prototype (k within ~3 %, R² ρ 0.998).
+
+**Remaining:** rollup stage (7: **`wls` on f, `wls-var` refused there**; `linear` rename and
+default), deprecations (5) and the `exponential` name (4), GUI, docs, validation before merge.
+
+**Monte Carlo of the Δk / interaction tests (2026-11-12, user request).**
+`tests/benchmark/bench_rising_null.py` simulates envelopes (generic in-vivo design: 2 conditions ×
+3 tissues of the same animals, one animal per condition × day, days 0–84) with per-peptide noise
+levels, ±10 % labeling-site error per peptide, per-animal enrichment (5 %) and turnover (15 %)
+variation, and 5 % interference, runs the shipped `riana fit` / `riana rollup`, and reports
+rejection rate, Δk coverage and log₂-ratio recovery over true ratios 1 / 1.25 / 1.5 / 2 (the user's
+R simulation's grid); `eval_rising_variance.py` re-fits the same collapsed cells under candidate
+variance models. Findings:
+- **f + `wls-var` is anti-conservative**: null rejection 0.23 at α 0.05 (interaction mean Δk
+  0.18), coverage 0.67–0.78. The per-peptide band ÷ the early gain spans ~1000× over a series and
+  is misspecified in time (it omits variance shared by a cell's peptides); with weights that
+  extreme the scale no longer fits the few cells that carry the slope.
+- **f + `wls`** under a slow precursor: null 0.03–0.05 in every k range, coverage 0.91–0.96,
+  log₂ ratio recovered (1.5 → 0.60 vs 0.58; 2 → 1.02); power 0.18 / 0.50 / 0.80 at ratios
+  1.25 / 1.5 / 2. The θ route on the same data: Δk biased −53…−68 %, coverage 0.15–0.49.
+- **The shipped θ test is anti-conservative too** (instant precursor, all nuisance on: null 0.15;
+  0.21 for k < 0.01). Two rollup mechanisms, each isolated in the simulation:
+  1. *Per-condition collapse weights.* Each peptide's weight in the inverse-variance collapse is
+     its own band, estimated separately per condition; with peptide-specific offsets (site-table
+     errors) the conditions mix the same peptides differently, a slope-like Δk under the null.
+     Sharing each peptide's weight across conditions: 0.14 → 0.03 (site error alone).
+  2. *Variance growing with time:* between-animal turnover variation adds φ-variance ∝ (k·t)²,
+     which the (1 − θ̂)² model lacks — late, high-leverage points are noisier than the pooled scale.
+     A pooled two-term variance function per experiment, Var = c·Var̂/(1 − θ̂)² + s·φ̂², with shared
+     collapse weights: null 0.051 (θ, instant) / 0.034 (f, slow), power kept (ratio 1.5: 0.60).
+     **But on real data it was unstable** (it erased most of one dataset's calls) — not
+     production-ready; it belongs with the Δk residual-variance moderation item.
+  The size of both depends on the simulated nuisance (site error, animal variation), which should
+  be calibrated against real data (within-protein k spread, the interaction's σ_animal) before
+  the shipped θ result is restated. With envelope noise only the θ test sits at ~0.075 (the
+  July WLS report's 0.062–0.070).
+- On a real dataset, shared collapse weights changed the θ calls little (−4 %).
+- *Also from the simulation:* the 3b rule dropping reads at or above the precursor ceiling is a
+  one-sided selection for fast proteins early in the series (k biased low there) — revisit
+  (cap instead of drop).
 
 **Why.** Without a priming dose the D₂O precursor rises over days. Today's per-point θ assumes
 every new molecule carries the plateau enrichment, so under a rising precursor θ reads below the
@@ -289,9 +339,9 @@ rollup, linear Δk, interaction) runs unchanged on f.
    early cells then get full weight: in the prototype the mean-Δk test found almost nothing and the
    animal variance collapsed; dropping the early points restored it (but cost per-experiment Δk
    power, so the fix is the weights, not dropping points). Pass (1 − f̂)²/Var(f) into the mixed
-   model (nlme `varFixed` form). **DONE 2026-11-12:** the interaction follows `--linear-weights`
-   (`wls-var` = the per-experiment fit's moderated weights, from the same OLS first pass); with f
-   input, rollup must run with `wls-var`. *Confirmed beforehand (local test):* the mixed model with wls-var weights (moderated Var as
+   model (nlme `varFixed` form). **DONE 2026-11-12:** the interaction follows `--linear-weights`.
+   **Superseded by the Monte Carlo (fit-stage status above): `wls-var` on f is anti-conservative
+   (the interaction too); f uses `wls`.** *Confirmed beforehand (local test):* the mixed model with wls-var weights (moderated Var as
    `fit_linear_deltak` does) brought the mean-Δk test back above θ's call count, with the animal
    variance back at θ's level. With the shipped weights the earliest cells carried nearly all of the
    weighted residual sum of squares; with wls-var, a small share.
@@ -382,12 +432,13 @@ rollup, linear Δk, interaction) runs unchanged on f.
    Results-affecting: the protein output becomes per-condition rows with Δk columns;
    `--peptide-admission auto` resolves to `all` (fewer peptides per protein in multi-condition
    runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input
-   (`# fs_basis f`, any finite k_p) the line and the interaction **require** `wls-var` (3): rollup
-   uses it by default there and errors on an explicit `wls`/`ols`.
+   (`# fs_basis f`, any finite k_p) the line and the interaction use **`wls`**; rollup errors on
+   `wls-var` there (miscalibrated, Monte Carlo above).
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
-**Validation before merge.** The report's §6 checks on real data (within-protein agreement,
+**Validation before merge.** Type-I of the Δk and interaction tests on f — done (above): `wls`
+calibrated, `wls-var` not; the interaction under the chosen weights still to re-check. The report's §6 checks on real data (within-protein agreement,
 residual shape over time, Δk and interaction); the simulation benches (k bias ≤ 1 %, coverage) —
 **add an early-timepoint baseline-bias arm** (a constant +0.01–0.05 θ offset), which the original
 benches lacked and which real data have; the instant-precursor path byte-identical to today; the
