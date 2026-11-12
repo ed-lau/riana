@@ -11,9 +11,11 @@ Two layers:
 2. M3 Week 4 solver layer: ``get_envelope``, ``peptide_spep_loss``,
    ``solve_fs_d2o`` — lifted from the M2 benchmark's
    ``tests/benchmark/_helpers/forward_model.py``. They compose on top of
-   ``get_peptide_distribution(label="D2O")`` and use the integer-nominal ±0.5
-   envelope-binning convention (the M2 oracle's choice; validated by
-   ``bench_fs_recovery``).
+   ``get_peptide_distribution(label="D2O")`` and assign IsoSpec peaks to
+   isotopomers by their offset from the monoisotopic mass
+   (:func:`_isotopomer_index`). Until 2026-11-11 they used the M2 oracle's
+   integer-nominal ±0.5 windows, which misassign peaks for peptides whose
+   monoisotopic mass has a fractional part near 0.5.
 
 The M2 benchmark copy in ``_helpers/forward_model.py`` **stays frozen** as
 the regression oracle — it must not import this module. The two are
@@ -185,25 +187,39 @@ def clear_envelope_cache() -> None:
     _init_width_cache.clear()
 
 
-def get_envelope(dist: IsoSpecPy.Iso, pep_mass: float, n: int = 8) -> list[float]:
-    """Bin an IsoSpecPy distribution into ``n`` integer-nominal isotope peaks.
+def _isotopomer_index(
+    dist: IsoSpecPy.Iso, pep_mass: float,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.int64]]:
+    """``(masses, probs, index)`` of an IsoSpecPy distribution, ``index`` being each
+    peak's isotopomer number ``round(mass − pep_mass)``.
 
-    ``use_nominal_masses=True`` in :func:`get_peptide_distribution` returns
-    probability-weighted average exact masses per nominal integer bin, so
-    we bin around ``round(pep_mass) + iso`` with ±0.5 tolerance — captures
-    every peak regardless of mass defect.
-
-    This is the M2 convention (validated by ``bench_fs_recovery``). The
-    older ``core/fsynthesis.py`` used ``H_MASS``-step ±0.1, which broke for
-    peptides where the mass defect pushes the apex outside the narrow
-    tolerance. The new solver standardizes on integer-nominal ±0.5.
+    IsoSpec returns **exact** masses (the custom isotope tables bypass
+    ``use_nominal_masses``), so peaks must be assigned by their offset from the
+    monoisotopic mass. The pre-2026-11-11 code binned them into ±0.5 Da windows
+    around ``round(pep_mass) + iso``; when the monoisotopic mass has a fractional
+    part near 0.5 (≈ 0.47–0.50), the isotope peaks — each ~1.0034 Da (¹³C) or
+    ~1.0063 Da (²H) apart — drift across the window edges and land in the wrong
+    channel (≈ 1–2 % of peptides). The offset is within ~0.02 Da of an integer for
+    any realistic isotopomer, so rounding it is exact. ``pep_mass`` must be the
+    monoisotopic mass of the same peptidoform (mods included), as every caller
+    passes.
     """
-    nom_mass_0 = round(pep_mass)
-    return [
-        sum(p for m, p in zip(dist.masses, dist.probs)
-            if abs(m - (nom_mass_0 + iso)) <= 0.5)
-        for iso in range(n)
-    ]
+    masses: npt.NDArray[np.float64] = np.fromiter(dist.masses, dtype=np.float64)
+    probs: npt.NDArray[np.float64] = np.fromiter(dist.probs, dtype=np.float64)
+    index: npt.NDArray[np.int64] = np.rint(masses - pep_mass).astype(np.int64)
+    return masses, probs, index
+
+
+def get_envelope(dist: IsoSpecPy.Iso, pep_mass: float, n: int = 8) -> list[float]:
+    """Abundance of isotopomers m0..m{n−1} of an IsoSpecPy distribution.
+
+    Each peak is assigned to isotopomer ``round(mass − pep_mass)``
+    (:func:`_isotopomer_index`); the abundances of each isotopomer are summed.
+    """
+    _masses, probs, idx = _isotopomer_index(dist, pep_mass)
+    keep = (idx >= 0) & (idx < n)
+    env = np.bincount(idx[keep], weights=probs[keep], minlength=n)[:n]
+    return [float(x) for x in env]
 
 
 def _get_init_env(sequence: str, pep_mass: float,
@@ -499,34 +515,22 @@ def _spep_upper_bound(sequence: str) -> int:
 
 
 def _binned_envelope(dist: IsoSpecPy.Iso, pep_mass: float, n: int) -> tuple[list[float], list[float]]:
-    """``(avg_mass, abundance)`` per integer-nominal bin ``round(pep_mass)+iso``.
+    """``(avg_mass, abundance)`` per isotopomer m0..m{n−1}.
 
-    ``avg_mass`` is the abundance-weighted average exact mass within the ±0.5 bin
-    (the averaged-isotopolog accurate mass — the true centroid of the isotopomer
-    cluster); ``abundance`` is the summed probability. An empty bin gives
-    ``(nan, 0.0)``. Companion to :func:`get_envelope`, which returns only the
-    abundances.
+    Peaks are assigned to isotopomer ``round(mass − pep_mass)``
+    (:func:`_isotopomer_index`). ``avg_mass`` is the abundance-weighted average
+    exact mass of the isotopomer's peaks (the averaged-isotopolog accurate mass —
+    the true centroid of the isotopomer cluster); ``abundance`` is the summed
+    probability. An empty isotopomer gives ``(nan, 0.0)``. Companion to
+    :func:`get_envelope`, which returns only the abundances.
     """
-    masses = list(dist.masses)
-    probs = list(dist.probs)
-    nom0 = round(pep_mass)
-    out_m: list[float] = []
-    out_p: list[float] = []
-    for iso in range(n):
-        center = nom0 + iso
-        wsum = 0.0
-        msum = 0.0
-        for m, p in zip(masses, probs):
-            if abs(m - center) <= 0.5:
-                wsum += p
-                msum += m * p
-        if wsum > 0:
-            out_m.append(msum / wsum)
-            out_p.append(wsum)
-        else:
-            out_m.append(float("nan"))
-            out_p.append(0.0)
-    return out_m, out_p
+    masses, probs, idx = _isotopomer_index(dist, pep_mass)
+    keep = (idx >= 0) & (idx < n)
+    wsum = np.bincount(idx[keep], weights=probs[keep], minlength=n)[:n]
+    msum = np.bincount(idx[keep], weights=(masses * probs)[keep], minlength=n)[:n]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        avg = np.where(wsum > 0, msum / np.where(wsum > 0, wsum, 1.0), np.nan)
+    return [float(x) for x in avg], [float(x) for x in wsum]
 
 
 def adaptive_channel_masses(
@@ -549,7 +553,7 @@ def adaptive_channel_masses(
     heavily-labelled ones m0-m8 — instead of a one-size fixed set.
 
     Each channel's **mass is the init (unlabeled) averaged-isotopolog mass** of
-    the nominal bin ``round(pep_mass)+iso`` — the θ=0 reference. (The init/final
+    isotopomer ``iso`` (:func:`_isotopomer_index`) — the θ=0 reference. (The init/final
     midpoint was considered as a drift-robust target but rejected for v1: it
     overcorrects when labelling is light — low coefficients / low θ keep the real
     peak near init — and anchoring at init makes the recorded ``iso{N}_ppm_error``
@@ -622,7 +626,7 @@ def init_channel_masses(
 
     The θ=0 reference for the orthogonal mass-defect θ (DeuteRater ΔS / Δmass,
     v1.1.0 item 1). Each entry is the abundance-weighted average exact mass of the
-    nominal bin ``round(pep_mass)+iso`` in the natural-abundance envelope — i.e.
+    isotopomer ``iso`` in the natural-abundance envelope — i.e.
     the *centroid* the labelled peak walks away from as deuterium incorporates.
 
     This is the "init half" of :func:`adaptive_channel_masses` (which documents

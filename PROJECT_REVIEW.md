@@ -286,6 +286,14 @@ FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precac
 - **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** (opt-in `--linear-weights wls-var`; see `CHANGELOG.md`).
 - **Cross-proportion-stable peak picker** (Phase C v2) — the `apex_search_half_width`/`consensus`
   levers for label-invariant boundary stability are untested in production (§2c / M3 carry-over).
+- **Labeled envelopes by convolution (performance; later).** For D₂O, the labeled envelope is the
+  natural envelope convolved with Binomial(labeling sites, enrichment) in isotopomer units (¹⁸O: steps
+  of 2); it matches correctly binned IsoSpec within 10⁻³ (2026-11-11). It would replace an IsoSpec call
+  per (peptide, enrichment) with a binomial and a short convolution — what a rising-precursor envelope
+  solve needs, since it mixes many enrichments
+  (`reports/2026-11-11_non_first_order_linearization_feasibility.md`). Drawback: it gives channel
+  abundances only, not each channel's exact (averaged-isotopolog) mass, so the mass-defect θ and
+  accurate-mass work for D₂O and ¹⁸O keeps IsoSpec.
 - **Robust observed-vs-IsoSpec matcher** — soft-trim / per-channel-SNR / Huber downweighting of a
   contaminated high channel; the A4 remainder and the research-grade endgame. Deferred.
 - **Genuine per-peptide channel optimizer** — replace the binary `--fs auto` init-width threshold

@@ -171,16 +171,20 @@ def get_peptide_distribution_o18(
 
 def get_envelope(dist, pep_mass: float, n: int = 8) -> list[float]:
     """
-    Bin IsoSpecPy distribution (use_nominal_masses=True) into n isotope peaks
-    around round(pep_mass)+iso with ±0.5 tolerance, so all peaks are captured
-    regardless of mass defect.
+    Abundance of isotopomers m0..m{n-1}: each IsoSpec peak (exact mass) is
+    assigned to isotopomer round(mass - pep_mass), pep_mass being the
+    monoisotopic mass.
     """
-    nom_mass_0 = round(pep_mass)
-    return [
-        sum(p for m, p in zip(dist.masses, dist.probs)
-            if abs(m - (nom_mass_0 + iso)) <= 0.5)
-        for iso in range(n)
-    ]
+    # Assign each peak to isotopomer round(mass - pep_mass). IsoSpec returns
+    # exact masses; the earlier ±0.5 windows around round(pep_mass)+iso put
+    # peaks in the wrong channel when the monoisotopic mass has a fractional
+    # part near 0.5 (fixed 2026-11-11, alongside riana.algorithms.isotope_dist).
+    out = [0.0] * n
+    for m, p in zip(dist.masses, dist.probs):
+        iso = int(round(m - pep_mass))
+        if 0 <= iso < n:
+            out[iso] += p
+    return out
 
 
 # ── Cached envelopes + per-peptide Spep loss ─────────────────────────────────

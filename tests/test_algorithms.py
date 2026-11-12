@@ -301,6 +301,47 @@ def test_get_envelope_returns_n_bins_summing_to_distribution_prob():
     assert sum(env) > 0.95
 
 
+# Monoisotopic mass 2952.4963: fractional part 0.496, at the edge of a ±0.5 window
+# around round(M) + k. The pre-2026-11-11 binning put its m2 peaks into m3 (natural
+# envelope [0.17, 0.28, 0.04, 0.23, …]).
+_EDGE_SEQ = "YLYEIARRHPYFYAPELLYYANK"
+
+
+def test_envelope_binning_robust_to_mass_near_half_integer():
+    """Peaks are assigned by offset from the monoisotopic mass, so a peptide whose
+    mass sits near a half-integer gets a smooth envelope, and the result does not
+    depend on where the anchor falls within ±0.2 Da."""
+    from scipy.stats import binom
+
+    pep_mass = _peptide_mass(_EDGE_SEQ)
+    assert abs(pep_mass % 1 - 0.5) < 0.01
+    nat = iso.get_peptide_distribution(_EDGE_SEQ, label="D2O")
+    env = np.asarray(iso.get_envelope(nat, pep_mass, n=8))
+    assert env[1] > env[0] and env[2] > 0.2 and env[2] > env[3] > env[4]
+    for shift in (-0.2, 0.2):
+        np.testing.assert_allclose(iso.get_envelope(nat, pep_mass + shift, n=8), env)
+    # Labeled envelope = natural ⊛ Binomial(sites, p): each ²H adds one isotopomer.
+    sites, p = 39, 0.04
+    lab = iso.get_peptide_distribution(_EDGE_SEQ, deuterium_enrichment_level=p,
+                                       label="D2O", num_labeling_sites=sites)
+    full = np.asarray(iso.get_envelope(nat, pep_mass, n=16))
+    conv = np.convolve(full / full.sum(), binom.pmf(np.arange(sites + 1), sites, p))[:6]
+    got = np.asarray(iso.get_envelope(lab, pep_mass, n=16))
+    np.testing.assert_allclose(got[:6] / got.sum(), conv, atol=2e-3)
+
+
+def test_binned_envelope_masses_step_by_one_isotope():
+    """Averaged-isotopolog masses are one isotope apart (no empty or merged
+    channels) and the abundances match get_envelope."""
+    pep_mass = _peptide_mass(_EDGE_SEQ)
+    nat = iso.get_peptide_distribution(_EDGE_SEQ, label="D2O")
+    masses, probs = iso._binned_envelope(nat, pep_mass, 6)
+    assert not np.isnan(masses).any()
+    assert masses[0] == pytest.approx(pep_mass, abs=1e-3)
+    assert np.all((np.diff(masses) > 0.99) & (np.diff(masses) < 1.02))
+    np.testing.assert_allclose(probs, iso.get_envelope(nat, pep_mass, n=6))
+
+
 def test_envelope_cache_idempotent_under_clear():
     iso.clear_envelope_cache()
     pep_mass = _peptide_mass(_TEST_SEQ)

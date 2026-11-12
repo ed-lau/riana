@@ -22,8 +22,8 @@ linear model. Precedent: Topograph (Hsieh et al., *MCP* 2012;11(11):1468–74,
 - **The back-calculation must be made from the isotope envelope, not from Riana's θ.** θ is solved
   as a mixture of the unlabeled and the *plateau*-labeled envelope. Molecules made while the
   precursor was still rising do not fit that two-envelope picture: θ overstates their label content
-  by +17 to +36 % over the first ten days of a slow-precursor design (+55 to +94 % for one peptide
-  in the test set), varying by peptide. Inverting θ through the Guan formula therefore overestimates
+  by +17 to +36 % over the first ten days of a slow-precursor design, more for peptides with more
+  labeling sites. Inverting θ through the Guan formula therefore overestimates
   k by **+5 to +42 %**, peptide-dependent. **This bias also affects Riana's current
   `fit --model guan` / `fornasiero` on D₂O data.**
 - **The envelope-level route works.** Solving each timepoint's envelope for f under the kinetic
@@ -151,11 +151,17 @@ p_max = 0.04, k_p = 1/14 per day).
 
 **θ / A(t) − 1** (Riana's θ against the Guan label content):
 
+> **Corrected 2026-11-11.** The first version of this table reported +55 to +94 % for
+> YLYEIARRHPYFYAPELLYYANK. That was a binning bug in Riana's envelope code, not physics: its
+> monoisotopic mass (2952.496) sits at the edge of the ±0.5 Da windows the code used, so its isotope
+> peaks landed in the wrong channels. The binning is fixed (CHANGELOG, 2026-11-11) and the table
+> re-run; the other peptides were unaffected or changed by ≤ 1 point.
+
 | Peptide (sites) | day 1 | day 5 | day 10 | day 31 | day 79 |
 |---|---|---|---|---|---|
-| AEFVEVTK (15) | +21 % | +23 % | +18 % | +6 to 8 % | +0.3 to 2 % |
+| AEFVEVTK (15) | +20 % | +22 % | +17 to 18 % | +6 to 8 % | +0.3 to 2 % |
 | DDPHACYSTVFDKLKHLVDEPQNLIK (43) | +31 % | +34 % | +27 to 30 % | +8 to 14 % | +0.4 to 4 % |
-| YLYEIARRHPYFYAPELLYYANK (39) | +93 % | +79 to 82 % | +55 to 63 % | +13 to 25 % | +0.6 to 6 % |
+| YLYEIARRHPYFYAPELLYYANK (39) | +27 % | +30 to 31 % | +24 to 26 % | +7 to 12 % | +0.4 to 3 % |
 
 Fixes compared:
 
@@ -163,8 +169,9 @@ Fixes compared:
   day 1 and −30 to −41 % on day 10.
 - **A per-peptide closed-form law** replacing linear label content with m0 depletion,
   (1 − (1 − p_max P)ⁿ)/(1 − (1 − p_max)ⁿ), brings the short peptides within 2–5 % from day 3.
-  It leaves −15 % (QTALVELLKHKPK) and −34 % (the 43-site peptide) on day 1, still −17 % on day 10
-  for the latter (`sim_envelope_fix.py`), because the solve uses m0–m5, not m0 alone.
+  It leaves −15 % (QTALVELLKHKPK) and −33 to −34 % (the 39- and 43-site peptides) on day 1, still
+  −16 to −17 % on day 10 for those (`sim_envelope_fix.py`), because the solve uses m0–m5, not m0
+  alone.
 - **A per-point envelope solve** (`sim_envelope_noise.py`): for each timepoint, find the k that
   makes the kinetic forward model's envelope match the observed one. Then f_i = 1 − e^{−k_i t},
   φ_i = −k_i t, and the line is fitted with weights from each point's information,
@@ -196,6 +203,13 @@ turnover at rate k it survives to t with weight k·e^{−k(t−s)}; a fraction e
 
   Correcting with the enrichment at the sampling day (last column) therefore over-states how
   labeled the new molecules are, and under-estimates f.
+- *No first pass.* The k inside the integral is the unknown being solved at that point, not a value
+  carried over from a peptide-level fit. Each candidate k implies its own mix of enrichments, and
+  the solve keeps the k whose predicted envelope matches the observed one. Neither a Guan fit nor θ
+  enters, so a biased first-pass k cannot propagate. Every point yields its own k_i; under
+  first-order turnover they agree, and the line through the φ_i = −k_i t_i is what tests that. The
+  only second step is the line's weights (below), evaluated at a pilot k from an unweighted line
+  through the same φ_i; an error in the pilot changes the weights, not what each point estimates.
 - *It reduces to today's solve.* With an instant precursor (p(s) = p_max for s > 0) the integral is
   (1 − e^{−kt})·E(p_max): today's mixture with θ = f.
 - *It is cheap.* E(p) is computed once per peptide on a grid of enrichments (about 80 cached IsoSpec

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Isotope envelopes — peaks assigned to the wrong isotopomer near half-integer masses — 2026-11-11
+
+#### Fixed
+
+- **Envelope binning (RESULTS-AFFECTING for ~1–2 % of peptides).** `get_envelope` and
+  `_binned_envelope` (`riana/algorithms/isotope_dist.py`) summed IsoSpec peaks within ±0.5 Da of
+  round(monoisotopic mass) + k, on the assumption that IsoSpec returned nominal masses; it returns
+  exact masses. When a peptide's monoisotopic mass has a fractional part near 0.5 (about 0.47–0.50),
+  its isotope peaks — about 1.0034 Da apart per ¹³C and 1.0063 Da per ²H — drift across the window
+  edges and land in the wrong isotopomer. YLYEIARRHPYFYAPELLYYANK (2952.496), for example, had a
+  natural envelope of [0.17, 0.28, 0.04, 0.23, …].
+  - *Now:* each peak is assigned to isotopomer round(mass − monoisotopic mass), which matches an
+    independent binomial-convolution model within 10⁻³.
+  - *Scope:* on 3,000 ATF6 peptides, 1.1 % (natural envelope) and 1.7 % (labeled at 4.6 %) had a
+    channel error above 0.005, most above 0.02. For those peptides it affected θ and the labeling-site
+    fit (D₂O and ¹⁸O), the `--iso auto` channel masses, and the averaged-isotopolog masses behind the
+    mass-defect θ check. Other peptides are unchanged.
+  - The benchmark oracles (`tests/benchmark/_helpers/forward_model.py`, `o18_forward_model.py`) used
+    the same windows and are fixed too. New regression tests use a half-integer-mass peptide.
+  - `reports/2026-11-11_non_first_order_linearization_feasibility.md` is corrected: its one outlier
+    peptide was this bug.
+
 ### Documentation refresh — 2026-11-11
 
 #### Changed
