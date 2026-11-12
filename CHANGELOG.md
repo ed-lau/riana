@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Interaction model follows `--linear-weights` — 2026-11-12
+
+#### Changed
+
+- **`rollup --interaction --linear-weights wls-var` now weights the joint fit by each point's
+  precision** (RESULTS-AFFECTING for that flag combination only). The mixed model always used the
+  `wls` weight (1 − θ̂)², whatever `--linear-weights` said. Under `wls-var` it now uses
+  (1 − θ̂)²/Ṽar(θ), with the collapse's `fs_var` moderated exactly as the per-experiment fit does
+  (same robust-fitFDist prior over every point), so at a singular fit the two give identical
+  slopes. Without per-point variances it falls back to `wls`, as the per-experiment fit does.
+  - *Unchanged:* the default (`wls`) is byte-identical. `ols`, the per-experiment audit path, has
+    no interaction counterpart and keeps `wls` (logged).
+  - *Why:* points whose precision varies systematically with time — the precursor-corrected
+    fraction new planned for a rising precursor, where early points carry little information —
+    otherwise dominate the residual variance; in a prototype the animal variance collapsed and the
+    condition test lost almost all its calls.
+  - `fit_interaction(weights=...)`, `riana.gui.tasks.run_interaction(weights=...)` (the GUI keeps
+    `wls`, as its rollup does). Tests: `tests/test_interaction_model.py`.
+
 ### Isotope envelopes — peaks assigned to the wrong isotopomer near half-integer masses — 2026-11-11
 
 #### Fixed

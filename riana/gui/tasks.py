@@ -397,6 +397,7 @@ def run_interaction(
     phi_limit: float = -4.0,
     workers: int = 1,
     progress_queue=None,
+    weights: str = "wls",
 ) -> tuple[pd.DataFrame, str]:
     """The experiment × condition interaction over the collapsed rollup points.
 
@@ -410,9 +411,10 @@ def run_interaction(
     from riana.core.interaction_model import fit_interaction
 
     table = fit_interaction(
-        rollup_fractions.rename(columns={"fs": "theta"}),
+        rollup_fractions.rename(columns={
+            "fs": "theta", "fs_var": "theta_var", "fs_df": "theta_df"}),
         reference_condition=reference_condition, test_condition=test_condition,
-        phi_limit=float(phi_limit), workers=int(workers),
+        phi_limit=float(phi_limit), weights=str(weights), workers=int(workers),
         progress_callback=_queue_progress_callback(progress_queue))
     return table, str(table.attrs.get("animal_key", "composite"))
 

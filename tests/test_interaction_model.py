@@ -283,3 +283,81 @@ def test_singular_fit_is_kept_as_the_weighted_least_squares_solution():
     for _, r in out.iterrows():
         assert r.k_reference == pytest.approx(lin[(r.experiment, "control")], rel=1e-9)
         assert r.k_test == pytest.approx(lin[(r.experiment, "KO")], rel=1e-9)
+
+
+# --- weights: the interaction follows the per-experiment fit's --linear-weights ---------
+
+
+def _with_var(d: pd.DataFrame, seed: int = 3) -> pd.DataFrame:
+    """Per-point variances spread over an order of magnitude, as the collapse writes."""
+    rng = np.random.default_rng(seed)
+    return d.assign(theta_var=10 ** rng.uniform(-4.5, -3.5, len(d)),
+                    theta_df=rng.uniform(4.0, 20.0, len(d)))
+
+
+def test_wls_var_weights_match_the_per_experiment_fit():
+    """At a singular fit the joint model reduces to the per-experiment weighted fits, so
+    its slopes must equal fit_linear_deltak's under the same scheme — same moderation
+    prior, same per-point weights (1 − θ̂)²/Ṽar."""
+    from riana.core.linear_model import fit_linear_deltak
+    d = _with_var(split_plot_points({"A": 0.08, "B": 0.06}, {"A": 0.8, "B": 0.9},
+                                    sd_animal=0.0, seed=0))
+    out = fit_interaction(d, reference_condition="control", test_condition="KO",
+                          weights="wls-var")
+    assert (out.sigma_animal == 0.0).all()
+    lin = fit_linear_deltak(d, reference_condition="control", weights="wls-var").set_index(
+        ["experiment", "condition"]).k_deg
+    wls = fit_linear_deltak(d, reference_condition="control").set_index(
+        ["experiment", "condition"]).k_deg
+    assert not np.allclose(lin.to_numpy(), wls.to_numpy(), rtol=1e-6)   # weights matter here
+    for _, r in out.iterrows():
+        assert r.k_reference == pytest.approx(lin[(r.experiment, "control")], rel=1e-9)
+        assert r.k_test == pytest.approx(lin[(r.experiment, "KO")], rel=1e-9)
+
+
+def test_wls_var_discounts_imprecise_points():
+    """Biased points that carry a large variance (the early points of a precursor-corrected
+    series) pull the wls fit but not the wls-var fit."""
+    d = split_plot_points(PARITY_K, PARITY_RATIO, seed=7)
+    rng = np.random.default_rng(5)
+    d = d.assign(theta_var=1e-4 * rng.uniform(0.8, 1.2, len(d)), theta_df=10.0)
+    clean = _protein(fit_interaction(d, reference_condition="control",
+                                     test_condition="KO", weights="wls-var"))
+    bad = (d.condition == "KO") & (d.labeling_time <= 3.0)
+    dc = d.copy()
+    dc.loc[bad, "theta"] += 0.3
+    dc.loc[bad, "theta_var"] = 0.1
+    wls, var = (_protein(fit_interaction(dc, reference_condition="control",
+                                         test_condition="KO", weights=w))
+                for w in ("wls", "wls-var"))
+    assert abs(wls.mean_delta_k - clean.mean_delta_k) > 0.005
+    assert abs(var.mean_delta_k - clean.mean_delta_k) < 0.1 * abs(wls.mean_delta_k
+                                                                  - clean.mean_delta_k)
+
+
+def test_wls_var_without_variances_and_ols_fall_back_to_wls(caplog):
+    d = split_plot_points(PARITY_K, PARITY_RATIO, seed=7)
+    base = fit_interaction(d, reference_condition="control", test_condition="KO")
+    with caplog.at_level("INFO", logger="riana.core.interaction_model"):
+        no_var = fit_interaction(d, reference_condition="control", test_condition="KO",
+                                 weights="wls-var")
+        ols = fit_interaction(d, reference_condition="control", test_condition="KO",
+                              weights="ols")
+    pd.testing.assert_frame_equal(base, no_var)
+    pd.testing.assert_frame_equal(base, ols)
+    assert "no theta_var/theta_df" in caplog.text and "audit path" in caplog.text
+
+
+def test_wls_var_workers_and_bad_scheme():
+    from riana.exceptions import DataError
+    d = _with_var(split_plot_points({"A": 0.08, "B": 0.06, "C": 0.07},
+                                    {"A": 0.7, "B": 0.9, "C": 0.8},
+                                    proteins=("P1", "P2", "P3"), seed=8))
+    serial = fit_interaction(d, reference_condition="control", test_condition="KO",
+                             weights="wls-var")
+    pooled = fit_interaction(d, reference_condition="control", test_condition="KO",
+                             weights="wls-var", workers=2)
+    pd.testing.assert_frame_equal(serial, pooled)
+    with pytest.raises(DataError, match="weights"):
+        fit_interaction(d, reference_condition="control", test_condition="KO",
+                        weights="gls")

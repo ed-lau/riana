@@ -170,7 +170,8 @@ condition change turnover in this tissue?". `--interaction` asks whether the eff
 tissues. Each protein is fitted across tissues at once, with a random slope per animal: an animal's
 tissues share its overall labeling and turnover, so treating them as independent would overstate
 the evidence. The animal is the SDRF's `characteristics[individual]`, else condition × labeling time
-× biological replicate. Three tests are reported per protein, each BH-adjusted across proteins:
+× biological replicate. Points are weighted as in the per-tissue fits: with `--linear-weights
+wls-var` each point's measured precision enters the joint fit too. Three tests are reported per protein, each BH-adjusted across proteins:
 
 - **Interaction, ratio scale (primary):** is k(test)/k(reference) the same in every tissue? A
   condition that slows every tissue by the same proportion is not an interaction on this scale.

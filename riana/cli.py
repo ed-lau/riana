@@ -874,7 +874,8 @@ def rollup(
         "precision 1/Var̂(θ) (eBayes-moderated, robust-fitFDist d0) — ~10% better "
         "biological-replicate consistency on rich multi-peptide time series, safe/neutral "
         "elsewhere; needs the collapse's theta_var (else falls back to wls). 'ols' restores "
-        "the old unweighted fit (audit only)."),
+        "the old unweighted fit (audit only). --interaction uses the same weights "
+        "('ols' there falls back to 'wls')."),
     reference_condition: str = typer.Option(
         None, "--reference-condition", metavar="COND",
         help="['linear simple' only] Baseline condition of the Δk contrast — "
@@ -1149,9 +1150,11 @@ def rollup(
             from riana.core.interaction_model import fit_interaction
             int_progress = ProgressReporter(0, "interaction", logger)
             inter = fit_interaction(
-                rollup_fractions.rename(columns={"fs": "theta"}),
+                rollup_fractions.rename(columns={
+                    "fs": "theta", "fs_var": "theta_var", "fs_df": "theta_df"}),
                 reference_condition=int_ref, test_condition=int_test,
-                phi_limit=float(phi_limit), workers=int(workers),
+                phi_limit=float(phi_limit), weights=str(linear_weights),
+                workers=int(workers),
                 progress_callback=int_progress)
             int_progress.close()
             inter_path = Path(out) / "riana_rollup_interaction.txt"
