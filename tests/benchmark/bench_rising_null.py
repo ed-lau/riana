@@ -226,7 +226,8 @@ def main() -> None:
     Path(a.work).mkdir(parents=True, exist_ok=True)
     (Path(a.work) / f"ratio{a.ratio:g}_params.json").write_text(json.dumps(dict(
         vars(a), argv=sys.argv[1:], commit=git("rev-parse", "--short", "HEAD"),
-        code_dirty=bool(git("status", "--porcelain", "--", "riana", "tests/benchmark")),
+        code_dirty=bool(git("status", "--porcelain", "--", "riana",
+                            "tests/benchmark/bench_rising_null.py")),
         days=DAYS, ria=RIA, tissues=TISSUES, noise_rel=NOISE_REL, noise_abs=NOISE_ABS,
         coefficients=COEFFS), indent=2))
     res = []
