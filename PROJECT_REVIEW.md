@@ -269,7 +269,12 @@ rollup, linear Δk, interaction) runs unchanged on f.
    beside the bootstrap band) and the `wls-var` weights. The φ-space information weight is
    (1 − f̂)²/Var(f_i); today's (1 − θ̂)² is its instant-precursor special case (Var constant over
    time). Under a rising precursor early points carry little information, so this weighting is
-   **required, not opt-in**: plain (1 − θ̂)² weights bias k by +2–15 % (report §4).
+   **required, not opt-in**: plain (1 − θ̂)² weights bias k by +2–15 % (report §4). The rollup's
+   per-cell `fs_var`/`fs_df` (same columns as today, now of f) carry this; `wls-var`'s eBayes
+   moderation must not shrink away the precursor factor, which is known, not estimated. In the
+   prototype it did not (prior df ≈ 1 against 10–16 per cell; early cells kept their ~10²–10³×
+   variance within 10 %), but production should moderate the envelope-noise part and apply the
+   gain after, so thin cells cannot.
    **Evaluate Var(f_i) at the model value f̂ = 1 − e^{−kt}, never at the observed f_i** (pilot k
    from the unweighted line through the origin, then one IRLS step — the same rule as the shipped
    WLS). Early in a slow-precursor series the new molecules carry only a few percent of the plateau
@@ -284,8 +289,9 @@ rollup, linear Δk, interaction) runs unchanged on f.
    early cells then get full weight: in the prototype the mean-Δk test found almost nothing and the
    animal variance collapsed; dropping the early points restored it (but cost per-experiment Δk
    power, so the fix is the weights, not dropping points). Pass (1 − f̂)²/Var(f) into the mixed
-   model (nlme `varFixed` form), with the first pass weighted too. *Confirmed (2026-11-12, local
-   test, shipped code unchanged):* the mixed model with wls-var weights (moderated Var as
+   model (nlme `varFixed` form). **DONE 2026-11-12:** the interaction follows `--linear-weights`
+   (`wls-var` = the per-experiment fit's moderated weights, from the same OLS first pass); with f
+   input, rollup must run with `wls-var`. *Confirmed beforehand (local test):* the mixed model with wls-var weights (moderated Var as
    `fit_linear_deltak` does) brought the mean-Δk test back above θ's call count, with the animal
    variance back at θ's level. With the shipped weights the earliest cells carried nearly all of the
    weighted residual sum of squares; with wls-var, a small share.
@@ -310,7 +316,7 @@ rollup, linear Δk, interaction) runs unchanged on f.
    also sets f̂ for the model-value Var(f_i) in 3 (in place of the pilot line). *Possible later
    simplification:* `k_cv` alone, from the analytic SE of the weighted line, was also safe on f —
    revisit on a second dataset.
-3b. *Early points and the rails — OPEN, decide before implementing.* Early in a slow-precursor
+3b. *Early points and the rails — DECIDED 2026-11-12 (user): rails on label content, no floor.* Early in a slow-precursor
    series no protein can carry more label than the precursor has reached, so the whole range
    f ∈ [0, 1] maps into label content [0, P(t)]. For a precursor half-life of ~10 days the first
    day's ceiling is a few percent of plateau, about the width of the envelope noise. The envelope →
@@ -325,6 +331,20 @@ rollup, linear Δk, interaction) runs unchanged on f.
    weights; censor points below an information floor (the mirror of plateau truncation); cap reads
    above the ceiling at the ceiling instead of dropping them. Independent of this, the early envelope
    reads themselves are biased (Track B "Early-timepoint findings").
+   *Prototype test (same solves, three rail variants; solve bound widened so label content can read
+   to −0.1).* Rails on label content (A_i > −0.05, as θ's below-natural rail; solves at the f upper
+   bound = reads at or above the ceiling, dropped as failed) against rails on f, and against
+   label-content rails plus an information floor (< 1 % of the peptide's best point's weight):
+   - *Selection.* On the first sampled day, f rails dropped ~60 % of reads as light and ~20 % at the
+     ceiling; label-content rails ~30 % and ~20 % — about symmetric, as noise around a small true
+     value should be. Early median label-content residuals fell to ≈ 0 (from about +0.01–0.02).
+   - *Downstream.* More proteins tested and more Δk calls (θ's calls equally recovered, same
+     agreement with θ); the interaction unchanged in calls, with more proteins.
+   - *Information floor:* no gain; not needed with the weights.
+   - Early per-point k_i is meaningless at that gain (with label-content rails it read *negative*
+     at the median: the weak-envelope light bias, seen on the measured scale) — QC views of early
+     points should show label content, not f or k_i.
+   **Decision (user, 2026-11-12):** rails on label content; no information floor.
 4. *The precursor is the fit's one kinetic choice, and k_p is the switch (user, 2026-11-12).* With
    guan/fornasiero removed (5) the fit has one kinetic equation, first-order, so the only decision is
    whether the precursor is at plateau from the start or rising. No mode name: **k_p decides.** It
@@ -361,8 +381,9 @@ rollup, linear Δk, interaction) runs unchanged on f.
    choice (collapse to one point per biological replicate × timepoint, or fit every peptide point).
    Results-affecting: the protein output becomes per-condition rows with Δk columns;
    `--peptide-admission auto` resolves to `all` (fewer peptides per protein in multi-condition
-   runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input, `linear`
-   requires the per-point variance (wls-var weights, 3) and the interaction uses the same weights.
+   runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input
+   (`# fs_basis f`, any finite k_p) the line and the interaction **require** `wls-var` (3): rollup
+   uses it by default there and errors on an explicit `wls`/`ols`.
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
@@ -370,7 +391,11 @@ rollup, linear Δk, interaction) runs unchanged on f.
 residual shape over time, Δk and interaction); the simulation benches (k bias ≤ 1 %, coverage) —
 **add an early-timepoint baseline-bias arm** (a constant +0.01–0.05 θ offset), which the original
 benches lacked and which real data have; the instant-precursor path byte-identical to today; the
-gate's yield (3a) rechecked with f in place of θ; the early-point rail decision (3b). The median residual against time is also a k_p
+gate's yield (3a) rechecked with f in place of θ; the early-point rail decision (3b). **Open
+from the prototype:** on identical gated peptides, within-protein k spread was ~10–15 % larger on f
+than on θ (both rail variants alike) — a precision cost of the correction, a k_p mismatch, or θ's
+late-point-driven k looking tighter than it is; check on the simulation benches and a second
+dataset (e.g. against labeling sites). The median residual against time is also a k_p
 diagnostic: a mid-series lag that the correction does not remove says the effective precursor is
 slower than assumed. A k_p profile on whole envelopes is pulled toward a faster precursor by the
 same early baseline bias — exclude the early, low-information points when estimating it.
@@ -448,9 +473,13 @@ FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precac
   of 2); it matches correctly binned IsoSpec within 10⁻³ (2026-11-11). It would replace an IsoSpec call
   per (peptide, enrichment) with a binomial and a short convolution — what a rising-precursor envelope
   solve needs, since it mixes many enrichments
-  (`reports/2026-11-11_non_first_order_linearization_feasibility.md`). Drawback: it gives channel
-  abundances only, not each channel's exact (averaged-isotopolog) mass, so the mass-defect θ and
-  accurate-mass work for D₂O and ¹⁸O keeps IsoSpec.
+  (`reports/2026-11-11_non_first_order_linearization_feasibility.md`). **Accurate masses are not lost
+  (checked 2026-11-12):** build the natural envelope E0′ with the labeling-site H fixed at ¹H (IsoSpec,
+  once per peptide) and convolve intensity and intensity × mass together, each extra ²H adding
+  1.00628 Da. That reproduces IsoSpec's per-channel abundances within ~10⁻⁴ and averaged-isotopolog
+  masses exactly on m0–m2 and within 0.01 mDa on any channel above ~3 % abundance; the residual on
+  weak tail channels (≤ 0.4 mDa at < 1 %) is IsoSpec's own 99.9 % coverage cutoff. So the mass-defect
+  θ (`fs_ds`), which under a rising precursor needs the same kinetic mixture, can use it too.
 - **Robust observed-vs-IsoSpec matcher** — soft-trim / per-channel-SNR / Huber downweighting of a
   contaminated high channel; the A4 remainder and the research-grade endgame. Deferred.
 - **Genuine per-peptide channel optimizer** — replace the binary `--fs auto` init-width threshold
