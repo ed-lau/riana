@@ -123,8 +123,9 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   timepoint by a kinetic forward model (not the plateau mixture), the precursor curve is
   `RIA_max·(1−e^{−k_p·s})` with `k_p` set per experiment from the SDRF, and `k_p` is **not** fit
   from the data by default (per-peptide it is not identifiable; proteome-wide it is only weakly
-  identified on real data). **See the box below** for the agreed design. Still open from the old
-  item: a measured (non-parametric) precursor curve, if a dataset with one appears.
+  identified on real data). **See the box below** for the agreed design, including removing
+  guan/fornasiero one release after the solve ships. Still open from the old item: a measured
+  (non-parametric) precursor curve, if a dataset with one appears.
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
@@ -324,28 +325,44 @@ rollup, linear Δk, interaction) runs unchanged on f.
    weights; censor points below an information floor (the mirror of plateau truncation); cap reads
    above the ceiling at the ceiling instead of dropping them. Independent of this, the early envelope
    reads themselves are biased (Track B "Early-timepoint findings").
-4. *Model selection — `fit --model` names the kinetic system.* `exponential` (rename of `simple`;
-   alias kept) = precursor at plateau from the start. The rising-precursor option applies the
-   precursor inside the per-point solve and then fits an exponential to f_i for the peptide's k,
-   R² and band — one choice, so nothing in fit can count the precursor twice. k_p comes per
-   experiment from the SDRF `characteristics[precursor rate constant]` (a manifest column, read like
-   RIA from `characteristics[precursor enrichment]`), with a CLI override; one shared value across
-   tissues and conditions unless the SDRF says otherwise.
-5. *Deprecate guan/fornasiero (user, 2026-11-11).* Both come from amino-acid (SILAC-type) labeling
-   studies; Riana fits D₂O / ¹⁸O, and their θ-curve fits are biased under a rising precursor.
-   Fornasiero's label recycling matters less for D₂O (no strong evidence so far of a second-phase
-   plateau rise with D₂O) — drop it rather than port it. **Open at implementation:** whether the
-   rising-precursor option keeps the name `guan` or becomes D₂O-native (e.g. `exponential`, with a
-   k_p from the SDRF switching the envelope solve on). Keep the old θ-curve fits behind a legacy
-   flag for one release only if needed for comparison.
-6. *Provenance and the double-count guard.* The fit header records what `fs` holds
-   (`# fs_basis theta|f`) and the precursor (`# k_p`). Rollup reads it and **errors** (not warns)
-   if asked for a non-exponential curve refit on f — that result would be silently wrong.
-7. *Rollup.* Rename `linear simple` → `linear` (old name kept as an alias for a release) and make
-   it the **default**. Group the nonlinear refits (`exponential`/`simple`, legacy guan/fornasiero)
-   as *curve refits*. Results-affecting: the protein output becomes per-condition rows with Δk
-   columns; `--peptide-admission auto` resolves to `all` (fewer peptides per protein in
-   multi-condition runs); the GUI default and docs follow; CHANGELOG results-affecting entry.
+4. *The precursor is the fit's one kinetic choice, and k_p is the switch (user, 2026-11-12).* With
+   guan/fornasiero removed (5) the fit has one kinetic equation, first-order, so the only decision is
+   whether the precursor is at plateau from the start or rising. No mode name: **k_p decides.** It
+   comes per experiment from the SDRF `characteristics[precursor rate constant]` (a manifest column,
+   read like RIA from `characteristics[precursor enrichment]`), with a `fit --kp` override; absent
+   or `inf` = steady precursor = today's θ path, byte-identical. A finite k_p applies the precursor
+   inside the per-point solve, fits the peptide on label content (3a) and writes f_i — one switch, so
+   nothing in fit can count the precursor twice. One shared value across tissues and conditions
+   unless the SDRF says otherwise. The fit logs which path ran and why (SDRF or CLI). `fit --model`
+   keeps only `exponential` (rename of `simple`, alias kept) and `calibration` (auto from the SDRF).
+5. *Remove guan/fornasiero (user, 2026-11-11, plan 2026-11-12).* Both were written for the SILAC
+   side of the SILAC-vs-D₂O comparison (Hammond et al., *MCP* 2022); amino-acid labeling is no
+   longer a `--label` option, so they have no native use left. On D₂O they are biased: they fit
+   their curves to θ, which is not label content under a rising precursor (report §4). Fornasiero's
+   label recycling has not been seen with D₂O; if it ever matters it returns as a precursor curve
+   P(s) fed to the same per-point solve, not as a curve model. **Plan:**
+   - *Timing.* Deprecate in the release that ships the rising-precursor solve, **not before**:
+     without the solve, non-primed D₂O data would have no correction at all, and ignoring the
+     precursor biases k further (low, by 25–86 % in the slow regime) than today's guan does (high,
+     by 5–42 %). Deprecation = a warning on `--model guan|fornasiero` and `--kp/--kr/--rp` at
+     rollup, both removed from the GUI and the docs. **Remove one release later**, with an error
+     that points to k_p.
+   - *Keep* `models.two_compartment_guan`: it is the label-content curve of the 3a fit (new role).
+     Remove `two_compartment_fornasiero`, the guan/fornasiero single-timepoint root-find, the
+     rollup's `--kp/--kr/--rp` (its `--kp 0.5` default is unrelated to any SDRF k_p) and the GUI
+     spin boxes.
+   - *CHANGELOG:* reproducing older guan/fornasiero analyses (e.g. Hammond 2022) needs ≤ 1.1.0.
+6. *Provenance.* The fit header records what `fs` holds (`# fs_basis theta|f`) and the precursor
+   (`# k_p`, with its source). With guan/fornasiero gone the double-count guard is moot (the only
+   curve refit left is exponential, valid on θ and on f); rollup echoes the basis in its own
+   header and log.
+7. *Rollup.* Two models: `linear` (rename of `linear simple`, alias kept for a release) as the
+   **default**, and the `exponential` curve refit. `--method weighted|pooled` stays a separate
+   choice (collapse to one point per biological replicate × timepoint, or fit every peptide point).
+   Results-affecting: the protein output becomes per-condition rows with Δk columns;
+   `--peptide-admission auto` resolves to `all` (fewer peptides per protein in multi-condition
+   runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input, `linear`
+   requires the per-point variance (wls-var weights, 3) and the interaction uses the same weights.
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
