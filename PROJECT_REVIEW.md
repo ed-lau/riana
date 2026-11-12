@@ -117,12 +117,14 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   ~80% shipped; the headline (adaptive *capture*) was benched and rejected as a default; the
   rule-based N_ISO we have is good enough. Only the robust matcher genuinely remains, and it is
   research-grade. **Not a 1.2.0 item.**
-- **Precursor-enrichment (RIA) modelling — a MAJOR item, data/design-blocked.** Per-sample RIA
-  works; the open science is: when RIA is **non-constant across timepoints**, rebuild the
-  labelled envelope per t or use the plateau? And for **Guan/Fornasiero**, how is the true
-  precursor at *t* derived — `RIA_max·(1−e^{−k_p·t})` from a user-set `k_p`, or per-point from
-  the data — **and can `k_p` be fit from the data** rather than hand-set? (`memory/precursor_enrichment_open_questions.md`.) This is the highest-value deferred science; blocked mainly on a
-  dataset with resolvable early-timepoint precursor curves.
+- **Slow precursor — per-point envelope solve + fit/rollup model redesign — DESIGNED
+  2026-11-11, productionize after the report §6 real-data checks.** Answers most of the old
+  *precursor-enrichment (RIA) modelling* item: under a rising precursor the envelope is rebuilt per
+  timepoint by a kinetic forward model (not the plateau mixture), the precursor curve is
+  `RIA_max·(1−e^{−k_p·s})` with `k_p` set per experiment from the SDRF, and `k_p` is **not** fit
+  from the data by default (per-peptide it is not identifiable; proteome-wide it is only weakly
+  identified on real data). **See the box below** for the agreed design. Still open from the old
+  item: a measured (non-parametric) precursor curve, if a dataset with one appears.
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
@@ -232,6 +234,89 @@ evidence here and close the item.
 - *Out of scope:* the interaction model. Its variance components (animal, residual) are per
   protein; moderating them across proteins is a different problem.
 
+##### Slow precursor — per-point envelope solve and the fit/rollup model redesign
+
+**Status.** Design agreed with the user 2026-11-11 from the feasibility study
+(`reports/2026-11-11_non_first_order_linearization_feasibility.md`). Productionize **after** the
+report's §6 checks on a real slow-precursor dataset finish. Not built.
+
+**Why.** Without a priming dose the D₂O precursor rises over days. Today's per-point θ assumes
+every new molecule carries the plateau enrichment, so under a rising precursor θ reads below the
+fraction new f (the naive k is low). The guan/fornasiero curves fitted to θ are biased too,
+because θ is not label content either (report §4). Under any precursor curve shared by the
+proteins, f = 1 − e^{−kt} is still first-order. So the fix belongs in the per-point solve: recover
+f_i with the precursor built in, and everything downstream (exponential peptide fit, R² gate,
+rollup, linear Δk, interaction) runs unchanged on f.
+
+**Design.**
+
+1. *Where.* The per-point solve stays in `riana fit`. Integrate stays signal extraction that knows
+   nothing about labeling: the solve depends on the label, the coefficient table (labeling sites),
+   the plateau enrichment, `--fs` channel scoring and the rail drop (and now k_p); changing any of
+   them must not mean re-reading the mzML. Fit keeps two internal steps: envelope → fs per point,
+   then fs over time → k.
+2. *The solve.* For each point, find the k_i whose predicted envelope
+   `E_pred(t; k) = e^{−kt}·E(0) + ∫₀ᵗ k·e^{−k(t−s)}·E(RIA_max·P(s)) ds` matches the observed one
+   (H4′: mix in the full-cluster basis, truncate to the scored channels, renormalize). Write
+   f_i = 1 − e^{−k_i t_i} into `fs`. No first pass: k inside the integral is the unknown at that
+   point. Allow f_i < 0 (k < 0 continues the formula smoothly) so noise around zero is not clipped;
+   rails as today. With an instant precursor it reduces exactly to today's θ, so the default stays
+   byte-identical. Build the labeled envelopes by binomial convolution on an enrichment grid
+   (Track B item) — the integral mixes many enrichments.
+3. *Per-point variance.* Emit Var(f_i) = σ²_env / ‖∂E_pred/∂f‖² (σ²_env from the peptide's envelope
+   residuals). It feeds the rollup's inverse-variance collapse (`_weighted_theta`, in place of or
+   beside the bootstrap band) and the `wls-var` weights. The φ-space information weight is
+   (1 − f̂)²/Var(f_i); today's (1 − θ̂)² is its instant-precursor special case (Var constant over
+   time). Under a rising precursor early points carry little information, so this weighting is
+   **required, not opt-in**: plain (1 − θ̂)² weights bias k by +2–15 % (report §4).
+   **Evaluate Var(f_i) at the model value f̂ = 1 − e^{−kt}, never at the observed f_i** (pilot k
+   from the unweighted line through the origin, then one IRLS step — the same rule as the shipped
+   WLS). Early in a slow-precursor series the new molecules carry only a few percent of the plateau
+   enrichment, so a small baseline bias in the envelope (a few hundredths in θ) solves to f near 1.
+   Variance taken at that observed f under-weights nothing and wrecks the fit; taken at f̂ those
+   points get ~1/100 of a late point's weight. Treat solves at the f bound (k → ∞) as failed.
+   A real-data prototype (2026-11-11) confirmed both: observed-f variance collapsed the yield, and
+   f with plain `wls` weights lost almost all Δk power, while model-value variance with `wls-var`
+   matched or beat θ.
+3a. *The gate statistic needs rethinking for f.* An information-weighted R² puts nearly all weight on
+   the late points; for slow proteins those f values span little, so R² is low even for a good fit
+   (the prototype passed far fewer slow-protein peptides than θ did). Candidates: the relative CI
+   width (`k_cv`), or an unweighted R² over the informative points only (those where the new
+   molecules carry, say, ≥ 30 % of the plateau enrichment). Decide on real data before shipping.
+4. *Model selection — `fit --model` names the kinetic system.* `exponential` (rename of `simple`;
+   alias kept) = precursor at plateau from the start. The rising-precursor option applies the
+   precursor inside the per-point solve and then fits an exponential to f_i for the peptide's k,
+   R² and band — one choice, so nothing in fit can count the precursor twice. k_p comes per
+   experiment from the SDRF `characteristics[precursor rate constant]` (a manifest column, read like
+   RIA from `characteristics[precursor enrichment]`), with a CLI override; one shared value across
+   tissues and conditions unless the SDRF says otherwise.
+5. *Deprecate guan/fornasiero (user, 2026-11-11).* Both come from amino-acid (SILAC-type) labeling
+   studies; Riana fits D₂O / ¹⁸O, and their θ-curve fits are biased under a rising precursor.
+   Fornasiero's label recycling matters less for D₂O (no strong evidence so far of a second-phase
+   plateau rise with D₂O) — drop it rather than port it. **Open at implementation:** whether the
+   rising-precursor option keeps the name `guan` or becomes D₂O-native (e.g. `exponential`, with a
+   k_p from the SDRF switching the envelope solve on). Keep the old θ-curve fits behind a legacy
+   flag for one release only if needed for comparison.
+6. *Provenance and the double-count guard.* The fit header records what `fs` holds
+   (`# fs_basis theta|f`) and the precursor (`# k_p`). Rollup reads it and **errors** (not warns)
+   if asked for a non-exponential curve refit on f — that result would be silently wrong.
+7. *Rollup.* Rename `linear simple` → `linear` (old name kept as an alias for a release) and make
+   it the **default**. Group the nonlinear refits (`exponential`/`simple`, legacy guan/fornasiero)
+   as *curve refits*. Results-affecting: the protein output becomes per-condition rows with Δk
+   columns; `--peptide-admission auto` resolves to `all` (fewer peptides per protein in
+   multi-condition runs); the GUI default and docs follow; CHANGELOG results-affecting entry.
+8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
+   per-experiment enrichment is the value applied.
+
+**Validation before merge.** The report's §6 checks on real data (within-protein agreement,
+residual shape over time, Δk and interaction); the simulation benches (k bias ≤ 1 %, coverage) —
+**add an early-timepoint baseline-bias arm** (a constant +0.01–0.05 θ offset), which the original
+benches lacked and which real data have; the instant-precursor path byte-identical to today; the
+gate's yield (3a) rechecked with f in place of θ. The median residual against time is also a k_p
+diagnostic: a mid-series lag that the correction does not remove says the effective precursor is
+slower than assumed. A k_p profile on whole envelopes is pulled toward a faster precursor by the
+same early baseline bias — exclude the early, low-information points when estimating it.
+
 #### Curation-gate reference (fit & rollup) — be explicit
 
 Three levers are easy to confuse; document them wherever they surface (CLI help + GUI tooltips):
@@ -286,6 +371,20 @@ FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precac
 - **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** (opt-in `--linear-weights wls-var`; see `CHANGELOG.md`).
 - **Cross-proportion-stable peak picker** (Phase C v2) — the `apex_search_half_width`/`consensus`
   levers for label-invariant boundary stability are untested in production (§2c / M3 carry-over).
+- **Early-timepoint findings (2026-11-11, an unpublished in-vivo D₂O DDA dataset; local notes
+  only).** Three open items, none decided, all results-affecting if changed:
+  - *One-sided rail drop.* Near t = 0 the true fs is ~0 and the per-point noise is wide, so a large
+    share of early points falls below the −0.05 rail. Dropping only that side keeps the points that
+    read high, and the surviving early fs read high (worst on noisy samples). Options: keep
+    −0.1 < fs ≤ −0.05, drop only solver-bound hits, or a noise-aware rail.
+  - *Low-intensity light bias.* Weak envelopes read lighter than natural — many pile up at the
+    solver's −0.1 bound even with m0–m3 all present, on two Orbitrap models. Likely weak
+    heavy-isotope centroids missing from some scans of the integration window. Integration-side;
+    candidate fixes: per-channel scan detectability, an apex-centred window, or treating an
+    undetected channel as censored rather than zero.
+  - *`--fs auto` as the D₂O default?* There it reduced the early-timepoint offset and raised the
+    R² ≥ 0.8 yield over full-envelope scoring, with within-protein agreement unchanged after the
+    gate. Check on a second dataset before changing the default.
 - **Labeled envelopes by convolution (performance; later).** For D₂O, the labeled envelope is the
   natural envelope convolved with Binomial(labeling sites, enrichment) in isotopomer units (¹⁸O: steps
   of 2); it matches correctly binned IsoSpec within 10⁻³ (2026-11-11). It would replace an IsoSpec call
@@ -340,7 +439,8 @@ and (2026-11-10) the experiment × condition interaction with a random animal ef
   moderates per-point Var(θ), not the residual variance.
 - **A1 — dimethyl S=1 spillover gate** (thin primitive + `spillover` column; see the scope block).
 - **Deamidation** (deferred; own side project).
-- **Precursor-enrichment (RIA) modelling** (deferred; MAJOR, data-blocked; see the scope block).
+- **Slow precursor — envelope solve + fit/rollup model redesign** (designed 2026-11-11;
+  productionize after the report §6 checks; see the box under "Deferred beyond 1.2.0").
 - **Proper demultiplexing** (deferred; the multiplexing endgame; see the scope block).
 - **GG-remnant (UNIMOD:121)** — the most turnover-relevant Tier-2 PTM, blocked on anti-K-ε-GG
   enriched D₂O data (none exists).
@@ -397,8 +497,9 @@ stays a linear `integrate → fit → rollup` chain glued by the manifest — or
 - **A bundled workflow engine** — the `Snakefile` is retired; SDRF + quantms/DIA-NN own search+ID,
   and Riana is a linear manifest-glued chain. The SDRF/manifest path is canonical; the
   per-timepoint Percolator path is kept for benchmarks/dev and gradually deprecated.
-- **Complex / Bayesian kinetic models** — nothing beyond simple / guan / fornasiero; the focus is
-  honest uncertainty on those, not more models.
+- **Complex / Bayesian kinetic models** — first-order turnover with an instant or a rising
+  precursor is the whole model space (guan/fornasiero θ-curve fits to be retired; see the
+  slow-precursor box); the focus is honest uncertainty, not more models.
 - **Multi-omics integration, a web interface, or a plugin system** — wrong shape for a
   single-developer scientific tool.
 
