@@ -1,6 +1,6 @@
 # Linear and mixed models for non-first-order labeling (Guan / Fornasiero) — feasibility
 
-**Date:** 2026-11-11 · **Status:** feasibility only, no production code ·
+**Date:** 2026-11-11 (§10 added 2026-11-12) · **Status:** feasibility only, no production code ·
 **Data:** simulations of an illustrative slow-precursor in-vivo design and of mouse designs, using
 Riana's own IsoSpec envelope model and θ solve, and the ATF6 mouse series (`runs/timeseries_atf6`) ·
 **Scripts:** `runs/nonfirstorder_linearization/` (gitignored)
@@ -284,8 +284,8 @@ Checks that need no ground truth:
   observed envelope under the kinetic forward model; report f = 1 − e^{−kt} and its variance from the
   envelope sensitivity. Per peptide, the cost is about 80 cached IsoSpec envelopes on an enrichment
   grid plus a 1-D solve per point. Guan and Fornasiero become precursor curves feeding this solve,
-  not separate curve models; any measured or parametric P(s) works the same way. The same idea
-  applies to ¹⁸O with its envelope model.
+  not separate curve models; any measured or parametric P(s) works the same way. The peptide fit and
+  admission gate run on label content (§10). The same idea applies to ¹⁸O with its envelope model.
 - **Rollup.** Unchanged models on f: φ = log(1 − f), through the origin. Weights come from the
   per-point variance, through the existing `fs_var` / `wls-var` path, not the (1 − θ̂)² rule, which
   assumes an instant precursor.
@@ -376,6 +376,66 @@ of about 1/k, so each animal's fast proteins report its own precursor level, and
 the enrichment ceiling. Caveat: the envelope shift scales with labeling sites × enrichment, so the
 plateau trades off against the labeling-site table; for a species without its own table the plateau
 is an effective value, consistent within the dataset but carried into absolute k.
+
+## 10. The peptide fit and admission gate under a rising precursor
+
+*Added 2026-11-12.* The per-point f feeds the rollup (§7). Each peptide still needs its own fit: to
+report its k and, more important, to decide whether it is measured well enough to enter the protein
+rollup. Today that gate is R² ≥ 0.8, or R² ≥ 0.6 with k_cv < 0.2. The gate stays as it is, for
+parity with today's default; what changes is the quantity R² is computed on.
+
+**Label content, not θ and not f.** Label content A is the peptide pool's mean enrichment divided by
+the plateau enrichment. To first order it is what the envelope's mean mass shift reads, whatever
+precursor model is assumed. Under an instant precursor A = f = θ. Under a rising precursor:
+
+- θ reads the envelope as a mixture of the unlabeled and the plateau envelopes, which no longer
+  gives the mean (§4).
+- f is unstable early. No protein can carry more label than the precursor has reached, so the whole
+  range f ∈ [0, 1] maps into A ∈ [0, P(t)]. While P(t) is a few percent of plateau, the envelope
+  noise spans the whole range of f.
+- An information-weighted R² in f puts nearly all the weight on the late points, where a slow
+  protein's f spans little, so it fails slow proteins.
+
+**How R² is computed.**
+
+1. *Each point:* the envelope solve finds the k_i whose predicted envelope matches the observed one
+   (equivalently f_i = 1 − e^{−k_i t_i}).
+2. *Each point:* the observed label content is A_i = A(t_i; k_i), the label content of that matching
+   envelope. At t = 0, A_i is the baseline read.
+3. *Each peptide:* fit one parameter, k, to the A_i by unweighted nonlinear least squares, with the
+   label-content curve
+
+   A(t; k) = ∫₀ᵗ k·e^{−k(t−s)}·P(s) ds = 1 − (k_p·e^{−kt} − k·e^{−k_p·t}) / (k_p − k),
+
+   for P(s) = 1 − e^{−k_p·s} with k_p fixed (from the SDRF). This is the Guan curve; as k_p → ∞ it
+   becomes 1 − e^{−kt}.
+4. R² = 1 − Σ(A_i − A(t_i; k̂))² / Σ(A_i − Ā)², unweighted, the same formula as today; k_cv comes
+   from the same residual bootstrap as today.
+
+No fit with an instant precursor comes first. The information-weighted φ line on f (§4, §7) is the
+linearized form of this fit: on a real slow-precursor dataset the two gave k within a few percent
+and near-identical R². The fitted k̂ also gives the model value f̂ = 1 − e^{−k̂t} at which each
+point's Var(f_i) is evaluated.
+
+**Today's `simple` fit and the rising-precursor fit, side by side.**
+
+| | today, `simple` | rising precursor |
+|---|---|---|
+| per-point value | θ_i from the two-envelope solve | k_i from the precursor-aware solve → A_i (and f_i) |
+| peptide curve | 1 − e^{−kt} | the Guan curve above, k_p fixed |
+| fit | nonlinear least squares on θ_i, unweighted | the same, on A_i |
+| R² | 1 − SS_res/SS_tot on θ | the same formula, on A |
+| k_cv | residual-bootstrap 90 % CI | the same |
+| passed to the rollup | θ_i | f_i with Var(f_i) |
+
+Today's `fit --model guan` fits the same curve, but to θ, which is not label content under a rising
+precursor; that is the source of its bias (§4).
+
+**Why not gate on today's exponential fit to θ.** It would work as a "well behaved" filter, but it
+scores model misfit as well as noise. Under a rising precursor the true curve is S-shaped and an
+exponential cannot follow it, so well-measured peptides lose R² for the shape. On the real dataset it
+gave systematically lower R² and admitted fewer peptides, while ranking peptides similarly. An R²
+against the right curve measures only the scatter of the measurements.
 
 ## Reproduce
 

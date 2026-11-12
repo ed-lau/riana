@@ -86,6 +86,45 @@ carry co-eluting interference.
 Confidence intervals come from a residual bootstrap. With a single labeling time (e.g. a TMT or
 dimethyl experiment) k is solved directly from θ.
 
+Each peptide's R² comes from the same fit: 1 − SS~res~/SS~tot~ of its θ values (t = 0 included)
+around the fitted curve, unweighted. It is the statistic the rollup's admission gate reads (see
+[Rollup](#rollup)).
+
+::: {.callout-note}
+## In development: a rising precursor
+
+Not in this release. Without a priming dose the D~2~O precursor rises over days, so molecules made
+early carry less than the plateau label. The planned fit takes the precursor rate constant $k_p$
+from the SDRF and solves each timepoint's envelope with the precursor built in. It reports the
+fraction of protein made since labeling began, $f = 1 - e^{-kt}$, which stays first-order, so the
+rollup models apply unchanged.
+
+The peptide fit and its R² then run on **label content** A, the peptide's mean enrichment as a
+fraction of the plateau enrichment (to first order, what the envelope's mean mass shift reads):
+
+1. Each timepoint's envelope gives its own $k_i$, and from it the observed label content
+   $A_i = A(t_i; k_i)$.
+2. The peptide's k is fitted to the $A_i$ by unweighted least squares with
+   $$A(t; k) = 1 - \frac{k_p e^{-kt} - k e^{-k_p t}}{k_p - k},$$
+   the Guan curve with $k_p$ fixed (it becomes $1 - e^{-kt}$ as $k_p \to \infty$).
+3. R² and the uncertainty of k come from that fit exactly as today, so the admission gate is
+   unchanged.
+
+Under a rising precursor neither θ nor f suits this fit. θ reads each envelope as a mixture of the
+unlabeled and the plateau envelopes, which no longer gives the mean enrichment. f is unstable early:
+no protein can carry more label than the precursor has reached, so while the precursor is a few
+percent of plateau the envelope noise spans the whole range of f.
+
+|                     | today (`simple`)                 | rising precursor                                   |
+|---------------------|----------------------------------|----------------------------------------------------|
+| per-timepoint value | θ from the two-envelope solve    | $k_i$ from the precursor-aware solve → $A_i$ and $f_i$ |
+| peptide curve       | $1 - e^{-kt}$                    | the curve above, $k_p$ fixed                       |
+| fit                 | least squares on θ, unweighted   | the same, on $A_i$                                 |
+| R²                  | 1 − SS~res~/SS~tot~ on θ         | the same, on A                                     |
+| uncertainty of k    | residual bootstrap               | the same                                           |
+| passed to rollup    | θ                                | f, with its variance                               |
+:::
+
 ### Curation at fit
 
 - `--depth` (default 3): a peptidoform must be seen at this many distinct timepoints.
