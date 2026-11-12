@@ -278,11 +278,52 @@ rollup, linear Δk, interaction) runs unchanged on f.
    A real-data prototype (2026-11-11) confirmed both: observed-f variance collapsed the yield, and
    f with plain `wls` weights lost almost all Δk power, while model-value variance with `wls-var`
    matched or beat θ.
-3a. *The gate statistic needs rethinking for f.* An information-weighted R² puts nearly all weight on
-   the late points; for slow proteins those f values span little, so R² is low even for a good fit
-   (the prototype passed far fewer slow-protein peptides than θ did). Candidates: the relative CI
-   width (`k_cv`), or an unweighted R² over the informative points only (those where the new
-   molecules carry, say, ≥ 30 % of the plateau enrichment). Decide on real data before shipping.
+   **The interaction model needs the same weights.** `interaction_model` always weights by
+   (1 − θ̂)² from a first unweighted pass, whatever `--linear-weights` says. On f the low-information
+   early cells then get full weight: in the prototype the mean-Δk test found almost nothing and the
+   animal variance collapsed; dropping the early points restored it (but cost per-experiment Δk
+   power, so the fix is the weights, not dropping points). Pass (1 − f̂)²/Var(f) into the mixed
+   model (nlme `varFixed` form), with the first pass weighted too. *Confirmed (2026-11-12, local
+   test, shipped code unchanged):* the mixed model with wls-var weights (moderated Var as
+   `fit_linear_deltak` does) brought the mean-Δk test back above θ's call count, with the animal
+   variance back at θ's level. With the shipped weights the earliest cells carried nearly all of the
+   weighted residual sum of squares; with wls-var, a small share.
+3a. *Gate: today's default, for parity (user, 2026-11-12).* Keep R² ≥ `--min-r2` OR (R² ≥
+   `--rescue-r2` AND `k_cv` < `--k-cv`), with R² and `k_cv` from a peptide fit on **label content**
+   (the pool's mean enrichment ÷ plateau — to first order the envelope's mean mass shift, whatever
+   the precursor model):
+   - per point, the envelope solve gives k_i; the observed label content is A_i = A(t_i; k_i)
+     (t = 0: A_i = the baseline read);
+   - per peptide, fit A(t; k) = 1 − (k_p·e^{−kt} − k·e^{−k_p·t})/(k_p − k) — the Guan curve with
+     k_p fixed, i.e. ∫₀ᵗ k·e^{−k(t−s)}·P(s) ds — to the A_i by unweighted nonlinear least squares:
+     today's fit code with this curve and A_i as input;
+   - R² = 1 − Σ(A_i − Â_i)²/Σ(A_i − Ā)², and `k_cv` from the same residual bootstrap as today (so the
+     `--rescue-r2` floor's reason, collapsed CIs at k ≈ 0, carries over unchanged).
+   Under an instant precursor A = f = θ and the curve is 1 − e^{−kt}: today's gate is the special
+   case. Label content is not today's θ (a two-envelope mixture at plateau, off under a rising
+   precursor, report §4). Not R² in f: f is unstable near the early label ceiling (3b), and an
+   information-weighted R² in f fails slow proteins. Not today's exponential fit to θ either: it
+   scores the lag shape as misfit. In the prototype this fit gave k within a few percent of the
+   information-weighted φ line (its linearization) with near-identical R²; the gate admitted somewhat
+   more peptides than today's θ gate, with more Δk calls and θ's calls nearly all recovered. Its k̂
+   also sets f̂ for the model-value Var(f_i) in 3 (in place of the pilot line). *Possible later
+   simplification:* `k_cv` alone, from the analytic SE of the weighted line, was also safe on f —
+   revisit on a second dataset.
+3b. *Early points and the rails — OPEN, decide before implementing.* Early in a slow-precursor
+   series no protein can carry more label than the precursor has reached, so the whole range
+   f ∈ [0, 1] maps into label content [0, P(t)]. For a precursor half-life of ~10 days the first
+   day's ceiling is a few percent of plateau, about the width of the envelope noise. The envelope →
+   f map is then nearly flat: Var(f) is hundreds of times Var(θ) (the weights in 3 handle that), and
+   **the rails, applied in f, select**. f > −0.05 there means label content above ≈ 0, so the solve
+   drops the light half of the early reads and every read above the ceiling (a bound hit), and keeps
+   the heavy half. In the prototype the kept first-day points read a per-point k_i more than an
+   order of magnitude above the fitted k (median), still several-fold on the second sampled day. Weighted fits barely notice (an early point's pull on
+   the slope scales with its gain, a few percent), but anything unweighted does: the shipped
+   interaction weights, QC plots of f over time, the k_p profile. Options: apply the rails on the
+   measured scale (θ or label content) rather than on f; keep early points unrailed with their tiny
+   weights; censor points below an information floor (the mirror of plateau truncation); cap reads
+   above the ceiling at the ceiling instead of dropping them. Independent of this, the early envelope
+   reads themselves are biased (Track B "Early-timepoint findings").
 4. *Model selection — `fit --model` names the kinetic system.* `exponential` (rename of `simple`;
    alias kept) = precursor at plateau from the start. The rising-precursor option applies the
    precursor inside the per-point solve and then fits an exponential to f_i for the peptide's k,
@@ -312,7 +353,7 @@ rollup, linear Δk, interaction) runs unchanged on f.
 residual shape over time, Δk and interaction); the simulation benches (k bias ≤ 1 %, coverage) —
 **add an early-timepoint baseline-bias arm** (a constant +0.01–0.05 θ offset), which the original
 benches lacked and which real data have; the instant-precursor path byte-identical to today; the
-gate's yield (3a) rechecked with f in place of θ. The median residual against time is also a k_p
+gate's yield (3a) rechecked with f in place of θ; the early-point rail decision (3b). The median residual against time is also a k_p
 diagnostic: a mid-series lag that the correction does not remove says the effective precursor is
 slower than assumed. A k_p profile on whole envelopes is pulled toward a faster precursor by the
 same early baseline bias — exclude the early, low-information points when estimating it.
