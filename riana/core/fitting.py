@@ -59,7 +59,9 @@ from riana.algorithms.isotope_dist import (
     solve_fs_d2o, solve_fs_d2o_ds, solve_fs_o18, solve_fs_o18_ds,
     spep_from_coefficients, spep_from_length_coefficients,
 )
+from riana.algorithms.isotope_dist import _FULL_CLUSTER_N
 from riana.algorithms.mass_calc import calculate_ion_mz, parse_unimod_ids
+from riana.algorithms.precursor import F_FAILED, RisingEnvelope, label_gain
 from riana.config import FitConfig
 from riana.core import models
 from riana.progress import iter_progress
@@ -363,6 +365,11 @@ class FitResult:
     #: weighted median + MAD), to cross-check the intensity FS — never the primary θ.
     #: NaN per point when < 2 channels are usable; empty when no obs_mz / no charge.
     fs_ds: list[float] = field(default_factory=list)
+    #: Rising precursor only (``config.precursor_k_p``): per-point **label content**
+    #: (mean enrichment ÷ plateau, the measured scale), aligned 1:1 with ``t``/``fs``.
+    #: The peptide curve, R², rails and k CI are on this; ``fs`` holds the fraction
+    #: new f. Empty on the steady (θ) path.
+    label_content: list[float] = field(default_factory=list)
     #: Census of the **fitted** points (a curve's composition): total, the count
     #: from MBR transfers, the count from Met-Ox peptidoforms merged at fit (M7
     #: tier 1b), and the count that are neither ("clean"). A point that is both MBR
@@ -491,6 +498,15 @@ def fit_run(
             f"expected one of {sorted(_MODELS)}"
         )
     model_fn = _MODELS[config.model]
+    if config.precursor_k_p is not None:
+        # Rising precursor: the per-point solve gives f (and label content A); the
+        # peptide curve is fitted on A with the label-content (Guan) curve at this k_p.
+        # FitConfig has already restricted this to model 'simple' and label 'hw'.
+        model_fn = models.rising_precursor_label
+        _LOGGER.info(
+            "fit_run: rising precursor k_p=%g — per-point envelope solve for the "
+            "fraction new f; peptide curve, R², rails and k CI on label content.",
+            config.precursor_k_p)
 
     rdf = pd.concat(integrate_dfs, ignore_index=True)
 
@@ -657,6 +673,7 @@ def fit_run(
     # re-deriving θ. ``.attrs`` survives the ``.copy()`` / column-add that
     # ``fit_project`` does per curve.
     out.attrs["fractions_long"] = build_fractions_long(results)
+    out.attrs["precursor_k_p"] = config.precursor_k_p
     return out
 
 
@@ -816,16 +833,37 @@ def _fit_one_concat(
         }
 
     # Per-timepoint FS via solve_fs_d2o, at the experiment's precursor
-    # enrichment ``config.ria_max``.
+    # enrichment ``config.ria_max``. Under a rising precursor (config.precursor_k_p)
+    # each point is instead solved for the fraction new f with the precursor built in
+    # (riana.algorithms.precursor), which also gives its label content A — the
+    # measured scale the rails and the peptide curve work on. One forward model per
+    # (peptidoform, t), shared by that timepoint's replicates and discarded with
+    # this peptide.
     sums = obs_matrix.sum(axis=1)
     valid = sums > 0
     fs_arr = np.full_like(t_arr, np.nan)
+    rising = config.precursor_k_p is not None
+    label_arr = np.full_like(t_arr, np.nan)
+    rising_envs: dict[tuple[str, float], RisingEnvelope] = {}
     try:
         for i in range(len(t_arr)):
             if valid[i]:
                 mods_i, pep_mass_i = forms[row_concats[i]]
                 score_channels_i = (form_score[row_concats[i]] if config.fs_auto
                                     else config.score_channels)
+                if rising:
+                    env_key = (str(row_concats[i]), float(t_arr[i]))
+                    env = rising_envs.get(env_key)
+                    if env is None:
+                        env = RisingEnvelope(
+                            seq, pep_mass_i, spep_int, float(config.ria_max),
+                            float(t_arr[i]), float(config.precursor_k_p), mods=mods_i,
+                            n_full=max(_FULL_CLUSTER_N, len(iso_cols)))
+                        rising_envs[env_key] = env
+                    fs_arr[i], label_arr[i] = env.solve(
+                        obs_matrix[i], n_iso=len(iso_cols),
+                        score_channels=score_channels_i)
+                    continue
                 fs_arr[i] = (solve_fs_o18 if is_o18 else solve_fs_d2o)(
                     seq, pep_mass_i, obs_matrix[i], spep_int,
                     ria_max=float(config.ria_max), n_iso=len(iso_cols),
@@ -833,6 +871,8 @@ def _fit_one_concat(
                 )
     except (KeyError, ValueError):
         return _null_result(concat, protein_id, mod_sites)
+    # The quantity the peptide curve is fitted on: θ (steady), label content (rising).
+    y_arr = label_arr if rising else fs_arr
 
     fit_mask = ~np.isnan(fs_arr) & valid
     if config.fs_rail_drop:
@@ -844,7 +884,16 @@ def _fit_one_concat(
         # default to the benchmark-picked rails (config.fs_rail_hi/lo override).
         rail_hi = _FS_RAIL_HI if config.fs_rail_hi is None else config.fs_rail_hi
         rail_lo = _FS_RAIL_LO if config.fs_rail_lo is None else config.fs_rail_lo
-        railed = (fs_arr >= rail_hi) | (fs_arr <= rail_lo)
+        if rising:
+            # Rails on the measured scale (label content), not on f: early in a
+            # rising-precursor series f ∈ [0, 1] maps into A ∈ [0, P(t)], so a rail at
+            # f = −0.05 would drop every read below A ≈ 0 and keep the heavy half
+            # (PROJECT_REVIEW 3b). A solve at the f bound (the read is at or above the
+            # precursor ceiling) is a failed solve.
+            railed = ((label_arr >= rail_hi) | (label_arr <= rail_lo)
+                      | (fs_arr >= F_FAILED))
+        else:
+            railed = (fs_arr >= rail_hi) | (fs_arr <= rail_lo)
         fit_mask = fit_mask & ~railed
     # depth = DISTINCT surviving timepoints (matches the run-level gate and the
     # documented semantics), NOT raw rows: on the biorep manifest path replicate rows
@@ -861,7 +910,8 @@ def _fit_one_concat(
     # The legacy curve_fit also used a_max=1.0 (riana_fit.py:368).
     kinetic_kwargs = dict(
         a_0=0.0, a_max=1.0,
-        k_p=config.k_p, k_r=config.k_r, r_p=config.r_p,
+        k_p=(float(config.precursor_k_p) if rising else config.k_p),
+        k_r=config.k_r, r_p=config.r_p,
     )
 
     # A fit whose points all share one labeling time has a closed-form / root-find k
@@ -872,7 +922,7 @@ def _fit_one_concat(
     # byte-identical).
     single_t = bool(np.ptp(t_arr[fit_mask]) == 0)
     k_direct = (
-        _solve_k_single_t(float(t_arr[fit_mask][0]), fs_arr[fit_mask],
+        _solve_k_single_t(float(t_arr[fit_mask][0]), y_arr[fit_mask],
                           model_fn, kinetic_kwargs)
         if single_t else None
     )
@@ -889,7 +939,7 @@ def _fit_one_concat(
         try:
             popt, _ = curve_fit(
                 partial(model_fn, **kinetic_kwargs),
-                t_arr[fit_mask], fs_arr[fit_mask],
+                t_arr[fit_mask], y_arr[fit_mask],
                 bounds=_K_DEG_BOUNDS,
                 p0=[_K_DEG_INIT],
                 maxfev=2000,
@@ -901,9 +951,9 @@ def _fit_one_concat(
     pred = np.array([
         model_fn(ti, k_deg=k_deg, **kinetic_kwargs) for ti in t_arr[fit_mask]
     ])
-    residuals = fs_arr[fit_mask] - pred
+    residuals = y_arr[fit_mask] - pred
     ss_res = float(np.sum(residuals ** 2))
-    ss_tot = float(np.sum((fs_arr[fit_mask] - np.mean(fs_arr[fit_mask])) ** 2))
+    ss_tot = float(np.sum((y_arr[fit_mask] - np.mean(y_arr[fit_mask])) ** 2))
     # R² needs time-axis variance to mean anything; a single-t fit explains none of the
     # (replicate) scatter by construction (ss_res == ss_tot), so report NaN — "not
     # applicable", not a misleading 0. Rollup already bypasses R² for single-timepoint
@@ -922,7 +972,7 @@ def _fit_one_concat(
     # residuals — hence the band — collapse to ~0.
     rng = np.random.default_rng(_concat_seed(base_seed, concat))
     t_fit = t_arr[fit_mask]
-    fs_fit = fs_arr[fit_mask]
+    fs_fit = y_arr[fit_mask]
     n_pts = len(t_fit)
     boot_ks: list[float] = []
     boot_obs: list[np.ndarray] = []
@@ -970,6 +1020,21 @@ def _fit_one_concat(
         ci_lo = ci_hi = sd = float("nan")
         fs_lo = [float("nan")] * n_pts
         fs_hi = [float("nan")] * n_pts
+
+    label_out: list[float] = []
+    if rising:
+        # Output f, with the band mapped from the label-content scale: the bootstrap
+        # band above is in A; Var(f) = Var(A)/gain², with the gain ∂A/∂f taken at the
+        # MODEL value f̂ = 1 − e^{−k̂t} (never at the observed f — early in the series
+        # a small envelope bias solves to f near 1). Centred on f̂, like the θ band.
+        label_out = [float(x) for x in fs_fit]
+        fs_fit = fs_arr[fit_mask]
+        f_hat = -np.expm1(-k_deg * t_fit)
+        gain = label_gain(t_fit, k_deg, float(config.precursor_k_p))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            half_f = (np.asarray(fs_hi) - np.asarray(fs_lo)) / 2.0 / gain
+        fs_lo = [float(x) for x in f_hat - half_f]
+        fs_hi = [float(x) for x in f_hat + half_f]
 
     # Census of the fitted points (aligned to fit_mask): MBR / Met-Ox / clean.
     mbr_fit = is_mbr[fit_mask]
@@ -1023,7 +1088,9 @@ def _fit_one_concat(
     # ¹⁸O isotopolog). The ¹⁸O variant is a low-signal completeness estimate (small
     # ¹⁸O-vs-¹³C mass-defect difference) — see solve_fs_o18_ds.
     fs_ds_fit: list[float] = []
-    if dspacing_fit:
+    # Not under a rising precursor: fs_ds inverts the plateau-mixture spacing curve,
+    # which would need the same kinetic mixture as the intensity solve (Track B).
+    if dspacing_fit and not rising:
         first_i = int(np.nonzero(fit_mask)[0][0])
         mods0, pep_mass0 = forms[row_concats[first_i]]
         z0 = int(charge_arr[first_i]) if np.isfinite(charge_arr[first_i]) else 0
@@ -1058,6 +1125,7 @@ def _fit_one_concat(
         dmass=dmass_fit,
         dspacing=dspacing_fit,
         fs_ds=fs_ds_fit,
+        label_content=label_out,
         n_points=int(fit_mask.sum()),
         n_mbr=int(mbr_fit.sum()),
         n_metox=int(metox_fit.sum()),
@@ -1157,6 +1225,31 @@ def peptide_summary(result_df: pd.DataFrame) -> pd.DataFrame:
     return result_df.drop(columns=list(_PER_TIMEPOINT_COLS), errors="ignore")
 
 
+def precursor_header(value: object) -> dict[str, str]:
+    """Provenance-header lines recording what ``fs`` holds and the precursor.
+
+    ``value`` is the fit result's ``attrs["precursor_k_p"]``: a dict
+    ``{(experiment, condition): k_p or None}`` (manifest fit) or one ``k_p``/``None``
+    (single-curve fit). Returns ``fs_basis`` — ``theta`` (precursor at plateau from
+    t = 0), ``f`` (every curve rising: fraction new) or ``mixed`` — and, when any curve
+    is rising, ``k_p_applied`` listing them (``experiment/condition=k_p; …``; the
+    config's own ``k_p`` line is the deprecated guan/fornasiero curve parameter, and
+    its ``precursor_k_p`` line only the ``--kp`` given). The rollup reads ``fs_basis``.
+    """
+    if isinstance(value, dict):
+        items = {k: v for k, v in value.items()}
+    else:
+        items = {("", ""): value}
+    rising = {k: float(v) for k, v in items.items() if v is not None}
+    if not rising:
+        return {"fs_basis": "theta"}
+    basis = "f" if len(rising) == len(items) else "mixed"
+    listed = "; ".join(
+        (f"{e or '-'}/{c or '-'}={v:g}" if (e or c) else f"{v:g}")
+        for (e, c), v in sorted(rising.items()))
+    return {"fs_basis": basis, "k_p_applied": listed}
+
+
 def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
     """Explode per-peptide fits into the M5 long-format fraction-new table.
 
@@ -1172,6 +1265,8 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
     # mDa). Exploded here from the per-point inner lists; collected so the column set
     # is stable across peptides and omitted entirely when no peptide carried obs_mz.
     extra_cols: set[str] = set()
+    # Rising precursor: per-point label content, after fs_upper; absent on θ fits.
+    with_label = any(r is not None and r.label_content for r in results)
     for r in results:
         if r is None:
             continue
@@ -1180,8 +1275,10 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
         dm = r.dmass if len(r.dmass) == len(r.t) else [None] * len(r.t)
         ds = r.dspacing if len(r.dspacing) == len(r.t) else [None] * len(r.t)
         tds = r.fs_ds if len(r.fs_ds) == len(r.t) else [float("nan")] * len(r.t)
-        for ti, fsi, lo, hi, br, evi, mxi, dmi, dsi, tdi in zip(
-            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev, mx, dm, ds, tds
+        lab = (r.label_content if len(r.label_content) == len(r.t)
+               else [float("nan")] * len(r.t))
+        for ti, fsi, lo, hi, br, evi, mxi, dmi, dsi, tdi, lbi in zip(
+            r.t, r.fs, r.fs_lo, r.fs_hi, r.bio_rep, ev, mx, dm, ds, tds, lab
         ):
             row = {
                 "concat": r.concat,
@@ -1196,6 +1293,8 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
                 "evidence": evi,
                 "metox": bool(mxi),
             }
+            if with_label:
+                row["label_content"] = float(lbi)
             if dmi is not None:
                 for k, v in enumerate(dmi):
                     col = f"dmass_iso{k}"
@@ -1210,4 +1309,7 @@ def build_fractions_long(results: list[FitResult | None]) -> pd.DataFrame:
     ordered_extra = sorted(
         extra_cols, key=lambda c: (c.rsplit("_iso", 1)[0], int(c.rsplit("iso", 1)[1]))
     )
-    return pd.DataFrame(rows, columns=_FRACTIONS_LONG_COLUMNS + ordered_extra)
+    base = list(_FRACTIONS_LONG_COLUMNS)
+    if with_label:
+        base.insert(base.index("fs_upper") + 1, "label_content")
+    return pd.DataFrame(rows, columns=base + ordered_extra)

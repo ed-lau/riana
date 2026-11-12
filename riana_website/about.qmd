@@ -91,13 +91,16 @@ around the fitted curve, unweighted. It is the statistic the rollup's admission 
 [Rollup](#rollup)).
 
 ::: {.callout-note}
-## In development: a rising precursor
+## A rising precursor (`--kp`, in development)
 
-Not in this release. Without a priming dose the D~2~O precursor rises over days, so molecules made
-early carry less than the plateau label. The planned fit takes the precursor rate constant $k_p$
-from the SDRF and solves each timepoint's envelope with the precursor built in. It reports the
-fraction of protein made since labeling began, $f = 1 - e^{-kt}$, which stays first-order, so the
-rollup models apply unchanged.
+Without a priming dose the D~2~O precursor rises over days, so molecules made early carry less
+than the plateau label. Give the precursor rate constant $k_p$ (per labeling-time unit; the
+precursor rises as $1 - e^{-k_p t}$) in the SDRF column `characteristics[precursor rate constant]`
+or with `fit --kp`, and `fit` solves each timepoint's envelope with the precursor built in. `fs`
+then holds the fraction of protein made since labeling began, $f = 1 - e^{-kt}$, which stays
+first-order, so the rollup models apply unchanged — run `rollup --model "linear simple"` with the
+default weights (not `--linear-weights wls-var`, which is miscalibrated on f; D~2~O, `--label hw`,
+only; `--kp inf` forces the precursor at plateau).
 
 The peptide fit and its R² then run on **label content** A, the peptide's mean enrichment as a
 fraction of the plateau enrichment (to first order, what the envelope's mean mass shift reads):

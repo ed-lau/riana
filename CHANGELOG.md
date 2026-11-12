@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Fit — a rising D₂O precursor (`--kp`, per-point envelope solve) — 2026-11-12
+
+#### Added
+
+- **`fit --kp` / SDRF `characteristics[precursor rate constant]`: a precursor that rises as
+  1 − e^(−k_p·t)** (no priming dose). Each timepoint's envelope is solved for the fraction of protein
+  made since labeling began, f = 1 − e^(−k·t), with new molecules spread over synthesis times, each
+  at the precursor enrichment of its time (`riana/algorithms/precursor.py`; report
+  `2026-11-11_non_first_order_linearization_feasibility.md`). f is first-order under any shared
+  precursor curve, so the rollup models apply unchanged.
+  - *Output:* `fs` holds f; a `label_content` column (the pool's mean enrichment ÷ plateau, the
+    measured scale) follows `fs_upper` in `riana_fit_fractions.txt`. The headers record
+    `fs_basis f` (θ fits: `fs_basis theta`) and `k_p_applied` per curve.
+  - *Peptide curve, R², k CI:* fitted on label content with the Guan curve at that k_p
+    (`models.rising_precursor_label`), the same least squares and residual bootstrap as today — so
+    the rollup's R² / `k_cv` gate means the same thing. The fs band is that bootstrap band mapped
+    to f through ∂A/∂f at the fitted k (Var(f) at the model value): early points get wide bands.
+  - *Rails on label content,* not on f: early in a series f ∈ [0, 1] maps into A ∈ [0, P(t)], so a
+    rail at f = −0.05 would keep only the heavy half of the reads. A solve at the f bound (a read
+    at or above the precursor ceiling) is a failed solve.
+  - *Envelopes by convolution:* the site-free envelope (labeling-site H fixed at ¹H) convolved with
+    Binomial(sites, p), within ~10⁻⁴ of IsoSpec; checked against an IsoSpec-integrated forward
+    model (`tests/test_precursor.py`).
+  - *Resolution per curve:* `--kp` > the manifest's new `precursor_rate_constant` column > none.
+    `--kp inf` forces the steady path. Runs of one curve must agree. Not applied under the
+    deprecated `--model guan|fornasiero` (there `--kp` stays their curve parameter, default 0.5)
+    or to calibration runs. D₂O (`--label hw`) only; `fs_ds` is not computed on this path.
+  - *Rollup:* use `--model "linear simple"` with the default `--linear-weights wls`. **Not `wls-var`
+    on f:** a Monte Carlo through the shipped pipeline (`tests/benchmark/bench_rising_null.py`)
+    found it anti-conservative there (false-positive rate 0.23 at α = 0.05; the interaction's mean
+    Δk 0.18), while `wls` holds 0.03–0.05 across turnover rates with unbiased ratio recovery. The
+    per-peptide variance, mapped through the tiny early gain, spans ~1000× over a series and is
+    misspecified in a time-structured way (it omits between-animal variance shared by a cell's
+    peptides), and with weights that extreme the residual scale no longer matches the points that
+    carry the slope.
+- **Unchanged without a k_p:** θ, k and every estimate are byte-identical. The fit header gains
+  `fs_basis theta` and the config's `precursor_k_p` line; the manifest gains an (empty)
+  `precursor_rate_constant` column.
+
 ### Interaction model follows `--linear-weights` — 2026-11-12
 
 #### Changed

@@ -997,3 +997,140 @@ def test_fit_run_single_timepoint_ci_finite_for_replicates_nan_for_single():
     single = fit_run(cfg, dfs1, coeffs1, n_boot=200, random_state=42,
                      time_column="labeling_time").iloc[0]
     assert np.isnan(single["ci_lo"]) and np.isnan(single["ci_hi"])
+
+
+# --- Rising precursor (config.precursor_k_p) --------------------------------------------
+
+_KP = 0.1
+_RISE_TIMES = (0.0, 1.0, 3.0, 7.0, 14.0, 28.0, 56.0)
+
+
+def _rising_frame(coeffs, *, k=0.08, k_p=_KP, times=_RISE_TIMES, n_rep=1, noise=0.0,
+                  seed=0, ria=0.04, extra=None):
+    """One manifest-style frame (``labeling_time`` column, one row per point) whose
+    envelopes come from the rising-precursor forward model at true (k, k_p).
+    ``extra`` = [(seq, t, f)] appends points at a chosen f (rail tests)."""
+    from riana.algorithms.precursor import RisingEnvelope
+
+    clear_envelope_cache()
+    spep_by = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    rng = np.random.default_rng(seed)
+    rows = []
+
+    def add(seq, charge, pep_idx, t, f, br):
+        env = RisingEnvelope(seq, calculate_ion_mz(seq), spep_by[seq], ria, t, k_p)
+        e = env.predict(f)[:6] * 1e6
+        if noise:
+            e = e * (1.0 + rng.normal(0.0, noise, 6))
+        rows.append({"concat": f"{seq}_{charge}", "sequence": seq, "charge": charge,
+                     "percolator q-value": 1e-4, "labeling_time": float(t),
+                     "biological_replicate": br,
+                     "protein id": f"sp|P0000{pep_idx}|TEST_HUMAN",
+                     **{f"iso{i}": e[i] for i in range(6)}})
+
+    for pep_idx, (seq, charge) in enumerate(_TEST_PEPTIDES):
+        for t in times:
+            for br in range(1, n_rep + 1):
+                add(seq, charge, pep_idx, t, -np.expm1(-k * t), br)
+    for seq, t, f in (extra or []):
+        pep_idx, charge = next((i, c) for i, (s, c) in enumerate(_TEST_PEPTIDES) if s == seq)
+        add(seq, charge, pep_idx, t, f, 99)
+    return pd.DataFrame(rows)
+
+
+def _rising_config(**kw):
+    return FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.04,
+                     precursor_k_p=_KP, **kw)
+
+
+def test_rising_precursor_fit_recovers_k_and_reports_f():
+    from riana.algorithms.precursor import label_content
+
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    res = fit_run(_rising_config(), [_rising_frame(coeffs)], coeffs,
+                  time_column="labeling_time", n_boot=20, random_state=1)
+    assert res.attrs["precursor_k_p"] == _KP
+    np.testing.assert_allclose(res["k_deg"].to_numpy(dtype=float), 0.08, rtol=0.01)
+    assert (res["R_squared"].to_numpy(dtype=float) > 0.999).all()
+    long = res.attrs["fractions_long"]
+    # fs is the fraction new f; label_content (the fitted, measured scale) rides along.
+    assert list(long.columns[:9]) == [
+        "concat", "protein id", "mod sites", "biological_replicate", "labeling_time",
+        "fs", "fs_lower", "fs_upper", "label_content"]
+    np.testing.assert_allclose(long["fs"], -np.expm1(-0.08 * long["labeling_time"]),
+                               atol=2e-3)
+    np.testing.assert_allclose(long["label_content"],
+                               label_content(long["labeling_time"].to_numpy(), 0.08, _KP),
+                               atol=1e-3)
+    assert long["fs_ds"].isna().all()            # not defined under a rising precursor
+
+
+def test_rising_precursor_band_is_wide_early_and_centred_on_the_model():
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    res = fit_run(_rising_config(), [_rising_frame(coeffs, n_rep=3, noise=0.01, seed=3)],
+                  coeffs, time_column="labeling_time", n_boot=100, random_state=1)
+    long = res.attrs["fractions_long"].merge(
+        res[["k_deg"]], left_on="concat", right_index=True)
+    half = (long["fs_upper"] - long["fs_lower"]) / 2
+    by_t = half.groupby(long["labeling_time"]).median()
+    # Var(f) = Var(A)/gain²: the same envelope noise is worth far more f early on.
+    assert by_t.loc[1.0] > 10 * by_t.loc[28.0]
+    centre = (long["fs_upper"] + long["fs_lower"]) / 2
+    np.testing.assert_allclose(centre, -np.expm1(-long["k_deg"] * long["labeling_time"]),
+                               atol=1e-9)
+
+
+def test_rising_precursor_rails_on_label_content():
+    """Early, a read just below natural on the measured scale (A = −0.03; f ≪ −0.05)
+    is kept; A = −0.08 is a failed solve; a read above the ceiling (f bound) is too."""
+    from scipy.optimize import brentq
+
+    from riana.algorithms.precursor import label_content
+
+    def f_at(a, t=1.0):
+        k = brentq(lambda k: float(label_content(t, k, _KP)) - a, -50.0, 5.0)
+        return float(-np.expm1(-k * t))
+
+    seq = _TEST_PEPTIDES[0][0]
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    frame = _rising_frame(coeffs, extra=[(seq, 1.0, f_at(-0.03)), (seq, 1.0, f_at(-0.08)),
+                                         (seq, 1.0, 0.999)])
+    res = fit_run(_rising_config(), [frame], coeffs, time_column="labeling_time",
+                  n_boot=0, random_state=1)
+    long = res.attrs["fractions_long"]
+    extra = long[(long["concat"] == f"{seq}_2") & (long["biological_replicate"] == 99)]
+    assert len(extra) == 1
+    assert extra["label_content"].iloc[0] == pytest.approx(-0.03, abs=1e-3)
+    assert extra["fs"].iloc[0] < -0.05
+
+
+def test_steady_fit_has_no_label_content_column():
+    coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
+    spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
+    res = fit_run(FitConfig(model="simple", label="hw", q_value=0.05, depth=3),
+                  _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq), coeffs,
+                  n_boot=0, random_state=1)
+    assert res.attrs["precursor_k_p"] is None
+    assert "label_content" not in res.attrs["fractions_long"].columns
+
+
+def test_precursor_k_p_config_validation():
+    assert FitConfig(precursor_k_p=float("inf")).precursor_k_p is None
+    for kw in ({"precursor_k_p": 0.0}, {"precursor_k_p": -1.0},
+               {"precursor_k_p": 0.1, "model": "guan"},
+               {"precursor_k_p": 0.1, "model": "calibration"},
+               {"precursor_k_p": 0.1, "label": "o18"}):
+        with pytest.raises(ValueError):
+            FitConfig(**kw)
+
+
+def test_precursor_header_lines():
+    from riana.core.fitting import precursor_header
+
+    assert precursor_header(None) == {"fs_basis": "theta"}
+    assert precursor_header(0.08) == {"fs_basis": "f", "k_p_applied": "0.08"}
+    assert precursor_header({("heart", "wt"): 0.07, ("heart", "ko"): 0.07}) == {
+        "fs_basis": "f", "k_p_applied": "heart/ko=0.07; heart/wt=0.07"}
+    assert precursor_header({("a", ""): None, ("b", ""): 0.1}) == {
+        "fs_basis": "mixed", "k_p_applied": "b/-=0.1"}
+    assert precursor_header({("a", ""): None}) == {"fs_basis": "theta"}

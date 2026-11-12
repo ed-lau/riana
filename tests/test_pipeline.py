@@ -737,3 +737,56 @@ def test_fit_project_long_carries_individual_from_the_manifest(tmp_path):
     assert cols[cols.index("biological_replicate") + 1] == "individual"
     expected = {float(r.identity.labeling_time): r.identity.individual for r in named}
     assert (long["individual"] == long["labeling_time"].map(expected)).all()
+
+
+def test_fit_project_resolves_the_precursor_per_curve(tmp_path, monkeypatch, caplog):
+    """k_p: --kp override (inf = steady) > the manifest's precursor_rate_constant > none;
+    never for the deprecated guan model; runs of one curve must agree."""
+    import riana.core.fitting as fitting_mod
+    from riana.exceptions import DataError
+
+    coeffs = _coeffs()
+    dfs = _make_timepoint_dfs(coeffs)
+
+    def manifest(kps, name):
+        rows = []
+        for i, (ti, df) in enumerate(zip(_TIMES, dfs)):
+            stem = f"{name}_t{ti:.4f}"
+            path = tmp_path / f"{stem}_riana.txt"
+            df.to_csv(path, sep="\t", index=False)
+            rows.append(ManifestRow("integrate", str(path), RunIdentity(
+                experiment="syn", sample=stem, data_file=stem, labeling_time=float(ti),
+                labeling_time_unit="au", condition="control",
+                precursor_rate_constant=kps[i % len(kps)])))
+        mf = tmp_path / f"{name}_manifest.tsv"
+        append_manifest(mf, rows)
+        return mf
+
+    seen: list = []
+    real = fitting_mod.fit_run
+
+    def _spy(cfg, *a, **k):
+        seen.append(cfg.precursor_k_p)
+        return real(cfg, *a, **k)
+
+    monkeypatch.setattr(fitting_mod, "fit_run", _spy)
+    base = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    mf = manifest([0.5], "kp")
+    assert read_manifest(mf)[0].identity.precursor_rate_constant == 0.5   # round-trips
+
+    out = fit_project(base, mf, coeffs, n_boot=0, random_state=0)
+    assert seen == [0.5] and out.attrs["precursor_k_p"] == {("syn", "control"): 0.5}
+    seen.clear()
+    fit_project(base, mf, coeffs, n_boot=0, random_state=0, kp_override=0.3)
+    fit_project(base, mf, coeffs, n_boot=0, random_state=0, kp_override=float("inf"))
+    assert seen == [0.3, None]
+    seen.clear()
+    with caplog.at_level("WARNING"):
+        fit_project(FitConfig(model="guan", label="hw", q_value=0.05, depth=3),
+                    mf, coeffs, n_boot=0, random_state=0)
+    assert seen == [None] and "deprecated" in caplog.text
+    seen.clear()
+    fit_project(base, manifest([None], "steady"), coeffs, n_boot=0, random_state=0)
+    assert seen == [None]
+    with pytest.raises(DataError, match="disagree on precursor_rate_constant"):
+        fit_project(base, manifest([0.5, 0.4], "clash"), coeffs, n_boot=0, random_state=0)

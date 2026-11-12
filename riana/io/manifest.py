@@ -62,6 +62,7 @@ _FIELDS = (
     "condition",
     "acquisition",
     "precursor_enrichment",
+    "precursor_rate_constant",
     "experiment_type",
     "config_hash",
     "git_sha",
@@ -113,6 +114,7 @@ class ManifestRow:
             "condition": i.condition,
             "acquisition": i.acquisition,
             "precursor_enrichment": _fmt_opt(i.precursor_enrichment),
+            "precursor_rate_constant": _fmt_opt(i.precursor_rate_constant),
             "experiment_type": i.experiment_type,
             "config_hash": self.config_hash,
             "git_sha": self.git_sha,
@@ -135,6 +137,7 @@ class ManifestRow:
             condition=rec.get("condition", ""),
             acquisition=rec.get("acquisition", "DDA") or "DDA",
             precursor_enrichment=_to_opt_float(rec.get("precursor_enrichment")),
+            precursor_rate_constant=_to_opt_float(rec.get("precursor_rate_constant")),
         )
         stage = _STAGE_ALIASES.get(rec["stage"], rec["stage"])
         return cls(

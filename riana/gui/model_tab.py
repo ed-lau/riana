@@ -49,7 +49,7 @@ from qasync import asyncSlot
 
 from riana.config import FitConfig
 from riana.core.fitting import available_coefficient_presets
-from riana.core.fitting import peptide_summary
+from riana.core.fitting import peptide_summary, precursor_header
 from riana.gui.curve_view import CurveView
 from riana.gui.models import DataFrameTableModel
 from riana.gui.progress import ProgressPump
@@ -535,7 +535,8 @@ class ModelTab(QWidget):
             dataclasses.asdict(config),
             id_source=str(id_source),
             extra={"model": config.model, "label": config.label,
-                   "coefficients": str(coefficients)},
+                   "coefficients": str(coefficients),
+                   **precursor_header(result_df.attrs.get("precursor_k_p"))},
         )
         out_path = out_dir / "riana_fit_peptides.txt"
         write_dataframe_tsv(out_path, peptide_summary(result_df), provenance,

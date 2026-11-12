@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from typer.testing import CliRunner
@@ -420,3 +421,36 @@ def test_rollup_interaction_needs_two_experiments(tmp_path):
                                  "--interaction", "-o", str(tmp_path / "out")])
     assert result.exit_code != 0
     assert "two or more experiments" in _norm(result.output)
+
+
+def test_fit_kp_switches_to_the_rising_precursor_and_records_it(tmp_path):
+    from riana.io.writers import read_provenance_header
+
+    mf, coeff_csv = _manifest_fit_project(tmp_path)
+    steady = runner.invoke(app, ["fit", "--manifest", str(mf), "--coefficients",
+                                 str(coeff_csv), "-q", "0.05", "-d", "3"])
+    assert steady.exit_code == 0, steady.output
+    head = read_provenance_header(tmp_path / "riana_fit_peptides.txt")
+    assert head["fs_basis"] == "theta" and "k_p_applied" not in head
+    assert "label_content" not in pd.read_table(
+        tmp_path / "riana_fit_fractions.txt", comment="#").columns
+
+    out = tmp_path / "rising"
+    r = runner.invoke(app, ["fit", "--manifest", str(mf), "--coefficients",
+                            str(coeff_csv), "-q", "0.05", "-d", "3", "--kp", "100",
+                            "-o", str(out)])
+    assert r.exit_code == 0, r.output
+    head = read_provenance_header(out / "riana_fit_peptides.txt")
+    assert head["fs_basis"] == "f" and head["k_p_applied"].endswith("=100")
+    assert "label_content" in pd.read_table(out / "riana_fit_fractions.txt",
+                                            comment="#").columns
+
+    bad = runner.invoke(app, ["fit", "--manifest", str(mf), "--coefficients",
+                              str(coeff_csv), "--kp", "0", "-o", str(tmp_path / "x")])
+    assert bad.exit_code != 0
+    # A fast precursor reproduces the steady fit (the rising solve's limit).
+    steady_k = pd.read_table(tmp_path / "riana_fit_peptides.txt", comment="#").set_index(
+        ["experiment", "condition", "concat"])["k_deg"]
+    rising_k = pd.read_table(out / "riana_fit_peptides.txt", comment="#").set_index(
+        ["experiment", "condition", "concat"])["k_deg"]
+    np.testing.assert_allclose(rising_k.loc[steady_k.index], steady_k, rtol=0.02)

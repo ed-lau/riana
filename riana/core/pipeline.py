@@ -394,6 +394,7 @@ def identity_to_extra(identity: RunIdentity) -> dict[str, str]:
         "condition": identity.condition,
         "acquisition": identity.acquisition,
         "precursor_enrichment": identity.precursor_enrichment,
+        "precursor_rate_constant": identity.precursor_rate_constant,
         "experiment_type": identity.experiment_type,
     }
     return {k: str(v) for k, v in fields.items() if v is not None and v != ""}
@@ -448,6 +449,7 @@ def fit_project(
     *,
     logger: logging.Logger | None = None,
     ria_override: float | None = None,
+    kp_override: float | None = None,
     **fit_kwargs,
 ) -> pd.DataFrame:
     """Fit every kinetic curve indexed by the manifest, tagged by condition.
@@ -456,6 +458,14 @@ def fit_project(
     :func:`riana.core.fitting.fit_run` per curve with the identity-supplied
     x-axis. Results across curves are concatenated with ``experiment`` /
     ``condition`` columns so side-by-side groups are distinguishable.
+
+    Each curve's precursor: ``kp_override`` (CLI ``--kp``; ``inf`` forces the steady
+    path) > the manifest's ``precursor_rate_constant`` (SDRF
+    ``characteristics[precursor rate constant]``) > none. A finite k_p switches the
+    curve to the rising-precursor solve (``fs`` = fraction new f); the deprecated
+    guan/fornasiero models and calibration runs never use it. The per-curve values
+    are returned in ``out.attrs["precursor_k_p"]`` (``{(experiment, condition): k_p or
+    None}``) for the output header.
     """
     from riana.core.fitting import build_fractions_long, fit_run
 
@@ -482,12 +492,47 @@ def fit_project(
     # mis-shape the envelope and bias every FS/k).
     exp_ria = {r.identity.group_key: r.identity.precursor_enrichment
                for r in integrate_rows if r.stage == "integrate"}
+    # Per-curve precursor rate constant (SDRF characteristics[precursor rate
+    # constant]). Physically one value per animal; one per curve here, so runs of a
+    # curve that disagree are an error rather than a silent pick.
+    exp_kp_values: dict[tuple[str, str], set[float]] = {}
+    for r in integrate_rows:
+        if r.stage == "integrate" and r.identity.precursor_rate_constant is not None:
+            exp_kp_values.setdefault(r.identity.group_key, set()).add(
+                float(r.identity.precursor_rate_constant))
+    for key, vals in exp_kp_values.items():
+        if len(vals) > 1:
+            raise DataError(
+                f"curve experiment={key[0]} condition={key[1] or '-'}: runs disagree on "
+                f"precursor_rate_constant ({sorted(vals)}); one k_p per curve.")
+    exp_kp = {key: next(iter(vals)) for key, vals in exp_kp_values.items()}
+    if exp_kp and config.model in ("guan", "fornasiero"):
+        log.warning(
+            "--model %s models the precursor itself (deprecated): the manifest's "
+            "precursor_rate_constant is not applied.", config.model)
+    curve_kp: dict[tuple[str, str], float | None] = {}
 
     results: list[pd.DataFrame] = []
     long_frames: list[pd.DataFrame] = []
     for group_key, frame in sorted(curves.items()):
         experiment, condition = group_key
         curve_config = config
+        is_calibration = (exp_type.get(group_key) == "calibration"
+                          or config.model == "calibration")
+        # Resolve the curve's precursor before any model swap (FitConfig rejects a
+        # k_p on the calibration / guan / fornasiero models).
+        if is_calibration or config.model in ("guan", "fornasiero"):
+            kp, kp_src = None, ""
+        elif kp_override is not None:
+            kp = None if np.isinf(kp_override) else float(kp_override)
+            kp_src = "--kp"
+        elif group_key in exp_kp:
+            kp, kp_src = exp_kp[group_key], "manifest precursor_rate_constant"
+        else:
+            kp, kp_src = None, ""
+        if kp != curve_config.precursor_k_p:
+            curve_config = dataclasses.replace(curve_config, precursor_k_p=kp)
+        curve_kp[group_key] = kp
         if exp_type.get(group_key) == "calibration" and config.model != "calibration":
             curve_config = dataclasses.replace(curve_config, model="calibration")
             log.info(
@@ -505,8 +550,10 @@ def fit_project(
         if curve_ria != curve_config.ria_max:
             curve_config = dataclasses.replace(curve_config, ria_max=curve_ria)
         log.info(
-            "fitting curve experiment=%s condition=%s (%d rows; RIA=%.4f from %s)",
+            "fitting curve experiment=%s condition=%s (%d rows; RIA=%.4f from %s; %s)",
             experiment, condition or "-", len(frame), curve_ria, ria_src,
+            (f"rising precursor k_p={kp:g} from {kp_src}" if kp is not None
+             else "precursor at plateau from t=0"),
         )
         try:
             result = fit_run(
@@ -536,6 +583,7 @@ def fit_project(
         # there is >1 curve (the two-condition Δk path). It is already captured in
         # long_frames; out.attrs["fractions_long"] is rebuilt after the concat.
         result.attrs.pop("fractions_long", None)
+        result.attrs.pop("precursor_k_p", None)   # rebuilt per curve after the concat
         for col, val in zip(GROUP_KEY_COLUMNS, group_key):
             result[col] = val
         results.append(result)
@@ -557,6 +605,8 @@ def fit_project(
             f"{n} duplicate {tuple(CURVE_KEY_COLUMNS)} rows in the fit output — "
             "a curve-key collision (two conditions tagged the same?)."
         )
+    out.attrs["precursor_k_p"] = {key: curve_kp.get(key) for key in sorted(
+        {(str(e), str(c)) for e, c in zip(out["experiment"], out["condition"])})}
     out.attrs["fractions_long"] = _attach_individual(
         pd.concat(long_frames, ignore_index=True)
         if long_frames

@@ -431,3 +431,39 @@ def test_isobaric_collapse_keeps_individual_only_when_channels_agree(tmp_path):
     p.write_text("\n".join("\t".join(r) for r in [cols, *rows]) + "\n")
     by_file = {r.data_file: r.individual for r in read_sdrf(p).runs}
     assert by_file == {"fileA": "m1", "fileB": ""}
+
+
+# --- precursor rate constant (rising precursor) ---------------------------------------
+
+
+@pytest.mark.parametrize("cell,expected", [
+    ("0.08", 0.08), ("0.08 per day", 0.08), ("8e-2 1/day", 0.08),
+    ("not available", None), ("", None),
+])
+def test_precursor_rate_constant_is_read(tmp_path, cell, expected):
+    p = _write(tmp_path, f"""\
+        source name\tcomment[data file]\tcharacteristics[labeling time]\tcharacteristics[precursor rate constant]
+        s0\trun0.raw\t1 day\t{cell}
+    """)
+    run = read_sdrf(p).runs[0]
+    assert run.precursor_rate_constant == (pytest.approx(expected) if expected else None)
+
+
+@pytest.mark.parametrize("cell", ["fast", "0", "-0.1"])
+def test_unreadable_precursor_rate_constant_is_an_error(tmp_path, cell):
+    p = _write(tmp_path, f"""\
+        source name\tcomment[data file]\tcharacteristics[labeling time]\tcharacteristics[precursor rate constant]
+        s0\trun0.raw\t1 day\t{cell}
+    """)
+    with pytest.raises(DataError, match="precursor rate constant"):
+        read_sdrf(p)
+
+
+def test_precursor_rate_constant_absent_and_not_a_stratifier(tmp_path):
+    p = _write(tmp_path, """\
+        source name\tcomment[data file]\tcharacteristics[labeling time]
+        s0\trun0.raw\t1 day
+    """)
+    assert read_sdrf(p).runs[0].precursor_rate_constant is None
+    from riana.io.sdrf import _NOT_STRATIFIERS
+    assert "characteristics[precursor rate constant]" in _NOT_STRATIFIERS

@@ -527,8 +527,17 @@ def fit(
         "needs its matching --coefficients table. (Amino-acid / SILAC fitting "
         "was dropped — integrate SILAC peaks, fit L/(H+L) downstream.)",
     ),
-    kp: float = typer.Option(
-        0.5, "--kp", help="Precursor rate constant (two-compartment models)."),
+    kp: Optional[float] = typer.Option(
+        None, "--kp", metavar="K_P",
+        help="Precursor rate constant k_p (per labeling-time unit) for a precursor "
+        "that rises as 1 − e^(−k_p·t) from the start of labeling (no priming dose). "
+        "With the exponential model each timepoint's envelope is then solved with the "
+        "precursor built in: fs holds the fraction of protein made since labeling "
+        "began, and the peptide curve, R² and k CI are fitted on label content. "
+        "Default: per experiment from the manifest's precursor_rate_constant (SDRF "
+        "characteristics[precursor rate constant]); absent = precursor at plateau "
+        "from t = 0 (θ, as before). 'inf' forces that. Under the deprecated "
+        "guan / fornasiero models: their curve's k_p [default: 0.5]."),
     kr: float = typer.Option(
         0.05, "--kr", help="Reutilization rate constant (Fornasiero)."),
     rp: float = typer.Option(
@@ -607,7 +616,7 @@ def fit(
     from riana.config import FitConfig
     from riana.core.fitting import (
         available_coefficient_presets, fit_run, load_aa_coefficients,
-        load_o18_coefficients, peptide_summary,
+        load_o18_coefficients, peptide_summary, precursor_header,
     )
     from riana.io.writers import (
         ESTIMATE_FLOAT_FORMAT, make_provenance, write_dataframe_tsv,
@@ -664,10 +673,14 @@ def fit(
 
     os.makedirs(out, exist_ok=True)
     try:
+        two_compartment = model in ("guan", "fornasiero")
         config = FitConfig(
             model=model,
             label=label,
-            k_p=float(kp),
+            k_p=(float(kp) if two_compartment and kp is not None
+                 else FitConfig.__dataclass_fields__["k_p"].default),
+            precursor_k_p=(float(kp) if not two_compartment and kp is not None
+                           else None),
             k_r=float(kr),
             r_p=float(rp),
             q_value=float(q_value),
@@ -723,8 +736,10 @@ def fit(
                 "(input manifest left untouched)", out_dir)
         out = out_dir
         logger.info(f"fitting from manifest {manifest}")
-        result_df = fit_project(config, manifest, coeffs, logger=logger,
-                                ria_override=ria, progress_callback=progress)
+        result_df = fit_project(
+            config, manifest, coeffs, logger=logger, ria_override=ria,
+            kp_override=(None if config.model in ("guan", "fornasiero") else kp),
+            progress_callback=progress)
         progress.close()
         id_source = str(manifest)
     else:
@@ -756,7 +771,8 @@ def fit(
     provenance = make_provenance(
         dataclasses.asdict(config),
         id_source=id_source,
-        extra={"model": model, "label": label, "coefficients": str(coefficients)},
+        extra={"model": model, "label": label, "coefficients": str(coefficients),
+               **precursor_header(result_df.attrs.get("precursor_k_p"))},
     )
     # Write the scalar per-peptide summary (the per-timepoint detail lives in the
     # fractions file); estimates rounded to ~6 sig figs.

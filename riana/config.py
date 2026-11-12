@@ -16,6 +16,7 @@ with typer/click.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -353,7 +354,8 @@ class FitConfig:
     #: dropped from fitting (and the SILAC dual-channel ``-X/-F`` extraction knobs
     #: were retired in M7).
     label: str = "hw"
-    #: --kp. Precursor rate constant for the two-compartment models.
+    #: --kp under the (deprecated) guan / fornasiero models: their curve's precursor
+    #: rate constant.
     k_p: float = 0.5
     #: --kr. Reutilization rate constant for the Fornasiero model.
     k_r: float = 0.05
@@ -444,6 +446,15 @@ class FitConfig:
     #: (≈ the solver clamp 1.199 / −0.099) reproduces the pre-sweep behaviour.
     fs_rail_hi: float | None = None
     fs_rail_lo: float | None = None
+    #: The **rising-precursor** rate constant k_p (per labeling-time unit): when set,
+    #: each point's envelope is solved with the precursor P(s) = 1 − e^{−k_p·s} built in
+    #: (:mod:`riana.algorithms.precursor`), ``fs`` holds the fraction new f, and the
+    #: peptide curve is fitted on label content. ``None`` (default) = precursor at
+    #: plateau from t = 0 — today's θ, unchanged. Resolved per curve by
+    #: :func:`riana.core.pipeline.fit_project` (``--kp`` > the manifest's
+    #: ``precursor_rate_constant`` from the SDRF > ``None``); ``inf`` means ``None``.
+    #: Exponential model (``simple``) and ``hw`` only.
+    precursor_k_p: float | None = None
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
     #: lever for the IsoSpec/bootstrap fit). The per-peptide bootstrap is seeded
@@ -484,3 +495,21 @@ class FitConfig:
                 f"{self.fraction_collapse!r}")
         if self.workers < 1:
             raise ValueError(f"workers must be >= 1, got {self.workers}")
+        if self.precursor_k_p is not None:
+            kp = float(self.precursor_k_p)
+            if math.isinf(kp) and kp > 0:
+                object.__setattr__(self, "precursor_k_p", None)   # ∞ = steady
+            elif not kp > 0:
+                raise ValueError(
+                    f"precursor_k_p (--kp) must be > 0 (or inf), got {self.precursor_k_p}")
+            elif self.model != "simple":
+                raise ValueError(
+                    "a rising precursor (k_p) applies to the exponential model only; "
+                    f"--model {self.model} " + (
+                        "models the precursor itself (deprecated)."
+                        if self.model in ("guan", "fornasiero")
+                        else "has no labeling time."))
+            elif self.label != "hw":
+                raise ValueError(
+                    "a rising precursor (k_p) is supported for --label hw (D2O) only, "
+                    f"not {self.label!r}.")

@@ -23,6 +23,7 @@ SDRF column                                     :class:`~riana.records.RunIdenti
 ``factor value[...]``                            ``condition``
 ``comment[proteomics data acquisition method]``  ``acquisition`` (DDA/DIA)
 ``characteristics[precursor enrichment]``        ``precursor_enrichment`` (RIA)
+``characteristics[precursor rate constant]``     ``precursor_rate_constant`` (k_p)
 ``comment[precursor mass tolerance]``            :attr:`SdrfTable.precursor_mass_tol_ppm`
 ``comment[modification parameters]`` (1..n)      :attr:`SdrfTable.modifications`
 ==============================================  ===============================
@@ -317,6 +318,9 @@ def read_sdrf(
             precursor_enrichment=_parse_optional_float(
                 cell("characteristics[precursor enrichment]")
             ),
+            precursor_rate_constant=_parse_rate_constant(
+                cell("characteristics[precursor rate constant]"), path, line_no
+            ),
         )
         runs.append(identity)
 
@@ -418,6 +422,7 @@ _NOT_STRATIFIERS = frozenset({
     "characteristics[biological replicate]",
     _INDIVIDUAL_COL,
     "characteristics[precursor enrichment]",
+    "characteristics[precursor rate constant]",
 })
 
 
@@ -480,8 +485,8 @@ def _collapse_isobaric_runs(runs: list[RunIdentity]) -> list[RunIdentity]:
         # fit x-axis, so a disagreeing SDRF (a typo, or a pulsed-labeling design MS1
         # cannot resolve into channels) would otherwise be silently stamped with one
         # arbitrary channel's time. Fail loudly instead.
-        for field in ("labeling_time", "labeling_time_unit",
-                      "precursor_enrichment", "biological_replicate"):
+        for field in ("labeling_time", "labeling_time_unit", "precursor_enrichment",
+                      "precursor_rate_constant", "biological_replicate"):
             values = {getattr(r, field) for r in group}
             if len(values) > 1:
                 raise DataError(
@@ -677,6 +682,25 @@ def _parse_optional_float(value: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_rate_constant(value: str, path: object, line_no: int) -> float | None:
+    """``characteristics[precursor rate constant]``: a positive number, optionally
+    followed by a unit (``"0.08"``, ``"0.08 per day"``); empty / NA → ``None``.
+
+    Not silently ``None`` on a typo, unlike the other optional floats: a missing k_p
+    means "precursor at plateau from t = 0", a different analysis, so an unreadable
+    cell is an error.
+    """
+    text = value.strip()
+    if text.lower() in _NOT_APPLICABLE:
+        return None
+    match = re.match(r"^[+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?", text)
+    if match is None or not float(match.group(0)) > 0:
+        raise DataError(
+            f"{path} line {line_no}: characteristics[precursor rate constant] "
+            f"{value!r} is not a positive number (per labeling-time unit).")
+    return float(match.group(0))
 
 
 def _parse_mass_tol_ppm(value: str) -> float | None:

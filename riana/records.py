@@ -79,6 +79,11 @@ class RunIdentity:
     #: ``characteristics[precursor enrichment]`` (RIA), optional. ``None`` falls
     #: back to the global ``--ria`` default at fit time.
     precursor_enrichment: float | None = None
+    #: ``characteristics[precursor rate constant]`` (k_p, per labeling-time unit),
+    #: optional: the precursor rises as ``1 − e^{−k_p·t}`` from the start of labeling
+    #: (no priming dose). ``None`` = precursor at plateau from t = 0. Switches the fit
+    #: to the rising-precursor solve (:mod:`riana.algorithms.precursor`).
+    precursor_rate_constant: float | None = None
 
     @property
     def experiment_type(self) -> str:

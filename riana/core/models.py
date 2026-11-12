@@ -52,6 +52,31 @@ def two_compartment_guan(t,
     return a_0 + (a_max-a_0) * (1. - (np.exp(-t * k_deg) * k_p - np.exp(-t * k_p) * k_deg) / (k_p - k_deg))
 
 
+def rising_precursor_label(t,
+                            k_deg: float,
+                            a_0: float = 0,
+                            a_max: float = 1,
+                            k_p: float = np.inf,
+                            **_,
+                            ) -> float:
+    """
+    Label content under a rising precursor P(s) = 1 − e^{−k_p·s}: the Guan curve
+    1 − (k_p·e^{−kt} − k·e^{−k_p·t})/(k_p − k), written pole-free at k = k_p
+    (:func:`riana.algorithms.precursor.label_content`). The peptide curve of the
+    rising-precursor fit, which runs on per-point label content (not on θ).
+
+    :param t:       time (x)
+    :param k_deg:   degradation rate constant
+    :param a_0:     initial label content
+    :param a_max:   asymptotic label content
+    :param k_p:     precursor rate constant (∞ = precursor at plateau from t = 0)
+    :return:        float: label content at t
+    """
+    from riana.algorithms.precursor import label_content
+
+    return a_0 + (a_max - a_0) * label_content(t, k_deg, k_p)
+
+
 def two_compartment_fornasiero(t,
                                k_deg: float,
                                a_0: float = 0.,
