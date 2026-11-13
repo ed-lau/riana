@@ -459,6 +459,36 @@ without discarding data.
 the permutations, take the most powerful; the simplest if tied. Until then `wls` stays the
 default and `wls-var` stays opt-in, documented as calibrated only against S1–S2.
 
+**Direction (user, 2026-11-13).** Try **D as the replacement for `wls-var`** (tested on real data
+as above), and **E later as the thorough solution**. D and E map onto the existing
+`--method weighted | pooled` split: D upgrades the collapse route, and E is the peptide-point
+route done properly, so the pooled side becomes a real estimator, not a pseudoreplicated
+reference, and can later become the main route. The new plan is to be written after the
+non-primed D₂O dataset analysis. Points to carry into it:
+
+- *D keeps C's shared levels* (as specified in the table). Shared proportions alone removed
+  mechanism 1 in the simulation (§6.4); τ² on top makes the cell variance honest (Ṽ_RE cannot
+  fall below ≈ τ²/n, which is the failure of `wls-var`'s Ṽ) and bounds the weight range, the
+  problem `wls-var` has on f (§6.2), so D may also be usable on f. Test that, don't assume it.
+- *τ² is not a constant.* A peptide offset is an offset in its slope (labeling-site error scales
+  its apparent k), so in φ the peptides of a cell spread as ≈ c·k·t: τ grows with time, as
+  `pool2`'s s·φ̂² term does. Model it as a relative spread, τ²(cell) ≈ τ_rel²·φ̂² (or the θ-scale
+  equivalent), with τ_rel pooled over a protein's cells or over proteins, not one τ² per protein.
+- *D cannot fix composition changes:* a peptide missing from one cell still changes that cell's
+  mix (DDA gaps). Only E handles that without dropping data.
+- *E with fixed peptide effects* (sum-to-zero slope offsets per protein, shared by the
+  conditions) is enough for Δk, which is then a within-peptide contrast. It keeps one random
+  effect (the animal slope), so the existing `--interaction` machinery (MixedLM, BFGS,
+  Satterthwaite) fits it; random peptide effects are needed only to borrow strength. Longitudinal
+  designs also need a sample (run) effect beside the animal slope. Check the additive-offset
+  approximation (the offset is multiplicative in k) on the residuals.
+- *E unifies three things:* per-experiment Δk, `--interaction`, and within-animal comparisons
+  (tissue A vs B in the same animals, §8.2). One model family instead of three.
+- *Naming.* E should be a new `--method` value rather than a redefinition of `pooled`: `pooled`
+  also serves the exponential refit, and redefining it would silently change results.
+  `pooled` can be retired once E is validated. D replaces the per-condition weights inside
+  `weighted` (results-affecting when adopted), and its Ṽ_RE takes `wls-var`'s place.
+
 **Datasets:** ATF6 (DIA, 3 animals per cell, 4 tissues), lve_atr (DDA, 2 tissues), boomi /
 lauren (cell culture, rich series), the proprietary slow-precursor set (locally only), and
 **EDL / SOL** (the sister comparison of lve_atr in the Study 4 manuscript) — **to do: not yet
@@ -474,7 +504,16 @@ same in both conditions, so it does not carry the per-condition mixing of §7 to
   to the Δk; §7 shows it can dominate. Results to re-examine once 8.1 decides: the ATF6 biology
   notebook (`notebooks/atf6_biology.ipynb`) and the 11-10 report's interaction hits.
 - **The rising-precursor rollup** (PROJECT_REVIEW Track C, item 7): `wls` on f; refuse `wls-var`.
-  It inherits whatever 8.1 decides for the collapse.
+  Built 2026-11-13 (`9daf9f8`). It inherits whatever 8.1 decides for the collapse.
+- **Within-animal comparisons** (tissue A vs B of the same animals, one experiment, condition =
+  tissue). The Δk test does not read `individual`; each animal's two tissues enter as
+  independent points. The animal's shared deviation (its body-water enrichment, its overall
+  turnover) nearly cancels from the tissue contrast but stays in the residual variance, so the
+  test is conservative with respect to animals and loses power. The fix is the paired analysis:
+  φ ~ 0 + day:tissue + (0 + day | animal), tissue within animal, as a paired t-test is a
+  random-intercept model; it reduces to today's fit when σ²_animal = 0. Mechanism 1 is not
+  removed by pairing and may be systematic here (a peptide measured better in one tissue), so
+  the test as a whole is not guaranteed conservative. Covered by E in 8.1.
 - **The interaction model's animal term.** Its random slope is additive in φ (the same absolute
   slope shift in every experiment); simulated proportional animal effects inflate its mean-Δk
   and additive tests (§6.5). Check on ATF6 whether animal shifts scale with chamber k; if so, a

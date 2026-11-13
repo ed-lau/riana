@@ -144,16 +144,20 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   dataset analysis and its (local) report, write a **new plan** from §8.1: does `wls-var` do what
   it is meant to (weight by measured precision) at all, and should it be replaced by a
   peptide-specific term — a peptide offset modelled in the collapse (L1), or Ṽ replaced by the
-  across-peptide scatter.
-- **Within-animal one-factor comparisons — not supported yet (noted 2026-11-13).** When the two
-  conditions are tissues (or other strata) of the *same* animals and there is one experiment, the
-  plain Δk test does not read `individual` (only `--interaction`, which needs ≥ 2 experiments × 2
-  conditions, does). Each animal's two tissues are fitted as independent points, so the animal's
-  shared enrichment and turnover count in the error instead of cancelling in the contrast:
-  conservative, with power lost. Mechanism 1 above still applies, and may be systematic here
-  (peptides measured better in one tissue). Fix: the interaction model's random animal slope with
-  the tissue as the within-animal factor, φ ~ 0 + day:tissue + (0 + day | animal). Not built; to
-  weigh alongside §8.1 (candidate E has the same animal slope).
+  across-peptide scatter. *Direction (user, 2026-11-13):* D (random-effects collapse, shared
+  levels) as the `wls-var` replacement, E (peptide-level mixed model) later as the main route;
+  D upgrades `--method weighted`, E replaces pseudoreplicated `pooled` (as a new method name).
+  Refinements in manual §8.1 "Direction".
+- **TODO — paired within-animal comparisons (user, 2026-11-13).** When the two conditions are
+  tissues (or other strata) of the *same* animals in one experiment, the Δk test does not read
+  `characteristics[individual]` (only `--interaction`, which needs ≥ 2 experiments × 2
+  conditions, does). Each animal's two tissues enter as independent points: the animal's shared
+  enrichment and turnover nearly cancel from the contrast but stay in the error, so the test is
+  conservative with respect to animals and loses power. Build the paired analysis: the
+  interaction model's random animal slope with tissue as the within-animal factor,
+  φ ~ 0 + day:tissue + (0 + day | animal) (reduces to today's fit when σ²_animal = 0). Mechanism
+  1 is not removed by pairing. Candidate E (§8.1) covers it; build with E or as a standalone
+  `--paired` first if a dataset needs it sooner. Manual §8.2.
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
