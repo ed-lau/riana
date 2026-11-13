@@ -221,6 +221,28 @@ def test_run_rollup_forwards_min_fit_points(tmp_path, monkeypatch):
     assert captured.get("min_fit_points") == 3
 
 
+def test_run_rollup_reads_the_fit_fs_basis(tmp_path, monkeypatch):
+    """The Protein-tab worker reads the fit's ``# fs_basis`` header and hands it to
+    rollup_proteins, so the GUI refuses the same settings on fraction new f as the CLI."""
+    import riana.core.protein as protein_mod
+
+    captured: dict = {}
+
+    def fake_rollup(peptides, fractions, **kw):
+        captured.update(kw)
+        out = pd.DataFrame({"experiment": [], "condition": [], "protein": []})
+        out.attrs["protein_points"] = {}
+        return out
+
+    monkeypatch.setattr(protein_mod, "rollup_proteins", fake_rollup)
+    (tmp_path / "riana_fit_peptides.txt").write_text(
+        "# fs_basis f\nconcat\tprotein id\nA_2\tsp|P|X\n")
+    (tmp_path / "riana_fit_fractions.txt").write_text(
+        "# fs_basis f\n# k_p_applied 0.1\nconcat\tlabeling_time\tfs\nA_2\t24.0\t0.4\n")
+    run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    assert captured.get("fs_basis") == "f"
+
+
 def _build_manifest_project(tmp_path):
     """Leave a manifest project on disk as integrate→fit→rollup would.
 
@@ -650,10 +672,10 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
 
 
 def test_protein_tab_linear_model_toggles_and_params(main_window):
-    """Selecting 'linear simple' swaps the ODE rate knobs for the φ + Δk-condition
+    """Selecting 'linear' swaps the ODE rate knobs for the φ + Δk-condition
     knobs and surfaces the reference/test pair in build_params."""
     tab = main_window.protein_tab
-    tab.model_combo.setCurrentText("linear simple")
+    tab.model_combo.setCurrentText("linear")
     assert tab.phi_limit_spin.isVisibleTo(tab)
     assert tab.reference_combo.isVisibleTo(tab)
     assert tab.test_combo.isVisibleTo(tab)
@@ -664,7 +686,7 @@ def test_protein_tab_linear_model_toggles_and_params(main_window):
     tab.reference_combo.setCurrentText("control")
     tab.test_combo.setCurrentText("drug")
     params = tab.build_params()
-    assert params["model"] == "linear simple"
+    assert params["model"] == "linear"
     assert params["phi_limit"] == -4.0
     assert params["reference_condition"] == "control"
     assert params["test_condition"] == "drug"
@@ -690,10 +712,10 @@ def test_protein_tab_linear_plots_phi_space(main_window):
     from pyqtgraph import PlotDataItem
 
     tab = main_window.protein_tab
-    tab.model_combo.setCurrentText("linear simple")
+    tab.model_combo.setCurrentText("linear")
     result = pd.DataFrame({
         "experiment": ["e", "e"], "condition": ["control", "atrium"],
-        "protein": ["P1", "P1"], "method": ["linear simple"] * 2,
+        "protein": ["P1", "P1"], "method": ["linear"] * 2,
         "n_peptides": [3, 3], "n_points": [5, 5],
         "k_deg": [0.05, 0.10], "ci_lo": [0.04, 0.09], "ci_hi": [0.06, 0.11],
         "R_squared": [0.98, 0.98], "peptide_median_k": [0.05, 0.10],
@@ -1466,7 +1488,7 @@ def test_protein_tab_interaction_option_is_linear_only(main_window):
     tab.model_combo.setCurrentText("simple")
     assert not tab.interaction_check.isVisibleTo(tab)
     assert tab.build_params()["interaction"] is False   # ignored off the linear model
-    tab.model_combo.setCurrentText("linear simple")
+    tab.model_combo.setCurrentText("linear")
     assert tab.interaction_check.isVisibleTo(tab)
     assert tab.build_params()["interaction"] is True
 

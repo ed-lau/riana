@@ -45,7 +45,7 @@ D~2~O), per experiment. `riana fit --ria` overrides it for every curve; without 
 
 A: `simple` (one compartment), `guan` (two compartments, with a precursor rate constant) and
 `fornasiero` (adds precursor reutilization), plus `calibration` for mixing experiments. At the
-protein level, `riana rollup --model "linear simple"` fits a linearized simple model that supports
+protein level, `riana rollup --model linear` fits a linearized simple model that supports
 comparing conditions. See the [Documentation](about.qmd#kinetic-models).
 
 #### Q: How is the fraction of new protein calculated, and can I restrict the isotopomers used?
@@ -79,14 +79,14 @@ replicate and timepoint by inverse-variance weighting, and refits k. The median 
 
 #### Q: How do I compare turnover between two conditions?
 
-A: `riana rollup --model "linear simple" --reference-condition control`. Each protein gets
+A: `riana rollup --model linear --reference-condition control`. Each protein gets
 `delta_k` = k(test) − k(reference), a p-value and a Benjamini–Hochberg-adjusted `delta_k_p_adj`.
 With more than two conditions, add `--test-condition` to name the pair. If your runs span several
 tissues, split them with `integrate --experiment-column` and the comparison is made within each.
 
 #### Q: My tissues come from the same animals. Can I test whether a condition affects them differently?
 
-A: Yes, with `riana rollup --model "linear simple" --interaction` (or the *Interaction* option on
+A: Yes, with `riana rollup --model linear --interaction` (or the *Interaction* option on
 the desktop app's Protein tab). It fits each protein across tissues with a random effect for the
 animal and tests whether the k ratio between conditions differs between tissues. Give each animal
 one `characteristics[individual]` ID on all its rows in the SDRF. See the

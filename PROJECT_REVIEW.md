@@ -140,6 +140,20 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   Comes **before** the residual-variance moderation below, which should moderate the winner.
   *To do first for it:* run **EDL / SOL** (the lve_atr sister comparison, Study 4) through
   current Riana — no current-version fit exists yet.
+  *Order (user, 2026-11-13):* after the rising-precursor rollup stage and the non-primed D₂O
+  dataset analysis and its (local) report, write a **new plan** from §8.1: does `wls-var` do what
+  it is meant to (weight by measured precision) at all, and should it be replaced by a
+  peptide-specific term — a peptide offset modelled in the collapse (L1), or Ṽ replaced by the
+  across-peptide scatter.
+- **Within-animal one-factor comparisons — not supported yet (noted 2026-11-13).** When the two
+  conditions are tissues (or other strata) of the *same* animals and there is one experiment, the
+  plain Δk test does not read `individual` (only `--interaction`, which needs ≥ 2 experiments × 2
+  conditions, does). Each animal's two tissues are fitted as independent points, so the animal's
+  shared enrichment and turnover count in the error instead of cancelling in the contrast:
+  conservative, with power lost. Mechanism 1 above still applies, and may be systematic here
+  (peptides measured better in one tissue). Fix: the interaction model's random animal slope with
+  the tissue as the within-animal factor, φ ~ 0 + day:tissue + (0 + day | animal). Not built; to
+  weigh alongside §8.1 (candidate E has the same animal slope).
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
@@ -266,8 +280,15 @@ manifest `precursor_rate_constant`. Choices made while building:
 - *Cost:* same as the θ fit (convolution envelopes per peptide × timepoint, not cached run-wide).
 - On the real dataset k, R² and gate yield matched the prototype (k within ~3 %, R² ρ 0.998).
 
-**Remaining:** rollup stage (7: **`wls` on f, `wls-var` refused there**; `linear` rename and
-default), deprecations (5) and the `exponential` name (4), GUI, docs, validation before merge.
+**Rollup stage (7) BUILT 2026-11-13, except the default:** rollup reads the fit's `fs_basis`
+(`protein.fit_basis_header`), echoes `fs_basis`/`k_p_applied` in its headers outside the config
+hash, and on f/mixed refuses `--linear-weights wls-var` and guan/fornasiero
+(`protein.check_fs_basis`; CLI and GUI); `linear simple` → `linear` with the old name accepted
+(warning). The Monte Carlo bench runs its f + `wls-var` arm with the refusal lifted (audit only;
+reproduces the stored arm exactly). **Default flip to `linear` held:** it would make the shipped
+per-condition collapse (known issue, manual §7) everyone's default Δk — flip once §8.1 decides.
+**Remaining:** the default (7), deprecations (5) and the `exponential` name (4), GUI φ-axis
+labels (say θ on f), validation before merge.
 
 **Monte Carlo of the Δk / interaction tests (2026-11-12) — full write-up, numbers and
 reproduction in `reports/2026-11-12_deltak_inference_manual.md` (the single source of truth for

@@ -233,7 +233,7 @@ def test_rollup_fractions_biorep_on_pooled_and_linear_paths():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
     pooled = build_rollup_fractions(rollup_proteins(pep, frac, method="pooled", n_boot=20))
     assert set(pooled["biological_replicate"]) == {1, 2, 3}
-    # linear simple: two conditions so a Δk substrate exists
+    # linear: two conditions so a Δk substrate exists
     pep2, frac2 = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
     for df in (pep2, frac2):
         df["condition"] = "control"
@@ -243,7 +243,7 @@ def test_rollup_fractions_biorep_on_pooled_and_linear_paths():
     pep_all = pd.concat([pep2, pepK], ignore_index=True)
     frac_all = pd.concat([frac2, fracK], ignore_index=True)
     lin = build_rollup_fractions(
-        rollup_proteins(pep_all, frac_all, model="linear simple",
+        rollup_proteins(pep_all, frac_all, model="linear",
                         reference_condition="control", n_boot=20))
     assert "biological_replicate" in lin.columns
     assert set(lin["biological_replicate"]) == {1, 2, 3}
@@ -551,22 +551,22 @@ def test_resolve_admission_auto_per_model():
     """'auto' resolves to 'all' for the linear-simple Δk model, 'own' for the kinetic
     models; explicit policies pass through unchanged."""
     from riana.core.protein import _resolve_admission
-    assert _resolve_admission("auto", "linear simple") == "all"
+    assert _resolve_admission("auto", "linear") == "all"
     assert _resolve_admission("auto", "simple") == "own"
     assert _resolve_admission("auto", "guan") == "own"
     for p in ("own", "any", "all"):
-        assert _resolve_admission(p, "linear simple") == p
+        assert _resolve_admission(p, "linear") == p
         assert _resolve_admission(p, "simple") == p
 
 
 def test_peptide_admission_auto_defaults_all_for_linear_simple():
-    """model='linear simple' + default 'auto' resolves to 'all' (paired): a peptide that
+    """model='linear' + default 'auto' resolves to 'all' (paired): a peptide that
     fails the gate in one condition is dropped from BOTH, so the Δk basis is the same
     peptides on both sides. Explicit 'own' instead keeps it on its passing side."""
     pep, frac = _two_condition_gate_frames()   # PEP passes ctrl only; QEP passes both
-    auto = rollup_proteins(pep, frac, model="linear simple", reference_condition="ctrl",
+    auto = rollup_proteins(pep, frac, model="linear", reference_condition="ctrl",
                            min_r2=0.8, min_peptides=1).set_index("condition")
-    own = rollup_proteins(pep, frac, model="linear simple", reference_condition="ctrl",
+    own = rollup_proteins(pep, frac, model="linear", reference_condition="ctrl",
                           min_r2=0.8, min_peptides=1,
                           peptide_admission="own").set_index("condition")
     assert int(auto.loc["ctrl", "n_peptides"]) == 1   # auto->all: PEP dropped (fails drug)
@@ -605,17 +605,17 @@ def _make_two_condition_frames(k_by_prot_cond, *, n_pep=3,
 
 
 def test_rollup_linear_simple_delta_k():
-    """The `linear simple` model: per-condition φ-slope k + a cross-condition Δk
+    """The `linear` model: per-condition φ-slope k + a cross-condition Δk
     test, in the PROTEIN_LINEAR_COLUMNS schema."""
     from riana.core.protein import PROTEIN_LINEAR_COLUMNS
     pep, frac = _make_two_condition_frames({
         "sp|P0|X": {"control": 0.05, "atrium": 0.10},   # atrium faster
         "sp|P1|Y": {"control": 0.08, "atrium": 0.08},   # no difference
     })
-    res = rollup_proteins(pep, frac, model="linear simple",
+    res = rollup_proteins(pep, frac, model="linear",
                           reference_condition="control", min_peptides=2)
     assert list(res.columns) == PROTEIN_LINEAR_COLUMNS
-    assert (res["method"] == "linear simple").all()
+    assert (res["method"] == "linear").all()
     k = res.set_index(["protein", "condition"])["k_deg"]
     assert k[("P0", "control")] == pytest.approx(0.05, abs=0.01)
     assert k[("P0", "atrium")] == pytest.approx(0.10, abs=0.01)
@@ -629,10 +629,10 @@ def test_rollup_linear_simple_delta_k():
 
 
 def test_rollup_linear_simple_is_a_valid_model():
-    """`linear simple` must not be rejected as an unknown model."""
+    """`linear` must not be rejected as an unknown model."""
     pep, frac = _make_two_condition_frames(
         {"sp|P0|X": {"control": 0.05, "atrium": 0.09}})
-    rollup_proteins(pep, frac, model="linear simple", min_peptides=2)  # no raise
+    rollup_proteins(pep, frac, model="linear", min_peptides=2)  # no raise
 
 
 def test_unknown_model_parsimony_method_raise():
@@ -661,3 +661,53 @@ def test_rollup_fractions_carry_individual_when_the_fit_did():
         assert cols[cols.index("biological_replicate") + 1] == "individual"
         assert (rf["individual"] == rf["biological_replicate"].map(
             {1: "843", 2: "844", 3: ""})).all()
+
+
+# --------------------------------------------------------------------------- #
+# Model name + what the fit's fs holds (rising precursor, 2026-11-13)
+# --------------------------------------------------------------------------- #
+def test_linear_model_accepts_its_earlier_name():
+    from riana.core.protein import LINEAR_MODEL, canonical_model
+
+    assert LINEAR_MODEL == "linear"
+    assert canonical_model("linear simple") == "linear"
+    assert canonical_model("simple") == "simple"
+
+
+@pytest.mark.parametrize("basis, model, weights, message", [
+    ("f", "linear", "wls-var", "wls-var"),
+    ("mixed", "linear", "wls-var", "wls-var"),
+    ("f", "guan", "wls", "apply it twice"),
+    ("mixed", "fornasiero", "wls", "apply it twice"),
+    ("phi", "linear", "wls", "unknown fs_basis"),
+])
+def test_check_fs_basis_refuses_settings_wrong_on_fraction_new(basis, model, weights,
+                                                               message):
+    from riana.core.protein import check_fs_basis
+
+    with pytest.raises(DataError, match=message):
+        check_fs_basis(basis, model, weights)
+
+
+@pytest.mark.parametrize("basis, model, weights", [
+    ("theta", "linear", "wls-var"),     # θ: unchanged
+    ("theta", "guan", "wls"),
+    ("f", "linear", "wls"),             # f: the calibrated weights
+    ("f", "linear", "ols"),
+    ("f", "simple", "wls-var"),         # weights only apply to the linear model
+])
+def test_check_fs_basis_allows_the_rest(basis, model, weights):
+    from riana.core.protein import check_fs_basis
+
+    check_fs_basis(basis, model, weights)
+
+
+def test_fit_basis_header_reads_the_fit_header(tmp_path):
+    from riana.core.protein import fit_basis_header
+
+    old = tmp_path / "old.txt"
+    old.write_text("# riana 1.1.0\nconcat\tfs\n")
+    assert fit_basis_header(old) == {"fs_basis": "theta"}
+    new = tmp_path / "new.txt"
+    new.write_text("# riana 1.2.0\n# fs_basis f\n# k_p_applied A/ctrl=0.1\nconcat\tfs\n")
+    assert fit_basis_header(new) == {"fs_basis": "f", "k_p_applied": "A/ctrl=0.1"}

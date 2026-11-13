@@ -1,4 +1,4 @@
-"""Tests for the linearized turnover model + cross-sample Δk (`linear simple`)."""
+"""Tests for the linearized turnover model + cross-sample Δk (`linear`)."""
 
 import numpy as np
 import pandas as pd

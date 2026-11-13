@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 from concurrent import futures
 from functools import partial
@@ -91,8 +92,67 @@ _MODELS = {
 #: an OLS in φ = log(1−θ) space that fits a protein's conditions jointly to yield a
 #: Δk test (:mod:`riana.core.linear_model`). A ``model`` choice, mutually exclusive
 #: with ``_MODELS``.
-LINEAR_MODEL = "linear simple"
+LINEAR_MODEL = "linear"
+#: Earlier names of :data:`LINEAR_MODEL`, still accepted (renamed 2026-11-13; the alias
+#: goes one release after the rename ships).
+LINEAR_MODEL_ALIASES = ("linear simple",)
+#: What a fit's ``fs`` holds — its ``# fs_basis`` header line
+#: (:func:`riana.core.fitting.precursor_header`): ``theta`` (precursor at plateau from
+#: t = 0, every fit before the rising-precursor solve), ``f`` (fraction new, every curve
+#: fit with a rising precursor) or ``mixed``.
+FS_BASES = ("theta", "f", "mixed")
 _K_DEG_INIT = 0.5
+
+
+def canonical_model(model: str) -> str:
+    """The current name of a rollup model (``"linear simple"`` → ``"linear"``)."""
+    return LINEAR_MODEL if model in LINEAR_MODEL_ALIASES else model
+
+
+def fit_basis_header(fit_file: str | os.PathLike[str]) -> dict[str, str]:
+    """``fs_basis`` (and ``k_p_applied`` when the precursor rose) from a fit output's
+    provenance header — ``{"fs_basis": "theta"}`` for fits that predate the line. The
+    rollup echoes these in its own header (outside the config hash: they describe the
+    input, not a setting)."""
+    from riana.io.writers import read_provenance_header
+    header = read_provenance_header(fit_file)
+    out = {"fs_basis": header.get("fs_basis", "theta")}
+    if "k_p_applied" in header:
+        out["k_p_applied"] = header["k_p_applied"]
+    return out
+
+
+def check_fs_basis(fs_basis: str, model: str, linear_weights: str) -> None:
+    """Refuse rollup settings that are wrong when ``fs`` holds fraction new f.
+
+    Under a rising precursor the fit has already solved each point for f, which is
+    first-order whatever the precursor did, so the exponential refit and the linear
+    model apply unchanged. Two settings do not:
+
+    - ``guan`` / ``fornasiero`` would apply the precursor a second time;
+    - ``--linear-weights wls-var`` is miscalibrated on f (false-positive rate 0.255 at
+      α 0.05 in the Monte Carlo; ``wls`` 0.042 —
+      ``reports/2026-11-12_deltak_inference_manual.md`` §6.2). The weights also feed
+      ``--interaction``.
+    """
+    if fs_basis not in FS_BASES:
+        raise DataError(
+            f"unknown fs_basis {fs_basis!r} in the fit header; expected one of "
+            f"{list(FS_BASES)}")
+    if fs_basis == "theta":
+        return
+    what = ("fraction new f" if fs_basis == "f"
+            else "fraction new f for some curves (fs_basis mixed)")
+    if model in ("guan", "fornasiero"):
+        raise DataError(
+            f"the fit's fs holds {what}: the rising precursor (k_p) was already applied "
+            f"at fit, so a {model} refit would apply it twice. Use --model simple or "
+            f"--model {LINEAR_MODEL!r}.")
+    if model == LINEAR_MODEL and linear_weights == "wls-var":
+        raise DataError(
+            f"the fit's fs holds {what}, where --linear-weights wls-var is "
+            "miscalibrated (false-positive rate ~0.26 at α 0.05 in simulation; "
+            "reports/2026-11-12_deltak_inference_manual.md §6.2). Use wls (the default).")
 _K_DEG_BOUNDS = ([1e-4], [10.0])
 
 #: A normal's 5–95 percentile span is ``2 · 1.6449 · σ``; invert to recover σ
@@ -134,7 +194,7 @@ _CURVE_KEYS = list(CURVE_KEY_COLUMNS)
 #:      that confound.
 _ADMISSION_POLICIES = ("own", "any", "all")
 #: Accepted CLI/API inputs: the three resolved policies plus ``"auto"`` (the default),
-#: which picks per-model — ``"all"`` for ``linear simple`` (the Δk path, where a
+#: which picks per-model — ``"all"`` for ``linear`` (the Δk path, where a
 #: different-peptides-per-condition contrast is a real confound) and ``"own"`` for the
 #: kinetic side-by-side models.
 _ADMISSION_INPUTS = ("auto",) + _ADMISSION_POLICIES
@@ -161,7 +221,7 @@ PROTEIN_COLUMNS = [
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
 ]
 
-#: Output schema for ``model="linear simple"``: the per-condition protein rows
+#: Output schema for ``model="linear"``: the per-condition protein rows
 #: (k_deg = −slope of φ=log(1−θ), its CI, joint R²) plus the protein-level
 #: cross-condition Δk test (``delta_k`` = k(other) − k(reference), its SE, the
 #: contrast p, and the Benjamini-Hochberg p across proteins).
@@ -201,6 +261,7 @@ def rollup_proteins(
     reference_condition: str | None = None,
     test_condition: str | None = None,
     exclude_mbr: bool = False,
+    fs_basis: str = "theta",
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
     """Roll per-peptide fits up to one ``k_deg`` per ``(experiment, condition,
@@ -245,7 +306,7 @@ def rollup_proteins(
             (``k_cv_max``), with the R²/rescue machinery bypassed.
         peptide_admission: how a peptide's per-condition gate result maps across the
             conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"auto"`` (default)
-            → ``"all"`` for ``model="linear simple"`` (the Δk path, where a
+            → ``"all"`` for ``model="linear"`` (the Δk path, where a
             different-peptides-per-condition contrast is a real confound) and ``"own"``
             for the kinetic models. ``"own"`` — strictly per-condition. ``"any"`` —
             passed-in-one ⇒ kept-in-all (the anti-conservative pre-2026-08 behaviour).
@@ -261,13 +322,18 @@ def rollup_proteins(
             result is **identical** regardless of ``workers`` (and of completion
             order).
         n_boot / boot_ci_pct / random_state: bootstrap CI controls (ignored by
-            ``model="linear simple"``, whose CIs are analytic).
+            ``model="linear"``, whose CIs are analytic).
         phi_limit / reference_condition / test_condition: only for
-            ``model="linear simple"`` — the plateau-truncation threshold in φ-space
+            ``model="linear"`` — the plateau-truncation threshold in φ-space
             (default −4 ≈ θ 0.98) and the Δk contrast conditions. ``reference`` is
             the baseline (default the alphabetically-first); naming ``test`` as well
             contrasts that specific pair even when >2 conditions are present (the
             multi-group interim — see :func:`riana.core.linear_model.fit_linear_deltak`).
+            ``model="linear simple"`` (the earlier name) is accepted.
+        fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
+            (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
+            ``"mixed"``, :func:`check_fs_basis` refuses guan/fornasiero and
+            ``linear_weights="wls-var"``.
 
     Returns:
         One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
@@ -275,13 +341,15 @@ def rollup_proteins(
         (``NaN`` where it could not fit), ``n_peptides`` / ``n_points``, and the
         comparison ``peptide_median_k``. ``result.attrs["protein_points"]`` maps
         each protein to the ``(t_list, fs_list)`` its refit used (GUI curve).
-        ``model="linear simple"`` instead returns the :data:`PROTEIN_LINEAR_COLUMNS`
+        ``model="linear"`` instead returns the :data:`PROTEIN_LINEAR_COLUMNS`
         schema (per-condition φ-slope k + the protein-level Δk test).
     """
+    model = canonical_model(model)
     if model not in _MODELS and model != LINEAR_MODEL:
         raise DataError(
             f"unknown kinetic model {model!r}; expected one of "
             f"{sorted(_MODELS) + [LINEAR_MODEL]}")
+    check_fs_basis(fs_basis, model, linear_weights)
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")
@@ -422,7 +490,7 @@ def _rollup_linear(
     linear_weights: str = "wls",
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
-    """The ``model="linear simple"`` path — φ-space OLS + cross-condition Δk.
+    """The ``model="linear"`` path — φ-space OLS + cross-condition Δk.
 
     Collapses peptides to the same ``(condition, t, θ)`` points the weighted/pooled
     refit uses, then fits each protein's conditions **jointly** in φ = log(1−θ)

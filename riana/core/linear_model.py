@@ -1,4 +1,4 @@
-"""Linearized turnover model + cross-sample Δk (the ``linear simple`` rollup model).
+"""Linearized turnover model + cross-sample Δk (the ``linear`` rollup model).
 
 The nonlinear rollup models (``simple``/``guan``/``fornasiero``) fit one ``k_deg``
 per ``(experiment, condition, protein)`` independently via ``curve_fit``. This

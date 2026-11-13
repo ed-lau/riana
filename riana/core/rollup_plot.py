@@ -1,7 +1,7 @@
-"""Headless PDF export of ``linear simple`` rollup curves — the batch/CLI analog of
+"""Headless PDF export of ``linear`` rollup curves — the batch/CLI analog of
 the GUI's one-at-a-time φ-space view (``riana.gui.curve_view.CurveView.plot_linear``).
 
-``riana rollup --model "linear simple" --plot`` renders every protein's control-vs-
+``riana rollup --model "linear" --plot`` renders every protein's control-vs-
 condition Δk comparison to a multi-page PDF, one PDF per experiment (Riana groups on
 ``(experiment, condition)``, so each experiment is a self-contained set of contrasts).
 matplotlib is a core dependency, so this adds nothing new; it runs on the Agg backend.
@@ -130,7 +130,7 @@ def _render_experiment(args) -> tuple[str, int]:
 def render_linear_pdf(proteins: pd.DataFrame, fractions: pd.DataFrame, out_dir: Path,
                       *, phi_limit: float = -4.0, workers: int = 1,
                       progress: "Callable[[str, int], None] | None" = None) -> list[Path]:
-    """Write ``linear simple`` Δk curves to one PDF per experiment.
+    """Write ``linear`` Δk curves to one PDF per experiment.
 
     One page per protein (sorted by ``delta_k_p_adj``, most significant first),
     filled kept points vs hollow plateau-truncated points at ``φ > phi_limit``, a
@@ -140,7 +140,7 @@ def render_linear_pdf(proteins: pd.DataFrame, fractions: pd.DataFrame, out_dir: 
     parallel (one process per experiment). Returns the paths written.
     """
     if "delta_k" not in proteins.columns:
-        raise ValueError("rollup is not 'linear simple' (no delta_k) — nothing to plot")
+        raise ValueError("rollup is not 'linear' (no delta_k) — nothing to plot")
 
     out_dir = Path(out_dir)
     experiments = [e for e in proteins["experiment"].dropna().unique()]

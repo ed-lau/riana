@@ -75,7 +75,7 @@ def capture_gated(fit_dir: Path, ref: str = REF, test: str = TEST) -> dict:
     try:
         with tempfile.TemporaryDirectory() as tmp:
             res = CliRunner().invoke(app, [
-                "rollup", str(fit_dir), "--model", "linear simple", "--reference-condition",
+                "rollup", str(fit_dir), "--model", "linear", "--reference-condition",
                 ref, "--test-condition", test, "--linear-weights", "wls", "-o", tmp])
             if res.exit_code != 0:
                 raise RuntimeError(f"rollup failed on {fit_dir}:\n{res.output[-2000:]}")

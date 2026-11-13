@@ -98,9 +98,11 @@ than the plateau label. Give the precursor rate constant $k_p$ (per labeling-tim
 precursor rises as $1 - e^{-k_p t}$) in the SDRF column `characteristics[precursor rate constant]`
 or with `fit --kp`, and `fit` solves each timepoint's envelope with the precursor built in. `fs`
 then holds the fraction of protein made since labeling began, $f = 1 - e^{-kt}$, which stays
-first-order, so the rollup models apply unchanged — run `rollup --model "linear simple"` with the
-default weights (not `--linear-weights wls-var`, which is miscalibrated on f; D~2~O, `--label hw`,
-only; `--kp inf` forces the precursor at plateau).
+first-order, so the rollup models apply unchanged — run `rollup --model linear` with the default
+weights, (1 − f̂)² (D~2~O, `--label hw`, only; `--kp inf` forces the precursor at plateau). The
+rollup reads the fit header's `fs_basis` and refuses `--linear-weights wls-var` on f
+(miscalibrated there in simulation) and `--model guan|fornasiero` (they would apply the precursor
+twice).
 
 The peptide fit and its R² then run on **label content** A, the peptide's mean enrichment as a
 fraction of the plateau enrichment (to first order, what the envelope's mean mass shift reads):
@@ -148,7 +150,7 @@ also folds isoform-shared peptides into the canonical entry.
 
 **Admission.** A peptide enters the protein fit if its own fit has R² ≥ 0.8 (`--min-r2`), or, for a
 flat curve with a low R², if k is still tightly estimated (relative uncertainty below `--k-cv`).
-In a multi-condition rollup the gate is applied per condition, and under `linear simple` a peptide
+In a multi-condition rollup the gate is applied per condition, and under `linear` a peptide
 is used only if it passes in every condition (`--peptide-admission`), so both conditions rest on
 the same peptides.
 
@@ -156,15 +158,15 @@ the same peptides.
 inverse-variance weighting, and k is refitted on those points (`--method weighted`; `pooled` fits
 every peptide point instead). The median of the peptides' k is reported alongside.
 
-### Comparing conditions (`linear simple`)
+### Comparing conditions (`linear`)
 
-`--model "linear simple"` linearizes the simple model, φ = log(1 − θ) = −k t, and fits a protein's
-conditions together by weighted least squares (weights from the delta method, which keeps the noisy
-near-plateau points from dominating; points past `--phi-limit` are dropped). It reports each
-condition's k and the difference Δk = k(test) − k(reference), with a t-test and Benjamini–Hochberg
-adjustment within each experiment. `--reference-condition` and `--test-condition` choose the pair;
-`--linear-weights wls-var` additionally weights points by their measured precision. `--plot` writes
-the φ-space curves to a PDF per experiment.
+`--model linear` (earlier `linear simple`, still accepted) linearizes the simple model,
+φ = log(1 − θ) = −k t, and fits a protein's conditions together by weighted least squares (weights from the
+delta method, which keeps the noisy near-plateau points from dominating; points past `--phi-limit`
+are dropped). It reports each condition's k and the difference Δk = k(test) − k(reference), with a
+t-test and Benjamini–Hochberg adjustment within each experiment. `--reference-condition` and
+`--test-condition` choose the pair; `--linear-weights wls-var` additionally weights points by their
+measured precision. `--plot` writes the φ-space curves to a PDF per experiment.
 
 ### Tissues of the same animals (`--interaction`)
 

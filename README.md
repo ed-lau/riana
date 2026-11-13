@@ -35,7 +35,7 @@ Describe the experiment in an SDRF sample sheet, then:
 ```bash
 riana integrate <mzml_dir> report.mzTab --sdrf samplesheet.sdrf.tsv --workers 4 --out ./out
 riana fit --manifest ./out/riana_manifest.tsv --coefficients deberneh_2025_rss
-riana rollup --manifest ./out/riana_manifest.tsv --model "linear simple" \
+riana rollup --manifest ./out/riana_manifest.tsv --model linear \
     --reference-condition control
 ```
 

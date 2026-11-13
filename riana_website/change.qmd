@@ -33,6 +33,9 @@ The full list is in the repository `CHANGELOG.md`.
   a peptide is used only if it passes in every condition (`--peptide-admission`). Out-of-range θ
   points are dropped before fitting (`--no-fs-rail-drop` restores the old behaviour). Peptides with
   non-standard residues (U, O, B, Z, J, X) are dropped at intake.
+* **`rollup --model linear`** (was `linear simple`; the old name is still accepted). The rollup
+  reads whether the fit's `fs` is θ or the fraction new f of a rising precursor (`fit --kp`) and,
+  on f, refuses `--linear-weights wls-var` and guan/fornasiero.
 * **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
 
 ## Update v1.1.0

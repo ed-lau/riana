@@ -25,6 +25,29 @@ The 1.2.0 development line (branch `1.2.0`).
   this in mind. Tools: `tests/benchmark/run_deltak_mc.sh`, `tests/benchmark/eval_rising_variance.py`
   (`--real REF TEST` re-tests a fit under the alternative collapses).
 
+### Rollup — fraction new f input; `linear` (was `linear simple`) — 2026-11-13
+
+#### Added
+
+- **Rollup reads what the fit's `fs` holds** (its `# fs_basis` header: `theta`, `f` or `mixed`;
+  fits without the line are θ) and echoes `fs_basis` / `k_p_applied` in its own headers
+  (`riana_rollup_proteins.txt`, `_fractions`, `_interaction`), outside the config hash. On f the
+  exponential refit, the linear model and `--interaction` run unchanged; `wls` weights by (1−f̂)².
+  The desktop app reads the same header.
+
+#### Changed
+
+- **`--model "linear simple"` is now `--model linear`** (CLI, desktop app, output `method` column
+  and header `model`). The old name is still accepted, with a warning, for one more release; saved
+  results under the old name still load in the app. A rollup's config hash changes with the name.
+
+#### Refused on f (`fs_basis f` or `mixed`)
+
+- **`--linear-weights wls-var`**, which is miscalibrated there (false-positive rate 0.255 at α 0.05
+  in simulation; `wls` 0.042 — `reports/2026-11-12_deltak_inference_manual.md` §6.2). The weights
+  also feed `--interaction`.
+- **`--model guan|fornasiero`**, which would apply the rising precursor a second time.
+
 ### Fit — a rising D₂O precursor (`--kp`, per-point envelope solve) — 2026-11-12
 
 #### Added
@@ -53,7 +76,7 @@ The 1.2.0 development line (branch `1.2.0`).
     deprecated `--model guan|fornasiero` (there `--kp` stays their curve parameter, default 0.5)
     or to calibration runs. D₂O (`--label hw`) only; `fs_ds` is not computed on this path.
   - *Rollup:* use `--model "linear simple"` with the default `--linear-weights wls`. **Not `wls-var`
-    on f:** a Monte Carlo through the shipped pipeline (`tests/benchmark/bench_rising_null.py`)
+    on f** (refused since 2026-11-13, entry above): a Monte Carlo through the shipped pipeline (`tests/benchmark/bench_rising_null.py`)
     found it anti-conservative there (false-positive rate 0.255 at α = 0.05 over three simulated
     datasets; the interaction's mean Δk 0.22), while `wls` holds 0.042 (0.04–0.06 at every
     turnover rate) with its CIs covering and the ratio recovered. The per-peptide variance, mapped

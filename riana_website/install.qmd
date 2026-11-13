@@ -117,10 +117,10 @@ recommended for D~2~O, and ^18^O water uses its own tables (`--label o18`, see t
 
 ```bash
 $ riana rollup --manifest ./out/riana_manifest.tsv \
-    --model "linear simple" --reference-condition control
+    --model linear --reference-condition control
 ```
 
-`linear simple` fits each protein's conditions together and reports, per protein, the turnover
+`linear` fits each protein's conditions together and reports, per protein, the turnover
 difference `delta_k` = k(test) − k(reference) with a p-value and a Benjamini–Hochberg-adjusted
 `delta_k_p_adj`. With more than two conditions, name the pair with `--test-condition`.
 
@@ -132,7 +132,7 @@ Split the runs into one experiment per tissue at integration, then compare condi
 $ riana integrate /path/to/mzml report.parquet --sdrf samplesheet.sdrf.tsv \
     --experiment-column "characteristics[organism part]" --workers 4 --out ./out
 $ riana fit --manifest ./out/riana_manifest.tsv --coefficients deberneh_2025_rss
-$ riana rollup --manifest ./out/riana_manifest.tsv --model "linear simple" \
+$ riana rollup --manifest ./out/riana_manifest.tsv --model linear \
     --reference-condition control --interaction --plot
 ```
 
@@ -146,7 +146,7 @@ $ riana rollup --manifest ./out/riana_manifest.tsv --model "linear simple" \
 
 `riana gui` opens the same steps as forms: **Integrate** (with an *Experiment from* choice for
 splitting runs by an SDRF column), **Model** (fit) and **Protein** (rollup, with the *Interaction*
-option for `linear simple`). Each tab can load a project's saved results without recomputing, and
+option for `linear`). Each tab can load a project's saved results without recomputing, and
 shows chromatograms, fitted curves and φ-space plots for the selected row.
 
 ### Single-run (Percolator) path
@@ -171,7 +171,7 @@ Every output file starts with a provenance header (RIANA version, settings, inpu
 | `riana_manifest.tsv` | The project index: each run's identity and every stage's outputs. |
 | `riana_fit_peptides.txt` | Per peptidoform: `k_deg`, its confidence interval, R², and point counts. |
 | `riana_fit_fractions.txt` | Per peptidoform and timepoint: the fraction of new protein (θ, column `fs`) with its prediction interval. |
-| `riana_rollup_proteins.txt` | Per protein (and experiment, condition): `k_deg`, and `delta_k` / `delta_k_p_adj` under `linear simple`. |
+| `riana_rollup_proteins.txt` | Per protein (and experiment, condition): `k_deg`, and `delta_k` / `delta_k_p_adj` under `linear`. |
 | `riana_rollup_fractions.txt` | The collapsed per-replicate, per-timepoint θ each protein was fitted on. |
 | `riana_rollup_interaction.txt` | With `--interaction`: per-tissue k and Δk from the joint fit, and the interaction tests. |
 

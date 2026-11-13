@@ -308,7 +308,7 @@ class CurveView(QWidget):
         delta_k: float | None = None,
         delta_k_p_adj: float | None = None,
     ) -> None:
-        """φ-space view for the ``linear simple`` model — overlay each condition.
+        """φ-space view for the ``linear`` model — overlay each condition.
 
         ``per_condition`` maps ``condition → (t_list, theta_list, k_deg[, ci_lo,
         ci_hi])``. For each condition we plot the clearance φ = log(1 − θ) points

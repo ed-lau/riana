@@ -1,4 +1,4 @@
-"""Two-factor (experiment × condition) interaction for ``linear simple``: a random-animal
+"""Two-factor (experiment × condition) interaction for ``linear``: a random-animal
 mixed model.
 
 When the experiments are strata of the **same animals** (e.g. four heart chambers sampled

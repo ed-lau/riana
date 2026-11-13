@@ -871,18 +871,21 @@ def rollup(
     model: str = typer.Option(
         "simple", "-m", "--model",
         help="Kinetic model for the protein refit — match how the peptides were "
-        "fit (simple, guan, fornasiero). Or 'linear simple': the linearized "
+        "fit (simple, guan, fornasiero). Or 'linear': the linearized "
         "φ=log(1−θ) cross-sample model — fits a protein's conditions jointly for a "
         "per-condition k and a Δk test (writes delta_k / delta_k_p / "
-        "delta_k_p_adj). Mutually exclusive with the ODE models."),
+        "delta_k_p_adj). Mutually exclusive with the ODE models. 'linear simple' "
+        "(the earlier name) is still accepted. When the fit applied a rising precursor "
+        "(its fs holds fraction new f), guan/fornasiero are refused: the precursor "
+        "is already in f."),
     phi_limit: float = typer.Option(
         -4.0, "--phi-limit", metavar="PHI",
-        help="['linear simple' only] Plateau-truncation threshold in φ-space: "
+        help="['linear' only] Plateau-truncation threshold in φ-space: "
         "points with φ=log(1−θ) at/below this are dropped per curve (saturated "
         "tail = measurement noise, not slope). −4 ≈ θ 0.98, −3 ≈ θ 0.95."),
     linear_weights: str = typer.Option(
         "wls", "--linear-weights", metavar="SCHEME",
-        help="['linear simple' only] Weighting of the φ-space fit: 'wls' (default) "
+        help="['linear' only] Weighting of the φ-space fit: 'wls' (default) "
         "weights by the delta-method inverse variance (1−θ)², taken from the fitted "
         "value — φ=log(1−θ) makes FS-scale noise heteroscedastic, so an unweighted "
         "fit is anti-conservative (~28% false positives at α=0.05, and k biased ~14% "
@@ -891,14 +894,16 @@ def rollup(
         "biological-replicate consistency on rich multi-peptide time series, safe/neutral "
         "elsewhere; needs the collapse's theta_var (else falls back to wls). 'ols' restores "
         "the old unweighted fit (audit only). --interaction uses the same weights "
-        "('ols' there falls back to 'wls')."),
+        "('ols' there falls back to 'wls'). On a rising-precursor fit (fs = fraction "
+        "new f) 'wls' weights by (1−f̂)² and 'wls-var' is refused (miscalibrated there "
+        "in simulation)."),
     reference_condition: str = typer.Option(
         None, "--reference-condition", metavar="COND",
-        help="['linear simple' only] Baseline condition of the Δk contrast — "
+        help="['linear' only] Baseline condition of the Δk contrast — "
         "delta_k = k(test) − k(reference). Default: alphabetically first."),
     test_condition: str = typer.Option(
         None, "--test-condition", metavar="COND",
-        help="['linear simple' only] Comparison condition of the Δk contrast "
+        help="['linear' only] Comparison condition of the Δk contrast "
         "(requires --reference-condition). Naming a pair contrasts exactly those "
         "two even when >2 conditions are present — an interim for multi-group "
         "projects before full all-pairwise. NOTE: the joint fit still pools the "
@@ -941,7 +946,7 @@ def rollup(
         "auto", "--peptide-admission", metavar="POLICY",
         help="How a peptide's per-condition curation result maps across conditions in a "
         "MULTI-condition rollup (single-condition is unaffected). 'auto' (default) → "
-        "'all' for `--model \"linear simple\"` (the Δk path, where a "
+        "'all' for `--model \"linear\"` (the Δk path, where a "
         "different-peptides-per-condition contrast is a real confound) and 'own' for the "
         "kinetic models. 'own': strictly per-condition — each condition's k / Δk term "
         "uses only peptides that pass the gate THERE. 'any': passed-in-one ⇒ kept-in-all "
@@ -993,13 +998,13 @@ def rollup(
         "output table (Δk is always within-experiment)."),
     plot: bool = typer.Option(
         False, "--plot",
-        help="['linear simple' only] Also write per-protein φ-space Δk comparison "
+        help="['linear' only] Also write per-protein φ-space Δk comparison "
         "curves to a PDF per experiment (riana_rollup_curves[_<exp>].pdf) — the "
         "batch analog of the GUI's one-at-a-time view. One page per protein, sorted "
         "by delta_k_p_adj."),
     interaction: bool = typer.Option(
         False, "--interaction",
-        help="['linear simple', 2+ experiments] Also test whether the condition effect "
+        help="['linear', 2+ experiments] Also test whether the condition effect "
         "differs between experiments that are strata of the SAME animals (e.g. tissues "
         "split with `integrate --experiment-column`). One joint fit per protein with a "
         "random slope per animal. The animal is the SDRF's characteristics[individual] "
@@ -1017,7 +1022,7 @@ def rollup(
 
     Per (experiment, condition, protein): collapses the peptides' θ within each
     biological replicate and timepoint (inverse-variance weighted) and refits k; the
-    median of the peptides' k is reported alongside. With --model "linear simple" it
+    median of the peptides' k is reported alongside. With --model "linear" it
     also tests the turnover difference between two conditions (Δk), and with
     --interaction whether that difference varies between experiments. Reads the
     `riana fit` outputs from FIT_DIR or via --manifest and writes
@@ -1080,11 +1085,25 @@ def rollup(
         raise typer.BadParameter(
             "--test-condition must differ from --reference-condition — a condition "
             "compared to itself has no Δk.", param_hint="--test-condition")
+    from riana.core.protein import canonical_model, fit_basis_header
+    renamed_from = model if canonical_model(model) != model else None
+    model = canonical_model(model)
+    # What the fit's fs holds: theta, or fraction new f under a rising precursor.
+    basis_extra = fit_basis_header(frac_path)
+    fs_basis = basis_extra["fs_basis"]
 
     os.makedirs(out, exist_ok=True)
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info(f"rollup (method={method}, parsimony={parsimony}, model={model})")
+    if renamed_from is not None:
+        logger.warning("--model %r is now %r; the old name will be removed in a later "
+                       "release.", renamed_from, model)
+    if fs_basis == "theta":
+        logger.info("fit fs basis: theta (precursor at plateau from t = 0)")
+    else:
+        logger.info("fit fs basis: %s — fraction new f under a rising precursor "
+                    "(k_p %s)", fs_basis, basis_extra.get("k_p_applied", "?"))
     if forked_into is not None:
         logger.info(
             "--manifest + -o: forking a derived project into %s "
@@ -1118,7 +1137,8 @@ def rollup(
             phi_limit=float(phi_limit), linear_weights=str(linear_weights),
             reference_condition=reference_condition,
             test_condition=test_condition,
-            exclude_mbr=bool(exclude_mbr), progress_callback=progress,
+            exclude_mbr=bool(exclude_mbr), fs_basis=fs_basis,
+            progress_callback=progress,
         )
         progress.close()
     except (DataError, NotImplementedError) as exc:
@@ -1139,7 +1159,10 @@ def rollup(
     provenance = make_provenance(
         settings,
         id_source=id_source,
-        extra={"method": method, "parsimony": parsimony, "model": model},
+        # fs_basis / k_p_applied describe the input, not a setting: header only,
+        # outside the config hash.
+        extra={"method": method, "parsimony": parsimony, "model": model,
+               **basis_extra},
     )
     write_dataframe_tsv(out_path, result, provenance, include_index=False,
                         float_format=ESTIMATE_FLOAT_FORMAT)
@@ -1195,7 +1218,7 @@ def rollup(
         from riana.core.protein import LINEAR_MODEL
         if model != LINEAR_MODEL:
             logger.warning(
-                "--plot is only implemented for --model 'linear simple' (got %r); "
+                "--plot is only implemented for --model 'linear' (got %r); "
                 "skipping.", model)
         elif rollup_fractions.empty:
             logger.warning("--plot: no rollup fractions to plot; skipping.")

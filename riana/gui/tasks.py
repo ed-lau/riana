@@ -220,8 +220,9 @@ def run_rollup(
     (``run_in_executor(None, …)``), not the shared ``ProcessPoolExecutor`` — a
     pool worker spawning its own pool is a nested pool, which breaks
     (``BrokenProcessPool``). On a thread the pool is created from the main
-    process. ``phi_limit`` / ``reference_condition`` / ``test_condition`` apply
-    only to ``model="linear simple"`` (``test_condition`` names the Δk comparison
+    process. The fit's ``fs_basis`` header is read here and checked as the CLI does
+    (:func:`riana.core.protein.check_fs_basis`). ``phi_limit`` / ``reference_condition`` / ``test_condition`` apply
+    only to ``model="linear"`` (``test_condition`` names the Δk comparison
     condition — the multi-group interim; needs ``reference_condition`` set too).
 
     Returns ``(protein_table, points)`` — ``points`` is the
@@ -232,11 +233,12 @@ def run_rollup(
     """
     from pathlib import Path
 
-    from riana.core.protein import rollup_proteins
+    from riana.core.protein import fit_basis_header, rollup_proteins
 
     fd = Path(fit_dir)
     peptides = pd.read_table(fd / "riana_fit_peptides.txt", comment="#")
     fractions = pd.read_table(fd / "riana_fit_fractions.txt", comment="#")
+    fs_basis = fit_basis_header(fd / "riana_fit_fractions.txt")["fs_basis"]
     result = rollup_proteins(
         peptides, fractions, model=model, method=method,
         kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
@@ -246,7 +248,7 @@ def run_rollup(
         peptide_admission=str(peptide_admission),
         workers=int(workers), phi_limit=float(phi_limit),
         reference_condition=reference_condition,
-        test_condition=test_condition,
+        test_condition=test_condition, fs_basis=fs_basis,
         progress_callback=_queue_progress_callback(progress_queue),
     )
     return result, result.attrs.get("protein_points", {})

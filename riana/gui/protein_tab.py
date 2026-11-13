@@ -145,9 +145,9 @@ class ProteinTab(QWidget):
         form.addRow("Parsimony", self.parsimony_combo)
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["simple", "guan", "fornasiero", "linear simple"])
+        self.model_combo.addItems(["simple", "guan", "fornasiero", "linear"])
         self.model_combo.setToolTip(
-            "simple/guan/fornasiero: nonlinear curve_fit. 'linear simple': the "
+            "simple/guan/fornasiero: nonlinear curve_fit. 'linear': the "
             "linearized φ=log(1−θ) cross-sample model — per-condition k + a Δk "
             "test (writes delta_k / delta_k_p_adj), plotted in φ-space.")
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
@@ -160,27 +160,27 @@ class ProteinTab(QWidget):
         self.rp_spin = self._rate_spin(10.0)
         form.addRow("r_p (fornasiero)", self.rp_spin)
 
-        # 'linear simple' only: plateau truncation + Δk reference condition.
+        # 'linear' only: plateau truncation + Δk reference condition.
         self.phi_limit_spin = QDoubleSpinBox()
         self.phi_limit_spin.setDecimals(1)
         self.phi_limit_spin.setRange(-10.0, -1.0)
         self.phi_limit_spin.setSingleStep(0.5)
         self.phi_limit_spin.setValue(-4.0)
         self.phi_limit_spin.setToolTip(
-            "['linear simple'] Plateau truncation: drop points with φ=log(1−θ) "
+            "['linear'] Plateau truncation: drop points with φ=log(1−θ) "
             "at/below this (saturated tail = noise, not slope). −4 ≈ θ 0.98.")
         form.addRow("φ-limit (linear)", self.phi_limit_spin)
         self.reference_combo = QComboBox()
         self.reference_combo.addItem("")  # blank = auto (alphabetically first)
         self.reference_combo.setToolTip(
-            "['linear simple'] Δk baseline condition: delta_k = k(test) − "
+            "['linear'] Δk baseline condition: delta_k = k(test) − "
             "k(reference). Blank = alphabetically first. Auto-filled from the "
             "manifest's conditions.")
         form.addRow("Reference cond. (linear)", self.reference_combo)
         self.test_combo = QComboBox()
         self.test_combo.addItem("")  # blank = auto (only a 2-condition protein gets Δk)
         self.test_combo.setToolTip(
-            "['linear simple'] Δk comparison condition (needs a Reference). Pick a "
+            "['linear'] Δk comparison condition (needs a Reference). Pick a "
             "pair to contrast exactly those two even when >2 conditions are present "
             "— an interim before full all-pairwise. NOTE: the joint fit still pools "
             "the residual variance over ALL conditions in the project, so include "
@@ -189,7 +189,7 @@ class ProteinTab(QWidget):
         form.addRow("Test cond. (linear)", self.test_combo)
         self.interaction_check = QCheckBox("experiment × condition")
         self.interaction_check.setToolTip(
-            "['linear simple', 2+ experiments] Also test whether the condition effect "
+            "['linear', 2+ experiments] Also test whether the condition effect "
             "differs between experiments that are strata of the SAME animals (e.g. "
             "tissues split with Integrate's 'Experiment from'). One joint fit per "
             "protein with a random slope per animal — the SDRF's "
@@ -276,7 +276,7 @@ class ProteinTab(QWidget):
         self.admission_combo.setToolTip(
             "How a peptide's per-condition curation result maps across conditions "
             "(multi-condition rollups only). 'auto' (default): 'all' for the "
-            "'linear simple' Δk model, 'own' for the kinetic models. 'own': "
+            "'linear' Δk model, 'own' for the kinetic models. 'own': "
             "per-condition — each condition's k / Δk term uses only peptides that pass "
             "the gate THERE. 'any': passed-in-one ⇒ kept-in-all (anti-conservative). "
             "'all': kept only if it passes in EVERY condition it appears in (paired / "
@@ -344,7 +344,7 @@ class ProteinTab(QWidget):
     def _on_model_changed(self, model: str) -> None:
         """Show the ODE rate knobs for the nonlinear models, the φ knobs for the
         linear model — they are mutually exclusive."""
-        linear = model == "linear simple"
+        linear = model == "linear"
         for w in (self.kp_spin, self.kr_spin, self.rp_spin):
             self._form.setRowVisible(w, not linear)
         for w in (self.phi_limit_spin, self.reference_combo, self.test_combo,
@@ -395,7 +395,7 @@ class ProteinTab(QWidget):
         self.result_tabs.setTabEnabled(1, False)
         self.result_tabs.setTabToolTip(
             1, "Experiment × condition interaction (Run with Interaction checked, "
-               "'linear simple' only).")
+               "'linear' only).")
         self.result_tabs.currentChanged.connect(self._on_result_tab_changed)
         results_split.addWidget(self.result_tabs)
 
@@ -473,7 +473,7 @@ class ProteinTab(QWidget):
             "reference_condition": self.reference_combo.currentText().strip() or None,
             "test_condition": self.test_combo.currentText().strip() or None,
             "interaction": (self.interaction_check.isChecked()
-                            and self.model_combo.currentText() == "linear simple"),
+                            and self.model_combo.currentText() == "linear"),
             "out_dir": self.out_edit.text().strip() or ".",
         }
 
@@ -527,6 +527,9 @@ class ProteinTab(QWidget):
             self._fail(str(exc))
             return
         fit_dir = Path(pep_path).parent
+        # What the fit's fs holds (theta or fraction new f), echoed in the header.
+        from riana.core.protein import fit_basis_header
+        p["fit_basis"] = fit_basis_header(_frac_path)
 
         os.makedirs(manifest.resolve().parent, exist_ok=True)
         self._set_running(True)
@@ -659,7 +662,7 @@ class ProteinTab(QWidget):
             settings,
             id_source=params["manifest"],
             extra={"method": params["method"], "parsimony": params["parsimony"],
-                   "model": params["model"]},
+                   "model": params["model"], **params.get("fit_basis", {})},
         )
         out_path = out_dir / "riana_rollup_proteins.txt"
         write_dataframe_tsv(out_path, result, provenance, include_index=False,
@@ -752,7 +755,7 @@ class ProteinTab(QWidget):
             return
         row = self.model.dataframe.iloc[current.row()]
         p = self._last_params or {}
-        if p.get("model") == "linear simple":
+        if p.get("model") == "linear":
             self._plot_linear_row(row, p)
             return
         key = (row["experiment"], row["condition"], row["protein"])
@@ -840,7 +843,8 @@ class ProteinTab(QWidget):
             # The refit / φ-space curve needs the model that produced the results;
             # take it from the provenance header, the rest from the form.
             params = self.build_params()
-            params["model"] = header.get("model", params["model"])
+            from riana.core.protein import canonical_model  # 'linear simple' → 'linear'
+            params["model"] = canonical_model(header.get("model", params["model"]))
             self._result_df = proteins
             self._points = points
             self._last_params = params

@@ -363,7 +363,7 @@ def test_rollup_interaction_writes_joint_fit_table(tmp_path):
     fit_dir = _multi_tissue_fit_dir(tmp_path, tissues=("LA", "LV", "RA"))
     out = tmp_path / "out"
     result = runner.invoke(app, [
-        "rollup", str(fit_dir), "--model", "linear simple",
+        "rollup", str(fit_dir), "--model", "linear",
         "--reference-condition", "control", "--interaction", "-o", str(out)])
     assert result.exit_code == 0, result.output
     inter = pd.read_table(out / "riana_rollup_interaction.txt", comment="#")
@@ -385,7 +385,7 @@ def test_rollup_interaction_keys_animals_on_individual(tmp_path):
     it and the interaction fit keys its random effect on it (same animals here, so
     the same numbers as the composite)."""
     out_a, out_b = tmp_path / "a", tmp_path / "b"
-    args = ["--model", "linear simple", "--reference-condition", "control",
+    args = ["--model", "linear", "--reference-condition", "control",
             "--interaction"]
     for out, individual in ((out_a, False), (out_b, True)):
         src = tmp_path / f"src_{out.name}"
@@ -402,9 +402,9 @@ def test_rollup_interaction_keys_animals_on_individual(tmp_path):
 
 
 @pytest.mark.parametrize("extra, message", [
-    (["--model", "simple"], "needs --model 'linear simple'"),
-    (["--model", "linear simple", "--experiment", "LA"], "drop --experiment"),
-    (["--model", "linear simple", "--test-condition", "drug",
+    (["--model", "simple"], "needs --model 'linear'"),
+    (["--model", "linear", "--experiment", "LA"], "drop --experiment"),
+    (["--model", "linear", "--test-condition", "drug",
       "--reference-condition", "control"], "not among the conditions"),
 ])
 def test_rollup_interaction_rejects_bad_requests(tmp_path, extra, message):
@@ -417,10 +417,80 @@ def test_rollup_interaction_rejects_bad_requests(tmp_path, extra, message):
 
 def test_rollup_interaction_needs_two_experiments(tmp_path):
     fit_dir = _multi_tissue_fit_dir(tmp_path, tissues=("LA",))
-    result = runner.invoke(app, ["rollup", str(fit_dir), "--model", "linear simple",
+    result = runner.invoke(app, ["rollup", str(fit_dir), "--model", "linear",
                                  "--interaction", "-o", str(tmp_path / "out")])
     assert result.exit_code != 0
     assert "two or more experiments" in _norm(result.output)
+
+
+def _stamp_fs_basis(fit_dir: Path, basis: str) -> None:
+    """Prepend the fit's ``fs_basis`` header lines, as `riana fit` writes them."""
+    lines = f"# fs_basis {basis}\n" + (
+        "# k_p_applied LA/control=0.1; LA/KO=0.1\n" if basis != "theta" else "")
+    for name in ("riana_fit_peptides.txt", "riana_fit_fractions.txt"):
+        path = fit_dir / name
+        path.write_text(lines + path.read_text())
+
+
+@pytest.mark.parametrize("extra, message", [
+    (["--model", "linear", "--linear-weights", "wls-var"], "wls-var"),
+    (["--model", "guan"], "apply it twice"),
+])
+def test_rollup_on_fraction_new_refuses_miscalibrated_settings(tmp_path, extra, message):
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    _stamp_fs_basis(fit_dir, "f")
+    result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(tmp_path / "out"),
+                                 *extra])
+    assert result.exit_code != 0
+    assert message in _norm(result.output)
+
+
+def test_rollup_on_fraction_new_echoes_the_basis_outside_the_hash(tmp_path):
+    """f input runs the same linear model + interaction (wls); the header records the
+    basis and k_p, and the numbers and config hash match an unstamped (θ) run."""
+    from riana.io.writers import read_provenance_header
+
+    args = ["--model", "linear", "--reference-condition", "control", "--interaction"]
+    outs = {}
+    for basis in ("theta", "f"):
+        src = tmp_path / basis
+        src.mkdir()
+        fit_dir = _multi_tissue_fit_dir(src)
+        if basis == "f":
+            _stamp_fs_basis(fit_dir, "f")
+        outs[basis] = src / "out"
+        result = runner.invoke(app, ["rollup", str(fit_dir), *args,
+                                     "-o", str(outs[basis])])
+        assert result.exit_code == 0, result.output
+    for name in ("riana_rollup_proteins.txt", "riana_rollup_interaction.txt"):
+        h_theta = read_provenance_header(outs["theta"] / name)
+        h_f = read_provenance_header(outs["f"] / name)
+        assert h_theta["fs_basis"] == "theta" and "k_p_applied" not in h_theta
+        assert h_f["fs_basis"] == "f"
+        assert h_f["k_p_applied"] == "LA/control=0.1; LA/KO=0.1"
+        assert h_f["config_hash"] == h_theta["config_hash"]
+        pd.testing.assert_frame_equal(
+            pd.read_table(outs["theta"] / name, comment="#"),
+            pd.read_table(outs["f"] / name, comment="#"))
+
+
+def test_rollup_linear_simple_is_an_alias_of_linear(tmp_path):
+    from riana.io.writers import read_provenance_header
+
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    tables = {}
+    for name in ("linear", "linear simple"):
+        out = tmp_path / name.replace(" ", "_")
+        result = runner.invoke(app, ["rollup", str(fit_dir), "--model", name,
+                                     "--reference-condition", "control",
+                                     "-o", str(out)])
+        assert result.exit_code == 0, result.output
+        assert read_provenance_header(out / "riana_rollup_proteins.txt")["model"] == "linear"
+        tables[name] = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
+        log = (out / "logfile.log").read_text()
+        assert ("is now 'linear'" in log) == (name == "linear simple")
+    pd.testing.assert_frame_equal(tables["linear"], tables["linear simple"])
+    assert set(tables["linear"]["method"]) == {"linear"}
 
 
 def test_fit_kp_switches_to_the_rising_precursor_and_records_it(tmp_path):

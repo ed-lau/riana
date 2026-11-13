@@ -162,6 +162,26 @@ def _riana(*args: str) -> None:
         raise RuntimeError(f"riana {' '.join(args)} failed:\n{res.stdout[-2000:]}\n{res.stderr[-2000:]}")
 
 
+def _riana_refused_on_f(*args: str) -> None:
+    """``riana rollup`` with the fraction-new-f refusal lifted — the same CLI code in
+    process, minus :func:`riana.core.protein.check_fs_basis`. Audit only: it reproduces
+    the Monte Carlo that made the rollup refuse ``wls-var`` on f
+    (``reports/2026-11-12_deltak_inference_manual.md`` §6.2)."""
+    from typer.testing import CliRunner
+
+    import riana.core.protein as protein
+    from riana.cli import app
+
+    check = protein.check_fs_basis
+    protein.check_fs_basis = lambda *a, **k: None
+    try:
+        res = CliRunner().invoke(app, list(args))
+    finally:
+        protein.check_fs_basis = check
+    if res.exit_code != 0:
+        raise RuntimeError(f"riana {' '.join(args)} failed:\n{res.output[-2000:]}")
+
+
 def run_dataset(work: Path, seed: int, n_proteins: int, ratio: float, workers: int) -> pd.DataFrame:
     mf = simulate(work, seed, n_proteins, ratio, workers)
     rows = []
@@ -171,9 +191,10 @@ def run_dataset(work: Path, seed: int, n_proteins: int, ratio: float, workers: i
                "-W", str(workers), "-o", str(fit_dir), *kp_args)
         for weights in ("wls", "wls-var"):
             out = fit_dir / f"rollup_{weights}"
-            _riana("rollup", str(fit_dir), "--model", "linear simple", "--linear-weights",
-                   weights, "--reference-condition", "A", "--test-condition", "B",
-                   "--interaction", "-W", str(workers), "-o", str(out))
+            run = _riana_refused_on_f if (route, weights) == ("f", "wls-var") else _riana
+            run("rollup", str(fit_dir), "--model", "linear", "--linear-weights",
+                weights, "--reference-condition", "A", "--test-condition", "B",
+                "--interaction", "-W", str(workers), "-o", str(out))
             rows.append(_summarise(work, out, route, weights, seed, ratio))
     return pd.DataFrame(rows)
 

@@ -54,5 +54,5 @@ def test_render_sanitizes_experiment_names_with_spaces(tmp_path):
 
 def test_render_requires_delta_k_column(tmp_path):
     proteins, fractions = _frames(["exp1"])
-    with pytest.raises(ValueError, match="not 'linear simple'"):
+    with pytest.raises(ValueError, match="not 'linear'"):
         render_linear_pdf(proteins.drop(columns=["delta_k"]), fractions, tmp_path)
