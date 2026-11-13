@@ -3,6 +3,8 @@
 **Date:** 2026-07-13 · **Data:** `runs/lve_atr_clean` (atrium vs control, 686 proteins,
 12 timepoints 0–30 d) · **Status: SHIPPED** — `--linear-weights wls` is the default
 (`--linear-weights ols` restores the old fit for audit); t = 0 excluded. See `CHANGELOG.md`.
+**Caveat 2026-11-12:** the Monte Carlo here calibrates against envelope noise only; peptide
+offsets and animal variation are treated in `2026-11-12_deltak_inference_manual.md` (§3, §6).
 **Appendix (2026-11-10):** the as-shipped code, mapped line by line to the R `lm` + `emtrends`
 reference, with a numerical parity check against R — see the end of this report.
 

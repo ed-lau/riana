@@ -2,6 +2,10 @@
 
 **Date:** 2026-07-24 · **Data:** synthetic Monte-Carlo + real `runs/{lve_atr_clean,
 boomi_ipsc_d2o, juber_ac16_d2o}` · **Status (as written): MEASURED — not shipped.**
+**Caveat 2026-11-12:** these simulations had no peptide offsets or animals, and the biorep split
+cannot see a between-condition bias by construction; with peptide offsets `wls-var` inherits the
+per-condition collapse's mixing bias, and on the rising-precursor route it is anti-conservative —
+see `2026-11-12_deltak_inference_manual.md` §6–8.
 **UPDATE 2026-07-30: the eBayes-moderated path SHIPPED as opt-in `--linear-weights wls-var`**
 (`c82cc55`; `fs_var`/`fs_df` columns) — `wls` stays the default. The effect is real
 and large, but the naive estimate inflates Type-I; a variance-moderation step is required

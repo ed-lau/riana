@@ -8,6 +8,12 @@ it finds 39 chamber-specific KO effects across 977 proteins (see `CHANGELOG.md`)
 2026-11-11:** the ratio-scale test now uses Satterthwaite df (lmerTest-checked; 86 effects across
 982 proteins, all 39 kept), the animal is read from `characteristics[individual]`, and singular
 (σ²_animal = 0) fits are kept; the numbers below are the 2026-11-10 analysis.
+**Caveat 2026-11-12:** the per-protein Δk and interaction calls here rest on the per-condition
+peptide collapse, which on ATF6 turns peptide-to-peptide k differences into Δk. With the
+peptides mixed in the same proportions in both conditions the 86 ratio-scale interaction calls
+fall to 2 (Cops3 stays; Smyd1 does not) — see
+`2026-11-12_deltak_inference_manual.md` §7. The animal-effect findings (§3.1–3.3, §3.5–3.6) and
+the model itself are unaffected.
 Prompted by the statistical review of the titin manuscript, which asked for an `nlme::lme`
 analysis with a `varExp` variance function, a strain effect, and a random mouse slope.
 

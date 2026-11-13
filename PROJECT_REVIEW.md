@@ -126,6 +126,20 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   identified on real data). **See the box below** for the agreed design, including removing
   guan/fornasiero one release after the solve ships. Still open from the old item: a measured
   (non-parametric) precursor curve, if a dataset with one appears.
+- **Δk peptide collapse: per-point vs per-peptide scatter — HIGH PRIORITY, plan agreed
+  2026-11-12, nothing built.** The collapse weights each peptide by its own per-condition band, so
+  the two conditions average the same peptides in different proportions; with real within-protein
+  peptide k spread (CV ~0.2) that is a Δk which is not turnover (*mechanism 1*). On ATF6 it
+  accounts for most shipped calls (Δk 37 → 0, interaction 86 → 2 with shared proportions; lve_atr
+  250 → 244). The user is also not convinced by `wls-var` even on θ (its evidence never had
+  peptide offsets or animals). Plan, candidates (A shipped `wls`, B `wls-var`, C shared
+  proportions, D random-effects collapse with τ², E peptide-level mixed model with an animal
+  slope) and the evidence order (calibrated simulation → real-data permutation nulls → agreement
+  with peptides' own Δk → precision): `reports/2026-11-12_deltak_inference_manual.md` §8.1.
+  Also there: the interaction's additive animal slope vs proportional animal effects (§8.2).
+  Comes **before** the residual-variance moderation below, which should moderate the winner.
+  *To do first for it:* run **EDL / SOL** (the lve_atr sister comparison, Study 4) through
+  current Riana — no current-version fit exists yet.
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
@@ -255,41 +269,14 @@ manifest `precursor_rate_constant`. Choices made while building:
 **Remaining:** rollup stage (7: **`wls` on f, `wls-var` refused there**; `linear` rename and
 default), deprecations (5) and the `exponential` name (4), GUI, docs, validation before merge.
 
-**Monte Carlo of the Δk / interaction tests (2026-11-12, user request).**
-`tests/benchmark/bench_rising_null.py` simulates envelopes (generic in-vivo design: 2 conditions ×
-3 tissues of the same animals, one animal per condition × day, days 0–84) with per-peptide noise
-levels, ±10 % labeling-site error per peptide, per-animal enrichment (5 %) and turnover (15 %)
-variation, and 5 % interference, runs the shipped `riana fit` / `riana rollup`, and reports
-rejection rate, Δk coverage and log₂-ratio recovery over true ratios 1 / 1.25 / 1.5 / 2 (the user's
-R simulation's grid); `eval_rising_variance.py` re-fits the same collapsed cells under candidate
-variance models. Findings:
-- **f + `wls-var` is anti-conservative**: null rejection 0.23 at α 0.05 (interaction mean Δk
-  0.18), coverage 0.67–0.78. The per-peptide band ÷ the early gain spans ~1000× over a series and
-  is misspecified in time (it omits variance shared by a cell's peptides); with weights that
-  extreme the scale no longer fits the few cells that carry the slope.
-- **f + `wls`** under a slow precursor: null 0.03–0.05 in every k range, coverage 0.91–0.96,
-  log₂ ratio recovered (1.5 → 0.60 vs 0.58; 2 → 1.02); power 0.18 / 0.50 / 0.80 at ratios
-  1.25 / 1.5 / 2. The θ route on the same data: Δk biased −53…−68 %, coverage 0.15–0.49.
-- **The shipped θ test is anti-conservative too** (instant precursor, all nuisance on: null 0.15;
-  0.21 for k < 0.01). Two rollup mechanisms, each isolated in the simulation:
-  1. *Per-condition collapse weights.* Each peptide's weight in the inverse-variance collapse is
-     its own band, estimated separately per condition; with peptide-specific offsets (site-table
-     errors) the conditions mix the same peptides differently, a slope-like Δk under the null.
-     Sharing each peptide's weight across conditions: 0.14 → 0.03 (site error alone).
-  2. *Variance growing with time:* between-animal turnover variation adds φ-variance ∝ (k·t)²,
-     which the (1 − θ̂)² model lacks — late, high-leverage points are noisier than the pooled scale.
-     A pooled two-term variance function per experiment, Var = c·Var̂/(1 − θ̂)² + s·φ̂², with shared
-     collapse weights: null 0.051 (θ, instant) / 0.034 (f, slow), power kept (ratio 1.5: 0.60).
-     **But on real data it was unstable** (it erased most of one dataset's calls) — not
-     production-ready; it belongs with the Δk residual-variance moderation item.
-  The size of both depends on the simulated nuisance (site error, animal variation), which should
-  be calibrated against real data (within-protein k spread, the interaction's σ_animal) before
-  the shipped θ result is restated. With envelope noise only the θ test sits at ~0.075 (the
-  July WLS report's 0.062–0.070).
-- On a real dataset, shared collapse weights changed the θ calls little (−4 %).
-- *Also from the simulation:* the 3b rule dropping reads at or above the precursor ceiling is a
-  one-sided selection for fast proteins early in the series (k biased low there) — revisit
-  (cap instead of drop).
+**Monte Carlo of the Δk / interaction tests (2026-11-12) — full write-up, numbers and
+reproduction in `reports/2026-11-12_deltak_inference_manual.md` (the single source of truth for
+Δk variance; do not duplicate its numbers here).** For this item: on f, `wls` is calibrated
+(0.042 at α 0.05, every turnover rate; ratio recovered) and `wls-var` is not (0.255) — hence item
+7. The same work found that the **shipped θ test** is miscalibrated through the per-condition
+peptide collapse (mechanism 1) and through animal variation growing with time (mechanism 2), and
+that mechanism 1 dominates ATF6's calls — tracked as its own item below (*Δk peptide collapse*).
+The 3b ceiling drop is to be revisited (cap instead of drop).
 
 **Why.** Without a priming dose the D₂O precursor rises over days. Today's per-point θ assumes
 every new molecule carries the plateau enrichment, so under a rising precursor θ reads below the

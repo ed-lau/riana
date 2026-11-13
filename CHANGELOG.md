@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Known issue — `linear simple` Δk: the peptide collapse mixes conditions differently — 2026-11-12
+
+- **Each peptide's weight in the collapse comes from its own fit in each condition**, so the same
+  peptides are averaged in different proportions in the two conditions (the weights differ two- to
+  three-fold by chance). A protein's peptides often differ in apparent k (within-protein CV ~0.2
+  on ATF6 and lve_atr), so the two conditions' averages can differ when no peptide's own k does —
+  a Δk that is not turnover. On ATF6 (small true effects) mixing the peptides in the same
+  proportions in both conditions takes the Δk calls from 37 to 0 and the ratio-scale interaction
+  calls from 86 to 2; on lve_atr (large true effects) 250 → 244. In a simulation through the
+  shipped pipeline the per-tissue Δk test rejects 0.163 of true nulls at α 0.05 (peptide offsets
+  and animal variation both contribute). Nothing is changed yet; the analysis, the candidate fixes
+  and the plan to choose between them are in `reports/2026-11-12_deltak_inference_manual.md`
+  (§6–8). Results from the shipped per-condition collapse with small effects should be read with
+  this in mind. Tools: `tests/benchmark/run_deltak_mc.sh`, `tests/benchmark/eval_rising_variance.py`
+  (`--real REF TEST` re-tests a fit under the alternative collapses).
+
 ### Fit — a rising D₂O precursor (`--kp`, per-point envelope solve) — 2026-11-12
 
 #### Added
@@ -38,12 +54,13 @@ The 1.2.0 development line (branch `1.2.0`).
     or to calibration runs. D₂O (`--label hw`) only; `fs_ds` is not computed on this path.
   - *Rollup:* use `--model "linear simple"` with the default `--linear-weights wls`. **Not `wls-var`
     on f:** a Monte Carlo through the shipped pipeline (`tests/benchmark/bench_rising_null.py`)
-    found it anti-conservative there (false-positive rate 0.23 at α = 0.05; the interaction's mean
-    Δk 0.18), while `wls` holds 0.03–0.05 across turnover rates with unbiased ratio recovery. The
-    per-peptide variance, mapped through the tiny early gain, spans ~1000× over a series and is
-    misspecified in a time-structured way (it omits between-animal variance shared by a cell's
-    peptides), and with weights that extreme the residual scale no longer matches the points that
-    carry the slope.
+    found it anti-conservative there (false-positive rate 0.255 at α = 0.05 over three simulated
+    datasets; the interaction's mean Δk 0.22), while `wls` holds 0.042 (0.04–0.06 at every
+    turnover rate) with its CIs covering and the ratio recovered. The per-peptide variance, mapped
+    through the tiny early gain, spans ~1000× over a series and is misspecified in a
+    time-structured way (it omits between-animal variance shared by a cell's peptides), and with
+    weights that extreme the residual scale no longer matches the points that carry the slope.
+    Full numbers: `reports/2026-11-12_deltak_inference_manual.md` §6.2.
 - **Unchanged without a k_p:** θ, k and every estimate are byte-identical. The fit header gains
   `fs_basis theta` and the config's `precursor_k_p` line; the manifest gains an (empty)
   `precursor_rate_constant` column.

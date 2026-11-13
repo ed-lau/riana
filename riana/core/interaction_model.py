@@ -28,10 +28,10 @@ filters (plateau, t > 0) as :func:`riana.core.linear_model.fit_linear_deltak`::
   - ``wls-var``: ``w = (1 − θ̂)²/Ṽar(θ)``, adding each collapsed point's precision — the
     collapse's ``theta_var`` moderated toward a pooled prior exactly as
     :func:`riana.core.linear_model.fit_linear_deltak` does (robust-fitFDist ``d0`` and
-    ``s0²``, estimated once over every point). Needed when a point's precision varies
-    systematically with time, as for the precursor-corrected fraction new under a rising
-    precursor, where early points carry little information; without it those points
-    dominate the residual variance and the animal variance collapses.
+    ``s0²``, estimated once over every point). Opt-in, as for the per-experiment fit. Not
+    for the rising-precursor fraction new f: there the per-point precision spans ~10³ over a
+    series and these weights make the tests anti-conservative (Monte Carlo,
+    ``reports/2026-11-12_deltak_inference_manual.md`` §6.2); ``wls`` is calibrated there.
 
 **Animal** = the ``individual`` column (SDRF ``characteristics[individual]``, threaded
 through fit and rollup) where present. Otherwise the (condition, labeling_time,
