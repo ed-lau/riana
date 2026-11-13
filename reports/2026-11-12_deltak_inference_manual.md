@@ -470,10 +470,9 @@ non-primed D₂O dataset analysis. Points to carry into it:
   mechanism 1 in the simulation (§6.4); τ² on top makes the cell variance honest (Ṽ_RE cannot
   fall below ≈ τ²/n, which is the failure of `wls-var`'s Ṽ) and bounds the weight range, the
   problem `wls-var` has on f (§6.2), so D may also be usable on f. Test that, don't assume it.
-- *τ² is not a constant.* A peptide offset is an offset in its slope (labeling-site error scales
-  its apparent k), so in φ the peptides of a cell spread as ≈ c·k·t: τ grows with time, as
-  `pool2`'s s·φ̂² term does. Model it as a relative spread, τ²(cell) ≈ τ_rel²·φ̂² (or the θ-scale
-  equivalent), with τ_rel pooled over a protein's cells or over proteins, not one τ² per protein.
+- *τ² is not a constant:* peptide offsets are relative, so the spread between a cell's peptides
+  grows with θ (or with k·t). Model it as a relative spread τ_rel² times a shape g(θ̂), pooled
+  over cells and proteins — design options in (b) below.
 - *D cannot fix composition changes:* a peptide missing from one cell still changes that cell's
   mix (DDA gaps). Only E handles that without dropping data.
 - *E with fixed peptide effects* (sum-to-zero slope offsets per protein, shared by the
@@ -488,6 +487,59 @@ non-primed D₂O dataset analysis. Points to carry into it:
   also serves the exponential refit, and redefining it would silently change results.
   `pooled` can be retired once E is validated. D replaces the per-condition weights inside
   `weighted` (results-affecting when adopted), and its Ṽ_RE takes `wls-var`'s place.
+
+#### Options under evaluation (2026-11-13) — not decided
+
+Recorded as options to test, not choices. Both depend on the evidence above and on the cleanup
+still to come (guan/fornasiero removed, `linear` the default, `simple` renamed `exponential`).
+
+**(a) How `--method`, `--model` and `--linear-weights` could combine after the cleanup.**
+
+| `--method` | `--model linear` | `--model exponential` |
+|---|---|---|
+| `weighted` (cell collapse; D if adopted) | main route until E is validated | yes |
+| E, new name (e.g. `peptide`) | eventual default | no — linear only; no nonlinear mixed model planned |
+| `pooled` (pseudoreplicated) | audit, then retire | audit, then retire |
+
+`--linear-weights` would keep `wls` (default) and `ols` (audit). `wls-var` would either become
+D's cell variance Ṽ_RE inside `weighted` or be removed; under E it has no role (each peptide point
+carries its own (1 − θ̂)² weight). `--interaction` would stop being a separate fit under E, whose
+model already contains the animal slope. The name for E is open (`peptide` names the data unit;
+`mixed` is vaguer, since the interaction model is mixed too).
+
+**(b) How τ² could be modelled in D.**
+
+1. *What it is.* The spread between peptides measured in the **same sample** — the same cell
+   (condition × timepoint × animal) — beyond their own noise σᵢ². Estimated within cells, it is
+   not confounded with animal variation, which all peptides of a cell share and which is a
+   different component (the between-cell residual; `pool2`'s s·φ̂² term in §6).
+2. *Its shape over time* follows from where the offsets come from; two candidates that differ near
+   the plateau:
+   - *θ scaling* (a labeling-site count error): θᵢ ≈ aᵢ·θ → sd ≈ τ_rel·θ̂, persisting at plateau
+     (peptides level off at different heights);
+   - *apparent-k offset* (kᵢ = k(1 + cᵢ)) → sd ≈ τ_rel·|φ̂|(1 − θ̂), vanishing at plateau.
+
+   First step: plot each cell's excess spread, Q − (n − 1) (Q the inverse-variance-weighted sum
+   of squared deviations from the cell mean), against θ̂ on ATF6 and lve_atr and let the data pick
+   the shape g(θ̂) (the evaluator already has the gated frames).
+3. *Estimating τ_rel.* Per-cell DerSimonian–Laird (2–10 peptides) is too noisy and often 0, so
+   pool: start from C's shared-level bands σᵢ; evaluate g at θ̂ pooled over both conditions at
+   that timepoint (so the null keeps identical proportions); moment estimator over cells,
+   τ_rel² = max(0, Σ(Q − (n − 1)) / Σ g·(Σw − Σw²/Σw)). Pool over **both conditions** (a
+   per-condition τ would bring back condition-dependent mixing) and over the proteins of an
+   experiment, optionally with a per-protein value shrunk toward it (limma-style).
+4. *Use.* Collapse weights wᵢ = 1/(σᵢ² + τ_rel²·g): early cells, where measurement noise
+   dominates, stay near inverse-variance; late cells, where τ² dominates, become near-equal. Cell
+   variance Ṽ_RE = 1/Σwᵢ. As a regression weight it is optional: test `wls` alone first, then
+   `wls` × 1/Ṽ_RE.
+5. *Check.* After D, the within-cell standardized residuals (θᵢ − θ̄)/√(σᵢ² + τ²) should be
+   ≈ N(0, 1) in every θ̂ bin.
+6. *Limit.* The offsets persist (the same peptides read high or low in every cell). With shared
+   proportions and complete data that is a common shift that cancels from Δk, so counting it as
+   independent per-cell noise in Ṽ_RE is an approximation — reasonable for cells that lost
+   peptides. E models the persistence directly; τ_rel from D gives E a check (or a prior for
+   random peptide effects).
+7. *On f* the same machinery applies in label-content or f space; the shape needs its own check.
 
 **Datasets:** ATF6 (DIA, 3 animals per cell, 4 tissues), lve_atr (DDA, 2 tissues), boomi /
 lauren (cell culture, rich series), the proprietary slow-precursor set (locally only), and
