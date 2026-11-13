@@ -37,6 +37,11 @@ The full list is in the repository `CHANGELOG.md`.
   reads whether the fit's `fs` is θ or the fraction new f of a rising precursor (`fit --kp`) and,
   on f, refuses `--linear-weights wls-var` and guan/fornasiero.
 * **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
+* **Known issue (Δk, open).** Each peptide's weight in a protein's per-timepoint average comes from
+  its own fit in each condition, so the two conditions can average the same peptides in different
+  proportions. When peptides of a protein differ in apparent k, that produces a Δk which is not
+  turnover. It matters most when true effects are small. A fix is being evaluated; until then, read
+  small-Δk calls with care.
 
 ## Update v1.1.0
 

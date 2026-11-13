@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
-### Known issue — `linear simple` Δk: the peptide collapse mixes conditions differently — 2026-11-12
+### Known issue — `linear` (was `linear simple`) Δk: the peptide collapse mixes conditions differently — 2026-11-12
 
 - **Each peptide's weight in the collapse comes from its own fit in each condition**, so the same
   peptides are averaged in different proportions in the two conditions (the weights differ two- to
@@ -24,6 +24,10 @@ The 1.2.0 development line (branch `1.2.0`).
   (§6–8). Results from the shipped per-condition collapse with small effects should be read with
   this in mind. Tools: `tests/benchmark/run_deltak_mc.sh`, `tests/benchmark/eval_rising_variance.py`
   (`--real REF TEST` re-tests a fit under the alternative collapses).
+- **Options for the fix are recorded but not decided** (2026-11-13, manual §8.1 "Options under
+  evaluation"): how `--method`, `--model` and `--linear-weights` would combine after the
+  guan/fornasiero cleanup, and how a random-effects collapse would model the between-peptide
+  spread τ². The default rollup model stays `simple` until this is settled.
 
 ### Rollup — fraction new f input; `linear` (was `linear simple`) — 2026-11-13
 

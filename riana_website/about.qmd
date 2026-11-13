@@ -168,6 +168,11 @@ t-test and Benjamini–Hochberg adjustment within each experiment. `--reference-
 `--test-condition` choose the pair; `--linear-weights wls-var` additionally weights points by their
 measured precision. `--plot` writes the φ-space curves to a PDF per experiment.
 
+*Known issue (1.2 development).* Each timepoint's point is an inverse-variance average of the
+protein's peptides with weights taken separately in each condition, so the two conditions can mix
+the same peptides in different proportions. When the peptides differ in apparent k, that alone can
+produce a Δk. It matters most for small effects; a fix is being evaluated (see the Change Log).
+
 ### Tissues of the same animals (`--interaction`)
 
 When the experiments are tissues sampled from the same animals, the per-tissue Δk answer "does the
