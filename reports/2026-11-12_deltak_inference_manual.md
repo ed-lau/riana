@@ -430,8 +430,10 @@ or the model term (3) removes. **Missing data decides between them:** with compl
 identical proportions are achievable in every cell; with gaps a peptide missing from one cell
 changes that cell's mix whatever the weights, and only (3) handles it without discarding data.
 *Correction (2026-11-13):* this section first named ATF6 DIA as complete. After the rollup gate,
-no dataset is, DIA included; ATF6's cells are about as incomplete as lve_atr's DDA cells
-(audit in the [evaluation scope](2026-11-13_wls_var_and_collapse_plan.md) §2).
+no dataset is, DIA included. At depth gates of similar strictness (ATF6 3 of 5 timepoints,
+lve_atr 6 of 12), ATF6's cells are about as incomplete as lve_atr's DDA cells, and completeness
+falls as the depth gate loosens (audit in the
+[evaluation scope](2026-11-13_wls_var_and_collapse_plan.md) §2).
 
 **Candidates** (all on the same gated peptides; A–C exist, D–E would be built):
 
