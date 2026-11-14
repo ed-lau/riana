@@ -1,0 +1,183 @@
+# wls-var, the random-effects collapse (D) and the peptide-level model (E): scope of the evaluation
+
+2026-11-13 · branch `1.2.0` · **Status: scope approved by the user 2026-11-13 (answers in §7).
+Nothing is built; WP0 is next.** Follows
+[the Δk manual](2026-11-12_deltak_inference_manual.md) §8.1, which defines candidates A–E and the
+evidence order. This document fixes what is evaluated, on which data, with which tests, and the
+evidence that must be in hand before anything changes in `riana/`.
+
+## 1. What is being decided
+
+| | Question | Possible outcomes |
+|---|---|---|
+| Q1 | Does `wls-var` weight cells by their real precision? | keep opt-in, with its limits documented · deprecate |
+| Q2 | Should D (random-effects collapse, τ²) replace `wls-var` inside `--method weighted`? | build · do not build |
+| Q3 | Should E (peptide-level mixed model) become a new `--method`? | build · defer · do not build |
+
+**Rule (user, 2026-11-13).** A change goes into `riana/` only when the evidence shows it works on
+real data. If real data cannot show that, the outcome is a written evaluation and a design note,
+not code. During the evaluation, prototypes of D and E live in the evaluator
+(`tests/benchmark/`), as the research `pool2` model does now. They are not CLI options.
+
+## 2. What the existing runs can show (audit, 2026-11-13)
+
+Real data has no ground truth, so each dataset is useful only for the tests its design allows
+(§3). Gated statistics approximate the shipped rollup gate: R² ≥ 0.8, or R² ≥ 0.6 with
+k_cv < 0.2; Spep ≥ 8; admission `all`.
+
+| Dataset (run) | Design | Timepoints after 0 | Replicates per timepoint | Single-peptide tests | Multi-peptide tests: cells holding every admitted peptide (median) / fully complete | Fit made at | Tests it supports |
+|---|---|---|---|---|---|---|---|
+| ATF6 (`atf6_individual/fit`) | DIA, mouse heart; KO vs control × 4 chambers, all 4 from each animal | 5 (days 1–14, no day 0) | 3 animals per genotype | 40 % | 0.60 / 7 % | `33f0939` (Aug) + `individual` added | T2, T6, T4, interaction; animal-variance parameters |
+| lve_atr (`lve_atr_clean`) | DDA, mouse; atrium vs ventricle, both from the same mouse | 11 (days 1–30) | 1 mouse | 44 % | 0.64 / 11 % | `2ff71be` (Jun) | T3, T4 |
+| boomi (`boomi_ipsc_d2o`) | DDA, iPSC culture; one condition | 8 (1–24 h) | 2 culture plates | 43 % | 0.44 / 2 % | `e946b6f` (Jul) | **primary:** T1, T3, T3′, Q1 and τ² diagnostics |
+| lauren9 (`timeseries_lauren9`) | DDA, 8-fraction 2D-LC, iPSC; one condition | 11 (0.5–24 h) | 2 (nature unconfirmed) | — | — | `e946b6f` | T1, T3 (secondary: fraction pseudoreplication, see below) |
+| lauren5_7 (`timeseries_lauren5_7_…_o18`) | ¹⁸O, 8 fractions; control vs mesoderm | 11 | 2 per condition | 67 % | 0.77 / 16 % | `e946b6f` | balanced T2, T3 (secondary) |
+| proprietary non-primed set | f route, 1 animal per cell | 9 | 1 | — | — | HEAD | T3 only, local only, no numbers in committed files |
+| EDL / SOL | DDA, mouse; EDL vs soleus, **the same mice as lve_atr** (all four tissues at a timepoint come from one mouse) | as lve_atr | 1 mouse | — | — | not run; the user is adding the data | T3, T4; with lve_atr, the four-tissue animal diagnostic (WP1d) |
+
+`timeseries_dia` (an ATF6 subset, 3 timepoints) and `juber_ac16_d2o` (8 % of peptides pass the
+gate) are left out.
+
+**Findings that change the plan:**
+
+1. **No dataset has complete peptide sets, DIA included.** In ATF6, a median 40 % of cells miss at
+   least one admitted peptide, and only 7 % of multi-peptide tests are complete in every cell.
+   Manual §8.1 assumed that complete data, such as ATF6 DIA, allow identical proportions in every
+   cell. They do not.
+   - C and D therefore cannot make the two conditions' mixes identical cell by cell on any real
+     dataset.
+   - Gaps that occur at random add noise. Gaps that depend on the condition (a peptide less often
+     seen in one tissue) can still bias C and D.
+   - E is the only candidate that does not depend on complete cells.
+   - Manual §8.1 to be corrected when this plan is adopted.
+2. **40–67 % of tests rest on one admitted peptide.** For those, A–E give the same answer, so any
+   gain is confined to multi-peptide proteins (median 4 admitted peptides).
+3. **Every fit predates the envelope-binning fix `d1eb480`**, and boomi and lve_atr predate the
+   1.2.0 rail changes. Refit at HEAD before scoring (WP0).
+4. **Which designs can give a real-data null:**
+   - boomi: two culture plates per timepoint (separate plates, not reinjections; user,
+     2026-11-13), so one plate can be split against the other (T1), a null that includes
+     plate-to-plate biological variation. With D₂O, 8 timepoints and true replicates, **boomi is
+     the primary real-data dataset.** lauren9 has the same layout, but its replicates are
+     unconfirmed and it is fractionated (finding 7).
+   - ATF6: 3 + 3 animals per timepoint, so genotype labels can be permuted between animals (T2).
+   - lve_atr: one mouse per timepoint. Swapping tissue labels flips the sign of a large real
+     effect, so it is not a null. lve_atr supports only T3 and T4.
+5. **The missing design stays missing: DDA, in vivo, with ≥ 2 animals per condition per
+   timepoint.** EDL / SOL comes from the same single mouse per timepoint as lve_atr. Two things
+   soften the gap:
+   - After gating, ATF6's DIA cells are about as incomplete as lve_atr's DDA cells (0.60 vs 0.64
+     of cells hold every admitted peptide, finding 1), so T2 on ATF6 already tests gaps of a
+     similar size.
+   - Gaps that follow the label or the intensity, a DDA-specific pattern, go into the simulation
+     (WP3).
+6. **ATF6 has 5 timepoints, too few to split in time (T3).** Its null is the permutation (T2). For
+   an SE check with real effects, it splits by animals instead (T6).
+7. **The lauren sets are fractionated**, and the fit still pseudoreplicates multi-file points
+   (PROJECT_REVIEW, fraction-collapse gap). Use them only as a second check.
+8. **Every in-vivo tissue contrast is within animal.** All four ATF6 chambers come from each
+   animal, and lve_atr, EDL and soleus from one mouse per timepoint. The shipped one-factor Δk
+   ignores that pairing (manual §8.2, *Within-animal comparisons*). If an animal's deviation is
+   shared across its tissues, it cancels from the tissue Δk but stays in the residual variance, so
+   the SE is too large: tissue contrasts should give a T3 or T6 z SD **below** 1. The lower bound
+   of the z-SD threshold (§5) is there to catch that. If the deviation scales with tissue k
+   (proportional, manual §8.2), it does not cancel. WP1d measures which it is.
+
+## 3. Truth-free tests: what each one measures
+
+| | Test | What it measures | Requirements | Datasets | Cannot see |
+|---|---|---|---|---|---|
+| T1 | **Replicate split.** At each timepoint, assign one replicate at random to pseudo-condition A and the other to B; refit (`riana fit` on a relabeled manifest); roll up. | False-positive rate on real peptides and real noise; the true Δk is 0 by construction. Includes mechanism 1 from chance band differences. | ≥ 2 replicates per timepoint; a refit per assignment | boomi (128 distinct assignments), lauren9 | Peptide quality that differs between real conditions (there are none); animal variation (cell culture) |
+| T2 | **Permutation within timepoint.** Permute condition labels between animals; an animal's tissues move together. Refit, roll up, run the interaction. | False-positive rate of Δk and of the three interaction tests, with real animals | ≥ 2 animals per condition per timepoint; a refit per permutation | ATF6; lauren5_7 balanced (each pseudo-condition gets one sample of each real condition) | The small real genotype effect becomes noise |
+| T3 | **Time split** (the user's alternate-timepoint idea). Refit the odd- and even-numbered timepoints separately; both halves span the whole range. | Δk_odd − Δk_even has mean 0 whatever the true Δk. So z = difference / √(SE²_odd + SE²_even) should have SD 1 if the SEs are honest. Var(difference) measures precision. Works with real effects present. | ≥ 8 timepoints; 2 refits per dataset | lve_atr, boomi, lauren, proprietary (local) | Bias shared by both halves, e.g. a peptide genuinely measured better in one tissue. Each half has half the points, so its bands are noisier than the full data's. |
+| T3′ | **Leave one timepoint out.** Predict each held-out cell from the rest. | Standardized prediction residuals per cell: does a variance model (`wls`, `wls-var` Ṽ, D's Ṽ_RE, pool2) track the actual scatter? Answers Q1 directly. | as T3, no refit for the variance check | all | Bias |
+| T6 | **Animal-set split** (user, 2026-11-13). Estimate one chamber contrast (LV vs RV, LV vs RA) separately in the control animals and in the KO animals. The genotype barely changes turnover, so both sets estimate the same contrast. | z = (Δk_ctrl − Δk_KO) / √(SE²_ctrl + SE²_KO) should have SD 1. The in-vivo counterpart of T3: independent animals and all 5 timepoints in each half. Also tests whether a paired (within-animal) model gets the SE right (finding 8). | Negligible genotype × chamber interaction: drop the interaction hits and use a robust SD. Allow for the KO brake with one global scale factor, or compare on the log-ratio scale. No refit expected: the fit's curves are per chamber × genotype whichever label is the experiment (to verify in WP0). | ATF6 | Bias shared by both animal sets: mechanism 1 from chamber-specific peptide quality repeats in both halves, so T6 calibrates the SE, not that bias (T2 and T4 cover it) |
+| T4 | **Peptides' own Δk** (exists, manual §7) | Bias of the collapse against a collapse-free contrast | 2 conditions | ATF6, lve_atr | Cannot rank E, which is built from the same contrast |
+| T5 | **Biorep-split precision** (07-24) | Efficiency only | replicates | boomi, lauren | Mixing bias (weights fixed) |
+| S | **Calibrated simulation** (`bench_rising_null.py`) | The only source of truth: power, bias, coverage, ratio recovery | calibration inputs from §2 and §4 | — | Whatever it does not simulate (manual §6.6) |
+
+**Check the yardsticks before using them.** T1–T3 and T6 have never been tested against a known
+answer. The Monte Carlo predicts how A, B and C differ: mechanism 1 inflates A (0.141 with site
+error alone), C removes it (0.032), and B is no better than A (manual §6.4). So the tests are
+first run on A, B and C, which already exist, with no new estimator code. T1 on boomi and T2 on
+ATF6 are the two that can see mechanism 1; T3 and T6 check the SEs.
+
+- If the real-data tests separate A from C the way the simulation predicts, they can rank D and E.
+- If A and C look the same on them, real data cannot discriminate. The decision then rests on the
+  calibrated simulation alone, and D and E stay design-only.
+
+This is the "applicable to real data" gate (G1, §5).
+
+## 4. Work packages
+
+| WP | Content | Output | Compute | Code |
+|---|---|---|---|---|
+| 0 | Refit boomi, ATF6 and lve_atr at HEAD (θ route), into new run directories; integrate and fit EDL / SOL when its data are on disk. Build the relabeled manifests for T1, T2 and T3; check that T6 needs only a relabel. Measure refit time. If a T2 refit costs about an hour, decide between full refits (10–20 permutations) and a stage-2-only refit in the evaluator: curve and bootstrap on the stored per-point fs, accepted only if it reproduces the shipped k and bands on unpermuted data, as in the manual §6.1 audit. | fits; manifests; cost table | minutes each for lve_atr and boomi; about 1 h for ATF6 at `-W 16` (estimated) | scripts only |
+| 1 | **Diagnostics on the refits, no new estimators.** (a) Q1: regress the log squared standardized `wls` residual on log Ṽ within protein (slope 1 = Ṽ tracks the scatter, 0 = uninformative); also by peptides per cell, since a floor rather than a 1/n fall means peptide spread that Ṽ ignores; plus the T3′ version. (b) D's τ² shape: excess spread Q − (n − 1) against θ̂, comparing θ scaling with apparent-k offset (manual §8.1 b), and the pooled τ_rel. (c) Size of τ²·g against σᵢ² at the late, slope-carrying points. If τ² is negligible there, D reduces to C plus a cell variance, and that alone decides whether D is worth more than C. (d) **The animal term, from tissues of the same animal:** correlation of each animal's residuals across its tissues (lve_atr + EDL / SOL: 4 tissues × 11 mice; ATF6: 4 chambers × 30 animals, as deviations from the timepoint mean). It gives the shared animal component, and whether it is additive or scales with tissue k (manual §8.2), which fixes the form of the animal term in E. | Q1 evidence; D's g and τ_rel; the animal term's form | minutes | evaluator functions |
+| 2 | **Check the yardsticks with A, B and C:** T1 on boomi first (20–40 assignments), T2 on ATF6 (10–20 permutations, Δk and interaction), T3 on boomi and lve_atr, T6 on ATF6. | null rates, z SD, A-vs-C separation → **G1** | T2 dominates: 10–25 h of refits, or much less with the stage-2 tool; T1 and T3 minutes each; T6 no refit | evaluator + scripts |
+| 3 | **Calibrate the simulation:** peptide spread to the real within-protein k CV (0.21–0.23), σ_animal to ATF6 (0.013), proteome-wide animal shifts, and missingness from the completeness in §2 (the simulation has none today). Re-run A, B and C, then confirm the calibrated simulation reproduces the A–C gaps found in WP2. | calibrated arms | about 1.5–2 h per grid on 24 cores | `bench_rising_null.py` knobs |
+| 4 | **Prototype D and E in the evaluator**, scored on the WP2 yardsticks that passed G1 and on the WP3 simulation. E: fixed sum-to-zero peptide slope offsets shared by the conditions, animal random slope, (1 − θ̂)² weights, on the `interaction_model` machinery; measure its cost per protein on ATF6. Because every in-vivo tissue contrast is within animal (finding 8), E's animal term is shared across an animal's tissues (the paired model), in the form WP1d picks; T3 on lve_atr and T6 on ATF6 score it. D on f: in the simulation only, plus the proprietary set locally. | candidates A–E on every yardstick → **G2** | WP2 + WP3 again | evaluator only |
+| 5 | **Write-up:** evaluation report; design note for the winner, or for why nothing changes; manual §8.1 updated. Implementation proposal only if G2 passes. | report | — | docs |
+
+EDL / SOL comes from the same mice as lve_atr, so it gives no null and does not fill the gap in
+finding 5. It is still worth running in WP0: it is the second within-animal contrast (T3, T4),
+it makes the four-tissue animal diagnostic possible (WP1d), and current Riana has never fitted
+it.
+
+## 5. Decision gates
+
+**G1, after WP1–WP2: can real data discriminate?** Two conditions together:
+
+- T1 on boomi, or T2 on ATF6, separates A from C in the direction the simulation predicts.
+- C's null rate there is near nominal.
+
+**Q1 verdict at G1:**
+
+- **Deprecate `wls-var`** (results-affecting; the user decides) if Ṽ is uninformative or plateaus
+  (WP1a) and B is no better calibrated than A on the yardsticks.
+- **Keep it opt-in, with its limits documented,** if Ṽ tracks the scatter and B holds the nulls.
+
+**G2, after WP4: build D, E or neither.** The manual's decision rule applies (among candidates that
+hold the null, the most powerful; the simplest if tied), scored as follows:
+
+| Criterion | Threshold (to confirm) |
+|---|---|
+| Null rate, pooled over T1/T2 replicates | ≤ 0.07 at α 0.05, with no k bin above 0.10 |
+| T3 and T6 z SD | 0.9–1.15 (below 0.9 = SE too large, e.g. unmodelled pairing) |
+| Calibrated simulation | false-positive rate ≤ 0.065 overall; CI coverage ≥ 0.93 |
+| Power at ratio 1.5 (simulation) | not below A's by more than 10 % (relative) |
+| E's cost | acceptable for a full ATF6 rollup |
+
+If a candidate passes only in the simulation, it is written up but not built (the rule in §1).
+
+## 6. Out of scope
+
+Limma-style residual-variance moderation (after the winner); the paired within-animal model as
+a separate option for today's estimators (it is part of E, WP4); the default flip to `linear`; guan / fornasiero removal; the `exponential`
+rename; the k_p refits; GUI work. On the f route, D is checked in the simulation, and on real data
+only locally.
+
+## 7. Answers (user, 2026-11-13)
+
+1. **EDL / SOL:** same design as lve_atr. All four tissues (ventricle, atrium, EDL, soleus) at a
+   timepoint come from one mouse. The user is adding the data.
+2. **Replicates:** boomi's `_1`/`_2` are separate culture plates, not reinjections, so T1 is a
+   null that includes biological variation. boomi is the preferred dataset (D₂O, enough
+   timepoints). lauren's `TR1`/`TR2` are not confirmed; lauren stays secondary.
+3. **lve_atr:** both tissues come from the same mouse (as in 1).
+4. **ATF6:** the user suggested the chamber contrast (LV vs RV or LV vs RA) in the control and KO
+   animals as two animal sets, since the KO changes turnover very little. This is T6.
+5. **Prototypes** of D and E in the evaluator count as evaluation.
+6. **Placement:** this scope is committed under `reports/` and linked from manual §8.1 and the
+   PROJECT_REVIEW §3 box.
+
+Not yet confirmed: the G2 thresholds in §5 are proposals, to revisit at G1.
+
+## Reproduce the audit
+
+The audit scripts live in the session scratchpad; WP0 will move them into `tests/benchmark/`.
+They read `riana_fit_fractions.txt` and `riana_fit_peptides.txt` from each run and report:
+
+- the design;
+- the gated completeness: per protein × condition with ≥ 2 admitted peptides, the share of
+  (peptide, cell) pairs observed and the share of cells holding every admitted peptide.

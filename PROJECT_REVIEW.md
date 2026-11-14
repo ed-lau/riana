@@ -151,7 +151,9 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   dataset analysis and its (local) report — **both done 2026-11-13** — write a **new plan** from
   §8.1: does `wls-var` do what it is meant to (weight by measured precision) at all, and should it
   be replaced by a peptide-specific term — a peptide offset modelled in the collapse (L1), or Ṽ
-  replaced by the across-peptide scatter. **That plan is the next item.** *Direction (user,
+  replaced by the across-peptide scatter. **Scope approved 2026-11-13:**
+  `reports/2026-11-13_wls_var_and_collapse_plan.md`. WP0 (refits at HEAD) is next, and `riana/`
+  changes only on real-data evidence. *Direction (user,
   2026-11-13):* D (random-effects collapse, shared levels) as the `wls-var` replacement, E
   (peptide-level mixed model) later as the main route; D upgrades `--method weighted`, E replaces
   pseudoreplicated `pooled` (as a new method name). Refinements in manual §8.1 "Direction";

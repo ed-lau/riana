@@ -284,7 +284,8 @@ Rejection rates at ratio 1 (θ route, instant precursor; `wls`; the shipped per-
   ~9 points here vs ~14 on ATF6.
 - The animal turnover effect is independent across proteins; on ATF6 it is largely proteome-wide
   (11-10 §3.5), which correlates the tests across proteins.
-- No missing data (DDA gaps would make identical proportions impossible, §8.1); random sequences;
+- No missing data (real gaps, present after gating in every dataset including DIA, make identical
+  proportions impossible, §8.1); random sequences;
   no DIA/DDA acquisition differences; one dataset in the non-null arms.
 
 ## 7. Real data: what the per-condition collapse does to the calls
@@ -426,9 +427,11 @@ offset cancels from a within-peptide Δk contrast instead of entering through un
 So the instinct to put peptide-level variance into the linear weights is right for (2), but the
 larger problem the spread causes is in the means — the mixing — which only (1), a shared mix (C)
 or the model term (3) removes. **Missing data decides between them:** with complete data
-(ATF6 DIA) identical proportions are achievable in every cell; with gappy DDA data a peptide
-missing from one cell changes that cell's mix whatever the weights, and only (3) handles it
-without discarding data.
+identical proportions are achievable in every cell; with gaps a peptide missing from one cell
+changes that cell's mix whatever the weights, and only (3) handles it without discarding data.
+*Correction (2026-11-13):* this section first named ATF6 DIA as complete. After the rollup gate,
+no dataset is, DIA included; ATF6's cells are about as incomplete as lve_atr's DDA cells
+(audit in the [evaluation scope](2026-11-13_wls_var_and_collapse_plan.md) §2).
 
 **Candidates** (all on the same gated peptides; A–C exist, D–E would be built):
 
@@ -458,6 +461,12 @@ without discarding data.
 **Decision rule.** Among the candidates that hold the null in both the calibrated simulation and
 the permutations, take the most powerful; the simplest if tied. Until then `wls` stays the
 default and `wls-var` stays opt-in, documented as calibrated only against S1–S2.
+
+**Evaluation scope (approved 2026-11-13):**
+[`2026-11-13_wls_var_and_collapse_plan.md`](2026-11-13_wls_var_and_collapse_plan.md) turns this
+evidence order into work packages. It covers which runs support which truth-free test
+(replicate split, permutation, time split, animal-set split, peptides' own Δk) and checks those
+tests on A–C before they rank D and E. Code changes in `riana/` only on real-data evidence.
 
 **Direction (user, 2026-11-13).** Try **D as the replacement for `wls-var`** (tested on real data
 as above), and **E later as the thorough solution**. D and E map onto the existing
@@ -543,8 +552,9 @@ model already contains the animal slope. The name for E is open (`peptide` names
 
 **Datasets:** ATF6 (DIA, 3 animals per cell, 4 tissues), lve_atr (DDA, 2 tissues), boomi /
 lauren (cell culture, rich series), the proprietary slow-precursor set (locally only), and
-**EDL / SOL** (the sister comparison of lve_atr in the Study 4 manuscript) — **to do: not yet
-run through current Riana**, so its peptide-level fits do not exist; run it first. The Study 4 R
+**EDL / SOL** (the sister comparison of lve_atr in the Study 4 manuscript; the same mice, all
+four tissues at a timepoint from one mouse) — **to do: not yet run through current Riana**, so
+its peptide-level fits do not exist; run it first. The Study 4 R
 workflow itself averages peptides with log₂(intensity) weights, which are near-equal and the
 same in both conditions, so it does not carry the per-condition mixing of §7 to the same degree
 (whether its peptide sets match between conditions has not been checked).
