@@ -1,6 +1,9 @@
 """False positives of the Δk and interaction tests under a rising precursor — Monte Carlo
 through the shipped pipeline (``riana fit`` → ``riana rollup``), from simulated envelopes.
 
+``wls-var`` was removed from Riana on 2026-11-15: the ``wls-var`` arms need Riana at commit
+``e12980c`` or earlier (the wls-var / D / E evaluation).
+
 The earlier calibration work (``bench_linear_weights.py``, ``notebooks/wls_var_sim.py``)
 simulated θ directly with an instant precursor. Under a rising precursor the variance the
 rollup weights on comes from a chain those sims do not have: the per-point envelope solve

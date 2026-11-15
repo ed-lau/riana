@@ -1,5 +1,8 @@
 """Offline evaluator for the Δk Monte Carlo (``run_deltak_mc.sh`` → ``bench_rising_null``).
 
+``wls-var`` was removed from Riana on 2026-11-15: the ``wls-var`` re-tests need Riana at commit
+``e12980c`` or earlier (the wls-var / D / E evaluation).
+
 For every simulated dataset it re-tests the SAME gated peptides under the alternative peptide
 collapses and weights, with the shipped functions wherever they exist:
 

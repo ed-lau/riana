@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Removed — `--linear-weights wls-var` — 2026-11-15
+
+- **The opt-in `wls-var` weighting is gone** from `rollup --linear-weights` (and from
+  `fit_linear_deltak` / `fit_interaction`), before any release shipped it. Asking for it is now
+  an unknown-scheme error. `wls` (default) and `ols` are byte-identical to before.
+  - *Why:* the wls-var / D / E evaluation (`reports/2026-11-14_wls_var_D_E_evaluation.md`)
+    found it never better calibrated than `wls`, and worse on the ATF6 permutation null
+    (false-positive rate 0.122 against 0.096 at α 0.05; 49 against 20 BH calls per null
+    permutation). Its per-point variance leaves out the spread between a protein's peptides,
+    which is 2–4× larger at the timepoints that carry the slope.
+  - *Kept:* the `fs_var` / `fs_df` columns of `riana_rollup_fractions.txt` (each collapsed
+    point's variance and Satterthwaite df), now informational only, and the robust fitFDist
+    helper (`linear_model._fit_fdist`) for the deferred residual-variance moderation.
+  - *Gone with it:* the f-route refusal of `wls-var` (`check_fs_basis` lost its weights
+    argument) and the interaction's `wls-var` weights. The interaction always uses `wls`.
+  - *Next:* a peptide-level mixed model replaces the collapse for Δk once the EDL / SOL data are
+    in (report §5). Until then `wls` stays the default.
+
 ### Known issue — `linear` (was `linear simple`) Δk: the peptide collapse mixes conditions differently — 2026-11-12
 
 - **Each peptide's weight in the collapse comes from its own fit in each condition**, so the same
@@ -28,6 +46,12 @@ The 1.2.0 development line (branch `1.2.0`).
   evaluation"): how `--method`, `--model` and `--linear-weights` would combine after the
   guan/fornasiero cleanup, and how a random-effects collapse would model the between-peptide
   spread τ². The default rollup model stays `simple` until this is settled.
+- **Evaluated 2026-11-14** (`reports/2026-11-14_wls_var_D_E_evaluation.md`): the
+  random-effects collapse is not worth building, and the fix is a peptide-level mixed model
+  (peptide slope offsets, animal and, possibly, labeling-time random slopes), to be built after
+  the EDL / SOL data. On ATF6, the shipped test's 35 per-chamber Δk calls and 79 interaction calls
+  are at its permutation-null level (20 and 69 per permutation); every candidate that holds the
+  null makes 0 calls.
 
 ### Rollup — fraction new f input; `linear` (was `linear simple`) — 2026-11-13
 
@@ -49,7 +73,7 @@ The 1.2.0 development line (branch `1.2.0`).
 
 - **`--linear-weights wls-var`**, which is miscalibrated there (false-positive rate 0.255 at α 0.05
   in simulation; `wls` 0.042 — `reports/2026-11-12_deltak_inference_manual.md` §6.2). The weights
-  also feed `--interaction`.
+  also feed `--interaction`. *(`wls-var` removed altogether 2026-11-15, entry above.)*
 - **`--model guan|fornasiero`**, which would apply the rising precursor a second time.
 
 ### Fit — a rising D₂O precursor (`--kp`, per-point envelope solve) — 2026-11-12
@@ -93,6 +117,8 @@ The 1.2.0 development line (branch `1.2.0`).
   `precursor_rate_constant` column.
 
 ### Interaction model follows `--linear-weights` — 2026-11-12
+
+*Superseded: `wls-var` was removed 2026-11-15 (entry above), so the interaction uses `wls`.*
 
 #### Changed
 
@@ -435,6 +461,8 @@ two narrower weighting/collapse bugs on opt-in paths.
   moderation), putting the point on the same scale as its siblings.
 
 ### `linear simple` Δk — opt-in per-point Var(θ) weighting (`wls-var`) — 2026-07-30
+
+*`wls-var` was removed 2026-11-15 (entry at the top); the `fs_var` / `fs_df` columns stay.*
 
 #### Added
 

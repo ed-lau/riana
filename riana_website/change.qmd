@@ -20,8 +20,7 @@ The full list is in the repository `CHANGELOG.md`.
   SDRF's `comment[label]`). With one labeling time, k is solved directly from θ.
 * **Weighted Δk model (changes results).** `rollup --model "linear simple"` now fits by weighted
   least squares; the unweighted fit gave too many false positives. `--linear-weights ols` restores
-  it for comparison, and `wls-var` additionally weights points by their measured precision.
-  `--test-condition` names the pair to compare when there are more than two conditions.
+  it for comparison. `--test-condition` names the pair to compare when there are more than two conditions.
 * **Several tissues or strata in one project.** `integrate --experiment-column` (*Experiment from*
   in the app) splits runs into experiments by an SDRF column; Δk is BH-adjusted within each
   experiment (changes results for multi-experiment projects); `rollup --plot` writes the φ-space
@@ -35,7 +34,7 @@ The full list is in the repository `CHANGELOG.md`.
   non-standard residues (U, O, B, Z, J, X) are dropped at intake.
 * **`rollup --model linear`** (was `linear simple`; the old name is still accepted). The rollup
   reads whether the fit's `fs` is θ or the fraction new f of a rising precursor (`fit --kp`) and,
-  on f, refuses `--linear-weights wls-var` and guan/fornasiero.
+  on f, refuses guan/fornasiero.
 * **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
 * **Known issue (Δk, open).** Each peptide's weight in a protein's per-timepoint average comes from
   its own fit in each condition, so the two conditions can average the same peptides in different

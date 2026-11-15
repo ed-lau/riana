@@ -20,18 +20,9 @@ filters (plateau, t > 0) as :func:`riana.core.linear_model.fit_linear_deltak`::
 - ``β_shift`` — the test-condition slope shift averaged over experiments (C = sum contrasts);
 - ``γ`` — how that shift differs between experiments (the interaction);
 - ``u_animal ~ N(0, σ_animal²)`` — a per-animal slope (nlme ``random = ~0 + day | animal``);
-- ``Var(ε) ∝ 1/w``, the weights of the per-experiment linear fit (``--linear-weights``), from a
-  first OLS pass as there:
-
-  - ``wls`` (default): ``w = (1 − θ̂)²``, the delta-method weight (nlme
-    ``varExp(form = ~fitted(.))`` with δ fixed at −1; ATF6 estimates δ ≈ −1.1);
-  - ``wls-var``: ``w = (1 − θ̂)²/Ṽar(θ)``, adding each collapsed point's precision — the
-    collapse's ``theta_var`` moderated toward a pooled prior exactly as
-    :func:`riana.core.linear_model.fit_linear_deltak` does (robust-fitFDist ``d0`` and
-    ``s0²``, estimated once over every point). Opt-in, as for the per-experiment fit. Not
-    for the rising-precursor fraction new f: there the per-point precision spans ~10³ over a
-    series and these weights make the tests anti-conservative (Monte Carlo,
-    ``reports/2026-11-12_deltak_inference_manual.md`` §6.2); ``wls`` is calibrated there.
+- ``Var(ε) ∝ 1/w``, the ``wls`` weights of the per-experiment linear fit, from a first OLS
+  pass as there: ``w = (1 − θ̂)²``, the delta-method weight (nlme
+  ``varExp(form = ~fitted(.))`` with δ fixed at −1; ATF6 estimates δ ≈ −1.1).
 
 **Animal** = the ``individual`` column (SDRF ``characteristics[individual]``, threaded
 through fit and rollup) where present. Otherwise the (condition, labeling_time,
@@ -78,7 +69,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from riana.core.linear_model import LINEAR_WEIGHT_SCHEMES, _fit_fdist, to_phi
+from riana.core.linear_model import LINEAR_WEIGHT_SCHEMES, to_phi
 from riana.progress import iter_progress
 
 _LOGGER = logging.getLogger(__name__)
@@ -333,14 +324,9 @@ def _fit_protein(
     test: str,
     phi_limit: float,
     min_shared_animals: int,
-    weights: str = "wls",
-    var_prior: tuple[float, float] | None = None,
 ) -> list[dict]:
     """Fit one protein; ``[]`` when it cannot be fitted (fewer than two paired
-    experiments, too few shared animals or points, or no convergence).
-
-    ``weights`` is ``"wls"`` or ``"wls-var"``; the latter needs ``g``'s
-    ``theta_var``/``theta_df`` and ``var_prior = (d0, s0²)``."""
+    experiments, too few shared animals or points, or no convergence)."""
     strata = sorted(g["experiment"].unique())
     S = len(strata)
     if S < 2:
@@ -365,18 +351,10 @@ def _fit_protein(
     from statsmodels.regression.mixed_linear_model import MixedLM
 
     # The per-experiment fits' weights, from a first OLS pass (the slopes are saturated
-    # per cell, so its fitted values are those fits' too): w = (1 − θ̂)² = exp(2·φ̂),
-    # and under wls-var also ÷ the moderated per-point variance (Ṽar = (d0·s0² +
-    # df·var)/(d0 + df); a point without one gets the prior s0², as in
-    # fit_linear_deltak). √w transforms the model to unit-variance errors.
+    # per cell, so its fitted values are those fits' too): w = (1 − θ̂)² = exp(2·φ̂).
+    # √w transforms the model to unit-variance errors.
     b0 = np.linalg.lstsq(X, y, rcond=None)[0]
     sw = np.exp(np.maximum(X @ b0, phi_limit))
-    if weights == "wls-var" and var_prior is not None:
-        d0, s0 = var_prior
-        var = g["theta_var"].to_numpy(dtype=float)
-        vdf = g["theta_df"].to_numpy(dtype=float)
-        vmod = (d0 * s0 + vdf * var) / (d0 + vdf)
-        sw = sw / np.sqrt(np.where(np.isfinite(vmod) & (vmod > 0), vmod, s0))
     Xt, yt, zt = X * sw[:, None], y * sw, day * sw
     res = None
     try:
@@ -519,10 +497,8 @@ def fit_interaction(
         min_shared_animals: a protein needs at least this many animals contributing
             to two or more experiments (otherwise σ_animal is not identifiable).
         weights: the per-experiment fit's scheme (``--linear-weights``). ``"wls"``
-            (default) or ``"wls-var"`` (needs ``theta_var``/``theta_df``; without them
-            it falls back to ``"wls"``, as the per-experiment fit does). ``"ols"``, the
-            per-experiment fit's audit-only unweighted path, has no interaction
-            counterpart: it is logged and ``"wls"`` is used.
+            (default). ``"ols"``, the per-experiment fit's audit-only unweighted path,
+            has no interaction counterpart: it is logged and ``"wls"`` is used.
         workers: processes (statsmodels is GIL-bound; threads would not help).
         progress_callback: ``callback(done, total)`` per protein.
 
@@ -543,7 +519,6 @@ def fit_interaction(
     if weights == "ols":
         _LOGGER.info("--interaction: 'ols' is the per-experiment fit's audit path; the "
                      "interaction uses 'wls'.")
-        weights = "wls"
 
     need = {"experiment", "condition", "protein", "biological_replicate",
             "labeling_time", "theta"}
@@ -561,30 +536,13 @@ def fit_interaction(
                 f"{role} condition {cond!r} is not among the conditions in the data "
                 f"({sorted(present)}).")
 
-    # wls-var: the moderation prior from every point, as the per-experiment fit
-    # estimates it from every collapsed cell (same points → same d0, s0²).
-    var_prior = None
-    if weights == "wls-var":
-        if {"theta_var", "theta_df"} <= set(points.columns):
-            v = points["theta_var"].to_numpy(dtype=float)
-            vdf = points["theta_df"].to_numpy(dtype=float)
-            ok = np.isfinite(v) & (v > 0) & np.isfinite(vdf) & (vdf > 0)
-            var_prior = _fit_fdist(v[ok], vdf[ok])
-            _LOGGER.info("--interaction wls-var: robust fitFDist d0=%.2f, s0^2=%.3g "
-                         "(%d points with a variance)", var_prior[0], var_prior[1],
-                         int(ok.sum()))
-        else:
-            _LOGGER.info("--interaction: wls-var requested but the points carry no "
-                         "theta_var/theta_df — using wls.")
-            weights = "wls"
-
     p = _prepare(points, reference, test, phi_limit=phi_limit,
                  theta_floor=theta_floor, theta_ceiling=theta_ceiling,
                  min_points_per_condition=min_points_per_condition)
     animal_key = _check_animals(p) if not p.empty else "composite"
     groups = [(str(k), g) for k, g in p.groupby("protein", sort=True)
               if g["experiment"].nunique() >= 2]
-    args = (reference, test, phi_limit, min_shared_animals, weights, var_prior)
+    args = (reference, test, phi_limit, min_shared_animals)
     if workers > 1 and len(groups) > 1:
         chunk = max(1, len(groups) // (workers * 8))
         with futures.ProcessPoolExecutor(

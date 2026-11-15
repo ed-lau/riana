@@ -413,8 +413,7 @@ def run_interaction(
     from riana.core.interaction_model import fit_interaction
 
     table = fit_interaction(
-        rollup_fractions.rename(columns={
-            "fs": "theta", "fs_var": "theta_var", "fs_df": "theta_df"}),
+        rollup_fractions.rename(columns={"fs": "theta"}),
         reference_condition=reference_condition, test_condition=test_condition,
         phi_limit=float(phi_limit), weights=str(weights), workers=int(workers),
         progress_callback=_queue_progress_callback(progress_queue))

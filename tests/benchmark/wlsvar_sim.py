@@ -1,5 +1,8 @@
 """Calibrated simulation for the wls-var / D / E evaluation (WP3, then WP4's scoring).
 
+``wls-var`` was removed from Riana on 2026-11-15: B and C+wls-var need Riana at commit
+``e12980c`` or earlier (the wls-var / D / E evaluation).
+
 Scope: ``reports/2026-11-13_wls_var_and_collapse_plan.md`` WP3. The manual's Monte Carlo
 (``bench_rising_null.py``) stays as it is, so its numbers remain reproducible; this bench
 adds the design and the nuisance that WP1–WP2 measured on real data, and runs the same

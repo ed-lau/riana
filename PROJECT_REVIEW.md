@@ -64,7 +64,8 @@ August: multi-factor designs (`--experiment-column`, `rollup --plot`, per-experi
 animal slope** (`rollup --interaction`; `individual` IDs, Satterthwaite df, GUI tab), the
 isotope-envelope binning fix, the docs refresh, the **rising D₂O precursor fit** (`fit --kp`,
 per-point envelope solve → fraction new f) and its rollup stage (`linear`, was `linear simple`;
-`wls-var` refused on f). One known issue is open: the Δk collapse mixing (§6).
+`wls-var` refused on f, then removed 2026-11-15). One known issue is open: the Δk collapse
+mixing (§6).
 
 #### In scope — the release spine
 
@@ -106,9 +107,10 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
 
 **3. Easy wins pulled into 1.2.0** *(maintainer-prioritized)*
 
-- **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** as opt-in
-  `--linear-weights wls-var` (`c82cc55`; new `fs_var` / `fs_df` columns in
-  `riana_rollup_fractions`). See `CHANGELOG.md`.
+- **Per-point `Var(θᵢ)` → depth-aware WLS weight — shipped as opt-in `--linear-weights
+  wls-var` (`c82cc55`), REMOVED 2026-11-15** before any release (evaluation report
+  `reports/2026-11-14_wls_var_D_E_evaluation.md`). The `fs_var` / `fs_df` columns in
+  `riana_rollup_fractions` stay, informational only. See `CHANGELOG.md`.
 - **PyInstaller standalone GUI bundle — SHIPPED** (`packaging/`, 2026-08-08).
 - **`mypy --strict` on `riana/algorithms/` — SHIPPED** (CI `typecheck` job, 2026-08-08).
 - **User-facing docs refresh — SHIPPED** (2026-11-11): Quarto site rewritten for 1.2, generated
@@ -202,7 +204,7 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
-  how the shipped baseline (`wls`, `wls-var`) behaves across complex samples. Its benefit depends
+  how the shipped baseline (`wls`) behaves across complex samples. Its benefit depends
   on the per-protein residual df and dispersion, which vary by design. **See the box below** for
   what to measure first, the build/skip rule, and implementation notes. Not data-blocked:
   characterization can start on the existing runs and grows as new datasets arrive.
@@ -244,11 +246,14 @@ from that protein's own collapsed points, with `d_g = N_g − p_g` df (`N_g` poi
 `s̃²_g = (d₀·s₀² + d_g·s²_g)/(d₀ + d_g)`, and the moderated t has `d_g + d₀` df, with `(d₀, s₀²)`
 from a (robust) fitFDist over the proteins. limma-trend makes `s₀²` a function of a covariate.
 
-**How it differs from what shipped.** `wls-var` (opt-in, 2026-07-30) moderates the *per-point*
-Var(θ) that sets the point weights; the contrast keeps `N − p` df, and `s²_g` stays per protein.
+**How it differs from what shipped.** `wls-var` (opt-in 2026-07-30, removed 2026-11-15)
+moderated the *per-point* Var(θ) that set the point weights; the contrast kept `N − p` df, and
+`s²_g` stayed per protein.
 Residual moderation acts on `s²_g` itself and is the only lever that changes the df. Under the
 shipped weights `s²_g` is a dispersion relative to the delta-method weights (it also carries
-biological and animal-to-animal variation); moderating it remains valid. The two can be combined.
+biological and animal-to-animal variation); moderating it remains valid. **2026-11-14:** the
+evaluation report (§9 item 3) puts this moderation on the peptide-level model that replaces the
+collapse: per-protein σ²_animal and σ²_time, moderated across proteins.
 
 **Why it is deferred.** It only matters where `d_g` is small and proteins' dispersions are
 similar (large `d₀`). Rich time series give `N − p` ≈ 20+ (the 2026-07-24 report: "nothing to
@@ -256,7 +261,7 @@ augment there"); single-timepoint TMT/dimethyl, sparse DIA, proteins missing tim
 designs with many conditions give far fewer. We do not yet know where real projects fall.
 
 **Step 1 — characterize the baseline (the gate).** For each dataset × design, from the shipped
-`wls` (and `wls-var`) rollups, record in a `reports/` entry (one table, extended per dataset):
+`wls` rollups, record in a `reports/` entry (one table, extended per dataset):
 
 1. **Residual df** per tested protein: median `d_g`, and the share with `d_g ≤ 3`, `≤ 5`, `≤ 10`.
 2. **Dispersion:** the distribution of `s²_g`, and a robust fitFDist `(d₀, s₀²)` per experiment
@@ -292,13 +297,13 @@ evidence here and close the item.
 **Implementation notes (for later).**
 
 - *Where:* `riana/core/linear_model.fit_linear_deltak`, after the per-protein fits and before BH.
-  Reuse the robust `_fit_fdist` already there (it estimates the `wls-var` prior). Estimate
+  Reuse the robust `_fit_fdist` already there (it estimated the removed `wls-var` prior). Estimate
   `(d₀, s₀²)` per experiment, matching per-experiment BH, unless item 2 shows a shared prior is
   better.
 - *Surface:* an opt-in rollup flag (and a Protein-tab checkbox). Moderated SE / df / p in the Δk
   columns. `d₀` and `s₀²` go in the provenance header. Regenerate the CLI Reference
   (`tests/test_docs.py`).
-- *Weights:* must work with `wls` and `wls-var` (and `ols` for audit).
+- *Weights:* must work with `wls` (and `ols` for audit).
 - *Validation:* add a residual-moderation arm to `tests/benchmark/bench_linear_weights.py`. It has
   none today; its `moderate` subcommand moderates per-point Var(θ). Cover sparse-design
   scenarios (Type-I, power, coverage). Check R parity with limma: `lmFit` on the protein × sample
@@ -327,8 +332,8 @@ manifest `precursor_rate_constant`. Choices made while building:
 
 **Rollup stage (7) BUILT 2026-11-13, except the default:** rollup reads the fit's `fs_basis`
 (`protein.fit_basis_header`), echoes `fs_basis`/`k_p_applied` in its headers outside the config
-hash, and on f/mixed refuses `--linear-weights wls-var` and guan/fornasiero
-(`protein.check_fs_basis`; CLI and GUI); `linear simple` → `linear` with the old name accepted
+hash, and on f/mixed refuses guan/fornasiero (`protein.check_fs_basis`; CLI and GUI; it also
+refused `--linear-weights wls-var` until that was removed 2026-11-15); `linear simple` → `linear` with the old name accepted
 (warning). The Monte Carlo bench runs its f + `wls-var` arm with the refusal lifted (audit only;
 reproduces the stored arm exactly). **Default flip to `linear` held:** it would make the shipped
 per-condition collapse (known issue, manual §7) everyone's default Δk — flip once §8.1 decides.
@@ -492,8 +497,8 @@ rollup, linear Δk, interaction) runs unchanged on f.
    Results-affecting: the protein output becomes per-condition rows with Δk columns;
    `--peptide-admission auto` resolves to `all` (fewer peptides per protein in multi-condition
    runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input
-   (`# fs_basis f`, any finite k_p) the line and the interaction use **`wls`**; rollup errors on
-   `wls-var` there (miscalibrated, Monte Carlo above).
+   (`# fs_basis f`, any finite k_p) the line and the interaction use **`wls`** (`wls-var`,
+   miscalibrated there, is removed altogether since 2026-11-15).
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
@@ -562,7 +567,6 @@ concurrency + `--resume`, the manifest project chain, the scan↔precursor intak
 Shipped (CHANGELOG): adaptive N_ISO at integrate (opt-in `--iso auto`), H4′ mix-then-truncate
 FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precache (~8×) and the
 `searchsorted` masking vectorization. **Open:**
-- **Per-point `Var(θᵢ)` → depth-aware WLS weight — SHIPPED** (opt-in `--linear-weights wls-var`; see `CHANGELOG.md`).
 - **Cross-proportion-stable peak picker** (Phase C v2) — the `apex_search_half_width`/`consensus`
   levers for label-invariant boundary stability are untested in production (§2c / M3 carry-over).
 - **Early-timepoint findings (2026-11-11, an unpublished in-vivo D₂O DDA dataset; local notes
@@ -629,8 +633,9 @@ and (2026-11-10) the experiment × condition interaction with a random animal ef
   conditions exists to test on**; ties to the all-pairwise item above.
 - **[HIGH PRIORITY — DEFERRED] Residual-variance moderation for the Δk t-test (limma-style).**
   A protein with few collapsed points has a noisy residual variance and an unstable t. Moderating
-  it across proteins with an augmented df would stabilise them. This is distinct from the shipped
-  per-point `wls-var` weights (`reports/2026-07-24_linear_wls_per_point_var.md`). Deferred
+  it across proteins with an augmented df would stabilise them. This is distinct from the
+  per-point `wls-var` weights (`reports/2026-07-24_linear_wls_per_point_var.md`; removed
+  2026-11-15). Deferred
   2026-11-11 until the baseline is characterized across complex samples; the plan, the build/skip
   rule and implementation notes are in the *Δk residual-variance moderation* box under §3
   "Deferred beyond 1.2.0". Not built and not prototyped: `bench_linear_weights.py moderate`
@@ -709,8 +714,10 @@ stays a linear `integrate → fit → rollup` chain glued by the manifest — or
   `linear simple`) now fits by **WLS** (`--linear-weights wls`, default; delta-method weights `(1−θ̂)²` from the
   fitted value); the old OLS was anti-conservative (Type-I ~28% at α=0.05) and biased −14% in the
   fast tail; t=0 excluded (`reports/2026-07-13_linear_model_wls.md`). The ideal weight
-  `(1−θ̂)²/Var(θᵢ)` **SHIPPED** as opt-in `--linear-weights wls-var` (`c82cc55`; per-point
-  `Var(θ)` from the emitted `fs_var` / `fs_df`). **Still open (purist alternative):** a **joint
+  `(1−θ̂)²/Var(θᵢ)` shipped as opt-in `--linear-weights wls-var` (`c82cc55`) and was
+  **removed 2026-11-15**: on real data the per-point variance leaves out the spread between a
+  protein's peptides (evaluation report `reports/2026-11-14_wls_var_D_E_evaluation.md`).
+  **Still open (purist alternative):** a **joint
   nonlinear fit + Wald contrast** (exact MLE + exact inference) — filed, not built, buys back
   only the last ~3% of efficiency. **Also open:** each protein's Δk test uses its own residual
   variance, which is noisy when a protein has few points (single-timepoint and sparse designs).

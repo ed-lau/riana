@@ -122,18 +122,14 @@ def fit_basis_header(fit_file: str | os.PathLike[str]) -> dict[str, str]:
     return out
 
 
-def check_fs_basis(fs_basis: str, model: str, linear_weights: str) -> None:
+def check_fs_basis(fs_basis: str, model: str) -> None:
     """Refuse rollup settings that are wrong when ``fs`` holds fraction new f.
 
     Under a rising precursor the fit has already solved each point for f, which is
     first-order whatever the precursor did, so the exponential refit and the linear
-    model apply unchanged. Two settings do not:
-
-    - ``guan`` / ``fornasiero`` would apply the precursor a second time;
-    - ``--linear-weights wls-var`` is miscalibrated on f (false-positive rate 0.255 at
-      α 0.05 in the Monte Carlo; ``wls`` 0.042 —
-      ``reports/2026-11-12_deltak_inference_manual.md`` §6.2). The weights also feed
-      ``--interaction``.
+    model apply unchanged (``wls`` is calibrated on f: false-positive rate 0.042 at α 0.05
+    in the Monte Carlo, ``reports/2026-11-12_deltak_inference_manual.md`` §6.2).
+    ``guan`` / ``fornasiero`` do not: they would apply the precursor a second time.
     """
     if fs_basis not in FS_BASES:
         raise DataError(
@@ -148,11 +144,6 @@ def check_fs_basis(fs_basis: str, model: str, linear_weights: str) -> None:
             f"the fit's fs holds {what}: the rising precursor (k_p) was already applied "
             f"at fit, so a {model} refit would apply it twice. Use --model simple or "
             f"--model {LINEAR_MODEL!r}.")
-    if model == LINEAR_MODEL and linear_weights == "wls-var":
-        raise DataError(
-            f"the fit's fs holds {what}, where --linear-weights wls-var is "
-            "miscalibrated (false-positive rate ~0.26 at α 0.05 in simulation; "
-            "reports/2026-11-12_deltak_inference_manual.md §6.2). Use wls (the default).")
 _K_DEG_BOUNDS = ([1e-4], [10.0])
 
 #: A normal's 5–95 percentile span is ``2 · 1.6449 · σ``; invert to recover σ
@@ -332,8 +323,7 @@ def rollup_proteins(
             ``model="linear simple"`` (the earlier name) is accepted.
         fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
             (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
-            ``"mixed"``, :func:`check_fs_basis` refuses guan/fornasiero and
-            ``linear_weights="wls-var"``.
+            ``"mixed"``, :func:`check_fs_basis` refuses guan/fornasiero.
 
     Returns:
         One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
@@ -349,7 +339,7 @@ def rollup_proteins(
         raise DataError(
             f"unknown kinetic model {model!r}; expected one of "
             f"{sorted(_MODELS) + [LINEAR_MODEL]}")
-    check_fs_basis(fs_basis, model, linear_weights)
+    check_fs_basis(fs_basis, model)
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")

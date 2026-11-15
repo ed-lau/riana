@@ -372,7 +372,8 @@ The tests are those of the shipped `--interaction`. df:
 ## 10. Reproduce
 
 All runs are under the gitignored `runs/wlsvar_eval/` and `runs/wlsvar_sim/`. Each command and
-its output table is in scope §8; the main ones:
+its output table is in scope §8. `wls-var` was removed from Riana on 2026-11-15, so the variants
+that use it (B, C+wls-var, D+var) need Riana at commit `e12980c` or earlier. The main commands:
 
 ```bash
 # Real data: T1 / T2 (null), T3, T6, interaction; --variants picks A B C D D+var E E+band E+time …

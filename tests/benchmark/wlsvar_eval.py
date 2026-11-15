@@ -1,5 +1,8 @@
 """Truth-free yardsticks for the wls-var / D / E evaluation (WP2).
 
+``wls-var`` was removed from Riana on 2026-11-15: B and C+wls-var need Riana at commit
+``e12980c`` or earlier (the wls-var / D / E evaluation).
+
 Scope: ``reports/2026-11-13_wls_var_and_collapse_plan.md`` §3. Every fit directory is
 re-tested on the SAME gated peptides under each collapse × weights with the shipped
 functions, via ``eval_rising_variance`` (``capture_gated`` runs the shipped rollup and

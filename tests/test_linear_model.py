@@ -248,75 +248,12 @@ def test_plateau_truncation_changes_fast_curve_slope():
 # the phi-residuals are heteroscedastic and an unweighted fit is anti-conservative
 # and biased low in the fast tail. See reports/2026-07-13_linear_model_wls.md.
 
-def test_unknown_weight_scheme_raises():
+@pytest.mark.parametrize("scheme", ["bogus", "wls-var"])   # wls-var: removed pre-1.2.0
+def test_unknown_weight_scheme_raises(scheme):
     from riana.exceptions import DataError
     pts = pd.DataFrame(_curve("e", "P1", "control", 0.05, [1, 2, 4]))
     with pytest.raises(DataError, match="weights must be one of"):
-        fit_linear_deltak(pts, weights="bogus")
-
-
-def _two_cond(seed=3, **kw):
-    return pd.DataFrame(
-        _curve("e", "P1", "control", 0.08, [0, 1, 2, 4, 8], noise=0.02, seed=seed)
-        + _curve("e", "P1", "atrium", 0.12, [0, 1, 2, 4, 8], noise=0.02, seed=seed + 1))
-
-
-def test_wls_var_falls_back_to_wls_without_theta_var():
-    """wls-var on a points table with no per-point variance must reproduce wls exactly."""
-    pts = _two_cond()
-    a = fit_linear_deltak(pts, weights="wls", reference_condition="control")
-    b = fit_linear_deltak(pts, weights="wls-var", reference_condition="control")
-    for col in ("k_deg", "delta_k"):
-        np.testing.assert_allclose(a[col].to_numpy(), b[col].to_numpy(), equal_nan=True)
-
-
-def test_wls_var_equals_wls_when_variance_is_constant():
-    """A constant Var̂(θ) cancels out of the RELATIVE weights, so wls-var ≡ wls."""
-    pts = _two_cond()
-    pts["theta_var"] = 4e-4        # constant across all points
-    pts["theta_df"] = 8.0
-    a = fit_linear_deltak(pts, weights="wls", reference_condition="control")
-    b = fit_linear_deltak(pts, weights="wls-var", reference_condition="control")
-    np.testing.assert_allclose(a["k_deg"].to_numpy(), b["k_deg"].to_numpy(), rtol=1e-9)
-
-
-def test_wls_var_reweights_under_heteroscedastic_variance():
-    """With genuinely varying per-point variance, wls-var re-weights → k differs from wls
-    (but tracks it); a tiny-sample fitFDist falls back to the fixed d0."""
-    rng = np.random.default_rng(7)
-    rows, var = [], []
-    for i in range(40):
-        for cond, k in (("control", 0.08), ("atrium", 0.12)):
-            for t in [1, 2, 4, 8, 12]:
-                sd = 0.06 if rng.random() < 0.5 else 0.012      # half the points 5x noisier
-                rows.append({"experiment": "e", "protein": f"P{i}", "condition": cond,
-                             "labeling_time": float(t), "theta": float(1 - np.exp(-k * t) + rng.normal(0, sd))})
-                var.append(sd ** 2)
-    pts = pd.DataFrame(rows); pts["theta_var"] = var; pts["theta_df"] = 6.0
-    a = fit_linear_deltak(pts, weights="wls", reference_condition="control").set_index("protein")["k_deg"]
-    b = fit_linear_deltak(pts, weights="wls-var", reference_condition="control").set_index("protein")["k_deg"]
-    assert (a - b).abs().median() > 0        # the per-point weighting bites
-    assert a.corr(b) > 0.9                    # but the two track each other
-
-
-def test_wls_var_missing_variance_falls_back_to_prior_not_near_zero_weight():
-    """A point whose per-point variance is missing (``theta_var`` NaN) must fall back
-    to the pooled prior ``s0²`` — the same scale as its finite-variance siblings — not
-    to a constant 1.0 that would be ~1/s0² lighter and silently drop it. With every
-    finite variance equal, ``s0² ≈`` that constant, so blanking some points' variance
-    to NaN must leave k UNCHANGED (they still weigh in). Regression for the old 1.0
-    fallback, which near-zero-weighted the blanked points and shifted k."""
-    pts = pd.DataFrame(_curve("e", "P1", "control", 0.10, [1, 2, 4, 8, 12],
-                              noise=0.03, seed=11))
-    pts["theta_df"] = 8.0
-    all_finite = pts.assign(theta_var=4e-4)            # uniform variance -> wls-var ≡ wls
-    some_nan = all_finite.copy()
-    some_nan.loc[some_nan["labeling_time"] >= 8, "theta_var"] = np.nan  # blank late points
-    k_all = fit_linear_deltak(all_finite, weights="wls-var")["k_deg"].iloc[0]
-    k_nan = fit_linear_deltak(some_nan, weights="wls-var")["k_deg"].iloc[0]
-    # Fix: blanked points moderate to the (equal) prior scale -> identical k. The old
-    # 1.0 fallback would have dropped t≥8 and moved k well outside this tolerance.
-    np.testing.assert_allclose(k_nan, k_all, rtol=1e-6)
+        fit_linear_deltak(pts, weights=scheme)
 
 
 def test_fit_fdist_fallback_on_tiny_sample():

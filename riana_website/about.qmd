@@ -100,9 +100,8 @@ or with `fit --kp`, and `fit` solves each timepoint's envelope with the precurso
 then holds the fraction of protein made since labeling began, $f = 1 - e^{-kt}$, which stays
 first-order, so the rollup models apply unchanged — run `rollup --model linear` with the default
 weights, (1 − f̂)² (D~2~O, `--label hw`, only; `--kp inf` forces the precursor at plateau). The
-rollup reads the fit header's `fs_basis` and refuses `--linear-weights wls-var` on f
-(miscalibrated there in simulation) and `--model guan|fornasiero` (they would apply the precursor
-twice).
+rollup reads the fit header's `fs_basis` and refuses `--model guan|fornasiero` on f (they would
+apply the precursor twice).
 
 The peptide fit and its R² then run on **label content** A, the peptide's mean enrichment as a
 fraction of the plateau enrichment (to first order, what the envelope's mean mass shift reads):
@@ -165,8 +164,7 @@ every peptide point instead). The median of the peptides' k is reported alongsid
 delta method, which keeps the noisy near-plateau points from dominating; points past `--phi-limit`
 are dropped). It reports each condition's k and the difference Δk = k(test) − k(reference), with a
 t-test and Benjamini–Hochberg adjustment within each experiment. `--reference-condition` and
-`--test-condition` choose the pair; `--linear-weights wls-var` additionally weights points by their
-measured precision. `--plot` writes the φ-space curves to a PDF per experiment.
+`--test-condition` choose the pair. `--plot` writes the φ-space curves to a PDF per experiment.
 
 *Known issue (1.2 development).* Each timepoint's point is an inverse-variance average of the
 protein's peptides with weights taken separately in each condition, so the two conditions can mix
@@ -180,8 +178,7 @@ condition change turnover in this tissue?". `--interaction` asks whether the eff
 tissues. Each protein is fitted across tissues at once, with a random slope per animal: an animal's
 tissues share its overall labeling and turnover, so treating them as independent would overstate
 the evidence. The animal is the SDRF's `characteristics[individual]`, else condition × labeling time
-× biological replicate. Points are weighted as in the per-tissue fits: with `--linear-weights
-wls-var` each point's measured precision enters the joint fit too. Three tests are reported per protein, each BH-adjusted across proteins:
+× biological replicate. Points are weighted as in the per-tissue fits. Three tests are reported per protein, each BH-adjusted across proteins:
 
 - **Interaction, ratio scale (primary):** is k(test)/k(reference) the same in every tissue? A
   condition that slows every tissue by the same proportion is not an interaction on this scale.

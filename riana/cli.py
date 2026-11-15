@@ -889,14 +889,9 @@ def rollup(
         "weights by the delta-method inverse variance (1−θ)², taken from the fitted "
         "value — φ=log(1−θ) makes FS-scale noise heteroscedastic, so an unweighted "
         "fit is anti-conservative (~28% false positives at α=0.05, and k biased ~14% "
-        "low in the fast tail). 'wls-var' (opt-in) additionally weights by the per-point "
-        "precision 1/Var̂(θ) (eBayes-moderated, robust-fitFDist d0) — ~10% better "
-        "biological-replicate consistency on rich multi-peptide time series, safe/neutral "
-        "elsewhere; needs the collapse's theta_var (else falls back to wls). 'ols' restores "
-        "the old unweighted fit (audit only). --interaction uses the same weights "
-        "('ols' there falls back to 'wls'). On a rising-precursor fit (fs = fraction "
-        "new f) 'wls' weights by (1−f̂)² and 'wls-var' is refused (miscalibrated there "
-        "in simulation)."),
+        "low in the fast tail). 'ols' restores the old unweighted fit (audit only). "
+        "--interaction always uses 'wls'. On a rising-precursor fit (fs = fraction "
+        "new f) 'wls' weights by (1−f̂)²."),
     reference_condition: str = typer.Option(
         None, "--reference-condition", metavar="COND",
         help="['linear' only] Baseline condition of the Δk contrast — "
@@ -1189,8 +1184,7 @@ def rollup(
             from riana.core.interaction_model import fit_interaction
             int_progress = ProgressReporter(0, "interaction", logger)
             inter = fit_interaction(
-                rollup_fractions.rename(columns={
-                    "fs": "theta", "fs_var": "theta_var", "fs_df": "theta_df"}),
+                rollup_fractions.rename(columns={"fs": "theta"}),
                 reference_condition=int_ref, test_condition=int_test,
                 phi_limit=float(phi_limit), weights=str(linear_weights),
                 workers=int(workers),

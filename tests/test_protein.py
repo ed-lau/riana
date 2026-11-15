@@ -674,32 +674,28 @@ def test_linear_model_accepts_its_earlier_name():
     assert canonical_model("simple") == "simple"
 
 
-@pytest.mark.parametrize("basis, model, weights, message", [
-    ("f", "linear", "wls-var", "wls-var"),
-    ("mixed", "linear", "wls-var", "wls-var"),
-    ("f", "guan", "wls", "apply it twice"),
-    ("mixed", "fornasiero", "wls", "apply it twice"),
-    ("phi", "linear", "wls", "unknown fs_basis"),
+@pytest.mark.parametrize("basis, model, message", [
+    ("f", "guan", "apply it twice"),
+    ("mixed", "fornasiero", "apply it twice"),
+    ("phi", "linear", "unknown fs_basis"),
 ])
-def test_check_fs_basis_refuses_settings_wrong_on_fraction_new(basis, model, weights,
-                                                               message):
+def test_check_fs_basis_refuses_settings_wrong_on_fraction_new(basis, model, message):
     from riana.core.protein import check_fs_basis
 
     with pytest.raises(DataError, match=message):
-        check_fs_basis(basis, model, weights)
+        check_fs_basis(basis, model)
 
 
-@pytest.mark.parametrize("basis, model, weights", [
-    ("theta", "linear", "wls-var"),     # θ: unchanged
-    ("theta", "guan", "wls"),
-    ("f", "linear", "wls"),             # f: the calibrated weights
-    ("f", "linear", "ols"),
-    ("f", "simple", "wls-var"),         # weights only apply to the linear model
+@pytest.mark.parametrize("basis, model", [
+    ("theta", "linear"),                # θ: unchanged
+    ("theta", "guan"),
+    ("f", "linear"),                    # f: the linear model and the simple refit apply
+    ("f", "simple"),
 ])
-def test_check_fs_basis_allows_the_rest(basis, model, weights):
+def test_check_fs_basis_allows_the_rest(basis, model):
     from riana.core.protein import check_fs_basis
 
-    check_fs_basis(basis, model, weights)
+    check_fs_basis(basis, model)
 
 
 def test_fit_basis_header_reads_the_fit_header(tmp_path):

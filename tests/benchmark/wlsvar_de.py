@@ -1,5 +1,8 @@
 """WP4 prototypes: D (random-effects collapse) and E (peptide-level mixed model).
 
+``wls-var`` was removed from Riana on 2026-11-15: D+var need Riana at commit
+``e12980c`` or earlier (the wls-var / D / E evaluation).
+
 Scope: ``reports/2026-11-13_wls_var_and_collapse_plan.md`` WP4. Evaluator code only, not a
 CLI option. Each variant maps the gated frame the shipped rollup collapses (``seen``, from
 ``eval_rising_variance.capture_gated``) to one Δk test per (experiment, protein), with the

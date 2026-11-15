@@ -432,17 +432,22 @@ def _stamp_fs_basis(fit_dir: Path, basis: str) -> None:
         path.write_text(lines + path.read_text())
 
 
-@pytest.mark.parametrize("extra, message", [
-    (["--model", "linear", "--linear-weights", "wls-var"], "wls-var"),
-    (["--model", "guan"], "apply it twice"),
-])
-def test_rollup_on_fraction_new_refuses_miscalibrated_settings(tmp_path, extra, message):
+def test_rollup_on_fraction_new_refuses_guan(tmp_path):
     fit_dir = _multi_tissue_fit_dir(tmp_path)
     _stamp_fs_basis(fit_dir, "f")
     result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(tmp_path / "out"),
-                                 *extra])
+                                 "--model", "guan"])
     assert result.exit_code != 0
-    assert message in _norm(result.output)
+    assert "apply it twice" in _norm(result.output)
+
+
+def test_rollup_rejects_the_removed_wls_var_scheme(tmp_path):
+    """--linear-weights wls-var was removed before 1.2.0 was released."""
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(tmp_path / "out"),
+                                 "--model", "linear", "--linear-weights", "wls-var"])
+    assert result.exit_code != 0
+    assert "weights must be one of" in _norm(result.output)
 
 
 def test_rollup_on_fraction_new_echoes_the_basis_outside_the_hash(tmp_path):
