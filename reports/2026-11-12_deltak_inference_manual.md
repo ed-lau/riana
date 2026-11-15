@@ -44,6 +44,12 @@ Proprietary datasets are not used; the real-data checks use ATF6 and lve_atr (§
 - **Open (§8):** how to fix the shipped test — a head-to-head of per-point and per-peptide
   scatter (§8.1: shared proportions, a random-effects collapse, a peptide-level mixed model,
   against today's `wls` and `wls-var`), after calibrating the simulation to real data.
+  **Evaluated 2026-11-14** ([report](2026-11-14_wls_var_D_E_evaluation.md)): remove `wls-var`;
+  do not build D; the peptide-level model with time and animal random slopes (E+time, and
+  EJ+time for the interaction) is the only candidate inside the G2 thresholds.
+  **Decided 2026-11-15 (user):** `wls-var` removed; D not built; the peptide-level model is
+  built after EDL / SOL, E or E+time still to be debated (report §5 Q3); per-protein Δk is
+  tested as is under whole-group shifts (report §9 item 1). `wls` stays the default until then.
 
 ## 1. The chain, stage by stage
 
@@ -440,10 +446,10 @@ falls as the depth gate loosens (audit in the
 | | Collapse | Variance / weights | Peptide spread is… | Status |
 |---|---|---|---|---|
 | A | per-condition inverse variance | `wls` | not modeled (mixing bias) | shipped default |
-| B | per-condition inverse variance | `wls-var` (per-point Ṽ) | not modeled | opt-in, unused in projects; **user not convinced** |
-| C | shared proportions (each peptide's weight level pooled over conditions) | `wls` | cancels through identical mixing | evaluator only (`shared_bands`) |
-| D | random-effects: wᵢ = 1/(σᵢ² + τ²), shared levels as C, τ² per protein × experiment (DerSimonian–Laird) | `wls`, Ṽ_RE available for weights | a variance in the cell (more equal mixing; Ṽ includes the spread) | to build |
-| E | none — every peptide point | φ = −(k_c + b_pep)·t + u_animal·t + ε, peptide slope b_pep shared by the conditions (fixed or random), animal random slope, (1 − θ̂)² weights | a persistent peptide effect; Δk is a within-peptide contrast replicated by animals | to build; generalizes `--interaction` |
+| B | per-condition inverse variance | `wls-var` (per-point Ṽ) | not modeled | opt-in, unused in projects; **evaluated: never better than A, anti-conservative on ATF6 → remove** |
+| C | shared proportions (each peptide's weight level pooled over conditions) | `wls` | cancels through identical mixing | evaluator only (`shared_bands`); **evaluated: holds the nulls, SE too wide on paired contrasts** |
+| D | random-effects: wᵢ = 1/(σᵢ² + τ²), shared levels as C, τ² per protein × experiment (DerSimonian–Laird) | `wls`, Ṽ_RE available for weights | a variance in the cell (more equal mixing; Ṽ includes the spread) | **evaluated: = C; not to build** |
+| E | none — every peptide point | φ = −(k_c + b_pep)·t + u_animal·t + ε, peptide slope b_pep shared by the conditions (fixed or random), animal random slope, (1 − θ̂)² weights | a persistent peptide effect; Δk is a within-peptide contrast replicated by animals | **evaluated: with a time random slope (E+time / EJ+time), the recommended model**; generalizes `--interaction` |
 
 **Evidence, in order** (each for the per-experiment Δk and the interaction):
 
@@ -464,6 +470,26 @@ falls as the depth gate loosens (audit in the
 the permutations, take the most powerful; the simplest if tied. Until then `wls` stays the
 default and `wls-var` stays opt-in, documented as calibrated only against S1–S2.
 
+**Result (2026-11-14):**
+[`2026-11-14_wls_var_D_E_evaluation.md`](2026-11-14_wls_var_D_E_evaluation.md). In brief:
+
+- *A third variance source:* a deviation from the line shared by every sample at a labeling
+  time (both conditions; 85 % shared across ATF6's chambers). It cancels from Δk but inflates
+  any SE that counts it as residual or animal variance.
+- *C* removes mechanism 1 and holds every null, but its SE is too wide on paired contrasts.
+- *D* equals C.
+- *E* is conservative until it gets a random slope per labeling time (E+time). E+time then
+  holds the real nulls (boomi 0.028, ATF6 0.041) and the calibrated simulation (0.064, coverage
+  0.937), with 1.16 × the shipped test's power.
+- *`wls-var`* is never better than `wls`.
+- *ATF6:* none of the shipped per-chamber or interaction calls survive.
+
+*Decisions (user, 2026-11-15):* B removed from Riana; D not built; E or E+time after EDL / SOL
+(report §5 Q3); per-protein Δk tested as is under whole-group shifts (report §9 item 1).
+
+The calibrated simulation (`tests/benchmark/wlsvar_sim.py`) supersedes §6's grid for ranking
+these candidates; §6 stays as the record of the two mechanisms.
+
 **Evaluation scope (approved 2026-11-13):**
 [`2026-11-13_wls_var_and_collapse_plan.md`](2026-11-13_wls_var_and_collapse_plan.md) turns this
 evidence order into work packages. It covers which runs support which truth-free test
@@ -471,7 +497,8 @@ evidence order into work packages. It covers which runs support which truth-free
 tests on A–C before they rank D and E. Code changes in `riana/` only on real-data evidence.
 
 **Direction (user, 2026-11-13).** Try **D as the replacement for `wls-var`** (tested on real data
-as above), and **E later as the thorough solution**. D and E map onto the existing
+as above), and **E later as the thorough solution**. *(2026-11-14: the evaluation found D equal
+to C and E+time the only candidate inside G2, so the D step drops out; see the Result above.)* D and E map onto the existing
 `--method weighted | pooled` split: D upgrades the collapse route, and E is the peptide-point
 route done properly, so the pooled side becomes a real estimator, not a pseudoreplicated
 reference, and can later become the main route. The new plan is to be written after the
@@ -566,7 +593,10 @@ same in both conditions, so it does not carry the per-condition mixing of §7 to
 - **Shipped results.** Any `linear simple` Δk or interaction result rests on the per-condition
   collapse. How much mechanism 1 moved it depends on the within-protein peptide spread relative
   to the Δk; §7 shows it can dominate. Results to re-examine once 8.1 decides: the ATF6 biology
-  notebook (`notebooks/atf6_biology.ipynb`) and the 11-10 report's interaction hits.
+  notebook (`notebooks/atf6_biology.ipynb`) and the 11-10 report's interaction hits. *2026-11-14:*
+  ATF6's 35 per-chamber and 79 interaction calls under the shipped test sit at its permutation
+  null, and the notebook's Cops3 and Smyd1 hits do not survive the peptide-level model
+  (evaluation report §7).
 - **The rising-precursor rollup** (PROJECT_REVIEW Track C, item 7): `wls` on f; refuse `wls-var`.
   Built 2026-11-13 (`9daf9f8`). It inherits whatever 8.1 decides for the collapse.
 - **Within-animal comparisons** (tissue A vs B of the same animals, one experiment, condition =

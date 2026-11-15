@@ -1,7 +1,8 @@
 # wls-var, the random-effects collapse (D) and the peptide-level model (E): scope of the evaluation
 
-2026-11-13 · branch `1.2.0` · **Status: scope approved by the user 2026-11-13 (answers in §7).
-Nothing is built; WP0 is next.** Follows
+2026-11-13 · branch `1.2.0` · **Status: evaluation complete 2026-11-14; verdict,
+recommendations and the user's decisions (2026-11-15) in the
+[evaluation report](2026-11-14_wls_var_D_E_evaluation.md) §5.** Scope approved by the user 2026-11-13 (answers in §7). Follows
 [the Δk manual](2026-11-12_deltak_inference_manual.md) §8.1, which defines candidates A–E and the
 evidence order. This document fixes what is evaluated, on which data, with which tests, and the
 evidence that must be in hand before anything changes in `riana/`.
@@ -193,7 +194,7 @@ Not yet confirmed: the G2 thresholds in §5 are proposals, to revisit at G1.
 The relabeled manifests for T1, T2 and T3 (and ATF6's animal IDs from its SDRF) come from
 `python tests/benchmark/wlsvar_manifests.py {individuals,t1,t2,t3} ...`.
 
-## 8. Progress log (moves into the evaluation report at WP5)
+## 8. Progress log (the record behind the [evaluation report](2026-11-14_wls_var_D_E_evaluation.md))
 
 **2026-11-13, WP0.** Refits at HEAD in `runs/wlsvar_eval/` (gitignored), each at its original
 depth; the stored runs are untouched.
@@ -428,3 +429,547 @@ Interaction (`rollup --interaction` machinery, `wls`; about 980 proteins per per
 - **Q1: the deprecation branch applies (results-affecting; the user decides).** Ṽ is informative but
   floored: peptide spread τ² is 2–4× Ṽ (WP1a–c). B is worse calibrated than A on the ATF6 null (0.122 vs
   0.096; 49 vs 20 BH calls per permutation) and no better on T1, T3 and T6.
+
+**2026-11-14, user decisions at G1.**
+
+1. G1's second condition is read as "C lacks the paired (animal) term": WP3 and WP4 go ahead.
+2. `wls-var`: deprecate it, or replace it with C later. 1.2.0 is unreleased and no real experiment
+   is known to use the flag. The change to the flag is folded into the WP5 outcome (removed, or
+   repurposed for the winner), so the unreleased flag changes once, not twice.
+
+EDL / SOL waits for one combined ATR / LVE / EDL / SOL search (user, 2026-11-14), which will
+also allow further comparison designs.
+
+**WP3, simulation calibrated to ATF6 (`tests/benchmark/wlsvar_sim.py`, `wlsvar_calib.py`).** The
+manual's bench (`bench_rising_null.py`) is left as it is, so its numbers stay reproducible. The
+new bench has the ATF6 design: two conditions × four tissues from every animal, three animals
+per condition × day, days 1, 3, 7, 10, 14, RIA 0.046, instant precursor, fitted as ATF6 was
+(θ route, depth 3, `deberneh_2025_rss`, Spep ≥ 8). New nuisance, each a knob:
+
+- a per-peptide apparent-k offset, shared by conditions, animals and tissues (WP1b);
+- a per-animal proteome-wide turnover shift shared by the animal's tissues, plus a small
+  per-animal × tissue one (WP1d);
+- animal × protein turnover, shared by the tissues and per tissue;
+- missingness per peptide and run, heavier for low-intensity peptides (§2 finding 1).
+
+`wlsvar_calib.py` computes the same statistics on a real and on a simulated fit, from the frame
+the shipped rollup collapses. Six rounds of 300-protein datasets tuned the knobs:
+
+| Statistic | ATF6 | Simulation (calibrated) |
+|---|---|---|
+| protein k, median (10th–90th) | 0.091 (0.038–0.194) | 0.087 (0.043–0.180) |
+| admitted precursors per protein × condition, median / 90th | 4 / 13 | 4 / 10 |
+| cells holding every admitted precursor (median) / groups fully complete | 0.58 / 4.8 % | 0.60 / 2.8 % |
+| band σ at θ̄ ≤ 0.05 / 0.4–0.7 | 0.060 / 0.072 | 0.059 / 0.062 |
+| Q/df at baseline | 0.81 | 0.72 |
+| τ_rel at θ̄ 0.25 / 0.45 / 0.65 | 0.19 / 0.17 / 0.17 | 0.15 / 0.17 / 0.17 |
+| τ² / Ṽ at the late points | 2.1 | 4.0 |
+| cross-tissue correlation of the animal deviation (φ scale) | 0.39 | 0.32 |
+| relative-k deviation: variance / cross-tissue covariance | 0.0235 / 0.0055 | 0.0228 / 0.0057 |
+| proteome-wide shift: cross-tissue correlation / SD (last 3 days) | 0.92 / 0.077 | 0.94 / 0.066 |
+
+Calibrated knobs: peptide k offset SD 0.17 (log); animal shift 0.085, animal × tissue shift 0.02;
+animal × protein 0.06 shared by tissues and 0.05 per tissue; RIA CV 2 %; envelope noise 8.5 %
+relative; missingness 8 % × intensity^−1. The proteome-wide shift statistics vary between
+datasets (6 animals per day), so the shift SD was set from three rounds. Two gaps remain: the
+late-point band is 15 % narrower than ATF6's (hence the larger τ² / Ṽ), and the animal deviation
+correlates a little less across tissues.
+
+**WP4 prototypes (`tests/benchmark/wlsvar_de.py`).** Evaluator code, scored with
+`wlsvar_eval.py --variants` and `wlsvar_sim.py`:
+
+- **D**: C's shared band levels, then per-peptide weights 1/(σᵢ² + τ_rel²·g(θ̄)²), with τ_rel per
+  experiment from the moments of Cochran's Q, pooled over both conditions. The shipped collapse then
+  runs on the inflated bands. `D` = shipped `wls` on those cells; `D+var` = shipped `wls-var` with
+  Ṽ_RE.
+- **E**: per (experiment, protein), on the peptides' own points: one slope per condition, fixed
+  peptide slope offsets (sum-to-zero, shared by the conditions), a random slope per animal,
+  weights (1 − θ̂)² from an OLS pass (`E+band`: also ÷ the peptide's shared band variance). Where
+  the animals carry both conditions (tissues of one animal), the random slope is one per condition
+  with a free covariance, so the animal's shared part cancels from Δk (the paired model). If that
+  fit is degenerate, E falls back to one shared slope, then to no animal term. df: animals − 2
+  (between), animals − 1 (paired). The estimand is the unweighted peptide-average k.
+- **E, joint (`interaction_E`)**: the shipped interaction model at the peptide level, with peptide
+  slope offsets per tissue and two variance components, the animal slope shared by its tissues
+  and the cell (animal × tissue) slope. Tests as shipped. df: the containment rule at the cell
+  level (mean Δk: animals − 1; additive and ratio: cells − animals − 2(S − 1), 84 on ATF6).
+- **EJ+time**: E, joint grouped by labeling time instead, with a random slope per time (shared
+  by every sample taken then, all tissues and both conditions) and three nested components:
+  animal, cell and tissue × time (the part of the timepoint deviation the tissues do not share).
+  Cross-sectional designs with ≥ 3 times; otherwise, or if the fit fails, as E, joint. df: mean
+  Δk animals − times − 1 (24 on ATF6); additive and ratio cells − animals − (S − 1)·times −
+  (S − 1) (72), the tissue × condition × time stratum pooled with the cells. BFGS stalls at its
+  start with three components and five groups; Powell converges and agrees with a long
+  Nelder–Mead run.
+
+**T6 with D and E (ATF6; no refit).** Same table as above, now with D and the paired E:
+
+| Variant | LV–RV: z robust SD | \|z\| > 1.96 | robust SD of Δk_ctrl − Δk_KO | median combined SE | LV–RA: z robust SD | \|z\| > 1.96 | robust SD of Δk_ctrl − Δk_KO | median combined SE |
+|---|---|---|---|---|---|---|---|---|
+| A (shipped) | 0.80 | 0.047 | 0.0050 | 0.0070 | 0.90 | 0.068 | 0.0060 | 0.0083 |
+| C | 0.51 | 0.006 | 0.0031 | 0.0071 | 0.71 | 0.022 | 0.0048 | 0.0085 |
+| D | 0.51 | 0.006 | 0.003 | 0.007 | 0.75 | 0.022 | 0.005 | 0.009 |
+| E (paired) | 0.82 | 0.024 | 0.004 | 0.005 | 0.94 | 0.071 | 0.005 | 0.007 |
+| E+band (paired) | 0.85 | 0.019 | 0.003 | 0.005 | 0.96 | 0.062 | 0.005 | 0.006 |
+
+- **E is the first candidate whose SE fits a paired contrast.** Its animal term cancels from the
+  chamber Δk, so the SE drops by 25–30 % against C, with the same disagreement between the two
+  animal sets (E+band). z robust SD rises from C's 0.51–0.71 to 0.85–0.96.
+- D behaves as C here: its τ² changes the weights, not the animal term that T6 is about.
+- LV–RA keeps its median z of about +0.2 under every variant (the proportional KO brake, above).
+  The 6–7 % of |z| > 1.96 under E includes it.
+- What is still below 1 on LV–RV may be chamber-specific peptide behaviour. E puts it in the
+  residual, and T6 cannot see it because it repeats in both animal sets (§3, T6 "cannot see").
+
+**T1 with D and E (boomi, the same 20 assignments).** boomi has no animal IDs, so E's "animal" is
+the culture plate at one timepoint (each pseudo-condition holds one plate per timepoint).
+
+| Variant | α 0.05 (range) | α 0.01 | By turnover quartile, slow → fast | SD of Δk / SE | BH < 0.05 calls per refit |
+|---|---|---|---|---|---|
+| A (shipped) | 0.059 (0.048–0.076) | 0.018 | 0.048 / 0.062 / 0.053 / 0.072 | 1.07 | 0.45 |
+| C | 0.028 (0.017–0.047) | 0.007 | 0.020 / 0.028 / 0.025 / 0.041 | 0.87 | 0.05 |
+| D | 0.028 (0.012–0.044) | 0.006 | 0.018 / 0.025 / 0.028 / 0.039 | 0.87 | 0 |
+| D+var | 0.014 | 0.003 | 0.008 / 0.011 / 0.012 / 0.027 | 0.74 | 0 |
+| E | 0.009 (0.004–0.017) | 0.001 | 0.003 / 0.009 / 0.010 / 0.013 | 0.69 | 0.05 |
+| E+band | 0.010 | 0.001 | 0.003 / 0.009 / 0.013 / 0.015 | 0.69 | 0.10 |
+| E+time | 0.028 (0.015–0.043) | 0.006 | 0.033 / 0.026 / 0.027 / 0.027 | 1.14 | 0.50 |
+| E+band+time | 0.033 (0.017–0.052) | 0.005 | 0.034 / 0.034 / 0.033 / 0.032 | 1.09 | 0.70 |
+
+- **E is the most conservative candidate on T1, and the reason is the design.** The two plates of a
+  timepoint share that timepoint's departure from the line (boomi's curve shape, §8 above), and E
+  counts it as plate variance. That share cancels from the plate-vs-plate Δk.
+- **E+time** adds a random slope per timepoint, shared by every sample taken then (both
+  conditions), with the animal or plate nested in it (cross-sectional designs). On boomi the time
+  term takes nearly all of that variance (σ_time ≈ 0.0055 vs σ_plate ≈ 0.0002 on assignment 1), the
+  SE falls by a third, and the rejection rate rises to C's level. df is then plates − timepoints −
+  1 = 7. A t₇ has SD 1.18, so an SD of Δk/SE of 1.09–1.14 is in line. It is flat across turnover
+  quartiles, unlike A's fast-tail rise. On the calibrated simulation, which has no shared timepoint
+  deviation, σ_time ≈ 0 and E+time gives the same answer as E (df 24 instead of 28).
+- `D+var` is more conservative than D: Ṽ_RE's moderation shrinks the spread between cells.
+
+**WP3, calibrated null: does the simulation reproduce WP2?** (`runs/wlsvar_sim/null`, 12 datasets of
+300 proteins, true ratio 1, so every test is a false positive.) The calibration statistics,
+averaged over the 12, match ATF6 more closely than the single tuning dataset: cross-tissue animal
+correlation 0.36 (range 0.25–0.48; ATF6 0.39), relative-k covariance 0.0059 (0.0055), proteome-wide
+shift SD 0.068 (0.041–0.093; ATF6 0.077).
+
+| α 0.05 | Simulation, pooled (range over datasets) | ATF6 T2, pooled (range over permutations) |
+|---|---|---|
+| Δk, A | 0.175 (0.112–0.383) | 0.096 (0.048–0.297) |
+| Δk, B | 0.190 | 0.122 |
+| Δk, C | 0.096 (0.039–0.322) | 0.039 (0.015–0.200) |
+| Δk in datasets / permutations with little shift (\|median z\| < 0.3), A / C | 0.112–0.144 / 0.039–0.050 | 0.061 / 0.019 |
+| interaction, ratio scale, A / C | 0.307 / 0.084 | 0.216 / 0.065 |
+| interaction, BH calls per dataset (≈ 290 proteins) / per permutation (≈ 980), A / C | 44 / 0.4 | 69 / 1.2 |
+
+- **The ordering and the gaps reproduce:** B above A, C well below A, and the interaction false
+  positives almost all mechanism 1. As in T2, whole datasets light up with their proteome-wide
+  shift: dataset 4 (median z −1.6) rejects 0.38 under A and 0.32 under C.
+- **The simulation runs hotter than ATF6 by about 0.05–0.08 under both A and C.** The leading
+  candidate is a deviation the simulation lacks: the timepoint-shared departure from the line
+  that boomi shows (T1 with E+time, above). It makes every collapse conservative on real data,
+  and it is absent from the simulation. The calibration therefore ranks candidates, but its
+  absolute null rates are pessimistic for ATF6.
+
+**WP4 on the calibrated null (the same 12 datasets; `wlsvar_sim.py --score-only`, `--pooled`).**
+Pooled over datasets, so each dataset's proteome-wide animal shift counts as the population null
+does. Per-dataset z SD in brackets: below the pooled value wherever the shift is shared across
+proteins.
+
+| Variant | α 0.05 (range over datasets) | α 0.01 | By turnover quartile, slow → fast | 95 % CI coverage | z SD pooled (within) | BH calls per dataset | Seconds per dataset |
+|---|---|---|---|---|---|---|---|
+| A (shipped) | 0.175 (0.112–0.383) | 0.079 | 0.168 / 0.170 / 0.181 / 0.180 | 0.825 | 1.56 (1.36) | 54 | 35 |
+| B (`wls-var`) | 0.190 (0.124–0.393) | 0.088 | 0.179 / 0.189 / 0.191 / 0.199 | 0.810 | 1.62 (1.41) | 63 | 33 |
+| C | 0.096 (0.039–0.322) | 0.031 | 0.101 / 0.099 / 0.098 / 0.088 | 0.904 | 1.24 (1.01) | 9.5 | 10 |
+| D | 0.091 (0.034–0.305) | 0.028 | 0.096 / 0.098 / 0.092 / 0.081 | 0.909 | 1.22 (1.00) | 7.9 | 43 |
+| D+var | 0.082 (0.029–0.267) | 0.023 | 0.082 / 0.087 / 0.082 / 0.075 | 0.918 | 1.18 (0.95) | 3.8 | 21 |
+| **E** | **0.059 (0.019–0.196)** | **0.014** | **0.060 / 0.061 / 0.062 / 0.054** | **0.941** | **1.08 (0.89)** | **1.1** | 16 |
+| E+band | 0.067 (0.019–0.230) | 0.017 | 0.066 / 0.066 / 0.073 / 0.062 | 0.933 | 1.12 (0.90) | 3.4 | 41 |
+| E+time | 0.067 (0.023–0.223) | 0.018 | 0.067 / 0.067 / 0.071 / 0.063 | 0.933 | 1.12 (0.92) | 2.3 | 37 |
+| E+band+time | 0.076 (0.020–0.267) | 0.022 | 0.074 / 0.076 / 0.082 / 0.074 | 0.924 | 1.16 (0.93) | 5.3 | 34 |
+
+Interaction (the shipped model on A's and C's cells; E's joint peptide-level model):
+
+| α 0.05 (BH calls per dataset) | Ratio scale (primary) | Additive | Mean Δk |
+|---|---|---|---|
+| A | 0.307 (44) | 0.314 (45) | 0.116 (7.6) |
+| C | 0.084 (0.4) | 0.089 (0.5) | 0.074 (1.3) |
+| E, joint | 0.046 (0) | 0.053 (0.08) | 0.065 (0.08) |
+
+- **E is the only candidate inside the proposed G2 simulation thresholds** (false-positive rate
+  ≤ 0.065, coverage ≥ 0.93), for Δk (0.059, 0.941) and for the interaction (0.046–0.053). It holds
+  even with each dataset's own proteome-wide animal shift, because its per-protein animal slope
+  puts that variance in the SE. C and D remove mechanism 1 but not mechanism 2 (0.09–0.10).
+- Whole datasets still light up under E when their shift is large (0.196 at median z −1.6). That
+  is the right marginal behaviour for a per-protein test, but the false positives come in
+  clusters, which BH does not anticipate. A shift that large is a real difference between the two
+  groups of animals, not a protein-level effect (evaluation report §9, item 1).
+- The simulation has no shared timepoint deviation, so E+time's extra term only adds noise there
+  (0.067). The band weights (E+band) add nothing here either.
+
+**WP3 / WP4 power at ratio 1.5 (`runs/wlsvar_sim/r15`, 4 datasets; every B protein 1.5× faster,
+on every tissue).** Too strong to rank power: every variant rejects 0.994–0.998 and calls
+1125–1129 of 1131 at BH < 0.05. What the run does show is how each variant estimates a real
+effect, against the simulation's truth (median over tests, mean over datasets):
+
+| Variant | log k_A − log k_A,true | log k_B − log k_B,true | Δk / Δk_true | log₂ ratio (true 0.585) | Coverage vs k0 | Coverage vs the protein's estimand | Coverage under the null |
+|---|---|---|---|---|---|---|---|
+| A | +0.022 | +0.032 | 1.047 | 0.601 | 0.780 | 0.827 | 0.825 |
+| C | +0.029 | +0.029 | 1.031 | 0.592 | 0.855 | 0.909 | 0.903 |
+| E | +0.063 | +0.039 | 0.996 | 0.552 | 0.893 | 0.928 | 0.940 |
+| Em (below) | +0.053 | +0.051 | 1.051 | 0.584 | 0.872 | 0.929 | 0.927 |
+
+- **"Coverage vs the protein's estimand" is the fair column.** The simulation sets each peptide's
+  k to k0·e^koff and mislabels its sites by Spep_true / Spep_tab. A protein-level estimate
+  targets the average over its peptides, not k0, so its true Δk is (r − 1)·k0·mean(e^koff ·
+  Spep_true / Spep_tab). That factor is 1 under the null and differs from protein to protein
+  under the alternative. Scored against k0, every variant loses 3–5 points of coverage at ratio
+  1.5. Against the estimand, each is back at its null coverage. The within-dataset spread is what
+  grows against k0 (E: z SD 0.89 → 1.23, back to 1.07 against the estimand), not the
+  between-dataset shift. The proteins' estimands are regenerated from the simulation seed
+  (`estimand_factors` in `wlsvar_sim.py`; `--pooled` reports both coverages).
+- **E's k level is about 4–6 % high in both conditions**, against 1–3 % for A and C. That holds
+  under the null too (+4.9 % / +4.2 %): E's estimand is the unweighted peptide average, whereas
+  the collapse precision-weights the peptides. It cancels in Δk but not in the ratio when the two
+  conditions' biases differ. At 1.5 they do (+6.3 % vs +3.9 %), so E's log₂ ratio is 6 % low.
+- **Em (rejected):** E with multiplicative peptide offsets, slope k_c·(1 + m_p), with the offset
+  columns rescaled by k̂_c / k̄ over four WLS passes, then the same MixedLM. It removes the
+  ratio bias (0.584) and the asymmetry, but coverage is no better, and its null false-positive
+  rate rises from 0.059 to 0.072 (coverage 0.928), with 2.8 BH calls per dataset instead of 1.1.
+  The likely cause is a design that depends on the estimate, ignored by the SE. E stays
+  additive. The ratio bias is small at realistic effects (below).
+- **Interaction at ratio 1.5.** The ratio-scale test is still a true null (the same ratio on every
+  tissue): E joint 0.040, C 0.088. The additive test is now a real effect, because atria are 15–17 %
+  faster, so their Δk is larger: power C 0.285, E joint 0.161. C's additive test rejects 0.089
+  under the full null, so its power figure is not comparable.
+
+**WP3 / WP4 power at ratio 1.2 (`runs/wlsvar_sim/r12`, 4 datasets).** The size of the real tissue
+effects (LA / RA 1.15–1.17 here, lve_atr's atrium 1.24). "Size-adjusted" uses each variant's own
+p threshold that rejects 5 % on the 12 null datasets, pooled (so the population null, shifts
+included).
+
+| Variant | Null α 0.05 | Power at α 0.05 (range over datasets) | vs A | p threshold for a 5 % null | Size-adjusted power | vs A | BH calls per dataset (of ≈ 1120) | Coverage vs estimand | log₂ ratio (true 0.263) |
+|---|---|---|---|---|---|---|---|---|---|
+| A (shipped) | 0.175 | 0.760 (0.627–0.914) | 1 | 0.0038 | 0.504 | 1 | 813 | 0.823 | 0.260 |
+| B (`wls-var`) | 0.190 | 0.779 | 1.03 | 0.0028 | 0.500 | 0.99 | 837 | — | 0.262 |
+| C | 0.096 | 0.780 (0.663–0.923) | 1.03 | 0.020 | 0.679 | 1.35 | 829 | 0.912 | 0.254 |
+| C + `wls-var` | 0.096 | 0.795 | 1.05 | 0.020 | 0.691 | 1.37 | 849 | — | 0.254 |
+| D | 0.091 | 0.779 | 1.02 | 0.021 | 0.675 | 1.34 | 824 | 0.918 | 0.254 |
+| D+var | 0.082 | 0.785 | 1.03 | 0.026 | 0.704 | 1.40 | 824 | — | 0.255 |
+| **E** | **0.059** | **0.721 (0.539–0.891)** | **0.95** | 0.041 | **0.689** | **1.37** | 713 | **0.946** | 0.238 |
+| E+band | 0.067 | 0.777 (0.615–0.921) | 1.02 | 0.035 | 0.726 | 1.44 | 802 | 0.934 | 0.240 |
+| E+time | 0.067 | 0.734 | 0.97 | 0.034 | 0.678 | 1.35 | 732 | 0.936 | 0.237 |
+| E+band+time | 0.076 | 0.788 | 1.04 | 0.030 | 0.723 | 1.44 | 822 | — | 0.238 |
+
+Interaction at ratio 1.2 (every tissue's B 1.2× faster: the ratio-scale test is a true null; the
+additive difference is real but small, 0.15–0.17 × a 20 % Δk):
+
+| α 0.05 (BH calls per dataset) | Ratio scale | Additive | Mean Δk |
+|---|---|---|---|
+| A | 0.325 (47) | 0.354 (61) | 0.916 (255) |
+| C | 0.099 (2.0) | 0.128 (3.5) | 0.920 (258) |
+| E, joint | 0.058 (0) | 0.081 (0) | 0.901 (252) |
+
+- **E costs about 5 % of A's nominal power**, inside the G2 bound of 10 %. **At equal size it has 37 %
+  more** (0.689 vs 0.504). A's nominal power is bought with its false-positive rate of 0.175.
+  Among the candidates that hold their size, the band weights help: E+band 0.726 at the same
+  threshold, but its null rate (0.067) sits just above the 0.065 bound.
+- **E keeps its coverage under a real effect** (0.946 against the protein's estimand), and its
+  ratio estimate is 9 % low in log₂ (0.238 vs 0.263), the same k-level asymmetry as at 1.5.
+- **The interaction holds its size under a real main effect only with E's joint model** (ratio
+  scale 0.058; C 0.099). Its mean-Δk power is within 2 % of A and C.
+- The spread of power between datasets (E 0.54–0.89) is the proteome-wide animal shift. It
+  moves every variant together.
+
+**E's k level (synthetic check, 100–150 proteins of 4 peptides, 3 animals per condition × 5 days,
+peptide k offsets SD 0.17, constant θ noise).** E recovers its estimand, the peptide-average k,
+exactly without noise. Two small effects add up to the 1–3 % seen in the simulation:
+
+| θ noise SD | Ratio | log k_A − estimand | log k_B − estimand |
+|---|---|---|---|
+| 0 | 1 | 0.000 | 0.000 |
+| 0 | 1.5 | +0.005 | −0.006 |
+| 0.03 | 1.5 | +0.010 | −0.006 |
+| 0.065 (the simulation's band σ) | 1 | +0.011 | +0.014 |
+| 0.065 | 1.5 | +0.025 | +0.006 |
+
+- **Additive offsets on a multiplicative truth** cost ±0.5 % at ratio 1.5, about 1 % of ratio.
+- **Noise passed through φ = ln(1 − θ) point by point** (Jensen) adds 1–2.5 %, more for the
+  slower condition. The collapse averages θ over peptides before the log, so it shows less of
+  this.
+- Net effect: E's ratio is 1–2 % low at strong effects, and Δk is unaffected to within 0.15 SE. A
+  second-order correction, φ + σ²/(2(1 − θ)²) from the band, would remove most of the Jensen
+  part if E's k values are ever reported. Not needed for the Δk test.
+
+**T2 with D and E (ATF6, the same 20 permutations; `wlsvar_eval.py null --variants D E E+time
+E+band --cache`).** Real data, no truth needed. A, B and C are repeated from the WP2 table.
+
+| Variant | α 0.05 pooled (range over permutations) | α 0.01 | By turnover quartile, slow → fast | SD of Δk / SE | BH < 0.05 calls per permutation |
+|---|---|---|---|---|---|
+| A (shipped) | 0.096 (0.048–0.297) | 0.032 | 0.108 / 0.097 / 0.083 / 0.098 | 1.07 | 19.7 |
+| B (`wls-var`) | 0.122 (0.073–0.322) | 0.048 | 0.118 / 0.119 / 0.108 / 0.142 | 1.21 | 49.4 |
+| C | 0.039 (0.015–0.200) | 0.007 | 0.039 / 0.041 / 0.032 / 0.046 | 0.79 | 0.40 |
+| D | 0.038 (0.013–0.199) | 0.007 | 0.039 / 0.038 / 0.030 / 0.044 | 0.78 | 0.30 |
+| E | 0.018 (0.007–0.087) | 0.003 | 0.012 / 0.017 / 0.018 / 0.025 | 0.70 | 0.35 |
+| E+band | 0.020 (0.007–0.093) | 0.003 | 0.011 / 0.020 / 0.020 / 0.027 | 0.69 | 0.25 |
+| E+time | 0.041 (0.011–0.225) | 0.007 | 0.046 / 0.044 / 0.035 / 0.039 | 0.82 | 0.40 |
+
+- **Every candidate except A and B passes the G2 real-data null** (≤ 0.07 pooled, no turnover
+  quartile above 0.10).
+- **E is conservative on ATF6, as on boomi (T1: 0.009),** and for the same reason. Both conditions
+  sampled at a timepoint share that timepoint's departure from the line, which cancels from Δk.
+  E counts it as animal variance. **E+time takes it out and lands at 0.041,** flat across
+  turnover quartiles. On boomi it gave 0.028.
+- **E's worst permutation is 0.087, against 0.20–0.30 for the collapse variants.** The animal
+  variance it carries per protein spans the proteome-wide shift that lights up whole
+  permutations. E+time gives some of that back (0.225): with the timepoint variance removed, the
+  animal term is smaller and the shift-driven permutations reappear. On real data, E and E+time
+  trade the same quantity: robustness to whole-group shifts against conservatism.
+- The simulation lacks the timepoint-shared deviation, so it ranks E+time below E (0.067 vs
+  0.059). The two real datasets where it can be checked (boomi T1, ATF6 T2) both show the
+  deviation and favour E+time for size. The simulation's 0.05–0.08 excess over ATF6 under A and C
+  has the same cause.
+
+**Correction applied (E, joint).** The prototype's tissue filter let in a tissue that had
+animals under only one condition: pandas' `min` skips the missing condition, which left an
+unidentified contrast and degenerate p-values. Found on real ATF6, two proteins at p ~ 1e-194
+and 1e-88; the shipped `_prepare` is correct (it requires both conditions). The fix also takes
+the fixed-effect covariance from GLS at the fitted variance components, (Σ X′V⁻¹X)⁻¹, rather than
+the joint Hessian inverse, which was ill-conditioned near a zero component (24 negative
+variances on ATF6). The E, joint rows above (null, ratio 1.5, ratio 1.2) are re-scored with the
+fix; no rate moved by more than 0.003.
+
+**E, joint on real ATF6, unpermuted (fixed code; `wlsvar_eval.py inter runs/wlsvar_eval/atf6/fit
+--variants A C EJ --cache`).** About 976 proteins carry ≥ 2 chambers with both genotypes.
+
+| Interaction, α 0.05 (BH < 0.05 calls) | Ratio scale (primary) | Additive | Mean Δk |
+|---|---|---|---|
+| A (shipped model on per-condition cells) | 0.227 (79) | 0.294 (135) | 0.063 (1) |
+| C (shipped model on shared-band cells) | 0.056 (2) | 0.114 (3) | 0.016 (0) |
+| E, joint (peptide level) | 0.028 (0) | 0.050 (0) | 0.015 (0) |
+| EJ+time | 0.029 (0) | 0.067 (0) | 0.051 (0) |
+
+- **The two interaction hits named in the ATF6 biology notebook do not survive the peptide-level model.**
+  Smyd1 (P97443): A p ≈ 0, C 0.28, E joint 0.77. That is the peptide-mixing artifact
+  (mechanism 1), and C already removes it. Cops3 (O88543): A p ≈ 0, C p ≈ 0 (BH 0.002), E joint 0.22
+  (rank 160 of 976). This fits the known outlying LA-control cell: E joint's cell (animal ×
+  chamber) variance carries it, whereas the shipped model has only the animal slope. C's other
+  call, Q9JHU4, is also absent under E joint.
+- The real-data rejection rates under E joint sit at or below nominal on every test. That is
+  consistent with no chamber-specific KO effect beyond the proportional brake (§8, T6),
+  although a permutation null (T2, below) is needed to tell "none" from "conservative".
+- **EJ+time** fits its time term on 965 of 979 proteins (median σ_time 0.0117, σ_animal 0.0092,
+  tissue × time 0.0017, cell ≈ 0). The interaction tests barely move (ratio-scale p vs E,
+  joint: Spearman 0.96; Cops3 0.19, Smyd1 0.78). The mean-Δk test comes back to nominal
+  (0.015 → 0.051): the timepoint deviation no longer sits in the animal term. 75 % of proteins
+  have KO slower (the brake), but no single protein passes BH.
+
+**WP3 with the timepoint-shared deviation.** The simulation now carries the deviation that boomi
+and ATF6 show (knobs in `wlsvar_sim.py`): per protein × tissue × day, shared by every animal
+sampled that day in both conditions. Calibrated to ATF6's E+time fit, where σ_time by turnover
+quartile (k 0.036 / 0.069 / 0.112 / 0.184) is 0.0079 / 0.0100 / 0.0128 / 0.0177, about
+√(0.0072² + (0.088·k)²), with σ_animal / k ≈ 0.11:
+
+- A turnover factor alone (`time_k_sd`) gives a σ_time / k that is flat across quartiles, at any
+  size (three rounds: 0.08–0.13). ATF6's falls with k.
+- A constant θ offset per peptide (a reference-envelope error, `pep_theta_sd`) adds nothing
+  E+time can see.
+- A factor of 0.09 plus an absolute offset per day (`time_kabs_sd` 0.0115) reproduces the
+  shape. On the 8 null datasets: k 0.056 / 0.083 / 0.116 / 0.178 → σ_time 0.0096 / 0.0116 /
+  0.0130 / 0.0173. ATF6's curve gives 0.0087 / 0.0103 / 0.0125 / 0.0172 at those k, so the match
+  is within about 10 %, a little high for slow proteins. σ_animal / k stays at 0.10–0.11.
+
+In this first version the deviation is drawn independently per tissue (`runs/wlsvar_sim/null_t`,
+8 datasets; `r12_t`, 4; same seeds as `null` and `r12`).
+
+| Δk, α 0.05 pooled (range) | Simulation, no timepoint term | Simulation with it | ATF6 T2 |
+|---|---|---|---|
+| A (shipped) | 0.175 (0.112–0.383) | **0.096** (0.052–0.213) | **0.096** (0.048–0.297) |
+| B (`wls-var`) | 0.190 | 0.105 | 0.122 |
+| C | 0.096 | 0.046 (0.013–0.158) | 0.039 (0.015–0.200) |
+| D | 0.091 | 0.044 | 0.038 |
+| D+var | 0.082 | 0.042 | — |
+| E | 0.059 | 0.025 (0.008–0.078) | 0.018 (0.007–0.087) |
+| E+band | 0.067 | 0.026 | 0.020 |
+| E+time | 0.067 | 0.063 (0.021–0.203) | 0.041 (0.011–0.225) |
+| E+band+time | 0.076 | 0.070 | — |
+
+- **The timepoint term closes the gap between simulation and real data.** With it, the
+  simulated null reproduces ATF6's permutation null for every variant measured on both: A
+  exactly, the rest within 0.01, apart from E+time, which runs 0.02 hotter in the simulation.
+  The worst datasets match the worst permutations too. The 0.05–0.08 excess flagged above was
+  this deviation.
+- **It makes E conservative (0.025), as on real data, and E+time absorbs it (0.063).** C and D sit
+  at 0.044–0.046, coverage 0.95.
+
+Power at ratio 1.2 with the timepoint term (size-adjusted on `null_t`, as before):
+
+| Variant | Null α 0.05 | Power at α 0.05 (range) | vs A | Size-adjusted power | vs A | Coverage vs estimand | BH calls per dataset |
+|---|---|---|---|---|---|---|---|
+| A (shipped) | 0.096 | 0.640 (0.486–0.849) | 1 | 0.508 | 1 | 0.903 | 565 |
+| B (`wls-var`) | 0.105 | 0.654 | 1.02 | 0.496 | 0.98 | 0.889 | 596 |
+| C | 0.046 | 0.625 (0.447–0.853) | 0.98 | 0.636 | 1.25 | 0.954 | 529 |
+| D | 0.044 | 0.623 | 0.97 | 0.637 | 1.25 | 0.954 | 515 |
+| D+var | 0.042 | 0.626 | 0.98 | 0.653 | 1.29 | 0.959 | 523 |
+| E | 0.025 | 0.546 (0.317–0.783) | **0.85** | 0.676 | 1.33 | 0.970 | 374 |
+| E+band | 0.026 | 0.591 | 0.92 | 0.701 | 1.38 | 0.968 | 456 |
+| **E+time** | **0.063** | **0.727 (0.523–0.903)** | **1.14** | 0.688 | 1.35 | **0.938** | 675 |
+| E+band+time | 0.070 | 0.770 | 1.20 | 0.721 | 1.42 | 0.926 | 748 |
+
+- **Under realistic timepoint deviation, E at its nominal α falls outside the G2 power bound**
+  (0.85 × A), because it is conservative. At equal size it still beats every collapse (1.33 ×
+  A against C's 1.25 ×).
+- **E+time is the one variant inside every simulation threshold here.** False-positive rate
+  0.063 (≤ 0.065), coverage 0.938 (≥ 0.93), and nominal power 1.14 × A, where A runs at a null of
+  0.096. E+band+time has more power but breaks the size bound (0.070).
+- **E+time keeps its power when the term is added (0.734 → 0.727). Everything else loses it**
+  (A 0.760 → 0.640, C 0.780 → 0.625, E 0.721 → 0.546). The deviation largely cancels from the Δk
+  estimate, because both conditions share it, but it inflates every SE except E+time's.
+
+**Is the timepoint deviation shared across tissues?** The first version drew it independently
+per tissue, and its interaction tests came out far colder than ATF6's (ratio scale: A 0.091,
+C 0.011, E, joint 0.006). On ATF6, it is mostly shared. Per protein × chamber × day, the mean
+relative-k residual over the day's animals (both genotypes), minus the animals' own
+cross-chamber covariance ÷ n, correlates across chambers at **0.85** (pairs 0.80–0.92). The same
+statistic reads 0.10 on the independent simulation, its floor. (`day_shared_frac` in
+`wlsvar_calib.py`.) A shared deviation lands in the animal slope, shared by an
+animal's tissues, which cancels from the interaction. A per-tissue one lands in the cell
+variance, which does not.
+
+`time_shared` 0.85 (`runs/wlsvar_sim/null_ts`, `r12_ts`; same seeds) reads 0.80 on the same
+statistic. Δk repeats the independent version within 0.003 on every variant (A 0.094, C 0.047,
+D 0.046, E 0.026, E+time 0.064, E+band+time 0.070; coverage E+time 0.936). Size-adjusted power
+at ratio 1.2: A 0.486, C 0.629, D 0.629, D+var 0.657, E 0.676, E+time 0.690, E+band 0.701,
+E+band+time 0.710. E+time's nominal power is 1.16 × A (0.733 vs 0.630), E's 0.87 ×. The
+interaction now matches ATF6:
+
+| Interaction, α 0.05 | Simulation, shared deviation (8 datasets) | ATF6 T2 (20 / 10 permutations) |
+|---|---|---|
+| Ratio scale: A / C / E, joint | 0.194 / 0.044 / 0.022 | 0.216 / 0.065 / 0.025 |
+| Additive: A / C / E, joint | 0.205 / 0.052 / 0.026 | 0.245 / 0.081 / 0.035 |
+| Mean Δk: A / C / E, joint | 0.045 / 0.027 / 0.018 | 0.044 / 0.019 / 0.010 |
+| BH calls, ratio scale: A / C / E, joint | 17.8 / 0.1 / 0 per ≈ 280 proteins | 69 / 1.2 / 0.1 per ≈ 980 |
+
+- **The calibrated simulation now reproduces ATF6's permutation nulls for Δk and for all three
+  interaction tests**, under every variant scored on both, to within 0.01–0.03.
+- **E, joint is conservative on the interaction in both** (0.022–0.035), unlike E on Δk (whose
+  conservatism E+time removes). Its additive and ratio tests sit in the cell stratum, where
+  only the 15 % per-tissue share of the timepoint deviation lands. Its mean-Δk test is
+  conservative for E's reason: the shared deviation sits in its animal term.
+- Power at ratio 1.2 with the shared deviation, mean Δk across tissues: A 0.741, C 0.736,
+  E, joint 0.725, at nulls of 0.045 / 0.027 / 0.018. The ratio-scale test (a true null at 1.2):
+  A 0.204, C 0.062, E, joint 0.033.
+
+**EJ+time on the interaction** (the same datasets and permutations; `wlsvar_sim.py --score-only
+--variants EJ+time`, `wlsvar_eval.py inter --variants EJ+time`; size-adjusted power from the
+pooled `null_ts` thresholds, `wlsvar_sim.py --work runs/wlsvar_sim/r12_ts --ratio 1.2
+--size-adjust runs/wlsvar_sim/null_ts`, which prints the Δk rows too):
+
+| α 0.05 | Ratio scale (primary) | Additive | Mean Δk |
+|---|---|---|---|
+| ATF6 T2, 10 permutations: E, joint / EJ+time | 0.025 / 0.027 | 0.035 / 0.041 | 0.010 / 0.033 (worst 0.025 / 0.103) |
+| Simulation `null_ts`, pooled: E, joint / EJ+time | 0.022 / 0.039 | 0.026 / 0.049 | 0.018 / 0.074 |
+| … median over the 8 datasets: E, joint / EJ+time | 0.024 / 0.042 | 0.024 / 0.048 | 0.007 / 0.027 |
+| Simulation `null` (no timepoint term): E, joint / EJ+time | 0.046 / 0.049 | 0.053 / 0.056 | 0.065 / 0.082 |
+| `r12_ts` at α 0.05: A / C / E, joint / EJ+time | 0.204 / 0.062 / 0.033 / 0.049 (a true null) | 0.241 / 0.089 / 0.045 / 0.083 | 0.741 / 0.736 / 0.725 / **0.919** |
+| `r12_ts`, size-adjusted: A / C / E, joint / EJ+time | — | 0.055 / 0.086 / 0.085 / 0.084 | 0.782 / 0.850 / 0.880 / **0.886** |
+
+- **The ratio-scale and additive tests:** EJ+time brings E, joint's simulation rates to nominal
+  (0.039–0.049), holds the ratio-scale null under a real main effect (0.049 at ratio 1.2), and
+  has the same size-adjusted power as E, joint and C. On ATF6 it is as conservative as E, joint
+  (0.027 / 0.041). Those tests sit in the cell stratum, which the shared deviation never reached.
+- **The mean-Δk test** (protein Δk pooled over tissues) gains what E+time gains on Δk: nominal
+  power 0.919 against E, joint's 0.725 (1.24 × A), and the best size-adjusted power (0.886).
+  Its pooled simulation null, 0.074, is the mechanism-2 pattern at its strongest. Six of the 8
+  datasets reject 0.004–0.030; the two with the largest proteome-wide shift (median z −1.18 and
+  +0.90) reject 0.301 and 0.172. Averaging over four tissues shrinks the protein-level noise
+  but not the animal group's shift, which every tissue shares. With 8 datasets the pooled rate
+  has an SE of 0.038, so it does not separate from 0.05 or from 0.065; E+time's per-tissue Δk
+  (0.064, SE 0.025) and C's (0.047, SE 0.019) are dominated by the same two datasets. ATF6's
+  permutations show it more mildly (0.033, worst 0.103).
+- Timing (full ATF6, 979 proteins, `-W 14`, otherwise idle): E, joint 13.6 min, EJ+time 18.2 min.
+  Both reproduce the cached rejection rates exactly.
+
+**T3 and T6 with the time term.** T6 (ATF6, chamber Δk in the control vs the KO animals):
+
+| Variant | LV–RV: z robust SD | \|z\| > 1.96 | LV–RA: z robust SD | \|z\| > 1.96 |
+|---|---|---|---|---|
+| A (shipped) | 0.80 | 0.047 | 0.90 | 0.068 |
+| C | 0.51 | 0.006 | 0.71 | 0.022 |
+| E (paired) | 0.82 | 0.024 | 0.94 | 0.071 |
+| E+band | 0.85 | 0.019 | 0.96 | 0.062 |
+| E+time | 0.82 | 0.030 | 0.98 | 0.083 |
+| E+band+time | 0.85 | 0.024 | 1.07 | 0.071 |
+
+T3 (lve_atr, atrium vs ventricle Δk from the odd vs the even timepoints; one mouse per
+timepoint, both tissues from it; 315 proteins):
+
+| Variant | z robust SD | z SD | \|z\| > 1.96 | robust SD of Δk_odd − Δk_even | median combined SE |
+|---|---|---|---|---|---|
+| A (shipped) | 1.45 | 1.74 | 0.200 | 0.010 | 0.007 |
+| C | 1.13 | 1.29 | 0.108 | 0.009 | 0.007 |
+| E | 0.75 | 0.83 | 0.025 | 0.007 | 0.009 |
+| E+band | 0.88 | 0.95 | 0.054 | 0.006 | 0.007 |
+| **E+time** | **0.94** | **1.01** | **0.060** | 0.007 | 0.007 |
+| E+band+time | 1.07 | 1.14 | 0.083 | 0.006 | 0.006 |
+
+- **On T3, E+time and E+band+time land inside 0.9–1.15; E alone is too wide (0.75).** The
+  lve_atr fit has no animal IDs, so E's "animal" is each tissue sample (condition × timepoint),
+  and E runs unpaired (df 10 per half). The mouse's deviation, shared by its two tissues,
+  then sits in E's animal variance although it cancels from the tissue Δk: boomi's T1
+  situation. With one mouse per timepoint, E+time's time slope is the mouse slope, so it
+  takes that shared part out (df 5) and the SE falls by a quarter. The halves' disagreement
+  is the same under every E variant (0.006–0.007); E+time's SE matches it. *Corrected
+  2026-11-14:* this bullet first called E paired here; it was not (its `paired` flag is 0 on
+  every lve_atr test).
+- **On T6, the time term changes nothing** (it cancels from a paired chamber contrast). LV–RA
+  passes (0.98). LV–RV stays at 0.82–0.85 under every E variant, as under A (0.80), and no
+  candidate reaches 0.9. LV and RV share their turnover, so this contrast carries no brake,
+  and what remains is the shared-peptide gap noted at the first T6: chamber-specific peptide
+  behaviour sits in E's residual and in its SE, but repeats in both animal sets, so it never
+  reaches the T6 difference. Whether it belongs in the SE depends on the estimand (these
+  peptides, or the protein's peptides at large); it is the same for every E variant.
+
+**Real ATF6, unpermuted (per-chamber KO vs control Δk, 3,507 tests).**
+
+| Variant | α 0.05 | BH < 0.05 calls | Its T2 permutation null (α 0.05 / calls per permutation) |
+|---|---|---|---|
+| A (shipped) | 0.121 | 35 | 0.096 / 19.7 |
+| B (`wls-var`) | 0.156 | 64 | 0.122 / 49.4 |
+| C | 0.035 | 0 | 0.039 / 0.40 |
+| D | 0.036 | 0 | 0.038 / 0.30 |
+| E | 0.014 | 0 | 0.018 / 0.35 |
+| E+time | 0.043 | 0 | 0.041 / 0.40 |
+
+- **Every candidate that holds the null sees ATF6's per-chamber KO effect at its null rate, with
+  no protein passing BH.** A's 35 calls are within the range A gives on permuted labels (its
+  worst permutation rejects 0.297). The proteome-wide brake (75 % of proteins slower in KO, EJ+time's cross-chamber mean Δk) is a
+  shift of the whole animal group: per protein it is the mechanism-2 pattern, which a
+  per-protein test should not call (evaluation report §9, item 1: a proteome-level test of the
+  brake).
+
+**T6 with the KO brake scaled out; E+time with Powell + GLS; lve_atr's real calls.**
+
+- *Brake.* T6 LV–RA carries the KO brake, a proportional effect a median-centred SD cannot
+  remove. Scaled out by one global factor, Δk_KO ≈ s·Δk_ctrl (weighted, through the origin;
+  `wlsvar_eval.py t6` now reports `scale` and `z_scaled_robust_sd`), s = 0.88–0.91. LV–RA robust
+  z SD, scaled (raw): A 0.85 (0.90), B 0.92 (0.94), C 0.67 (0.71), D 0.69 (0.75), E 0.88 (0.94),
+  E+time 0.95 (0.98), E+band+time 1.01 (1.07). LV–RV has Δk ≈ 0, so s is not identified there;
+  it stays raw.
+- *E+time optimizer.* The E+time prototype used BFGS and the Hessian covariance. On the paired
+  T6 contrasts that fits the time term on only 41–46 % of tests (the rest fall back to E); on
+  the unpaired ones it fits 96–99 %. `WLSVAR_ET_OPT=powell` switches to Powell plus the GLS
+  covariance, as in EJ+time:
+  - time term on every T6 test, 2.4× faster;
+  - Δk within 0.003;
+  - median combined SE 10 % smaller;
+  - LV–RV 0.82 → 0.88;
+  - LV–RA 0.95 → 1.08 scaled (0.98 → 1.17 raw).
+
+  T1, T2 and the simulation are not yet rerun with it.
+- *lve_atr, unpermuted* (atrium vs ventricle, 348 tests at HEAD): BH < 0.05 calls A 234, C 235,
+  E 218, E+time 229.
+
+**G2 and WP5 (2026-11-14).** The G2 matrix, the decisions for Q1–Q3, the design note for E+time /
+EJ+time and the open items are in the
+[evaluation report](2026-11-14_wls_var_D_E_evaluation.md).

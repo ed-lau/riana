@@ -8,6 +8,7 @@ records the frame it collapses; ``collapse(shared=True)`` is candidate C):
 - A = per-condition collapse + ``wls`` (shipped default)
 - B = per-condition collapse + ``wls-var``
 - C = shared-proportion collapse + ``wls``  (also C + ``wls-var`` for completeness)
+- D, D+var, E, E+band (WP4 prototypes, ``wlsvar_de.py``) with ``--variants``
 
 Tests:
 
@@ -17,9 +18,11 @@ Tests:
 - ``null DIR [DIR ...] --ref R --test T``: replicate split (T1) or permutation (T2) refits;
   rejection rate of the Δk test at α 0.05 / 0.01 pooled over the refits, the SD of Δk/SE,
   and the BH < 0.05 calls per refit.
-- ``inter DIR [DIR ...] --ref R --test T [-W N]``: the shipped ``--interaction`` model on the
-  same refits (T2 permutations), under A and C (``wls``): rejection rate at α 0.05 of its
-  mean-Δk, ratio-scale (primary) and additive tests, and their BH < 0.05 calls per refit.
+- ``inter DIR [DIR ...] --ref R --test T [-W N] [--variants A C EJ EJ+time]``: the shipped
+  ``--interaction`` model on the same refits (T2 permutations), under A and C (``wls``), and
+  E's joint peptide-level model (EJ, ``wlsvar_de.interaction_E``; EJ+time adds the time and
+  tissue × time slopes): rejection rate at α 0.05 of
+  its mean-Δk, ratio-scale (primary) and additive tests, and their BH < 0.05 calls per refit.
 - ``t6 FIT --ref LV --test RV [--split control ATF6-KO]``: animal-set split. The fit's
   experiment (chamber) and condition (genotype) swap roles: one directory per genotype,
   holding only the two chambers compared (admission ``all`` spans every condition of an
@@ -47,31 +50,56 @@ from tests.benchmark.eval_rising_variance import (  # noqa: E402
 VARIANTS = [("A", False, "wls"), ("B", False, "wls-var"), ("C", True, "wls"),
             ("C+wls-var", True, "wls-var")]
 KEY = ["experiment", "protein"]
+#: the variants scored; ``--variants`` changes it (D, D+var, E, E+band: ``wlsvar_de.py``)
+SELECTED = [v[0] for v in VARIANTS]
+#: ``--cache``: keep each refit's Δk table in ``FIT/dk_cache`` and reuse it (resumable runs)
+CACHE = False
 
 
 def dk_tables(fit_dir: Path, ref: str, test: str) -> dict[str, pd.DataFrame]:
-    """Δk per (experiment, protein) under each variant, with the admitted peptide count."""
+    """Δk per (experiment, protein) under each selected variant, with the admitted
+    peptide count."""
+    cache = fit_dir / "dk_cache"
+    hit = {n: cache / f"{n}_{ref}_{test}.tsv" for n in SELECTED}
+    out = {n: pd.read_csv(path, sep="\t") for n, path in hit.items() if CACHE and path.exists()}
+    if len(out) == len(SELECTED):
+        return out
     seen = capture_gated(fit_dir, ref, test)
     f = seen["frame"]
     npep = f.groupby(KEY).concat.nunique().rename("n_pep")
-    out = {}
-    for name, shared, w in VARIANTS:
-        t = dk_shipped(collapse(seen, shared), w, ref, test)
-        out[name] = t.merge(npep.reset_index(), on=KEY, how="left")
-    return out
+    base = {name: (shared, w) for name, shared, w in VARIANTS}
+    for name in SELECTED:
+        if name in out:
+            continue
+        if name in base:
+            t = dk_shipped(collapse(seen, base[name][0]), base[name][1], ref, test)
+        else:
+            from tests.benchmark.wlsvar_de import VARIANTS as DE
+            t = DE[name](seen, ref, test)
+        out[name] = t.drop(columns=["n_pep"], errors="ignore").merge(
+            npep.reset_index(), on=KEY, how="left")
+        if CACHE:
+            cache.mkdir(exist_ok=True)
+            out[name].to_csv(hit[name], sep="\t", index=False)
+    return {n: out[n] for n in SELECTED}
 
 
 def _rsd(v: pd.Series) -> float:
     return float(1.4826 * (v - v.median()).abs().median())
 
 
-def t3(odd: Path, even: Path, ref: str, test: str) -> pd.DataFrame:
+def t3(odd: Path, even: Path, ref: str, test: str, scale: bool = False) -> pd.DataFrame:
+    """``scale`` (T6): also z after one global scale factor s, Δk_second ≈ s·Δk_first
+    (weighted least squares through the origin), the KO brake on a chamber contrast."""
     a, b = dk_tables(odd, ref, test), dk_tables(even, ref, test)
     rows = []
-    for name, *_ in VARIANTS:
+    for name in a:
         m = a[name].merge(b[name], on=KEY, suffixes=("_o", "_e")).dropna(
             subset=["dk_o", "dk_e", "se_o", "se_e"])
         z = (m.dk_o - m.dk_e) / np.sqrt(m.se_o ** 2 + m.se_e ** 2)
+        w = 1 / (m.se_o ** 2 + m.se_e ** 2)
+        s = float(np.sum(w * m.dk_o * m.dk_e) / np.sum(w * m.dk_o ** 2))
+        za = (s * m.dk_o - m.dk_e) / np.sqrt(s ** 2 * m.se_o ** 2 + m.se_e ** 2)
         npep = np.minimum(m.n_pep_o, m.n_pep_e)
         for lab, sel in [("all", npep > 0), ("1", npep == 1), ("2-3", npep.between(2, 3)),
                          ("4+", npep >= 4)]:
@@ -82,7 +110,8 @@ def t3(odd: Path, even: Path, ref: str, test: str) -> pd.DataFrame:
                              z_sd=zz.std(), z_robust_sd=_rsd(zz),
                              share_abs_z_gt_196=(zz.abs() > 1.96).mean(),
                              dk_diff_robust_sd=_rsd((m.dk_o - m.dk_e)[sel]),
-                             se_comb_median=np.sqrt(m.se_o ** 2 + m.se_e ** 2)[sel].median()))
+                             se_comb_median=np.sqrt(m.se_o ** 2 + m.se_e ** 2)[sel].median(),
+                             **(dict(scale=s, z_scaled_robust_sd=_rsd(za[sel])) if scale else {})))
     return pd.DataFrame(rows)
 
 
@@ -113,12 +142,32 @@ INTER_TESTS = [("mean Δk", "mean_delta_k_p"), ("ratio (primary)", "interaction_
                ("additive", "interaction_additive_p")]
 
 
-def inter(dirs: list[Path], ref: str, test: str, workers: int) -> pd.DataFrame:
+def inter_table(d: Path, name: str, ref: str, test: str, workers: int,
+                seen: dict | None) -> tuple[pd.DataFrame, dict | None]:
+    """One refit's per-protein interaction table: the shipped model on A's or C's cells, or
+    E's joint peptide-level model (EJ). Cached in ``FIT/dk_cache`` under ``--cache``."""
+    path = d / "dk_cache" / f"inter_{name}_{ref}_{test}.tsv"
+    if CACHE and path.exists():
+        return pd.read_csv(path, sep="\t"), seen
+    seen = seen or capture_gated(d, ref, test)
+    if name in ("EJ", "EJ+time"):
+        from tests.benchmark.wlsvar_de import interaction_E
+        t = interaction_E(seen, ref, test, workers, time=name == "EJ+time")
+    else:
+        t = interaction_shipped(collapse(seen, name == "C"), "wls", workers, ref, test)
+    if CACHE:
+        path.parent.mkdir(exist_ok=True)
+        t.to_csv(path, sep="\t", index=False)
+    return t, seen
+
+
+def inter(dirs: list[Path], ref: str, test: str, workers: int,
+          names: list[str] | None = None) -> pd.DataFrame:
     rows = []
     for d in dirs:
-        seen = capture_gated(d, ref, test)
-        for name, shared in [("A", False), ("C", True)]:
-            t = interaction_shipped(collapse(seen, shared), "wls", workers, ref, test)
+        seen = None
+        for name in names or ["A", "C"]:
+            t, seen = inter_table(d, name, ref, test, workers, seen)
             for lab, col in INTER_TESTS:
                 p = t[col].dropna()
                 rows.append(dict(refit=d.name, variant=name, test=lab, tests=len(p),
@@ -169,16 +218,25 @@ def main() -> None:
                    help="t6: the two animal sets (conditions of the fit)")
     p.add_argument("--work", type=Path, help="t6: where to write the swapped fit dirs")
     p.add_argument("-o", "--out", type=Path, help="write the table here (TSV)")
+    p.add_argument("--cache", action="store_true", help="t3 / null / t6: reuse FIT/dk_cache")
+    p.add_argument("--variants", nargs="+", help="t3 / null / t6: variants to score "
+                   "(default A B C C+wls-var; D D+var E E+band from wlsvar_de.py)")
     a = p.parse_args()
+    if a.variants:
+        SELECTED[:] = a.variants
+    if a.cache:
+        global CACHE
+        CACHE = True
     if a.test == "t3":
         if len(a.dirs) != 2:
             raise SystemExit("t3 takes ODD and EVEN fit directories")
         r = t3(*a.dirs, a.ref, a.cond)
     elif a.test == "inter":
-        r = inter(a.dirs, a.ref, a.cond, a.workers)
+        r = inter(a.dirs, a.ref, a.cond, a.workers, a.variants)
     elif a.test == "t6":
         work = a.work or a.dirs[0].parent / f"t6_{a.ref}_{a.cond}"
-        r = t3(*t6_dirs(a.dirs[0], work, (a.ref, a.cond), tuple(a.split)), a.ref, a.cond)
+        r = t3(*t6_dirs(a.dirs[0], work, (a.ref, a.cond), tuple(a.split)), a.ref, a.cond,
+               scale=True)
     else:
         r = null(a.dirs, a.ref, a.cond)
     with pd.option_context("display.width", 200, "display.max_rows", 200,

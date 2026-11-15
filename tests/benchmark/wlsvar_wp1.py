@@ -193,7 +193,10 @@ def q1(fit_dir: Path, ref: str | None, test: str | None) -> tuple[pd.DataFrame, 
 
 
 def tau(fit_dir: Path, ref: str | None, test: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
-    seen = capture(fit_dir, ref, test)
+    return tau_frame(capture(fit_dir, ref, test))
+
+
+def tau_frame(seen: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     f = seen["frame"].copy()
     f = f[np.isfinite(f.fs)]
     sig = (f.fs_upper - f.fs_lower) / protein._PI_SPAN_SIGMA
@@ -237,7 +240,10 @@ def tau(fit_dir: Path, ref: str | None, test: str | None) -> tuple[pd.DataFrame,
 
 
 def animal(fit_dir: Path, ref: str, test: str, shared: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
-    seen = capture(fit_dir, ref, test)
+    return animal_frame(capture(fit_dir, ref, test), shared)
+
+
+def animal_frame(seen: dict, shared: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     r = residuals(collapse(seen, shared))
     r = r[r.individual.astype(str) != ""].copy()
     r["e"] = r.phi - r.fit

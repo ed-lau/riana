@@ -1,8 +1,9 @@
 # Riana — Roadmap & TODO (v1.2.0 forward)
 
-> **Status (2026-11-13):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
-> merged back). Active development is on the **`1.2.0` branch**. **Next:** the `wls-var` /
-> collapse plan (D, E) — §3 box *Δk peptide collapse*, manual §8.1. **This document is the
+> **Status (2026-11-15):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
+> merged back). Active development is on the **`1.2.0` branch**. **Next:** the peptide-level Δk
+> model (E or E+time) once the EDL / SOL search lands — §3 box *Δk peptide collapse*,
+> evaluation report `reports/2026-11-14_wls_var_D_E_evaluation.md` §5. **This document is the
 > forward-looking roadmap — it lists OPEN work only.** The as-shipped record lives in
 > `CHANGELOG.md`; design decisions / point-in-time findings live in the `memory/` files
 > and `reports/*.md`. §2 and the M1–M4 pointers are kept as collapsed anchors because
@@ -152,8 +153,13 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   §8.1: does `wls-var` do what it is meant to (weight by measured precision) at all, and should it
   be replaced by a peptide-specific term — a peptide offset modelled in the collapse (L1), or Ṽ
   replaced by the across-peptide scatter. **Scope approved 2026-11-13:**
-  `reports/2026-11-13_wls_var_and_collapse_plan.md`. WP0 (refits at HEAD) is next, and `riana/`
-  changes only on real-data evidence. *Direction (user,
+  `reports/2026-11-13_wls_var_and_collapse_plan.md`. **Evaluation done 2026-11-14:**
+  `reports/2026-11-14_wls_var_D_E_evaluation.md` (verdict and numbers there, not here).
+  **Decided (user, 2026-11-15):** remove `wls-var` now; do not build D; build the peptide-level
+  model after the EDL / SOL data drop (the combined ATR / LVE / EDL / SOL search), with **E vs
+  E+time still to be debated** (simplicity vs calibration and power; trade-off table and the
+  deciding data in report §5 Q3); test per-protein Δk as is (report §9 item 1). Before building:
+  rerun T1, T2 and the simulation with E+time on Powell + GLS (report §9 item 4). *Direction (user,
   2026-11-13):* D (random-effects collapse, shared levels) as the `wls-var` replacement, E
   (peptide-level mixed model) later as the main route; D upgrades `--method weighted`, E replaces
   pseudoreplicated `pooled` (as a new method name). Refinements in manual §8.1 "Direction";
@@ -185,6 +191,14 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
     observed ÷ fitted label over proteins). Candidate correction: one scale per animal, estimated
     jointly across proteins and tissues, or a measured body-water enrichment.
   - Prototype: the local `report/k_stability.py` next to that report (generic code, data local).
+- **Proteome-wide group shifts — recorded, not to be built for now (user, 2026-11-15).** When
+  one group of animals turns over faster or slower as a whole (the ATF6 KO brake, about 5 %, or a
+  chance difference between two sets of animals), every protein's Δk carries the shift. Riana
+  tests per-protein Δk **as is**: the per-protein results are the evidence of the shift, protein
+  by protein. Testing the shift itself (animals as the units: permutation, or a mixed model on
+  each animal's proteome-wide factor) and Δk relative to the group median are a separate
+  scientific question, out of the software for now. Options and the evidence: evaluation report
+  §7.1 and §9 item 1. Related: the per-animal label-intake item above.
 - **Δk residual-variance moderation (limma-style) — HIGH PRIORITY, deferred (decided
   2026-11-11).** Shrink each protein's residual variance toward a prior estimated across proteins
   and test Δk on the augmented df, to stabilise proteins with few points. Deferred until we know
