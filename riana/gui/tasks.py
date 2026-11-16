@@ -197,7 +197,7 @@ def run_rollup(
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
     peptide_admission: str = "all",
-    method: str = "weighted",
+    level: str = "protein",
     workers: int = 1,
     phi_limit: float = -4.0,
     reference_condition: str | None = None,
@@ -239,7 +239,7 @@ def run_rollup(
     fractions = pd.read_table(fd / "riana_fit_fractions.txt", comment="#")
     fs_basis = fit_basis_header(fd / "riana_fit_fractions.txt")["fs_basis"]
     result = rollup_proteins(
-        peptides, fractions, model=model, method=method,
+        peptides, fractions, model=model, level=level,
         parsimony=parsimony, min_peptides=int(min_peptides),
         min_points=int(min_points), min_fit_points=min_fit_points, min_r2=min_r2,
         k_cv_max=float(k_cv_max), rescue_r2=float(rescue_r2),
@@ -414,6 +414,48 @@ def run_interaction(
         rollup_fractions.rename(columns={"fs": "theta"}),
         reference_condition=reference_condition, test_condition=test_condition,
         phi_limit=float(phi_limit), weights=str(weights), workers=int(workers),
+        progress_callback=_queue_progress_callback(progress_queue))
+    return table, str(table.attrs.get("animal_key", "composite"))
+
+
+def run_peptide_interaction(
+    fit_dir: str,
+    parsimony: str,
+    min_peptides: int,
+    min_fit_points: int | None,
+    min_r2: float | None,
+    k_cv_max: float,
+    rescue_r2: float,
+    peptide_admission: str,
+    reference_condition: str,
+    test_condition: str,
+    phi_limit: float = -4.0,
+    workers: int = 1,
+    progress_queue=None,
+) -> tuple[pd.DataFrame, str]:
+    """The peptide-level interaction (``rollup --level peptide --interaction``).
+
+    Reads the fit outputs in *fit_dir*, applies the rollup's attribution and curation
+    (:func:`riana.core.protein.gate_peptides`, with the same settings as
+    :func:`run_rollup`) and fits
+    :func:`riana.core.peptide_model.fit_peptide_interaction`. Dispatch as
+    :func:`run_interaction`. Returns ``(table, animal_key)``.
+    """
+    from pathlib import Path
+
+    from riana.core.peptide_model import fit_peptide_interaction
+    from riana.core.protein import gate_peptides
+
+    fd = Path(fit_dir)
+    peptides = pd.read_table(fd / "riana_fit_peptides.txt", comment="#")
+    fractions = pd.read_table(fd / "riana_fit_fractions.txt", comment="#")
+    _, gated = gate_peptides(
+        peptides, fractions, parsimony=parsimony, min_r2=min_r2,
+        k_cv_max=float(k_cv_max), rescue_r2=float(rescue_r2),
+        min_fit_points=min_fit_points, peptide_admission=str(peptide_admission))
+    table = fit_peptide_interaction(
+        gated, reference_condition=reference_condition, test_condition=test_condition,
+        phi_limit=float(phi_limit), min_peptides=int(min_peptides), workers=int(workers),
         progress_callback=_queue_progress_callback(progress_queue))
     return table, str(table.attrs.get("animal_key", "composite"))
 

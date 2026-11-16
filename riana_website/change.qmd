@@ -38,6 +38,11 @@ The full list is in the repository `CHANGELOG.md`.
   `guan` and `fornasiero`, with `--kr` and `--rp`, are removed: a rising precursor is given as
   `fit --kp` (or in the SDRF) and solved at each timepoint. Rollup refuses a fit made with a
   removed model.
+* **Peptide-level Δk (`rollup --level peptide`).** With `--model linear`, fits the peptides' own
+  points in a mixed model per protein (peptide slope offsets; random slopes for labeling time and
+  animal; paired automatically when animals carry both conditions), and with `--interaction` the
+  matching joint model. `--level` replaces `--method`: `--method weighted` is `--level protein`
+  (still accepted), and `pooled` is removed. The protein table's `method` column is now `level`.
 * **Peptide admission (changes results).** `--peptide-admission` defaults to `all` for every model
   (a peptide is used only if it passes curation in every condition); `auto` is gone. This changes
   multi-condition `exponential` rollups, which used `own` before.

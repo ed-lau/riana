@@ -370,6 +370,18 @@ is still to be debated (simplicity against performance).*
   - **`--model exponential | linear | calibration`.** `simple` is kept as a deprecated alias.
     guan / fornasiero, `--kr` and `--rp` are removed, along with rollup's `--kp`. `fit --kp`
     stays, as the switch for a rising precursor.
+  - **Built 2026-11-16 (CHANGELOG):** `riana.core.peptide_model` ports E+time-powell and
+    EJ+time from `tests/benchmark/wlsvar_de.py`. Generalizations:
+    - a lone condition is fitted alone, for its k;
+    - per-condition k CIs at the time-stratum df;
+    - per-experiment rows for the interaction.
+
+    For two conditions the numerics are unchanged. On the evaluation's gated frames it
+    reproduces the cached results within 1e-16:
+    - Boulder EDL–SOL: 250 tests and 162 calls (Δk, SE, p and df).
+    - ATF6 EJ+time interaction: 979 proteins and 0 ratio-scale calls (the mean-Δk, ratio and
+      additive p, and σ_animal). 945 proteins fit the time model; 34 fell back to the animal
+      model.
 
 ## 6. What is still missing before building
 

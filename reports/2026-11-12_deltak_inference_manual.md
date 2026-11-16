@@ -496,6 +496,7 @@ E+time.
 works (shipped). E+time / EJ+time come as the opt-in `rollup --level peptide`, inside a rollup
 CLI redesign: `--peptide-admission any|own|all` with a default of `all`, `--level
 protein|peptide`, and `--model exponential|linear|calibration`. guan / fornasiero are removed.
+All of this was built 2026-11-16; `--level peptide` lives in `riana.core.peptide_model`.
 
 The calibrated simulation (`tests/benchmark/wlsvar_sim.py`) supersedes §6's grid for ranking
 these candidates; §6 stays as the record of the two mechanisms.

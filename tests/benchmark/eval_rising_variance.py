@@ -3,6 +3,11 @@
 ``wls-var`` was removed from Riana on 2026-11-15: the ``wls-var`` re-tests need Riana at commit
 ``e12980c`` or earlier (the wls-var / D / E evaluation).
 
+Since ``a31f356`` (2026-11-16) the shipped linear collapse applies the shared band levels
+before ``_collapse_long``. The frame ``capture_gated`` records therefore carries C's bands, so its
+``per-condition`` arm equals ``shared``. Reproduce the old per-condition collapse with Riana
+``cc8a98b`` or earlier. The peptide-level variants ignore the bands and are unaffected.
+
 For every simulated dataset it re-tests the SAME gated peptides under the alternative peptide
 collapses and weights, with the shipped functions wherever they exist:
 

@@ -205,7 +205,7 @@ def test_peptide_median_k_column_recovers_planted_k():
 def test_weighted_refit_recovers_planted_k():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     out = rollup_proteins(pep, frac, n_boot=50).set_index("protein")
-    assert (out["method"] == "weighted").all()
+    assert (out["level"] == "protein").all()
     assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
     assert out.loc["P0", "R_squared"] > 0.999
     assert out.loc["P0", "n_points"] == 5         # collapsed (biorep, t) cells
@@ -227,12 +227,12 @@ def test_rollup_fractions_carry_biological_replicate():
     assert len(rf) == 3 * 5   # 3 bioreps × 5 timepoints
 
 
-def test_rollup_fractions_biorep_on_pooled_and_linear_paths():
-    """Both the pooled kinetic collapse and the linear-simple path carry biorep."""
+def test_rollup_fractions_biorep_on_exponential_and_linear_paths():
+    """Both the exponential collapse and the linear path carry biorep."""
     from riana.core.protein import build_rollup_fractions
     pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
-    pooled = build_rollup_fractions(rollup_proteins(pep, frac, method="pooled", n_boot=20))
-    assert set(pooled["biological_replicate"]) == {1, 2, 3}
+    expo = build_rollup_fractions(rollup_proteins(pep, frac, n_boot=20))
+    assert set(expo["biological_replicate"]) == {1, 2, 3}
     # linear: two conditions so a Δk substrate exists
     pep2, frac2 = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2, 3))
     for df in (pep2, frac2):
@@ -309,14 +309,6 @@ def test_rollup_progress_callback_ticks_to_total():
     assert seen, "callback never fired"
     done, total = seen[-1]
     assert done == total == len(seen)          # one tick per group, ends at total
-
-
-def test_pooled_method_uses_all_points():
-    pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=3)  # 3 peptides x 5 t
-    out = rollup_proteins(pep, frac, method="pooled", n_boot=50).set_index("protein")
-    assert (out["method"] == "pooled").all()
-    assert out.loc["P0", "k_deg"] == pytest.approx(0.5, abs=0.02)
-    assert out.loc["P0", "n_points"] == 15        # all peptide×timepoint points
 
 
 def test_rollup_breakdown_and_exclude_mbr():
@@ -610,7 +602,7 @@ def test_rollup_linear_simple_delta_k():
     res = rollup_proteins(pep, frac, model="linear",
                           reference_condition="control", min_peptides=2)
     assert list(res.columns) == PROTEIN_LINEAR_COLUMNS
-    assert (res["method"] == "linear").all()
+    assert (res["level"] == "protein").all()
     k = res.set_index(["protein", "condition"])["k_deg"]
     assert k[("P0", "control")] == pytest.approx(0.05, abs=0.01)
     assert k[("P0", "atrium")] == pytest.approx(0.10, abs=0.01)
@@ -693,14 +685,16 @@ def test_rollup_linear_simple_is_a_valid_model():
     rollup_proteins(pep, frac, model="linear", min_peptides=2)  # no raise
 
 
-def test_unknown_model_parsimony_method_raise():
+def test_unknown_model_parsimony_level_raise():
     pep, frac = _make_frames({"sp|P0|X": 0.5})
     with pytest.raises(DataError, match="model"):
         rollup_proteins(pep, frac, model="nope")
     with pytest.raises(DataError, match="parsimony"):
         rollup_proteins(pep, frac, parsimony="razor")
-    with pytest.raises(DataError, match="method"):
-        rollup_proteins(pep, frac, method="bogus")
+    with pytest.raises(DataError, match="level"):
+        rollup_proteins(pep, frac, level="bogus")
+    with pytest.raises(DataError, match="needs model 'linear'"):
+        rollup_proteins(pep, frac, level="peptide")       # exponential: no peptide level
 
 
 def test_rollup_fractions_carry_individual_when_the_fit_did():
@@ -713,7 +707,7 @@ def test_rollup_fractions_carry_individual_when_the_fit_did():
         rollup_proteins(pep, frac, n_boot=20)).columns
     ids = {1: 843.0, 2: 844.0, 3: np.nan}
     frac = frac.assign(individual=frac["biological_replicate"].map(ids))
-    for kw in ({}, {"method": "pooled"}):
+    for kw in ({}, {"model": "linear"}):
         rf = build_rollup_fractions(rollup_proteins(pep, frac, n_boot=20, **kw))
         cols = list(rf.columns)
         assert cols[cols.index("biological_replicate") + 1] == "individual"

@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Added — `rollup --level peptide`: the peptide-level Δk and interaction — 2026-11-16
+
+- **`--level protein|peptide` replaces `--method`.**
+  - `protein` (default) is the collapse refit, the old `weighted`.
+  - `peptide`, under `--model linear` only, fits one mixed model per protein to the peptides'
+    own points (`riana.core.peptide_model`; candidate E+time of
+    `reports/2026-11-14_wls_var_D_E_evaluation.md`).
+- **The model** has a slope per condition, sum-to-zero peptide slope offsets shared by the
+  conditions, and random slopes per labeling time and per animal (nested). When the same
+  `characteristics[individual]` carries both conditions, an animal × condition term is added
+  and the comparison is paired; this is detected from the data, with no flag.
+  - *Fitting:* `(1 − θ̂)²` weights from an OLS pass; REML with Powell, then Nelder–Mead.
+  - *Covariance:* the GLS one at the fitted components.
+  - *df:* animals − 1 when paired, else animals − times − 1.
+  - *Fallbacks:* a random animal slope (longitudinal designs, fewer than three times, or no
+    convergence), then WLS.
+- **New output columns** in `riana_rollup_proteins.txt`: `delta_k_df`, `n_animals`, `paired`,
+  `random_effects` (`time` / `animal` / `none`), `sigma_time` and `sigma_animal`. `n_points`
+  counts peptide points and `R_squared` is NaN.
+  - The collapsed points are still written to `riana_rollup_fractions.txt`, for display.
+  - Per-condition k CIs come from the same covariance at the time-stratum df. They are not
+    separately validated; the Δk test is.
+- **`--interaction` under `--level peptide`** fits the matching joint model (EJ+time): peptide
+  offsets within each experiment, plus random slopes per labeling time, animal, animal ×
+  experiment and experiment × time, with containment df. It adds `random_effects`,
+  `sigma_cell`, `sigma_time` and `sigma_tissue_time` to `riana_rollup_interaction.txt`.
+- **Evaluation (report §3–§5):**
+  - Holds every Δk null: boomi 0.025, ATF6 0.042, calibrated simulation 0.065.
+  - Power at equal size: 1.43× the old collapse, 1.11× the shared-band collapse.
+  - EJ+time holds the ATF6 interaction null on both scales (0.027 / 0.041).
+  - Reproduces the evaluation's cached results exactly: Boulder EDL–SOL, 162 calls, p within
+    1e-16.
+  - *Cost:* about a minute for ATF6's Δk and 18 min for its interaction at `-W 14`.
+  - *Open:* one Boulder time-split reading (ATR–EDL) is high, at 1.26.
+- **`pooled` is removed** (every peptide point as an independent replicate). `--method weighted`
+  is still accepted, with a warning; `--method pooled` is an error. The protein table's `method`
+  column is now `level` (`protein` / `peptide`).
+- **Library:**
+  - `protein.gate_peptides` (attribution and curation, shared by the rollup and the
+    peptide-level interaction);
+  - `rollup_proteins(level=...)` in place of `method`;
+  - `PROTEIN_PEPTIDE_COLUMNS`;
+  - in the app, a *Level* option on the Protein tab, shown for `linear`.
+
 ### Changed / Removed — models and peptide admission — 2026-11-16
 
 - **`simple` is now `exponential`** in `fit --model`, `rollup --model`, `FitConfig` and the app.

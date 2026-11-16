@@ -61,6 +61,7 @@ from riana.gui.tasks import (
     load_rollup_interaction,
     load_rollup_results,
     run_interaction,
+    run_peptide_interaction,
     run_rollup,
 )
 from riana.io.writers import (
@@ -130,14 +131,6 @@ class ProteinTab(QWidget):
         man_row.addWidget(browse)
         form.addRow("Manifest", _row(man_row))
 
-        self.method_combo = QComboBox()
-        self.method_combo.addItems(["weighted", "pooled"])
-        self.method_combo.setToolTip(
-            "weighted (default): biorep-aware per-timepoint inverse-variance "
-            "collapse, then refit. pooled: all peptide×timepoint points "
-            "(pseudoreplication; for comparison).")
-        form.addRow("Method", self.method_combo)
-
         self.parsimony_combo = QComboBox()
         self.parsimony_combo.setToolTip(
             "Protein attribution: unique (single-accession peptides only) or isoform (fold isoform-shared peptides into the canonical entry).")
@@ -152,6 +145,18 @@ class ProteinTab(QWidget):
             "test (writes delta_k / delta_k_p_adj), plotted in φ-space.")
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
         form.addRow("Model", self.model_combo)
+
+        # 'linear' only: fit the collapsed protein points or the peptides' own points.
+        self.level_combo = QComboBox()
+        self.level_combo.addItems(["protein", "peptide"])
+        self.level_combo.setToolTip(
+            "protein (default): the peptides' θ collapsed per replicate and timepoint "
+            "(each peptide keeping one precision level across conditions), then the φ "
+            "fit. peptide: a mixed model on the peptides' own points, with peptide slope "
+            "offsets and random slopes for labeling time and animal (paired when the same "
+            "individual carries both conditions); the interaction uses the matching "
+            "joint model. Slower.")
+        form.addRow("Level (linear)", self.level_combo)
 
         # 'linear' only: plateau truncation + Δk reference condition.
         self.phi_limit_spin = QDoubleSpinBox()
@@ -328,8 +333,8 @@ class ProteinTab(QWidget):
     def _on_model_changed(self, model: str) -> None:
         """Show the φ / Δk knobs only for the linear model."""
         linear = model == "linear"
-        for w in (self.phi_limit_spin, self.reference_combo, self.test_combo,
-                  self.interaction_check):
+        for w in (self.level_combo, self.phi_limit_spin, self.reference_combo,
+                  self.test_combo, self.interaction_check):
             self._form.setRowVisible(w, linear)
 
     def _build_results(self) -> QWidget:
@@ -436,7 +441,8 @@ class ProteinTab(QWidget):
         mfp = int(self.min_fit_points_spin.value())   # 0 = auto (None)
         return {
             "manifest": self.manifest_edit.text().strip(),
-            "method": self.method_combo.currentText(),
+            "level": (self.level_combo.currentText()
+                      if self.model_combo.currentText() == "linear" else "protein"),
             "parsimony": self.parsimony_combo.currentText(),
             "model": self.model_combo.currentText(),
             "min_peptides": int(self.min_peptides_spin.value()),
@@ -529,7 +535,7 @@ class ProteinTab(QWidget):
             self._future = loop.run_in_executor(
                 executor, run_rollup, str(fit_dir), p["model"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_fit_points"], p["min_r2"],
-                p["k_cv_max"], p["rescue_r2"], p["peptide_admission"], p["method"],
+                p["k_cv_max"], p["rescue_r2"], p["peptide_admission"], p["level"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
                 p["test_condition"],
                 progress_q,
@@ -547,9 +553,17 @@ class ProteinTab(QWidget):
                 else:
                     self._info(f"fitting the interaction ({int_pair[1]} vs "
                                f"{int_pair[0]}) …")
-                    self._future = loop.run_in_executor(
-                        executor, run_interaction, rollup_fractions, int_pair[0],
-                        int_pair[1], p["phi_limit"], p["workers"], progress_q)
+                    if p["level"] == "peptide":
+                        self._future = loop.run_in_executor(
+                            executor, run_peptide_interaction, str(fit_dir),
+                            p["parsimony"], p["min_peptides"], p["min_fit_points"],
+                            p["min_r2"], p["k_cv_max"], p["rescue_r2"],
+                            p["peptide_admission"], int_pair[0], int_pair[1],
+                            p["phi_limit"], p["workers"], progress_q)
+                    else:
+                        self._future = loop.run_in_executor(
+                            executor, run_interaction, rollup_fractions, int_pair[0],
+                            int_pair[1], p["phi_limit"], p["workers"], progress_q)
                     interaction = await self._future
                     if self._cancelled:
                         self._info("cancelled.")
@@ -564,7 +578,7 @@ class ProteinTab(QWidget):
             self.model.set_dataframe(result)
             self.curve.show_placeholder("Select a protein row to view its refit.")
             n_fit = int(result["k_deg"].notna().sum())
-            summary = (f"{len(result)} proteins ({p['method']}); "
+            summary = (f"{len(result)} proteins ({p['level']} level); "
                        f"{n_fit} with a fitted k_deg.")
             # Surface the single-timepoint regime — the core logs it, but that INFO is
             # emitted in a worker process and never reaches the GUI. Appended to the
@@ -616,7 +630,7 @@ class ProteinTab(QWidget):
             self._info(f"forking a derived project into {out_dir} "
                        f"(input manifest left untouched)")
         settings = {
-            "model": params["model"], "method": params["method"],
+            "model": params["model"], "level": params["level"],
             "parsimony": params["parsimony"],
             "min_peptides": params["min_peptides"],
             "min_points": params["min_points"],
@@ -637,7 +651,7 @@ class ProteinTab(QWidget):
         provenance = make_provenance(
             settings,
             id_source=params["manifest"],
-            extra={"method": params["method"], "parsimony": params["parsimony"],
+            extra={"level": params["level"], "parsimony": params["parsimony"],
                    "model": params["model"], **params.get("fit_basis", {})},
         )
         out_path = out_dir / "riana_rollup_proteins.txt"
@@ -831,7 +845,8 @@ class ProteinTab(QWidget):
             self.summary_label.setText(
                 f"Loaded {len(proteins)} proteins from saved results "
                 f"(model={header.get('model', '?')}, "
-                f"method={header.get('method', '?')}); {n_fit} with a fitted k_deg.")
+                f"level={header.get('level', header.get('method', '?'))}); "
+                f"{n_fit} with a fitted k_deg.")
             self._info("loaded saved rollup results.")
         except Exception as exc:  # surface loader/IO errors inline
             self._fail(f"{type(exc).__name__}: {exc}")

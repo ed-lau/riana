@@ -520,7 +520,7 @@ def test_rollup_linear_simple_is_an_alias_of_linear(tmp_path):
         log = (out / "logfile.log").read_text()
         assert ("is now 'linear'" in log) == (name == "linear simple")
     pd.testing.assert_frame_equal(tables["linear"], tables["linear simple"])
-    assert set(tables["linear"]["method"]) == {"linear"}
+    assert set(tables["linear"]["level"]) == {"protein"}
 
 
 def test_fit_kp_switches_to_the_rising_precursor_and_records_it(tmp_path):
@@ -554,3 +554,47 @@ def test_fit_kp_switches_to_the_rising_precursor_and_records_it(tmp_path):
     rising_k = pd.read_table(out / "riana_fit_peptides.txt", comment="#").set_index(
         ["experiment", "condition", "concat"])["k_deg"]
     np.testing.assert_allclose(rising_k.loc[steady_k.index], steady_k, rtol=0.02)
+
+
+def test_rollup_level_peptide_with_interaction(tmp_path):
+    """--level peptide: the peptide-level Δk table (extra columns, level tag) and, with
+    --interaction, the peptide-level joint model's table."""
+    fit_dir = _multi_tissue_fit_dir(tmp_path, individual=True)
+    out = tmp_path / "out"
+    result = runner.invoke(app, [
+        "rollup", str(fit_dir), "--model", "linear", "--level", "peptide",
+        "--reference-condition", "control", "--interaction", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    prot = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
+    assert set(prot["level"]) == {"peptide"}
+    assert {"delta_k_df", "n_animals", "paired", "random_effects"} <= set(prot.columns)
+    assert prot["delta_k"].notna().all()
+    inter = pd.read_table(out / "riana_rollup_interaction.txt", comment="#")
+    assert {"random_effects", "sigma_cell", "sigma_time"} <= set(inter.columns)
+    from riana.io.writers import read_provenance_header
+    assert read_provenance_header(out / "riana_rollup_proteins.txt")["level"] == "peptide"
+
+
+def test_rollup_level_peptide_needs_the_linear_model(tmp_path):
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    result = runner.invoke(app, ["rollup", str(fit_dir), "--level", "peptide",
+                                 "-o", str(tmp_path / "out")])
+    assert result.exit_code != 0
+    assert "add --model linear" in _norm(result.output)
+
+
+def test_rollup_method_is_replaced_by_level(tmp_path):
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    pooled = runner.invoke(app, ["rollup", str(fit_dir), "--method", "pooled",
+                                 "-o", str(tmp_path / "p")])
+    assert pooled.exit_code != 0
+    assert "--method pooled was removed" in _norm(pooled.output)
+    tables = {}
+    for name, args in (("old", ["--method", "weighted"]), ("new", [])):
+        out = tmp_path / name
+        res = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(out), *args])
+        assert res.exit_code == 0, res.output
+        tables[name] = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
+    pd.testing.assert_frame_equal(tables["old"], tables["new"])
+    assert "--method weighted is now --level protein" in (
+        tmp_path / "old" / "logfile.log").read_text()

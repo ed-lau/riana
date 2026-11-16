@@ -4,24 +4,27 @@
 
 Rolls the `riana fit` per-peptide outputs up to one turnover estimate per
 protein, grouped by ``(experiment, condition, protein)`` so side-by-side groups
-stay distinct. One ``k_deg`` per protein from the selected ``method``:
+stay distinct. The ``level`` decides what the protein model is fitted to:
 
-- **``"weighted"`` (default)** — the pseudoreplication-safe refit and the reason
+- **``"protein"`` (default)** — the pseudoreplication-safe refit and the reason
   M5 was built. Within each ``(protein, biological_replicate, labeling_time)``
   the peptides' fraction-new θ are collapsed by an **inverse-variance weighted
   average** (σ from the M5 prediction interval, ``σ ≈ (fs_upper − fs_lower) /
   3.29`` for the 5–95 band), then **one** protein ``k_deg`` is fit to the
   collapsed ``(t, θ)`` points *across timepoints AND bioreps* — different
   biological replicates stay independent points, giving the refit honest
-  degrees of freedom.
-- **``"pooled"``** — fit one ``k_deg`` to **all** peptide×timepoint θ points
-  with no collapse. The pseudoreplication-naive stance (peptides treated as
-  independent replicates ⇒ over-confident CI); kept for comparison, **not
-  recommended**.
+  degrees of freedom. Under ``model="linear"`` each peptide's band level is
+  shared across the conditions first (:func:`_shared_bands`).
+- **``"peptide"``** (``model="linear"`` only) — a mixed model on the peptides' own
+  points, with peptide slope offsets and random slopes for labeling time and
+  animal (:mod:`riana.core.peptide_model`). The collapse still runs, for the
+  display points of ``riana_rollup_fractions.txt``. (The earlier ``"pooled"``
+  method — every peptide point as an independent replicate — was removed
+  2026-11-16.)
 
 CI via the residual bootstrap :func:`riana.core.fitting.fit_run` uses. A
 near-free **``peptide_median_k``** column (median of the peptides' fitted k) is
-carried for comparison regardless of method — point estimators over peptide k
+carried for comparison at every level — point estimators over peptide k
 are a trivial ``groupby`` the user can also do on the peptide file. (Harmonic
 mean was dropped: DIY *and* outlier-sensitive on the low-k tail. The linearized
 ``log(1−θ) = −kt`` fit + a cross-sample Δk test are a deferred milestone.)
@@ -150,11 +153,11 @@ _K_DEG_BOUNDS = ([1e-4], [10.0])
 _PI_SPAN_SIGMA = 2.0 * 1.6448536269514722  # ≈ 3.2897
 
 _PARSIMONY = ("unique", "isoform")
-#: Rollup estimators. ``weighted`` (default) = the biorep-aware per-timepoint
-#: inverse-variance collapse then refit (pseudoreplication-safe). ``pooled`` =
-#: fit one k to *all* peptide×timepoint θ points with no collapse — the
-#: pseudoreplication-naive stance (kept for comparison, not recommended).
-_METHODS = ("weighted", "pooled")
+#: Rollup levels: what the protein model is fitted to. ``protein`` (default) = the
+#: biorep-aware per-timepoint inverse-variance collapse, then the refit. ``peptide``
+#: (``model="linear"`` only) = the peptide-level mixed model
+#: (:mod:`riana.core.peptide_model`).
+LEVELS = ("protein", "peptide")
 #: The rollup grouping key — ``(experiment, condition, protein)``, defined once
 #: in :mod:`riana.records` (:data:`PROTEIN_KEY_COLUMNS`) and shared with the fit
 #: recombination so the stages can't drift. (Distinct from ``PROTEIN_COLUMNS``
@@ -189,15 +192,15 @@ _ADMISSION_POLICIES = ("any", "own", "all")
 DEFAULT_ADMISSION = "all"
 
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
-#: the selected ``method``; ``peptide_median_k`` is the near-free median of the
-#: peptides' fitted k, carried for comparison regardless of method.
+#: the collapse refit (``level`` = ``"protein"``); ``peptide_median_k`` is the
+#: near-free median of the peptides' fitted k, carried for comparison.
 #: ``n_mbr`` / ``n_metox`` / ``n_clean`` are the **raw** (peptide × biorep ×
 #: timepoint) fraction-point composition — how many measurements came from MBR
 #: transfers / Met-Ox-merged forms / neither — so they are *not* on the same scale
 #: as ``n_points`` (the collapsed per-timepoint refit points); they answer "how
 #: many of this protein's data points are clean".
 PROTEIN_COLUMNS = [
-    *PROTEIN_KEY_COLUMNS, "method",
+    *PROTEIN_KEY_COLUMNS, "level",
     "n_peptides", "n_replicates", "n_timepoints", "n_points",
     "n_mbr", "n_metox", "n_clean",
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
@@ -208,142 +211,51 @@ PROTEIN_COLUMNS = [
 #: cross-condition Δk test (``delta_k`` = k(other) − k(reference), its SE, the
 #: contrast p, and the Benjamini-Hochberg p across proteins).
 PROTEIN_LINEAR_COLUMNS = [
-    *PROTEIN_KEY_COLUMNS, "method", "n_peptides", "n_points",
+    *PROTEIN_KEY_COLUMNS, "level", "n_peptides", "n_points",
     "n_mbr", "n_metox", "n_clean",
     "k_deg", "ci_lo", "ci_hi", "R_squared", "peptide_median_k",
     "delta_k", "delta_k_se", "delta_k_p", "delta_k_p_adj",
+]
+#: ``level="peptide"`` adds the mixed model's Δk df, animals, pairing, random-effects
+#: path and SDs (:data:`riana.core.peptide_model.PEPTIDE_LEVEL_COLUMNS`); ``n_points``
+#: there counts peptide points and ``R_squared`` is NaN.
+PROTEIN_PEPTIDE_COLUMNS = [
+    *PROTEIN_LINEAR_COLUMNS,
+    "delta_k_df", "n_animals", "paired", "random_effects", "sigma_time", "sigma_animal",
 ]
 
 
 # --------------------------------------------------------------------------- #
 # public entry point
 # --------------------------------------------------------------------------- #
-def rollup_proteins(
+def gate_peptides(
     peptides: pd.DataFrame,
     fractions: pd.DataFrame,
     *,
-    model: str = EXPONENTIAL_MODEL,
-    kinetic_kwargs: Mapping[str, float] | None = None,
     parsimony: str = "unique",
-    method: str = "weighted",
-    min_peptides: int = 2,
-    min_points: int = 3,
     min_spep: int | None = None,
     min_r2: float | None = None,
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
     min_fit_points: int | None = None,
     peptide_admission: str = DEFAULT_ADMISSION,
-    workers: int = 1,
-    n_boot: int = 200,
-    boot_ci_pct: tuple[float, float] = (5.0, 95.0),
-    random_state: int = 1337,
-    phi_limit: float = -4.0,
-    linear_weights: str = "wls",
-    reference_condition: str | None = None,
-    test_condition: str | None = None,
     exclude_mbr: bool = False,
-    fs_basis: str = "theta",
-    progress_callback: "Callable[[int, int], None] | None" = None,
-) -> pd.DataFrame:
-    """Roll per-peptide fits up to one ``k_deg`` per ``(experiment, condition,
-    protein)`` via the median and the biorep-aware weighted refit.
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Attribution and curation: the ``(peptides, fractions)`` a rollup fits.
 
-    Args:
-        peptides: ``riana_fit_peptides.txt`` content — needs ``protein id`` and
-            ``k_deg``.
-        fractions: ``riana_fit_fractions.txt`` content — needs ``concat``,
-            ``protein id``, ``biological_replicate``, ``labeling_time``, ``fs``,
-            ``fs_lower``, ``fs_upper``.
-        model: ``"exponential"`` (default; the nonlinear refit) or ``"linear"``
-            (the φ-space joint fit with a Δk test). Earlier names (``"simple"``,
-            ``"linear simple"``) are accepted.
-        kinetic_kwargs: extra keyword arguments for the exponential curve (none
-            are needed); ``a_0`` / ``a_max`` are pinned 0 / 1.
-        parsimony: ``"unique"`` (default) or ``"isoform"`` (deferred).
-        min_peptides: a protein needs at least this many attributed peptides to
-            be reported.
-        min_points: the refit needs at least this many collapsed ``(t, θ)``
-            points.
-        min_spep: optional Spep (labelling-site) admission gate applied *before*
-            rollup — drop peptides below it (defense-in-depth; the primary gate is
-            at fit, so a manifest rollup already inherits it). Off (``None``) by
-            default. See report 2026-06-28_spep_curation_gate.
-        min_r2: optional peptide R² admission gate applied *before* rollup. When
-            ``None`` (default) no gate is applied — the inverse-variance weighting
-            already down-weights noisy peptides; pass a value (e.g. 0.8) to also
-            hard-exclude peptides whose kinetic fit doesn't follow the model, for
-            an A/B against the unfiltered result. A peptide is kept if
-            ``R² ≥ min_r2`` OR — the flat-curve rescue, so well-measured but
-            slow / low-dynamic-range peptides (low R² only because θ barely moves)
-            survive — if ``R² ≥ rescue_r2 and k_cv < k_cv_max``.
-        k_cv_max / rescue_r2: the relative-uncertainty rescue thresholds (only
-            used when ``min_r2`` is set). ``k_cv`` = ``(ci_hi − ci_lo)/(2·|k|)``,
-            the rate constant's scale-free CV. ``k_cv_max ≤ 0`` disables the
-            rescue; the ``rescue_r2`` floor guards against degenerate k≈0 rail-hits
-            (see :func:`_r2_admitted`).
-        min_fit_points: peptide-level biological-replicate gate — keep only
-            peptidoforms fit on ≥ this many points. ``None`` (default) auto-resolves
-            to **2 for a single-timepoint experiment** (detected from one distinct
-            labeling time) and **off otherwise**. For single-timepoint data R² is
-            degenerate, so curation is this replicate floor + the ``k_cv`` gate
-            (``k_cv_max``), with the R²/rescue machinery bypassed.
-        peptide_admission: how a peptide's per-condition gate result maps across the
-            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"all"``
-            (default) — kept only if it passed in every condition it appears in
-            (paired / common support). ``"own"`` — strictly per-condition. ``"any"`` —
-            passed-in-one ⇒ kept-in-all (anti-conservative). Only bites a
-            multi-condition rollup; single-condition is unaffected.
-        method: ``"weighted"`` (default, the inverse-variance per-timepoint
-            collapse; under ``model="linear"`` with each peptide's band level shared
-            across conditions, :func:`_shared_bands`) or ``"pooled"`` (all
-            peptide×timepoint points, no collapse; pseudoreplication-naive).
-        workers: worker *processes* for the per-protein refit — the parallelism
-            lever for the GIL-bound refit (``curve_fit`` × bootstrap). Each protein
-            gets an independent RNG stream seeded from ``random_state``, so the
-            result is **identical** regardless of ``workers`` (and of completion
-            order).
-        n_boot / boot_ci_pct / random_state: bootstrap CI controls (ignored by
-            ``model="linear"``, whose CIs are analytic).
-        phi_limit / reference_condition / test_condition: only for
-            ``model="linear"`` — the plateau-truncation threshold in φ-space
-            (default −4 ≈ θ 0.98) and the Δk contrast conditions. ``reference`` is
-            the baseline (default the alphabetically-first); naming ``test`` as well
-            contrasts that specific pair even when >2 conditions are present (the
-            multi-group interim — see :func:`riana.core.linear_model.fit_linear_deltak`).
-            ``model="linear simple"`` (the earlier name) is accepted.
-        fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
-            (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
-            ``"mixed"``; every rollup model applies to each (:func:`check_fs_basis`).
-
-    Returns:
-        One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
-        selected estimator's ``k_deg`` / ``ci_lo`` / ``ci_hi`` / ``R_squared``
-        (``NaN`` where it could not fit), ``n_peptides`` / ``n_points``, and the
-        comparison ``peptide_median_k``. ``result.attrs["protein_points"]`` maps
-        each protein to the ``(t_list, fs_list)`` its refit used (GUI curve).
-        ``model="linear"`` instead returns the :data:`PROTEIN_LINEAR_COLUMNS`
-        schema (per-condition φ-slope k + the protein-level Δk test).
+    Protein attribution (``parsimony``), the optional MBR and Spep filters, and the
+    per-condition curation gates mapped across conditions by ``peptide_admission``.
+    The arguments are those of :func:`rollup_proteins`, which calls this first; the
+    peptide-level interaction (:func:`riana.core.peptide_model.fit_peptide_interaction`)
+    starts from the same gated points.
     """
-    model = canonical_model(model)
-    if model in REMOVED_MODELS:
-        raise DataError(removed_model_message(model))
-    if model not in ROLLUP_MODELS:
-        raise DataError(
-            f"unknown rollup model {model!r}; expected one of {list(ROLLUP_MODELS)}")
-    check_fs_basis(fs_basis)
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")
-    if method not in _METHODS:
-        raise DataError(
-            f"method must be one of {list(_METHODS)}, got {method!r}")
     if peptide_admission not in _ADMISSION_POLICIES:
         raise DataError(
             f"peptide_admission must be one of {list(_ADMISSION_POLICIES)}, "
             f"got {peptide_admission!r}")
-    kk = dict(a_0=0.0, a_max=1.0, **dict(kinetic_kwargs or {}))
-
     peptides = _ensure_group_cols(peptides)
     fractions = _ensure_group_cols(fractions)
     if "concat" not in peptides.columns:
@@ -412,6 +324,136 @@ def rollup_proteins(
         admitted = _apply_admission_policy(peptides, own, peptide_admission)
         peptides = _filter_by_curve(peptides, admitted)
         fractions = _filter_by_curve(fractions, admitted)
+    return peptides, fractions
+
+
+def rollup_proteins(
+    peptides: pd.DataFrame,
+    fractions: pd.DataFrame,
+    *,
+    model: str = EXPONENTIAL_MODEL,
+    kinetic_kwargs: Mapping[str, float] | None = None,
+    parsimony: str = "unique",
+    level: str = "protein",
+    min_peptides: int = 2,
+    min_points: int = 3,
+    min_spep: int | None = None,
+    min_r2: float | None = None,
+    k_cv_max: float = 0.2,
+    rescue_r2: float = 0.6,
+    min_fit_points: int | None = None,
+    peptide_admission: str = DEFAULT_ADMISSION,
+    workers: int = 1,
+    n_boot: int = 200,
+    boot_ci_pct: tuple[float, float] = (5.0, 95.0),
+    random_state: int = 1337,
+    phi_limit: float = -4.0,
+    linear_weights: str = "wls",
+    reference_condition: str | None = None,
+    test_condition: str | None = None,
+    exclude_mbr: bool = False,
+    fs_basis: str = "theta",
+    progress_callback: "Callable[[int, int], None] | None" = None,
+) -> pd.DataFrame:
+    """Roll per-peptide fits up to one ``k_deg`` per ``(experiment, condition,
+    protein)`` via the median and the biorep-aware weighted refit.
+
+    Args:
+        peptides: ``riana_fit_peptides.txt`` content — needs ``protein id`` and
+            ``k_deg``.
+        fractions: ``riana_fit_fractions.txt`` content — needs ``concat``,
+            ``protein id``, ``biological_replicate``, ``labeling_time``, ``fs``,
+            ``fs_lower``, ``fs_upper``.
+        model: ``"exponential"`` (default; the nonlinear refit) or ``"linear"``
+            (the φ-space joint fit with a Δk test). Earlier names (``"simple"``,
+            ``"linear simple"``) are accepted.
+        kinetic_kwargs: extra keyword arguments for the exponential curve (none
+            are needed); ``a_0`` / ``a_max`` are pinned 0 / 1.
+        parsimony: ``"unique"`` (default) or ``"isoform"`` (deferred).
+        min_peptides: a protein needs at least this many attributed peptides to
+            be reported.
+        min_points: the refit needs at least this many collapsed ``(t, θ)``
+            points.
+        min_spep: optional Spep (labelling-site) admission gate applied *before*
+            rollup — drop peptides below it (defense-in-depth; the primary gate is
+            at fit, so a manifest rollup already inherits it). Off (``None``) by
+            default. See report 2026-06-28_spep_curation_gate.
+        min_r2: optional peptide R² admission gate applied *before* rollup. When
+            ``None`` (default) no gate is applied — the inverse-variance weighting
+            already down-weights noisy peptides; pass a value (e.g. 0.8) to also
+            hard-exclude peptides whose kinetic fit doesn't follow the model, for
+            an A/B against the unfiltered result. A peptide is kept if
+            ``R² ≥ min_r2`` OR — the flat-curve rescue, so well-measured but
+            slow / low-dynamic-range peptides (low R² only because θ barely moves)
+            survive — if ``R² ≥ rescue_r2 and k_cv < k_cv_max``.
+        k_cv_max / rescue_r2: the relative-uncertainty rescue thresholds (only
+            used when ``min_r2`` is set). ``k_cv`` = ``(ci_hi − ci_lo)/(2·|k|)``,
+            the rate constant's scale-free CV. ``k_cv_max ≤ 0`` disables the
+            rescue; the ``rescue_r2`` floor guards against degenerate k≈0 rail-hits
+            (see :func:`_r2_admitted`).
+        min_fit_points: peptide-level biological-replicate gate — keep only
+            peptidoforms fit on ≥ this many points. ``None`` (default) auto-resolves
+            to **2 for a single-timepoint experiment** (detected from one distinct
+            labeling time) and **off otherwise**. For single-timepoint data R² is
+            degenerate, so curation is this replicate floor + the ``k_cv`` gate
+            (``k_cv_max``), with the R²/rescue machinery bypassed.
+        peptide_admission: how a peptide's per-condition gate result maps across the
+            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"all"``
+            (default) — kept only if it passed in every condition it appears in
+            (paired / common support). ``"own"`` — strictly per-condition. ``"any"`` —
+            passed-in-one ⇒ kept-in-all (anti-conservative). Only bites a
+            multi-condition rollup; single-condition is unaffected.
+        level: ``"protein"`` (default; the inverse-variance per-timepoint collapse,
+            under ``model="linear"`` with each peptide's band level shared across
+            conditions, :func:`_shared_bands`) or ``"peptide"`` (``model="linear"``
+            only; the peptide-level mixed model,
+            :func:`riana.core.peptide_model.fit_peptide_deltak`).
+        workers: worker *processes* for the per-protein refit — the parallelism
+            lever for the GIL-bound refit (``curve_fit`` × bootstrap, or the
+            peptide-level mixed models). Each protein gets an independent RNG stream
+            seeded from ``random_state``, so the result is **identical** regardless of
+            ``workers`` (and of completion order).
+        n_boot / boot_ci_pct / random_state: bootstrap CI controls (ignored by
+            ``model="linear"``, whose CIs are analytic).
+        phi_limit / reference_condition / test_condition: only for
+            ``model="linear"`` — the plateau-truncation threshold in φ-space
+            (default −4 ≈ θ 0.98) and the Δk contrast conditions. ``reference`` is
+            the baseline (default the alphabetically-first); naming ``test`` as well
+            contrasts that specific pair even when >2 conditions are present (the
+            multi-group interim — see :func:`riana.core.linear_model.fit_linear_deltak`).
+            ``model="linear simple"`` (the earlier name) is accepted.
+        fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
+            (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
+            ``"mixed"``; every rollup model applies to each (:func:`check_fs_basis`).
+
+    Returns:
+        One row per ``(experiment, condition, protein)`` — a ``level`` tag, the
+        selected estimator's ``k_deg`` / ``ci_lo`` / ``ci_hi`` / ``R_squared``
+        (``NaN`` where it could not fit), ``n_peptides`` / ``n_points``, and the
+        comparison ``peptide_median_k``. ``result.attrs["protein_points"]`` maps
+        each protein to the ``(t_list, fs_list)`` its refit used (GUI curve).
+        ``model="linear"`` instead returns the :data:`PROTEIN_LINEAR_COLUMNS`
+        schema (per-condition φ-slope k + the protein-level Δk test), and
+        ``level="peptide"`` :data:`PROTEIN_PEPTIDE_COLUMNS`.
+    """
+    model = canonical_model(model)
+    if model in REMOVED_MODELS:
+        raise DataError(removed_model_message(model))
+    if model not in ROLLUP_MODELS:
+        raise DataError(
+            f"unknown rollup model {model!r}; expected one of {list(ROLLUP_MODELS)}")
+    check_fs_basis(fs_basis)
+    if level not in LEVELS:
+        raise DataError(f"level must be one of {list(LEVELS)}, got {level!r}")
+    if level == "peptide" and model != LINEAR_MODEL:
+        raise DataError(
+            f"level 'peptide' fits the linear model at the peptide level; it needs model "
+            f"{LINEAR_MODEL!r} (got {model!r}).")
+    kk = dict(a_0=0.0, a_max=1.0, **dict(kinetic_kwargs or {}))
+    peptides, fractions = gate_peptides(
+        peptides, fractions, parsimony=parsimony, min_spep=min_spep, min_r2=min_r2,
+        k_cv_max=k_cv_max, rescue_r2=rescue_r2, min_fit_points=min_fit_points,
+        peptide_admission=peptide_admission, exclude_mbr=exclude_mbr)
 
     stats = _peptide_stats(peptides, min_peptides=min_peptides)
     # Per-protein data-point census from the (filtered) fraction points: how many
@@ -424,25 +466,25 @@ def rollup_proteins(
 
     if model == LINEAR_MODEL:
         result = _rollup_linear(
-            stats, fractions, method=method, min_peptides=min_peptides,
+            stats, fractions, level=level, min_peptides=min_peptides,
             min_points=min_points, phi_limit=phi_limit,
             linear_weights=linear_weights,
             reference_condition=reference_condition,
-            test_condition=test_condition,
+            test_condition=test_condition, workers=workers,
             progress_callback=progress_callback)
         result.attrs["point_individuals"] = _point_individuals(fractions)
         return result
 
     model_fn = _MODELS[model]
     refit, points = _refit_table(
-        fractions, model_fn=model_fn, kinetic_kwargs=kk, method=method,
+        fractions, model_fn=model_fn, kinetic_kwargs=kk,
         min_peptides=min_peptides, min_points=min_points,
         n_boot=n_boot, boot_ci_pct=boot_ci_pct, random_state=random_state,
         workers=workers, progress_callback=progress_callback,
     )
 
     out = pd.merge(stats, refit, on=_GROUP_KEYS, how="outer")
-    out["method"] = method
+    out["level"] = level
     for col in PROTEIN_COLUMNS:
         if col not in out.columns:
             out[col] = np.nan
@@ -462,44 +504,60 @@ def _rollup_linear(
     stats: pd.DataFrame,
     fractions: pd.DataFrame,
     *,
-    method: str,
+    level: str,
     min_peptides: int,
     min_points: int,
     phi_limit: float,
     reference_condition: str | None,
     test_condition: str | None,
     linear_weights: str = "wls",
+    workers: int = 1,
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
-    """The ``model="linear"`` path — φ-space OLS + cross-condition Δk.
+    """The ``model="linear"`` path — φ-space fit + cross-condition Δk.
 
-    Collapses peptides to ``(condition, t, θ)`` points as the weighted/pooled refit
-    does, except that the weighted collapse first gives each peptide one band level
-    across the conditions (:func:`_shared_bands`), so both sides of a Δk average the
-    same peptides in the same proportions. Then fits each protein's conditions **jointly** in φ = log(1−θ)
-    space (:func:`riana.core.linear_model.fit_linear_deltak`) for a per-condition
-    k and a Δk test. Returns the :data:`PROTEIN_LINEAR_COLUMNS` schema and attaches
-    the collapsed points for the GUI/fractions output (plotted in φ-space).
+    Collapses peptides to ``(condition, t, θ)`` points as the exponential refit does,
+    except that each peptide first gets one band level across the conditions
+    (:func:`_shared_bands`), so both sides of a Δk average the same peptides in the
+    same proportions. ``level="protein"`` then fits each protein's conditions
+    **jointly** in φ = log(1−θ) space (:func:`riana.core.linear_model.
+    fit_linear_deltak`) for a per-condition k and a Δk test (the
+    :data:`PROTEIN_LINEAR_COLUMNS` schema). ``level="peptide"`` fits the peptides'
+    own points instead (:func:`riana.core.peptide_model.fit_peptide_deltak`;
+    :data:`PROTEIN_PEPTIDE_COLUMNS`), and the collapsed points serve only as the
+    display points. Either way the collapsed points are attached for the GUI /
+    fractions output (plotted in φ-space).
     """
-    from riana.core.linear_model import fit_linear_deltak
-
-    if method == "weighted":
-        fractions = _shared_bands(fractions)
-    long = _collapse_long(fractions, method=method, min_peptides=min_peptides)
-    lin = fit_linear_deltak(
-        long, phi_limit=phi_limit, min_points=min_points,
-        weights=linear_weights,
-        reference_condition=reference_condition,
-        test_condition=test_condition,
-        progress_callback=progress_callback)
+    long = _collapse_long(_shared_bands(fractions), method="weighted",
+                          min_peptides=min_peptides)
+    if level == "peptide":
+        from riana.core.peptide_model import fit_peptide_deltak
+        if linear_weights != "wls":
+            _LOGGER.info("--linear-weights %s does not apply to --level peptide (its "
+                         "weights are always (1 − θ̂)²).", linear_weights)
+        lin = fit_peptide_deltak(
+            fractions, reference_condition=reference_condition,
+            test_condition=test_condition, phi_limit=phi_limit,
+            min_peptides=min_peptides, workers=workers,
+            progress_callback=progress_callback)
+        columns = PROTEIN_PEPTIDE_COLUMNS
+    else:
+        from riana.core.linear_model import fit_linear_deltak
+        lin = fit_linear_deltak(
+            long, phi_limit=phi_limit, min_points=min_points,
+            weights=linear_weights,
+            reference_condition=reference_condition,
+            test_condition=test_condition,
+            progress_callback=progress_callback)
+        columns = PROTEIN_LINEAR_COLUMNS
 
     out = pd.merge(stats, lin, on=_GROUP_KEYS, how="right")
-    out["method"] = LINEAR_MODEL
-    for col in PROTEIN_LINEAR_COLUMNS:
+    out["level"] = level
+    for col in columns:
         if col not in out.columns:
             out[col] = np.nan
     result = (
-        out[PROTEIN_LINEAR_COLUMNS]
+        out[columns]
         .sort_values(_GROUP_KEYS)
         .reset_index(drop=True)
     )
@@ -826,7 +884,7 @@ def _peptide_stats(peptides: pd.DataFrame, *, min_peptides: int) -> pd.DataFrame
 
     ``n_peptides`` is the distinct attributed peptides; ``peptide_median_k`` is
     the median of their fitted ``k_deg`` — a trivial comparison column (not the
-    headline estimate; that comes from the refit ``method``).
+    headline estimate; that comes from the protein model).
     """
     if "k_deg" not in peptides.columns:
         raise DataError("peptides input is missing the 'k_deg' column.")
@@ -874,14 +932,13 @@ def _breakdown_stats(fractions: pd.DataFrame) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
-# the protein refit (method = weighted collapse | pooled points)
+# the protein refit (the weighted collapse, then curve_fit)
 # --------------------------------------------------------------------------- #
 def _refit_table(
     fractions: pd.DataFrame,
     *,
     model_fn,
     kinetic_kwargs: dict,
-    method: str,
     min_peptides: int,
     min_points: int,
     n_boot: int,
@@ -894,9 +951,8 @@ def _refit_table(
     ``(experiment, condition, protein)`` → the ``(t_list, fs_list)`` the refit
     was fit on — the substrate for the GUI's per-protein curve.
 
-    ``method="weighted"`` collapses peptides within each (biorep, timepoint) by
-    inverse-variance before fitting; ``method="pooled"`` fits all peptide×
-    timepoint points directly (pseudoreplication). Each protein is an independent
+    Peptides are collapsed within each (biorep, timepoint) by inverse variance
+    before fitting (:func:`_collapse_group`). Each protein is an independent
     work unit; the per-protein ``curve_fit`` × bootstrap is GIL-bound, so
     ``workers`` (process-level) is the parallelism lever. Per-group RNG streams
     keep the result identical regardless of worker count and completion order.
@@ -914,7 +970,7 @@ def _refit_table(
 
     refit_one = partial(
         _refit_one_group, model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
-        method=method, min_points=min_points, n_boot=n_boot,
+        min_points=min_points, n_boot=n_boot,
         boot_ci_pct=boot_ci_pct, random_state=random_state,
     )
 
@@ -924,7 +980,7 @@ def _refit_table(
         # pickled to each worker ONCE via the initializer; only an integer index
         # crosses per task. The per-group RNG makes the result worker-count-
         # independent. Mirrors the fit -W pattern (core/fitting.py).
-        init_args = (groups, model_fn, kinetic_kwargs, method, min_points,
+        init_args = (groups, model_fn, kinetic_kwargs, min_points,
                      n_boot, boot_ci_pct, random_state)
         chunk = max(1, len(groups) // (workers * 8))
         with futures.ProcessPoolExecutor(
@@ -956,33 +1012,21 @@ def _refit_table(
     return table, points
 
 
-def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, list, list]:
+def _collapse_group(grp: pd.DataFrame) -> tuple[list, list, list, list, list]:
     """Collapse one protein group's peptide θ into ``(t_list, fs_list, var_list,
     df_list, br_list)`` points — the θ (unchanged), its per-point variance
-    ``Var(θ_i)``, the variance estimate's effective df (for the WLS-Var / eBayes
-    moderation), and each point's ``biological_replicate``.
+    ``Var(θ_i)``, the variance estimate's effective df (informational), and each
+    point's ``biological_replicate``.
 
-    ``method="pooled"`` keeps every peptide×timepoint θ (pseudoreplication; each
-    point's var is that peptide's own PI-width variance, df ≈ its fit-point count,
-    br its peptide's replicate); ``method="weighted"`` collapses peptides within each
-    (biorep, timepoint) by inverse variance (:func:`_weighted_theta`), so each point's
-    br is that cell's replicate. Shared by the nonlinear refit (:func:`_refit_one_group`)
+    Peptides are collapsed within each (biorep, timepoint) by inverse variance
+    (:func:`_weighted_theta`), so each point's br is that cell's replicate. Shared by
+    the nonlinear refit (:func:`_refit_one_group`)
     and the linear collapse (:func:`_collapse_long`). ``br_list`` lets the roll-up
     fractions record which replicate each collapsed point came from (a within-
     ``(experiment, condition, timepoint)`` index; see build_rollup_fractions).
     """
     # Per-peptide σ-df ≈ the peptide's fit-point count (its residual-bootstrap df).
     npts = grp.groupby("concat")["labeling_time"].nunique().to_dict()
-    if method == "pooled":
-        fs = grp["fs"].to_numpy(dtype=float)
-        t = grp["labeling_time"].to_numpy(dtype=float)
-        sig = (grp["fs_upper"].to_numpy(float) - grp["fs_lower"].to_numpy(float)) / _PI_SPAN_SIGMA
-        var = np.where(np.isfinite(sig) & (sig > 0), sig ** 2, np.nan)
-        df = np.array([float(npts.get(c, 1)) for c in grp["concat"].to_numpy()])
-        br = grp["biological_replicate"].to_numpy()
-        keep = np.isfinite(fs) & np.isfinite(t)
-        return (t[keep].tolist(), fs[keep].tolist(),
-                var[keep].tolist(), df[keep].tolist(), br[keep].tolist())
     t_list, fs_list, var_list, df_list, br_list = [], [], [], [], []
     for (br, t), cell in grp.groupby(
         ["biological_replicate", "labeling_time"], sort=False
@@ -1040,17 +1084,22 @@ def _shared_bands(fractions: pd.DataFrame) -> pd.DataFrame:
 
 
 def _collapse_long(
-    fractions: pd.DataFrame, *, method: str, min_peptides: int
+    fractions: pd.DataFrame, *, min_peptides: int, method: str = "weighted"
 ) -> pd.DataFrame:
     """Long table of collapsed ``(experiment, condition, protein, labeling_time,
     theta)`` points — the substrate the linear (φ-space) model fits, built with
-    the *same* collapse the weighted/pooled refit uses (:func:`_collapse_group`).
+    the *same* collapse the exponential refit uses (:func:`_collapse_group`).
+
+    ``method`` is accepted only as ``"weighted"`` (the evaluation scripts in
+    ``tests/benchmark`` wrap this function with that keyword; ``pooled`` was removed).
     """
+    if method != "weighted":
+        raise DataError(f"collapse method {method!r} was removed; only 'weighted' remains.")
     rows = []
     for (exp, cond, prot), grp in fractions.groupby(_GROUP_KEYS, sort=False):
         if grp["concat"].nunique() < min_peptides:
             continue
-        t_list, fs_list, var_list, df_list, br_list = _collapse_group(grp, method)
+        t_list, fs_list, var_list, df_list, br_list = _collapse_group(grp)
         for t, fs, var, df, br in zip(t_list, fs_list, var_list, df_list, br_list):
             rows.append({"experiment": exp, "condition": cond, "protein": prot,
                          "labeling_time": float(t), "theta": float(fs),
@@ -1067,7 +1116,6 @@ def _refit_one_group(
     *,
     model_fn,
     kinetic_kwargs: dict,
-    method: str,
     min_points: int,
     n_boot: int,
     boot_ci_pct: tuple[float, float],
@@ -1082,7 +1130,7 @@ def _refit_one_group(
     keys, grp = item
     n_rep = int(grp["biological_replicate"].nunique())
     n_tp = int(grp["labeling_time"].nunique())
-    t_list, fs_list, var_list, df_list, br_list = _collapse_group(grp, method)
+    t_list, fs_list, var_list, df_list, br_list = _collapse_group(grp)
     if len(t_list) < min_points:
         return keys, None, None
     fit = _fit_kdeg(
@@ -1112,12 +1160,12 @@ _REFIT_WORKER_STATE: dict[str, object] = {}
 
 
 def _init_refit_worker(
-    groups, model_fn, kinetic_kwargs, method, min_points,
+    groups, model_fn, kinetic_kwargs, min_points,
     n_boot, boot_ci_pct, random_state,
 ) -> None:
     _REFIT_WORKER_STATE.update(
         groups=groups, model_fn=model_fn, kinetic_kwargs=kinetic_kwargs,
-        method=method, min_points=min_points, n_boot=n_boot,
+        min_points=min_points, n_boot=n_boot,
         boot_ci_pct=boot_ci_pct, random_state=random_state,
     )
 
@@ -1126,7 +1174,7 @@ def _refit_one_group_worker(index: int):
     s = _REFIT_WORKER_STATE
     return _refit_one_group(
         s["groups"][index], model_fn=s["model_fn"],
-        kinetic_kwargs=s["kinetic_kwargs"], method=s["method"],
+        kinetic_kwargs=s["kinetic_kwargs"],
         min_points=s["min_points"], n_boot=s["n_boot"],
         boot_ci_pct=s["boot_ci_pct"], random_state=s["random_state"],
     )

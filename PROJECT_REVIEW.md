@@ -1,11 +1,16 @@
 # Riana — Roadmap & TODO (v1.2.0 forward)
 
 > **Status (2026-11-16):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
-> merged back). Active development is on the **`1.2.0` branch**. **Now (decided 2026-11-16):**
-> the rollup redesign. C (shared band levels) is the `linear` collapse (shipped). Next come the
-> CLI cleanup (admission default `all`, `--model exponential|linear|calibration`, guan /
-> fornasiero removed), then `--level peptide` = E+time / EJ+time. See the §3 box *Δk peptide
-> collapse* and evaluation report `reports/2026-11-14_wls_var_D_E_evaluation.md` §5. **This document is the
+> merged back). Active development is on the **`1.2.0` branch**. **The rollup redesign was
+> built 2026-11-16:**
+> - C (shared band levels) is the `linear` collapse;
+> - admission defaults to `all`;
+> - the models are `exponential`, `linear` and `calibration`, with guan / fornasiero removed;
+> - `--level peptide` is E+time / EJ+time.
+>
+> Open from it: the ATR–EDL time-split reading, and the Δk residual-variance moderation (§3
+> box *Δk peptide collapse*; evaluation report `reports/2026-11-14_wls_var_D_E_evaluation.md`
+> §5, §9). **This document is the
 > forward-looking roadmap — it lists OPEN work only.** The as-shipped record lives in
 > `CHANGELOG.md`; design decisions / point-in-time findings live in the `memory/` files
 > and `reports/*.md`. §2 and the M1–M4 pointers are kept as collapsed anchors because
@@ -165,13 +170,18 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   deciding data in report §5 Q3); test per-protein Δk as is (report §9 item 1). **2026-11-16:**
   EDL / SOL evaluated and E+time rerun on Powell + GLS (report §4b). E vs E+time is settled for
   E+time. **Decided 2026-11-16 (report §5 Q3): both steps.**
-  - **C: shipped.** It is the `linear` collapse, `protein._shared_bands`.
-  - **To build:**
-    - `--level protein|peptide`, replacing `--method`. `peptide` = E+time under `linear` only,
-      with EJ+time for `--interaction` and automatic animal pairing. `pooled` is dropped.
-    - `--peptide-admission any|own|all`, with a default of `all` (`auto` is gone).
-    - `--model exponential|linear|calibration`, keeping `simple` as an alias.
-    - guan / fornasiero, `--kr`, `--rp` and rollup's `--kp` removed.
+  - **Built 2026-11-16** (CHANGELOG):
+    - C is the `linear` collapse (`protein._shared_bands`).
+    - `--peptide-admission any|own|all`, with a default of `all`.
+    - `--model exponential|linear|calibration`; guan / fornasiero removed.
+    - `--level protein|peptide`: `peptide` is E+time under `linear`
+      (`riana.core.peptide_model`), with EJ+time for `--interaction` and automatic animal
+      pairing. `pooled` is dropped.
+  - **Still open:**
+    - The ATR–EDL time-split reading (1.26; report §9).
+    - Longitudinal designs (E+time falls back to E there; report §6).
+    - The f route for the peptide level, which was not evaluated (report §6).
+    - Whether `--level peptide` should become the default after more designs.
 
   *Direction (user,
   2026-11-13):* D (random-effects collapse, shared levels) as the `wls-var` replacement, E

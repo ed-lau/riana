@@ -172,7 +172,7 @@ Every output file starts with a provenance header (RIANA version, settings, inpu
 | `riana_fit_peptides.txt` | Per peptidoform: `k_deg`, its confidence interval, R², and point counts. |
 | `riana_fit_fractions.txt` | Per peptidoform and timepoint: the fraction of new protein (θ, column `fs`) with its prediction interval. |
 | `riana_rollup_proteins.txt` | Per protein (and experiment, condition): `k_deg`, and `delta_k` / `delta_k_p_adj` under `linear`. |
-| `riana_rollup_fractions.txt` | The collapsed per-replicate, per-timepoint θ each protein was fitted on. |
+| `riana_rollup_fractions.txt` | The collapsed per-replicate, per-timepoint θ each protein was fitted on (with `--level peptide`, the display points). |
 | `riana_rollup_interaction.txt` | With `--interaction`: per-tissue k and Δk from the joint fit, and the interaction tests. |
 
 Half-life is `ln(2) / k_deg`. Every option is listed in the [CLI Reference](reference.qmd).

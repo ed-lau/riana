@@ -189,7 +189,7 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
 
     proteins, points = run_rollup(
         str(fit_dir), "exponential", "unique", 1, 3)
-    assert {"protein", "method", "k_deg", "peptide_median_k"} <= set(proteins.columns)
+    assert {"protein", "level", "k_deg", "peptide_median_k"} <= set(proteins.columns)
     # Each synthetic peptide maps to its own protein (proteotypic) -> 5 proteins.
     assert len(proteins) == len(_TEST_PEPTIDES)
     assert int(proteins["k_deg"].notna().sum()) >= 1
@@ -286,7 +286,7 @@ def _build_manifest_project(tmp_path):
         str(tmp_path), "exponential", "unique", 1, 3)
     rprov = make_provenance(
         {"model": "exponential"}, id_source=str(mf),
-        extra={"model": "exponential", "method": "weighted", "parsimony": "unique"})
+        extra={"model": "exponential", "level": "protein", "parsimony": "unique"})
     rprot = tmp_path / "riana_rollup_proteins.txt"
     write_dataframe_tsv(rprot, result, rprov, include_index=False,
                         float_format=ESTIMATE_FLOAT_FORMAT)
@@ -331,7 +331,7 @@ def test_load_rollup_results_reconstructs_table_and_points(tmp_path):
     mf = _build_manifest_project(tmp_path)
     proteins, points, header = load_rollup_results(str(mf))
     assert {"protein", "k_deg"} <= set(proteins.columns)
-    assert header.get("model") == "exponential" and header.get("method") == "weighted"
+    assert header.get("model") == "exponential" and header.get("level") == "protein"
     assert len(points) >= 1
     row = proteins.iloc[0]
     assert (row["experiment"], row["condition"], row["protein"]) in points
@@ -633,7 +633,7 @@ def test_protein_tab_forks_on_different_output_dir(main_window, tmp_path):
     fork = tmp_path / "fork"
     params = tab.build_params()
     params.update(manifest=str(mf), out_dir=str(fork), model="exponential",
-                  method="weighted", parsimony="unique")
+                  level="protein", parsimony="unique")
     tab._result_df = result
     tab._write_output(result, params)
 
@@ -654,7 +654,7 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
     tab = main_window.protein_tab
     result = pd.DataFrame({
         "experiment": [""], "condition": [""], "protein": ["P1"],
-        "method": ["weighted"], "n_peptides": [3], "n_points": [4],
+        "level": ["protein"], "n_peptides": [3], "n_points": [4],
         "k_deg": [0.42], "ci_lo": [0.3], "ci_hi": [0.5], "R_squared": [0.98],
         "peptide_median_k": [0.40],
     })
@@ -715,7 +715,7 @@ def test_protein_tab_linear_plots_phi_space(main_window):
     tab.model_combo.setCurrentText("linear")
     result = pd.DataFrame({
         "experiment": ["e", "e"], "condition": ["control", "atrium"],
-        "protein": ["P1", "P1"], "method": ["linear"] * 2,
+        "protein": ["P1", "P1"], "level": ["protein"] * 2,
         "n_peptides": [3, 3], "n_points": [5, 5],
         "k_deg": [0.05, 0.10], "ci_lo": [0.04, 0.09], "ci_hi": [0.06, 0.11],
         "R_squared": [0.98, 0.98], "peptide_median_k": [0.05, 0.10],
@@ -1329,7 +1329,7 @@ def test_protein_row_selection_maps_through_sorted_order(main_window):
     tab = main_window.protein_tab
     result = pd.DataFrame({
         "experiment": ["", ""], "condition": ["", ""], "protein": ["P1", "P2"],
-        "method": ["weighted", "weighted"], "n_peptides": [3, 3],
+        "level": ["protein", "protein"], "n_peptides": [3, 3],
         "n_points": [4, 4], "k_deg": [0.2, 0.8], "ci_lo": [0.1, 0.7],
         "ci_hi": [0.3, 0.9], "R_squared": [0.98, 0.97],
         "peptide_median_k": [0.2, 0.8],
@@ -1583,3 +1583,31 @@ def test_protein_tab_writes_and_reloads_the_interaction(main_window, tmp_path):
     assert loaded is not None and len(loaded) == len(table)
     assert (int_header["interaction_reference"], int_header["interaction_test"]) == (
         "control", "KO")
+
+
+def test_protein_tab_level_is_linear_only(main_window):
+    """The Level row shows only for the linear model; build_params sends 'protein'
+    for the exponential model whatever the combo says."""
+    tab = main_window.protein_tab
+    tab.model_combo.setCurrentText("linear")
+    assert tab.level_combo.isVisibleTo(tab)
+    assert tab.build_params()["level"] == "protein"           # the default
+    tab.level_combo.setCurrentText("peptide")
+    assert tab.build_params()["level"] == "peptide"
+    tab.model_combo.setCurrentText("exponential")
+    assert not tab.level_combo.isVisibleTo(tab)
+    assert tab.build_params()["level"] == "protein"
+
+
+def test_run_peptide_interaction_task(tmp_path):
+    """The GUI's peptide-level interaction task gates the fit outputs as the rollup
+    does and returns the joint model's table with the animal key."""
+    from riana.gui.tasks import run_peptide_interaction
+    from tests.test_cli import _multi_tissue_fit_dir
+
+    fit_dir = _multi_tissue_fit_dir(tmp_path, individual=True)
+    table, key = run_peptide_interaction(
+        str(fit_dir), "unique", 2, None, 0.8, 0.2, 0.6, "all", "control", "KO")
+    assert key == "individual"
+    assert set(table["experiment"]) == {"LA", "LV"}
+    assert {"random_effects", "interaction_p_adj"} <= set(table.columns)

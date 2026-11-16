@@ -152,8 +152,8 @@ passes in every condition, so the conditions rest on the same peptides (`--pepti
 the default; `own` keeps it wherever it passes, `any` everywhere once it passes somewhere).
 
 **Protein k.** Within each biological replicate and timepoint, the peptides' θ are combined by
-inverse-variance weighting, and k is refitted on those points (`--method weighted`; `pooled` fits
-every peptide point instead). The median of the peptides' k is reported alongside.
+inverse-variance weighting, and k is refitted on those points (`--level protein`, the default). The
+median of the peptides' k is reported alongside.
 
 ### Comparing conditions (`linear`)
 
@@ -169,6 +169,22 @@ each peptide carries one precision level across the conditions (its level pooled
 change over time within a condition is kept), so both conditions average the same peptides in
 the same proportions. With levels taken separately per condition, peptides that differ in
 apparent k could produce a Δk that is not turnover.
+
+**Peptide level (`--level peptide`).** Instead of collapsing the peptides, this fits one mixed
+model per protein to the peptides' own points:
+$$\varphi = -(k_c + b_p)\,t + u_\text{time}\,t + v_\text{animal}\,t + \varepsilon$$
+with a fixed slope per condition $k_c$, fixed peptide slope offsets $b_p$ (summing to zero, shared
+by the conditions, so a peptide's own offset cannot enter Δk), and random slopes per labeling time
+(shared by every sample taken then) and per animal. When the same animal carries both conditions
+(e.g. two tissues of one mouse, with `characteristics[individual]` in the SDRF), the animal's
+shared part cancels from Δk: the comparison is paired, detected from the data. Points are weighted
+as in the protein-level fit. In the evaluation on real nulls and a calibrated simulation it held
+the false-positive rate and had more power than the collapse (about 1.1× at equal size), at the
+cost of run time (about a minute for a 1,000-protein, four-tissue project with 14 workers). The
+table adds the Δk degrees of freedom, the number of animals, whether the test was paired, which
+random effects were fitted (`time`; `animal` when an animal is sampled at several times or there
+are fewer than three times; `none` as the last fallback) and their SDs. `riana_rollup_fractions.txt`
+still holds the collapsed points, for display.
 
 ### Tissues of the same animals (`--interaction`)
 
@@ -187,6 +203,12 @@ the evidence. The animal is the SDRF's `characteristics[individual]`, else condi
 
 The fit matches R's `nlme` and `lme4`/`lmerTest` on reference data. In the desktop app, check
 *Interaction* on the Protein tab.
+
+With `--level peptide` the joint fit runs on the peptides' own points, with peptide offsets
+within each tissue and random slopes per labeling time, animal, animal × tissue and tissue ×
+labeling time. Its tests use containment degrees of freedom. On the ATF6 permutation null it held
+the false-positive rate on both scales, where the collapsed fit is close to the bound on the ratio
+scale and above it on the additive scale.
 
 
 :::{.callout-tip}

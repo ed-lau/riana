@@ -897,13 +897,20 @@ def rollup(
         "projects before full all-pairwise. NOTE: the joint fit still pools the "
         "residual variance over ALL conditions in the data, so scope the SDRF "
         "conditions to the ones you mean to compare."),
-    method: str = typer.Option(
-        "weighted", "--method",
-        help="Protein estimator. 'weighted' (default): biorep-aware per-timepoint "
-        "inverse-variance collapse, then one refit (pseudoreplication-safe). "
-        "'pooled': fit all peptide×timepoint points directly (pseudoreplication; "
-        "for comparison). The median of peptide k is always carried as "
-        "peptide_median_k for reference."),
+    level: str = typer.Option(
+        "protein", "--level",
+        help="What the protein model is fitted to. 'protein' (default): the peptides' "
+        "θ collapsed per biological replicate and timepoint by inverse variance, then "
+        "one fit (under 'linear', each peptide keeps one precision level across "
+        "conditions). 'peptide' (--model linear only): a mixed model on the peptides' "
+        "own points — peptide slope offsets plus random slopes for labeling time and "
+        "animal (paired automatically when the same characteristics[individual] carries "
+        "both conditions); with --interaction, the matching joint model. Slower; adds "
+        "delta_k_df, n_animals, paired, random_effects, sigma_time and sigma_animal. "
+        "The median of peptide k is always carried as peptide_median_k."),
+    method: Optional[str] = typer.Option(
+        None, "--method", hidden=True,
+        help="Removed; use --level. 'weighted' is --level protein."),
     parsimony: str = typer.Option(
         "unique", "--parsimony",
         help="Protein attribution at summarize time. 'unique' (default): only "
@@ -993,7 +1000,9 @@ def rollup(
         "the joint fit, the interaction test on the ratio scale (k_test/k_reference; "
         "primary) and on the additive scale, and the mean Δk across experiments, each "
         "BH-adjusted across proteins. Compares --reference-condition with "
-        "--test-condition (or the other condition when there are exactly two)."),
+        "--test-condition (or the other condition when there are exactly two). With "
+        "--level peptide the joint fit runs on the peptide points, with random slopes "
+        "for labeling time, animal, animal × experiment and experiment × time."),
     out: Path = typer.Option(
         Path("."), "-o", "--out", help="Output directory [default: .]."),
 ) -> None:
@@ -1056,6 +1065,19 @@ def rollup(
                     f"{p.name} not found in {fit_dir}. Run `riana fit` first.")
         id_source = str(fit_dir)
 
+    renamed_method = None
+    if method is not None:
+        if method != "weighted":
+            raise typer.BadParameter(
+                f"--method {method} was removed in Riana 1.2.0 (every peptide point as "
+                "an independent replicate overstates the evidence). Use --level "
+                "protein (the collapse, the old 'weighted') or --level peptide (a "
+                "peptide-level mixed model, --model linear).", param_hint="--method")
+        level, renamed_method = "protein", method
+    from riana.core.protein import LEVELS
+    if level not in LEVELS:
+        raise typer.BadParameter(
+            f"--level must be one of {list(LEVELS)}, got {level!r}.", param_hint="--level")
     if test_condition and not reference_condition:
         raise typer.BadParameter(
             "--test-condition requires --reference-condition (the baseline of the "
@@ -1067,6 +1089,10 @@ def rollup(
     from riana.core.protein import canonical_model, check_fit_model, fit_basis_header
     renamed_from = model if canonical_model(model) != model else None
     model = canonical_model(model)
+    if level == "peptide" and model != "linear":
+        raise typer.BadParameter(
+            f"--level peptide fits the linear model at the peptide level; add --model "
+            f"linear (got {model!r}).", param_hint="--level")
     try:
         check_fit_model(frac_path)
     except DataError as exc:
@@ -1078,7 +1104,10 @@ def rollup(
     os.makedirs(out, exist_ok=True)
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
-    logger.info(f"rollup (method={method}, parsimony={parsimony}, model={model})")
+    logger.info(f"rollup (level={level}, parsimony={parsimony}, model={model})")
+    if renamed_method is not None:
+        logger.warning("--method weighted is now --level protein; --method will be "
+                       "removed in a later release.")
     if renamed_from is not None:
         logger.warning("--model %r is now %r; the old name will be removed in a later "
                        "release.", renamed_from, model)
@@ -1108,19 +1137,20 @@ def rollup(
             model, experiment, fractions, reference_condition, test_condition)
     from riana.progress import ProgressReporter
     progress = ProgressReporter(0, "rollup", logger)
+    # Attribution + curation, shared by the rollup and the peptide-level interaction.
+    gate_kw = dict(
+        parsimony=parsimony, min_spep=min_spep, min_r2=min_r2, k_cv_max=float(k_cv),
+        rescue_r2=float(rescue_r2), min_fit_points=min_fit_points,
+        peptide_admission=str(peptide_admission), exclude_mbr=bool(exclude_mbr))
     try:
         result = rollup_proteins(
-            peptides, fractions, model=model, method=method,
-            parsimony=parsimony, min_peptides=int(min_peptides),
-            min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
-            k_cv_max=float(k_cv), rescue_r2=float(rescue_r2),
-            min_fit_points=min_fit_points, peptide_admission=str(peptide_admission),
+            peptides, fractions, model=model, level=level,
+            min_peptides=int(min_peptides), min_points=int(min_points),
             workers=int(workers),
             phi_limit=float(phi_limit), linear_weights=str(linear_weights),
             reference_condition=reference_condition,
-            test_condition=test_condition,
-            exclude_mbr=bool(exclude_mbr), fs_basis=fs_basis,
-            progress_callback=progress,
+            test_condition=test_condition, fs_basis=fs_basis,
+            progress_callback=progress, **gate_kw,
         )
         progress.close()
     except (DataError, NotImplementedError) as exc:
@@ -1131,7 +1161,7 @@ def rollup(
         "model": model, "parsimony": parsimony,
         "min_peptides": min_peptides, "min_points": min_points,
         "min_fit_points": min_fit_points, "peptide_admission": peptide_admission,
-        "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,
+        "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "level": level,
         "phi_limit": phi_limit, "linear_weights": linear_weights,
         "reference_condition": reference_condition,
         "test_condition": test_condition}
@@ -1143,7 +1173,7 @@ def rollup(
         id_source=id_source,
         # fs_basis / k_p_applied describe the input, not a setting: header only,
         # outside the config hash.
-        extra={"method": method, "parsimony": parsimony, "model": model,
+        extra={"level": level, "parsimony": parsimony, "model": model,
                **basis_extra},
     )
     write_dataframe_tsv(out_path, result, provenance, include_index=False,
@@ -1163,19 +1193,30 @@ def rollup(
         written.append(frac_path)
 
     # --interaction: the experiment × condition test, a joint random-animal fit per
-    # protein over the same collapsed points (riana.core.interaction_model).
+    # protein — over the same collapsed points at --level protein
+    # (riana.core.interaction_model), over the gated peptide points at --level peptide
+    # (riana.core.peptide_model).
     if interaction:
         if rollup_fractions.empty:
             logger.warning("--interaction: no rollup points to fit; skipping.")
         else:
-            from riana.core.interaction_model import fit_interaction
             int_progress = ProgressReporter(0, "interaction", logger)
-            inter = fit_interaction(
-                rollup_fractions.rename(columns={"fs": "theta"}),
-                reference_condition=int_ref, test_condition=int_test,
-                phi_limit=float(phi_limit), weights=str(linear_weights),
-                workers=int(workers),
-                progress_callback=int_progress)
+            if level == "peptide":
+                from riana.core.peptide_model import fit_peptide_interaction
+                from riana.core.protein import gate_peptides
+                _, gated = gate_peptides(peptides, fractions, **gate_kw)
+                inter = fit_peptide_interaction(
+                    gated, reference_condition=int_ref, test_condition=int_test,
+                    phi_limit=float(phi_limit), min_peptides=int(min_peptides),
+                    workers=int(workers), progress_callback=int_progress)
+            else:
+                from riana.core.interaction_model import fit_interaction
+                inter = fit_interaction(
+                    rollup_fractions.rename(columns={"fs": "theta"}),
+                    reference_condition=int_ref, test_condition=int_test,
+                    phi_limit=float(phi_limit), weights=str(linear_weights),
+                    workers=int(workers),
+                    progress_callback=int_progress)
             int_progress.close()
             inter_path = Path(out) / "riana_rollup_interaction.txt"
             # How animals were identified is a property of the data, not a setting:
@@ -1219,7 +1260,7 @@ def rollup(
 
     n_fit = int(result["k_deg"].notna().sum())
     logger.info(
-        f"{len(result)} proteins ({method}); {n_fit} with a fitted k_deg")
+        f"{len(result)} proteins ({level} level); {n_fit} with a fitted k_deg")
     logger.handlers.clear()
 
 
