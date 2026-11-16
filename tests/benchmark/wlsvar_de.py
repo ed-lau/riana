@@ -125,7 +125,7 @@ def _animal_keys(g: pd.DataFrame) -> np.ndarray:
     comp = ("c:" + g.condition.astype(str) + "|" + g.labeling_time.astype(str) + "|"
             + g.biological_replicate.astype(str))
     if "individual" in g:
-        named = g.individual.map(protein.individual_label)
+        named = g.individual.map(protein.individual_label).astype(str)   # empty g: keep str
         return np.where(named != "", "i:" + named, comp)
     return comp.to_numpy()
 
@@ -221,9 +221,10 @@ def fit_E_protein(g: pd.DataFrame, ref: str, test: str, band: bool,
 def _fit_E_chunk(args):
     items, ref, test, band, time, *rest = args
     mult = bool(rest and rest[0])
+    powell = rest[1] if len(rest) > 1 else None
     out = []
     for (exp, prot), g in items:
-        r = (fit_E_time_protein(g, ref, test, band) if time
+        r = (fit_E_time_protein(g, ref, test, band, powell) if time
              else fit_E_protein(g, ref, test, band, mult))
         if r is not None:
             out.append(dict(experiment=exp, protein=prot, **r))
@@ -232,7 +233,7 @@ def _fit_E_chunk(args):
 
 def variant_E(seen: dict, ref: str = REF, test: str = TEST, band: bool = False,
               workers: int | None = None, time: bool = False,
-              mult: bool = False) -> pd.DataFrame:
+              mult: bool = False, powell: bool | None = None) -> pd.DataFrame:
     f = shared_bands(seen["frame"]) if band else seen["frame"].copy()
     f = f[np.isfinite(f.fs) & f.condition.astype(str).isin([ref, test])].copy()
     f["sig"] = _sigma(f)
@@ -242,10 +243,11 @@ def variant_E(seen: dict, ref: str = REF, test: str = TEST, band: bool = False,
     npc = f.groupby(["experiment", "condition", "protein"]).concat.transform("nunique")
     f = f[npc >= seen["min_peptides"]]
     items = list(f.groupby(["experiment", "protein"], sort=False))
-    workers = workers or max(1, (os.cpu_count() or 2) - 4)
+    workers = (workers or int(os.environ.get("WLSVAR_WORKERS", "0"))
+               or max(1, (os.cpu_count() or 2) - 4))
     chunks = [items[i::workers * 4] for i in range(workers * 4)]
     with ProcessPoolExecutor(workers) as ex:
-        rows = [r for part in ex.map(_fit_E_chunk, [(c, ref, test, band, time, mult)
+        rows = [r for part in ex.map(_fit_E_chunk, [(c, ref, test, band, time, mult, powell)
                                                      for c in chunks]) for r in part]
     out = pd.DataFrame(rows)
     if len(out):
@@ -260,6 +262,9 @@ VARIANTS = {
     "E+band": lambda s, ref=REF, test=TEST: variant_E(s, ref, test, band=True),
     "E+time": lambda s, ref=REF, test=TEST: variant_E(s, ref, test, band=False, time=True),
     "E+band+time": lambda s, ref=REF, test=TEST: variant_E(s, ref, test, band=True, time=True),
+    # E+time as an implementation would fit it: Powell + the GLS covariance (§8 of the report)
+    "E+time-powell": lambda s, ref=REF, test=TEST: variant_E(s, ref, test, band=False,
+                                                             time=True, powell=True),
     "Em": lambda s, ref=REF, test=TEST: variant_E(s, ref, test, band=False, mult=True),
 }
 
@@ -505,7 +510,8 @@ def interaction_E(seen: dict, ref: str = REF, test: str = TEST,
     npc = f.groupby(["experiment", "condition", "protein"]).concat.transform("nunique")
     f = f[npc >= seen["min_peptides"]]
     items = list(f.groupby("protein", sort=False))
-    workers = workers or max(1, (os.cpu_count() or 2) - 4)
+    workers = (workers or int(os.environ.get("WLSVAR_WORKERS", "0"))
+               or max(1, (os.cpu_count() or 2) - 4))
     chunks = [items[i::workers * 4] for i in range(workers * 4)]
     with ProcessPoolExecutor(workers) as ex:
         rows = [r for part in ex.map(_fit_EJ_chunk, [(c, ref, test, time) for c in chunks])
@@ -521,7 +527,8 @@ def interaction_E(seen: dict, ref: str = REF, test: str = TEST,
 
 # --- E with a timepoint term ---------------------------------------------------------------
 
-def fit_E_time_protein(g: pd.DataFrame, ref: str, test: str, band: bool) -> dict | None:
+def fit_E_time_protein(g: pd.DataFrame, ref: str, test: str, band: bool,
+                       powell: bool | None = None) -> dict | None:
     """E plus a random slope per labeling time, shared by every animal (both conditions)
     sampled then: the timepoint's common deviation from the line (curve shape, a shared
     precursor history, a batch), which cancels from Δk when both conditions are sampled at
@@ -575,7 +582,8 @@ def fit_E_time_protein(g: pd.DataFrame, ref: str, test: str, band: bool) -> dict
     from statsmodels.regression.mixed_linear_model import MixedLM
     # WLSVAR_ET_OPT=powell: Powell + the GLS covariance, as EJ+time (the implementation
     # proposal); the default (BFGS + the Hessian covariance) is what the cached results used
-    powell = os.environ.get("WLSVAR_ET_OPT", "") == "powell"
+    if powell is None:
+        powell = os.environ.get("WLSVAR_ET_OPT", "") == "powell"
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")

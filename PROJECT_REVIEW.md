@@ -1,9 +1,10 @@
 # Riana — Roadmap & TODO (v1.2.0 forward)
 
-> **Status (2026-11-15):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
-> merged back). Active development is on the **`1.2.0` branch**. **Next:** the peptide-level Δk
-> model (E or E+time) once the EDL / SOL search lands — §3 box *Δk peptide collapse*,
-> evaluation report `reports/2026-11-14_wls_var_D_E_evaluation.md` §5. **This document is the
+> **Status (2026-11-16):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
+> merged back). Active development is on the **`1.2.0` branch**. **Next:** the user's decision
+> between C (shared proportions) and E+time (the peptide-level model) for the Δk fix, now that
+> EDL / SOL is evaluated — §3 box *Δk peptide collapse*, evaluation report
+> `reports/2026-11-14_wls_var_D_E_evaluation.md` §4b and §5. **This document is the
 > forward-looking roadmap — it lists OPEN work only.** The as-shipped record lives in
 > `CHANGELOG.md`; design decisions / point-in-time findings live in the `memory/` files
 > and `reports/*.md`. §2 and the M1–M4 pointers are kept as collapsed anchors because
@@ -160,8 +161,10 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   **Decided (user, 2026-11-15):** remove `wls-var` now; do not build D; build the peptide-level
   model after the EDL / SOL data drop (the combined ATR / LVE / EDL / SOL search), with **E vs
   E+time still to be debated** (simplicity vs calibration and power; trade-off table and the
-  deciding data in report §5 Q3); test per-protein Δk as is (report §9 item 1). Before building:
-  rerun T1, T2 and the simulation with E+time on Powell + GLS (report §9 item 4). *Direction (user,
+  deciding data in report §5 Q3); test per-protein Δk as is (report §9 item 1). **2026-11-16:**
+  EDL / SOL evaluated and E+time rerun on Powell + GLS (report §4b). E vs E+time is settled for
+  E+time. **C vs E+time awaits the user's decision**; the report recommends C in 1.2.0, then
+  E+time / EJ+time as the peptide-level method (report §5 Q3). *Direction (user,
   2026-11-13):* D (random-effects collapse, shared levels) as the `wls-var` replacement, E
   (peptide-level mixed model) later as the main route; D upgrades `--method weighted`, E replaces
   pseudoreplicated `pooled` (as a new method name). Refinements in manual §8.1 "Direction";

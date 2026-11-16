@@ -4,7 +4,8 @@
 [scope](2026-11-13_wls_var_and_collapse_plan.md)). User decisions 2026-11-15 (§5): remove
 `wls-var` now; do not build D; build the peptide-level model after the EDL / SOL data, with E
 vs E+time still to be settled (§5 Q3); test per-protein Δk as is under whole-group shifts (§9
-item 1).** Prototypes: `tests/benchmark/wlsvar_*.py`. Detailed log, every table and its command:
+item 1). Updated 2026-11-16 with EDL / SOL and E+time on Powell (§4b); C vs E+time awaits the
+user's decision (§5 Q3).** Prototypes: `tests/benchmark/wlsvar_*.py`. Detailed log, every table and its command:
 scope §8. Background (candidates, mechanisms, the decision rule):
 [Δk manual](2026-11-12_deltak_inference_manual.md) §8.1.
 
@@ -41,8 +42,15 @@ scope §8. Background (candidates, mechanisms, the decision rule):
   - Every candidate that holds the null makes 0 BH calls on either test.
   - The ATF6 biology notebook's Cops3 and Smyd1 interaction hits do not survive E, joint or
     EJ+time.
-- **Before anything is built:** EDL / SOL (§6), which needs the combined search, and a choice
-  between E and E+time (§5 Q3: simplicity against calibration and power).
+- **Update 2026-11-16 (§4b): EDL / SOL and E+time with Powell.**
+  - E+time with Powell + GLS holds every bound: boomi 0.025, ATF6 0.042, simulated null 0.065
+    (on the bound).
+  - On the T3 time split across six tissue pairs: A fails five; C passes all six (0.94–1.13);
+    E passes only with the mouse IDs (0.65–0.95 without them); E+time reads 0.96–1.07 except
+    ATR–EDL (1.26).
+  - E vs E+time is settled in E+time's favour.
+  - C vs E+time: E+time by the decision rule (more power), C on simplicity and margin. The
+    recommendation is C in 1.2.0, then E+time as the peptide-level method (§5 Q3).
 
 ## 1. What was compared
 
@@ -137,8 +145,8 @@ atrium 1.24).
   - LV–RA: brake scaled out 0.95 → 1.08; raw 0.98 → 1.17;
   - median combined SE: about 10 % smaller.
 
-  Both T6 numbers stay inside or at the edge of the band. T1, T2 and the simulation have not
-  been rerun this way (§9 item 4).
+  Both T6 numbers stay inside or at the edge of the band. T1, T2 and the simulation, rerun this
+  way on 2026-11-16, are unchanged within 0.003 (§4b), and so are the T3 time splits on EDL / SOL.
 
 ## 4. G2 — interaction (tissue × condition)
 
@@ -175,9 +183,101 @@ atrium 1.24).
   implementation should profile it, e.g. by starting each fit from the proteome-wide variance
   components instead of from zero.
 
+## 4b. Update 2026-11-16: EDL / SOL and E+time with Powell
+
+**Data.** The combined ATR / LVE / EDL / SOL search (`data/timeseries_boulder_4tissues`; quantms
+1.7.0, Comet + MS-GF+ + Sage; 48 runs). One mouse per labeling day (12 days, 0–30), all four
+tissues from that mouse, with real animal IDs (`characteristics[individual]` = `mouse_Ddd`).
+- Integrated at `0b275e3` in 14 min (`-W 8`).
+- Full fit at depth 6 in 8 min: 23,375 peptide curves, 13,459 with R² ≥ 0.9.
+- Time-split halves (6 and 5 labeled days, each with day 0) fitted at depth 3.
+- Each tissue pair is scored on a fit holding only those two tissues, so peptide admission spans
+  the pair, as in a two-tissue project.
+- **LVE and ATR from this search reproduce lve_atr almost exactly:** same mzML, 9,512 shared
+  peptidoforms, 10–15 unique to each, 348 tests in both. LVE–ATR is therefore a re-measurement,
+  not new evidence, except that it now carries the mouse IDs. The independent evidence is EDL–SOL
+  and the four heart–muscle pairs.
+
+**T3 on every tissue pair** (z robust SD of Δk_odd − Δk_even; band 0.9–1.15). Two notes on reading it:
+- *Reference values.* On the halves, the peptide-level models test on 4–5 df (one mouse per
+  day), so a calibrated statistic has a robust SD of 1.04, with 8 % of |z| above 1.96 (Monte
+  Carlo). The collapse variants have many residual df, so their reference is 1.00.
+- *Sampling error.* Each entry has a standard error of about ±0.07 (300 proteins) to ±0.11
+  (190 proteins).
+
+| Pair (k ratio) | Proteins | A | C | E, with IDs | E, without IDs | E+time (Powell) | E+time (Powell), without IDs |
+|---|---|---|---|---|---|---|---|
+| LVE–ATR (1.36), re-search of lve_atr | 316 | ✗ 1.45 | 1.11 | ✗ 0.88 | ✗ 0.75 | 0.97 | 0.97 |
+| EDL–SOL (1.13) | 232 | ✗ 1.17 | 0.94 | 0.93 | ✗ 0.65 | 0.99 | 1.00 |
+| LVE–EDL (0.68) | 191 | 1.07 | 0.97 | 0.98 | ✗ 0.72 | 0.96 | 0.97 |
+| LVE–SOL (0.77) | 295 | ✗ 1.29 | 1.10 | 0.95 | ✗ 0.73 | 1.03 | 1.07 |
+| ATR–EDL (0.50) | 190 | ✗ 1.39 | 1.13 | 1.14 | 0.95 | ✗ 1.26 | ✗ 1.25 |
+| ATR–SOL (0.57) | 302 | ✗ 1.28 | 1.03 | 1.02 | ✗ 0.87 | 1.06 | 1.04 |
+| lve_atr (old search, no IDs) | 315 | ✗ 1.45 | 1.13 | — | ✗ 0.75 | 0.97 | (no IDs) |
+
+k ratio = median k of the second tissue ÷ the first, on proteins held by all four. E+time with
+BFGS (the §3 prototype) reads 0.93 / 0.93 / 0.94 / 0.96 / 1.17 / 1.01 on the six pairs.
+
+- **A fails on five of six pairs.** Mechanism 1 shows on a second dataset, and in muscle.
+- **C passes on every pair** (0.94–1.13). Its only SE failure is still ATF6's animal-set split
+  (T6), where its SE is too wide.
+- **E needs the animal IDs.** With them it reads 0.88–1.14; without them, 0.65–0.95. Here the
+  mouse is the timepoint, so E's paired animal slope does the job of E+time's time slope. With
+  no IDs (lve_atr), or with several animals per timepoint (ATF6, boomi), E stays conservative.
+- **E+time does not need the IDs** and reads the same with or without them. On five pairs it
+  reads 0.96–1.07, at the small-df reference of 1.04.
+- **ATR–EDL is the exception** at 1.26, about 2 SE high. C (1.13) and E (1.14) also run high on
+  it. It is the pair with the largest k contrast (0.50), but ATR–SOL (0.57) reads 1.06, so the
+  pattern is not clearly tied to the k ratio.
+
+**Real calls, BH < 0.05** (each pair alone; all are large real tissue differences):
+
+| Pair | Tests | A | C | E | E+time (Powell) |
+|---|---|---|---|---|---|
+| LVE–ATR (re-search) | 348 | 233 | 235 | 227 | 234 |
+| EDL–SOL | 250 | 152 | 136 | 159 | 162 |
+| LVE–EDL | 206 | 160 | 156 | 147 | 154 |
+| LVE–SOL | 316 | 177 | 171 | 156 | 168 |
+| ATR–EDL | 198 | 186 | 186 | 189 | 189 |
+| ATR–SOL | 317 | 269 | 268 | 265 | 271 |
+
+Where the effect is smallest (EDL–SOL, ratio 1.13), C keeps 16 % fewer calls than E+time.
+Elsewhere C and E+time stay within 6 % of A, and E falls up to 12 % below it (LVE–SOL).
+
+**The shared day deviation across four tissues** (`wlsvar_boulder.py tissues`). Each (protein,
+tissue, day) cell's deviation from the protein's line in that tissue:
+- **Cell level.** The relative deviation correlates 0.21–0.36 between tissues. A one-factor
+  model on the 1,984 cells held by all four tissues gives loadings that follow tissue k on
+  neither scale. ATR, the fastest tissue, has one of the smallest.
+- **Proteome-wide level.** The day shift (median over proteins) correlates 0.70–0.84 between
+  tissues. Its SD across days is 0.0035–0.0045 per day on the absolute-k scale in all four tissues,
+  whose median k differs 2× (EDL 0.032, ATR 0.064). A shift proportional to k would show that 2×
+  spread. So the shared part is **additive in k**, the form E+time's time slope assumes.
+- **This is animal and time together.** With one mouse per day the two cannot be separated, so
+  it is not the clean additive-vs-proportional test of an animal term that §6 hoped for. That
+  test needs several animals per day with tissues of different k.
+
+**E+time with Powell + the GLS covariance** (the optimizer an implementation would use; §8):
+
+| | E+time, BFGS (§3) | E+time, Powell + GLS |
+|---|---|---|
+| T1 boomi (worst quartile) | 0.028 (0.033) | 0.025 (0.028) |
+| T2 ATF6 (worst quartile) | 0.041 (0.046) | 0.042 (0.048) |
+| S: false-positive rate, coverage | 0.064, 0.937 | 0.065, 0.936 |
+| S: power vs A, nominal / at equal size | 1.16 / 1.42 | 1.17 / 1.43 |
+| T3 lve_atr | 0.94 | 0.97 |
+| T6 LV–RA (brake scaled out) / LV–RV | 0.95 / 0.82 | 1.08 / 0.88 |
+| Simulation fit time per 300-protein dataset | 37 s | 9 s |
+
+- Every bound still holds. The simulated null sits exactly on its bound (0.065, pooled SE 0.025),
+  and as before it comes from the two datasets with the largest group shift (worst 0.221).
+- BFGS had already fitted the time term on about 99 % of these tests. Powell differs only where
+  BFGS fell back to E, which was mostly the paired tests.
+
 ## 5. Decisions
 
-Recommendations from the evaluation; the user's decisions (2026-11-15) follow each.
+Recommendations from the evaluation; the user's decisions (2026-11-15) follow each. Updated
+2026-11-16 with §4b.
 
 **Q1, `wls-var`: remove it before 1.2.0 is released.** Under E every peptide point carries its
 own (1 − θ̂)² weight, so a cell variance has no role, and D, which would have repurposed it as
@@ -204,44 +304,66 @@ ATF6 and its interaction null 0.216 on the ratio scale, so A's shipped calls on 
 should be read against §7. *Decided: build the peptide-level model after EDL / SOL; E or E+time
 is still to be debated (simplicity against performance).*
 
-**E against E+time, for that debate** (numbers from §3–§4):
+**E against E+time, after EDL / SOL and the Powell rerun (2026-11-16):**
 
-| | E | E+time |
+| | E | E+time (Powell + GLS) |
 |---|---|---|
-| Real nulls: boomi / ATF6 | 0.009 / 0.018 (too strict) | 0.028 / 0.041 |
-| Simulated null, coverage | 0.026, 0.975 | 0.064, 0.937 (at the 0.065 bound) |
-| SE honesty: lve_atr time split (T3) / ATF6 LV–RA (T6) | 0.75 ✗ / 0.88 ✗ | 0.94 / 0.95 |
-| Power vs A: nominal / at equal size | 0.87 / 1.39 | 1.16 / 1.42 |
-| lve_atr real calls (A 234) | 218 | 229 |
+| Real nulls: boomi / ATF6 | 0.009 / 0.018 (too strict) | 0.025 / 0.042 |
+| Simulated null, coverage | 0.026, 0.975 | 0.065 (at the bound), 0.936 |
+| T3, seven readings (§4b) | with IDs 0.88–1.14; without 0.65–0.95 (5 of 7 fail) | 0.96–1.07; ATR–EDL 1.26 |
+| T6 ATF6: LV–RA / LV–RV | 0.88 / 0.82 | 1.08 / 0.88 |
+| Power vs A: nominal / at equal size | 0.87 / 1.39 | 1.17 / 1.43 |
 | Interaction (EJ vs EJ+time): mean-Δk power, nominal; cost | 0.725; 13.6 min | 0.919; 18.2 min |
+| Needs animal IDs to pair conditions | yes | no (the time slope pairs them when one animal is sampled per time) |
 | Variance components (cross-sectional / paired) | animal / two per-condition animal slopes | time + animal / time + animal + cell |
 | Optimizer, covariance | BFGS works; Hessian or GLS | Powell then Nelder–Mead; GLS required |
 | Fallback | none needed | E (fewer than 3 times, or longitudinal) |
 
-- **At equal size the two have the same power (1.39 vs 1.42).** The difference is calibration.
-  E counts the shared timepoint deviation as animal variance, so its p-values are too large on
-  every real design measured (boomi plates, ATF6 animals, lve_atr's one mouse per timepoint). At
-  α 0.05 that costs about a quarter of E+time's calls (0.87 against 1.16 × A).
-- **E+time contains E.** Its fallback for longitudinal designs and for fewer than 3 times is E, so
-  building E+time means building E plus one variance component, the Powell optimizer and the GLS
-  covariance. Building E first and adding the time term later costs little rework.
-- **E+time is the less settled of the two.** Its simulated null sits at the bound, and the
-  Powell + GLS rerun (§9 item 4) gives SEs about 10 % smaller, which could push it over.
-- **The data that decides it:**
-  - the Powell rerun of T1, T2 and the simulation: is E+time still ≤ 0.065?
-  - EDL / SOL T3: does E's time-split SD stay near 0.75 on a second one-mouse-per-timepoint
-    design?
-- **Recommendation.** E+time with E as its built-in fallback, if the Powell rerun holds the bound.
-  If it does not, E, with the time term deferred.
+- **E+time contains E**, and where E works, E+time reads the same. E only works with the animal
+  IDs and one animal per timepoint (Boulder). Without IDs, or with several animals per timepoint,
+  it is conservative (boomi, ATF6, lve_atr), and it is never better calibrated than E+time.
+- **The question is settled in E+time's favour,** with E as its fallback. The extra build cost
+  is one variance component, Powell and the GLS covariance.
+
+**C against E+time** (the remaining choice):
+
+| | C (shared proportions) | E+time (Powell + GLS) |
+|---|---|---|
+| Real nulls: boomi / ATF6 (worst quartile) | 0.028 (0.041) / 0.039 (0.046) | 0.025 (0.028) / 0.042 (0.048) |
+| Simulated null, coverage | 0.047, 0.953 | 0.065 (at the bound), 0.936 |
+| T3, seven readings | all pass, 0.94–1.13 | six pass, 0.96–1.07; ATR–EDL ✗ 1.26 (too narrow) |
+| T6 ATF6: LV–RA / LV–RV | ✗ 0.67 / ✗ 0.51 (too wide) | 1.08 / ✗ 0.88 |
+| Power vs A: nominal / at equal size | 0.98 / 1.29 | 1.17 / 1.43 |
+| Real calls, EDL–SOL (smallest effect) | 136 | 162 |
+| Interaction null, ATF6 T2: ratio / additive / mean Δk | 0.065 / ✗ 0.081 / 0.019 (collapse C + the shipped `--interaction`) | 0.027 / 0.041 / 0.033 (EJ+time) |
+| Build | rescale each peptide's bands to its level pooled over conditions before the collapse (`eval_rising_variance.shared_bands`, about 10 lines), in `protein._collapse_long`; model, `--interaction`, outputs and GUI unchanged; seconds | a new peptide-level estimator (MixedLM with Powell, GLS covariance, fallbacks) with its own interaction form; about 1 min for ATF6's Δk, 18 min for its interaction |
+
+- **By the decision rule** (hold the nulls, then take the most powerful), **E+time.** Both hold
+  every Δk null. E+time has 1.11× C's power at equal size and 1.19× at nominal α.
+- **EDL / SOL narrowed the gap.** C now passes every T3, and its failures (T6) lean
+  conservative. E+time's one T3 failure leans anti-conservative, and its simulated null sits on
+  the bound.
+- **C's weak point is the interaction.** It fails ATF6's additive null and sits on the
+  ratio-scale bound, whereas EJ+time holds both.
+- **Recommendation: two steps.**
+  - *1.2.0:* ship C as the fix for the known issue. It is small and holds every Δk null with
+    margin. It is better calibrated than A on every null and every T3; only its T6 SE is wider
+    than A's, which is the conservative side.
+  - *After 1.2.0:* build E+time / EJ+time as the peptide-level method, opt-in until it has been
+    run on more designs. The ATR–EDL reading and the simulated null on its bound argue for
+    opt-in first.
+- **The one-step alternative** is E+time as the only change. It gives more power now, but it is
+  the larger build and the less settled estimator.
 
 ## 6. What is still missing before building
 
-- **EDL / SOL** (the user's combined ATR / LVE / EDL / SOL search, expected in 2–3 days). It gives:
-  - T3 on a second within-animal contrast;
-  - the four-tissue animal diagnostic (scope WP1d), where tissue k differs enough to tell an
-    additive animal slope from a proportional one (ATF6's chambers differ too little), which
-    fixes the form of E's animal term;
-  - a second check of E+time's time term on DDA.
+- ~~**EDL / SOL**~~ **Done 2026-11-16 (§4b).**
+  - T3 on five new within-animal contrasts.
+  - The four-tissue diagnostic. The shared day deviation is additive in k at the proteome-wide
+    level. With one mouse per day, animal and time cannot be separated, so the clean
+    additive-vs-proportional test of an animal term still needs several animals per day with
+    tissues of different k.
+  - E+time's time term checked on DDA.
 - **No DDA in-vivo design with ≥ 2 animals per condition per timepoint** (scope §2 finding 5).
   ATF6's gated cells are about as incomplete as lve_atr's, which partly covers it.
 - **Longitudinal designs** (the same animal at several timepoints) were not tested. There, E+time
@@ -342,6 +464,8 @@ The tests are those of the shipped `--interaction`. df:
 
 ## 9. Open items
 
+Items 4 and 5 were done on 2026-11-16 (§4b).
+
 1. **The estimand under whole-group shifts.** A per-protein test cannot tell a group's
    proteome-wide shift (the ATF6 brake, or a chance difference between two sets of animals)
    from protein-level effects, and its false positives cluster when the shift is large.
@@ -364,10 +488,11 @@ The tests are those of the shipped `--interaction`. df:
    peptides measured. A peptide × condition variance component would carry it; not tested.
 3. **Limma-style residual-variance moderation** (PROJECT_REVIEW, deferred) should be done on the
    winner: per-protein σ²_animal and σ²_time, moderated across proteins.
-4. **E+time with Powell + GLS** (§8): T6 done (§3). Rerun T1, T2 and the simulation with
-   `WLSVAR_ET_OPT=powell` before building. A 10 % smaller SE could move the simulated null
-   (0.064) past 0.065.
-5. **EDL / SOL** when the combined search lands (§6).
+4. ~~**E+time with Powell + GLS**~~ Done (§4b): T1 0.025, T2 0.042, simulated null 0.065 (on the
+   bound), coverage 0.936.
+5. ~~**EDL / SOL**~~ Done (§4b). New, from it: **ATR–EDL's T3 (1.26)**, the one reading where
+   E+time's SE is too narrow (C and E are high there too). Worth one more look when a second
+   heart–muscle dataset exists.
 
 ## 10. Reproduce
 
@@ -387,6 +512,19 @@ python tests/benchmark/wlsvar_eval.py inter runs/wlsvar_eval/atf6/t2/t2_0* --ref
 python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/null_ts --ratio 1 --datasets 8 --set time_k_sd=0.09 --set time_kabs_sd=0.0115 --set time_shared=0.85
 python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/null_ts --ratio 1 --pooled
 python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/r12_ts --ratio 1.2 --size-adjust runs/wlsvar_sim/null_ts
+# E+time with Powell + GLS (§4b): variant E+time-powell (WLSVAR_WORKERS caps the pool)
+python tests/benchmark/wlsvar_eval.py null runs/wlsvar_eval/boomi/t1/t1_0[0-9][0-9] --ref A --test B --variants E+time-powell --cache
+python tests/benchmark/wlsvar_eval.py null runs/wlsvar_eval/atf6/t2/t2_0[0-9][0-9] --ref control --test ATF6-KO --variants E+time-powell --cache
+python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/null_ts --ratio 1 --datasets 8 --score-only --variants E+time-powell --no-interaction
+# EDL / SOL (§4b): integrate, fit, time-split halves, per-pair fit dirs, T3 / real calls / four-tissue check
+D=data/timeseries_boulder_4tissues; E=runs/wlsvar_eval/boulder4
+riana integrate $D/mzml $D/quantms_results/quant_tables/samplesheet_atr_lve_edl_sol.sdrf_openms_design_openms.mzTab --sdrf $D/quantms_results/sdrf/samplesheet_atr_lve_edl_sol.sdrf.tsv -o runs/timeseries_boulder4/integrate -W 8
+riana fit --manifest runs/timeseries_boulder4/integrate/riana_manifest.tsv --coefficients deberneh_2025_rss -d 6 -W 12 -o $E/fit
+python tests/benchmark/wlsvar_manifests.py t3 runs/timeseries_boulder4/integrate/riana_manifest.tsv $E/t3_odd.tsv $E/t3_even.tsv   # then riana fit -d 3 on each
+python tests/benchmark/wlsvar_boulder.py pairs $E/t3_odd $E/pairs/t3_odd            # also t3_even, fit; --no-ids → pairs_noid
+python tests/benchmark/wlsvar_eval.py t3 $E/pairs/t3_odd/EDL_SOL $E/pairs/t3_even/EDL_SOL --ref EDL --test SOL --variants A C E E+time E+time-powell --cache
+python tests/benchmark/wlsvar_eval.py null $E/pairs/fit/EDL_SOL --ref EDL --test SOL --variants A C E E+time E+time-powell --cache   # real calls
+python tests/benchmark/wlsvar_boulder.py tissues $E/fit $E
 # Calibration statistics, real vs simulated (incl. the cross-tissue day-deviation share)
 python tests/benchmark/wlsvar_calib.py runs/wlsvar_eval/atf6/fit --ref control --test ATF6-KO
 ```

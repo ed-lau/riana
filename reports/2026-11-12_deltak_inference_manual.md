@@ -487,6 +487,12 @@ default and `wls-var` stays opt-in, documented as calibrated only against S1–S
 *Decisions (user, 2026-11-15):* B removed from Riana; D not built; E or E+time after EDL / SOL
 (report §5 Q3); per-protein Δk tested as is under whole-group shifts (report §9 item 1).
 
+*Update 2026-11-16 (report §4b):* E+time with Powell + GLS holds every bound (simulated null
+0.065, on the bound). On the EDL / SOL T3 time split across six tissue pairs, C passes all six,
+E passes only with animal IDs, and E+time passes five (ATR–EDL 1.26). E vs E+time is settled for
+E+time. C vs E+time awaits the user: E+time by the decision rule (more power); the report
+recommends C in 1.2.0, then E+time as the peptide-level method.
+
 The calibrated simulation (`tests/benchmark/wlsvar_sim.py`) supersedes §6's grid for ranking
 these candidates; §6 stays as the record of the two mechanisms.
 

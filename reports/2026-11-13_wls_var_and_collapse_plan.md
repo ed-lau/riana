@@ -973,3 +973,30 @@ timepoint, both tissues from it; 315 proteins):
 **G2 and WP5 (2026-11-14).** The G2 matrix, the decisions for Q1–Q3, the design note for E+time /
 EJ+time and the open items are in the
 [evaluation report](2026-11-14_wls_var_D_E_evaluation.md).
+
+**2026-11-16, EDL / SOL and E+time with Powell.** Tables and reading in the evaluation report §4b;
+this is the run record.
+
+- *Data and runs.* `data/timeseries_boulder_4tissues` (symlinks to the shared volume): 48 mzML,
+  the quantms 1.7.0 mzTab and SDRF of the combined ATR / LVE / EDL / SOL search. One mouse per
+  day, `characteristics[individual]` = `mouse_Ddd`, tissue = `factor value[organism part]` (the
+  condition).
+  - Integrate: `runs/timeseries_boulder4/integrate`, 14 min at `-W 8`, 492k rows, no guard or
+    drift warnings.
+  - Fits in `runs/wlsvar_eval/boulder4`: full at depth 6 (8 min); halves at depth 3 (9 min
+    each), 7 and 6 runs per tissue with day 0 in both.
+  - Per-pair fit dirs: `wlsvar_boulder.py pairs`, with and without IDs.
+- *The new search reproduces lve_atr's LVE / ATR:* 10,731 vs 10,705 PSM rows in LVE day 10;
+  9,512 shared peptidoforms, 15 only in the old search, 10 only in the new.
+- *Evaluator changes:*
+  - `wlsvar_de.py` gains the variant `E+time-powell` (Powell + GLS regardless of the environment
+    switch; cached under its own name) and the `WLSVAR_WORKERS` pool cap.
+  - `_animal_keys` keeps `str` dtype on an empty group. An all-missing `individual` crashed the
+    no-IDs ATR–EDL run; nothing else was affected, because empty groups return no fit either way.
+- *Small-df reference for T3* (Monte Carlo): z = (N + N) / √(s²₅ + s²₄) has a robust SD of
+  1.039 and |z| > 1.96 in 0.082 of draws. It is 1.012 at df 14 and 0.999 at df 200.
+- *Powell rerun:* T1 `runs/wlsvar_eval/boomi/t1_null_etime_powell.tsv`, T2
+  `runs/wlsvar_eval/atf6/t2_null_etime_powell.tsv`, simulation scores under
+  `runs/wlsvar_sim/{null_ts,r12_ts}`, size-adjusted table regenerated.
+- *ATR–EDL (E+time 1.26):* spread over every turnover quartile (1.00–1.27), not a few proteins.
+  σ_time is 0 in 8–9 % of the proteins.
