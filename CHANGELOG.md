@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Changed — `linear` Δk: each peptide keeps one precision level across conditions — 2026-11-16
+
+- **[RESULTS-AFFECTING] The `linear` collapse now pools each peptide's band level over the
+  conditions** before averaging a protein's peptides within each (biological replicate,
+  timepoint). A peptide's weight is still 1/σ² from its prediction band, and its change over time
+  within a condition is kept. Only the level, which each condition's fit estimated separately, is
+  now shared. Both conditions therefore average the same peptides in the same proportions, which
+  resolves the 2026-11-12 known issue below. Candidate C of
+  `reports/2026-11-14_wls_var_D_E_evaluation.md`; `protein._shared_bands`.
+  - *Scope:* `--model linear` with the default weighted collapse, and so also `--interaction`,
+    which fits the same collapsed points. Peptides seen in only one condition, single-condition
+    rollups and the kinetic models are unchanged.
+  - *Calibration (report §3–§5):*
+    - ATF6 animal-permutation null, Δk: false-positive rate 0.096 → 0.039 at α 0.05.
+    - ATF6 interaction, ratio scale: 0.216 → 0.065. On the additive scale: 0.245 → 0.081, still
+      above the 0.065 bound. The peptide-level model planned next holds both.
+    - boomi replicate-split null: 0.059 → 0.028.
+    - Time-split agreement on the six Boulder tissue pairs: within the expected band on all six,
+      where the old collapse failed five.
+  - *Real data:*
+    - ATF6 per-chamber Δk calls 35 → 0, and interaction calls 79 → 2. Both old counts were at
+      their permutation-null level.
+    - Boulder EDL–SOL: 152 → 136 calls.
+    - lve_atr: 234 → 235 calls.
+
 ### Removed — `--linear-weights wls-var` — 2026-11-15
 
 - **The opt-in `wls-var` weighting is gone** from `rollup --linear-weights` (and from
@@ -28,6 +53,8 @@ The 1.2.0 development line (branch `1.2.0`).
     in (report §5). Until then `wls` stays the default.
 
 ### Known issue — `linear` (was `linear simple`) Δk: the peptide collapse mixes conditions differently — 2026-11-12
+
+*Resolved 2026-11-16 by the shared band level (Changed, above).*
 
 - **Each peptide's weight in the collapse comes from its own fit in each condition**, so the same
   peptides are averaged in different proportions in the two conditions (the weights differ two- to

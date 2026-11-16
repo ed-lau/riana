@@ -4,8 +4,9 @@
 [scope](2026-11-13_wls_var_and_collapse_plan.md)). User decisions 2026-11-15 (§5): remove
 `wls-var` now; do not build D; build the peptide-level model after the EDL / SOL data, with E
 vs E+time still to be settled (§5 Q3); test per-protein Δk as is under whole-group shifts (§9
-item 1). Updated 2026-11-16 with EDL / SOL and E+time on Powell (§4b); C vs E+time awaits the
-user's decision (§5 Q3).** Prototypes: `tests/benchmark/wlsvar_*.py`. Detailed log, every table and its command:
+item 1). Updated 2026-11-16 with EDL / SOL and E+time on Powell (§4b). Decided 2026-11-16 (§5
+Q3): both steps. C becomes the `linear` collapse (shipped), and E+time / EJ+time come as the
+opt-in `rollup --level peptide`, inside a rollup CLI redesign.** Prototypes: `tests/benchmark/wlsvar_*.py`. Detailed log, every table and its command:
 scope §8. Background (candidates, mechanisms, the decision rule):
 [Δk manual](2026-11-12_deltak_inference_manual.md) §8.1.
 
@@ -354,6 +355,21 @@ is still to be debated (simplicity against performance).*
     opt-in first.
 - **The one-step alternative** is E+time as the only change. It gives more power now, but it is
   the larger build and the less settled estimator.
+- **Decided 2026-11-16 (user):** both steps, with a rollup CLI redesign.
+  - **C is how the `linear` collapse works** whenever a peptide is in several conditions. It is
+    not a separate option. The kinetic models' collapse is unchanged, because C was not
+    evaluated there. Implemented as `protein._shared_bands`. On the evaluation's fits it
+    reproduces this report's C exactly: EDL–SOL gives 136 calls, ATF6's interaction gives 2, and
+    per-protein p values agree within the output rounding.
+  - **`--peptide-admission any | own | all`.** The default is `all` for every model, and `auto`
+    is gone.
+  - **`--level protein | peptide` replaces `--method`.** The default is `protein`, the
+    collapse. `peptide` is E+time, available under `linear` only, and `--interaction` under it
+    is EJ+time. Animal pairing is detected from a shared `characteristics[individual]`, with no
+    flag. `pooled` is dropped.
+  - **`--model exponential | linear | calibration`.** `simple` is kept as a deprecated alias.
+    guan / fornasiero, `--kr` and `--rp` are removed, along with rollup's `--kp`. `fit --kp`
+    stays, as the switch for a rising precursor.
 
 ## 6. What is still missing before building
 

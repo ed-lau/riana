@@ -166,10 +166,11 @@ are dropped). It reports each condition's k and the difference Δk = k(test) −
 t-test and Benjamini–Hochberg adjustment within each experiment. `--reference-condition` and
 `--test-condition` choose the pair. `--plot` writes the φ-space curves to a PDF per experiment.
 
-*Known issue (1.2 development).* Each timepoint's point is an inverse-variance average of the
-protein's peptides with weights taken separately in each condition, so the two conditions can mix
-the same peptides in different proportions. When the peptides differ in apparent k, that alone can
-produce a Δk. It matters most for small effects; a fix is being evaluated (see the Change Log).
+Each timepoint's point is an inverse-variance average of the protein's peptides. Under `linear`
+each peptide carries one precision level across the conditions (its level pooled over them; the
+change over time within a condition is kept), so both conditions average the same peptides in
+the same proportions. With levels taken separately per condition, peptides that differ in
+apparent k could produce a Δk that is not turnover.
 
 ### Tissues of the same animals (`--interaction`)
 

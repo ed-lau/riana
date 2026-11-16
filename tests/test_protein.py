@@ -628,6 +628,69 @@ def test_rollup_linear_simple_delta_k():
     assert dk["delta_k_p_adj"].notna().all()
 
 
+def _composition_frames():
+    """One protein, two peptides that differ in k (0.05, 0.20) with the SAME curve in
+    both conditions (true Δk = 0). Their bands swap between the conditions: in X the
+    slow peptide is tight and the fast one wide, in Y the reverse — the per-condition
+    precision difference that makes a collapse mix the peptides in different proportions."""
+    pep_rows, frac_rows = [], []
+    for cond in ("X", "Y"):
+        for concat, k in (("SLOW_2", 0.05), ("FAST_2", 0.20)):
+            tight = (concat == "SLOW_2") == (cond == "X")
+            half = 0.005 if tight else 0.05
+            pep_rows.append({"concat": concat, "protein id": "sp|P0|X", "k_deg": k,
+                             "condition": cond})
+            for t in (1, 2, 3, 4, 6, 8, 10):
+                theta = 1.0 - np.exp(-k * t)
+                frac_rows.append({
+                    "concat": concat, "protein id": "sp|P0|X", "condition": cond,
+                    "biological_replicate": 1, "labeling_time": float(t),
+                    "fs": theta, "fs_lower": theta - half, "fs_upper": theta + half})
+    return pd.DataFrame(pep_rows), pd.DataFrame(frac_rows)
+
+
+def test_linear_collapse_shares_band_levels_so_composition_gives_no_delta_k(monkeypatch):
+    """Candidate C (reports/2026-11-14 §5): the linear collapse pools each peptide's band
+    level over the conditions, so swapping which peptide is precise in which condition
+    no longer moves the collapsed θ — Δk stays at the true 0. Without the shared level
+    the same data give a large spurious Δk."""
+    import riana.core.protein as protein_mod
+    pep, frac = _composition_frames()
+
+    def delta_k() -> float:
+        res = rollup_proteins(pep, frac, model="linear", reference_condition="X",
+                              min_peptides=2)
+        return float(res.dropna(subset=["delta_k"])["delta_k"].iloc[0])
+
+    assert abs(delta_k()) < 1e-9
+    monkeypatch.setattr(protein_mod, "_shared_bands", lambda f: f)
+    assert abs(delta_k()) > 0.05
+
+
+def test_shared_bands_pools_the_level_and_keeps_the_time_profile():
+    from riana.core.protein import _shared_bands
+    _, frac = _composition_frames()
+    frac["experiment"] = "e"
+    # A peptide seen in X only, with a time-varying band: left exactly as is.
+    solo = frac[(frac.concat == "SLOW_2") & (frac.condition == "X")].assign(concat="SOLO_2")
+    solo = solo.assign(fs_upper=solo.fs + 0.002 * solo.labeling_time)
+    out = _shared_bands(pd.concat([frac, solo], ignore_index=True))
+    s2 = ((out.fs_upper - out.fs_lower) / _PI_SPAN_SIGMA) ** 2
+    lvl = s2.groupby([out.concat, out.condition]).mean()
+    for concat in ("SLOW_2", "FAST_2"):          # one level in both conditions
+        assert lvl[(concat, "X")] == pytest.approx(lvl[(concat, "Y")], rel=1e-12)
+    pd.testing.assert_frame_equal(
+        out[out.concat == "SOLO_2"].reset_index(drop=True), solo.reset_index(drop=True))
+    assert (out.fs == pd.concat([frac, solo], ignore_index=True).fs).all()
+
+
+def test_shared_bands_leaves_a_single_condition_rollup_unchanged():
+    from riana.core.protein import _shared_bands
+    _, frac = _composition_frames()
+    one = frac[frac.condition == "X"].assign(experiment="e")
+    assert _shared_bands(one) is one
+
+
 def test_rollup_linear_simple_is_a_valid_model():
     """`linear` must not be rejected as an unknown model."""
     pep, frac = _make_two_condition_frames(

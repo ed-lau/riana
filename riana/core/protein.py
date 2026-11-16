@@ -305,8 +305,9 @@ def rollup_proteins(
             common-support, the cleanest Δk basis). Only bites a multi-condition rollup;
             single-condition is unaffected.
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
-            collapse) or ``"pooled"`` (all peptide×timepoint points, no collapse;
-            pseudoreplication-naive).
+            collapse; under ``model="linear"`` with each peptide's band level shared
+            across conditions, :func:`_shared_bands`) or ``"pooled"`` (all
+            peptide×timepoint points, no collapse; pseudoreplication-naive).
         workers: worker *processes* for the per-protein refit — the parallelism
             lever for the GIL-bound refit (``curve_fit`` × bootstrap). Each protein
             gets an independent RNG stream seeded from ``random_state``, so the
@@ -482,14 +483,18 @@ def _rollup_linear(
 ) -> pd.DataFrame:
     """The ``model="linear"`` path — φ-space OLS + cross-condition Δk.
 
-    Collapses peptides to the same ``(condition, t, θ)`` points the weighted/pooled
-    refit uses, then fits each protein's conditions **jointly** in φ = log(1−θ)
+    Collapses peptides to ``(condition, t, θ)`` points as the weighted/pooled refit
+    does, except that the weighted collapse first gives each peptide one band level
+    across the conditions (:func:`_shared_bands`), so both sides of a Δk average the
+    same peptides in the same proportions. Then fits each protein's conditions **jointly** in φ = log(1−θ)
     space (:func:`riana.core.linear_model.fit_linear_deltak`) for a per-condition
     k and a Δk test. Returns the :data:`PROTEIN_LINEAR_COLUMNS` schema and attaches
     the collapsed points for the GUI/fractions output (plotted in φ-space).
     """
     from riana.core.linear_model import fit_linear_deltak
 
+    if method == "weighted":
+        fractions = _shared_bands(fractions)
     long = _collapse_long(fractions, method=method, min_peptides=min_peptides)
     lin = fit_linear_deltak(
         long, phi_limit=phi_limit, min_points=min_points,
@@ -1004,6 +1009,44 @@ def _collapse_group(grp: pd.DataFrame, method: str) -> tuple[list, list, list, l
             df_list.append(eff_df)
             br_list.append(br)
     return t_list, fs_list, var_list, df_list, br_list
+
+
+def _shared_bands(fractions: pd.DataFrame) -> pd.DataFrame:
+    """Give each peptide one band (precision) level across the conditions it is in.
+
+    The weighted collapse weights a peptide in a ``(biorep, timepoint)`` cell by
+    1/σ², σ = (fs_upper − fs_lower) / :data:`_PI_SPAN_SIGMA`. Each condition's fit
+    estimates that band separately, so the same peptide can carry a different
+    share of the collapsed θ in each condition. A Δk then mixes peptides with
+    different k in different proportions — a spurious Δk from peptide composition
+    alone (reports/2026-11-14_wls_var_D_E_evaluation.md, candidate C).
+
+    Per ``(experiment, concat, condition)`` the mean σ² over the peptide's points
+    is m_c; over all its conditions, m. Each point's band is scaled by √(m/m_c), so
+    the time profile within a condition is kept and the level becomes the peptide's
+    pooled one. Peptides in a single condition (and so every single-condition
+    rollup) are returned unchanged, as are points without a usable band (the
+    collapse fills those with the cell median).
+    """
+    if fractions.empty or fractions["condition"].nunique() < 2:
+        return fractions
+    f = fractions.reset_index(drop=True)
+    fs = f["fs"].to_numpy(dtype=float)
+    lo = f["fs_lower"].to_numpy(dtype=float)
+    hi = f["fs_upper"].to_numpy(dtype=float)
+    with np.errstate(invalid="ignore"):
+        s2 = ((hi - lo) / _PI_SPAN_SIGMA) ** 2
+    keys = f[["experiment", "concat", "condition"]].assign(
+        s2=np.where(np.isfinite(s2) & (s2 > 0), s2, np.nan))
+    m_c = keys.groupby(["experiment", "concat", "condition"])["s2"].transform("mean")
+    m = keys.groupby(["experiment", "concat"])["s2"].transform("mean")
+    multi = keys.groupby(["experiment", "concat"])["condition"].transform("nunique") > 1
+    r = np.sqrt(m / m_c).where(multi).fillna(1.0).to_numpy()
+    move = r != 1.0
+    f = f.copy()
+    f["fs_lower"] = np.where(move, fs - (fs - lo) * r, lo)
+    f["fs_upper"] = np.where(move, fs + (hi - fs) * r, hi)
+    return f
 
 
 def _collapse_long(

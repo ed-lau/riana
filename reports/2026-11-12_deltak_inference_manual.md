@@ -490,8 +490,12 @@ default and `wls-var` stays opt-in, documented as calibrated only against S1–S
 *Update 2026-11-16 (report §4b):* E+time with Powell + GLS holds every bound (simulated null
 0.065, on the bound). On the EDL / SOL T3 time split across six tissue pairs, C passes all six,
 E passes only with animal IDs, and E+time passes five (ATR–EDL 1.26). E vs E+time is settled for
-E+time. C vs E+time awaits the user: E+time by the decision rule (more power); the report
-recommends C in 1.2.0, then E+time as the peptide-level method.
+E+time.
+
+*Decided 2026-11-16 (user; report §5 Q3):* both steps. C is now how the `linear` collapse
+works (shipped). E+time / EJ+time come as the opt-in `rollup --level peptide`, inside a rollup
+CLI redesign: `--peptide-admission any|own|all` with a default of `all`, `--level
+protein|peptide`, and `--model exponential|linear|calibration`. guan / fornasiero are removed.
 
 The calibrated simulation (`tests/benchmark/wlsvar_sim.py`) supersedes §6's grid for ranking
 these candidates; §6 stays as the record of the two mechanisms.
