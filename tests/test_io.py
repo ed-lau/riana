@@ -422,13 +422,13 @@ def test_provenance_header_writes_full_config():
     """The header records every setting (the full config + extra), one line each,
     with extra overriding a shared key (no duplicate)."""
     prov = iowriters.make_provenance(
-        {"model": "simple", "depth": 3, "ria_max": 0.06},
+        {"model": "exponential", "depth": 3, "ria_max": 0.06},
         id_source="m.tsv",
-        extra={"coefficients": "c.csv", "model": "simple"},
+        extra={"coefficients": "c.csv", "model": "exponential"},
     )
     lines = prov.comment_lines()
     text = "\n".join(lines)
-    assert "# model simple" in text        # from config (and extra)
+    assert "# model exponential" in text        # from config (and extra)
     assert "# depth 3" in text             # a config key that was NOT in extra
     assert "# ria_max 0.06" in text
     assert "# coefficients c.csv" in text   # extra-only key

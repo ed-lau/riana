@@ -43,10 +43,12 @@ D~2~O), per experiment. `riana fit --ria` overrides it for every curve; without 
 
 #### Q: Which kinetic models are available?
 
-A: `simple` (one compartment), `guan` (two compartments, with a precursor rate constant) and
-`fornasiero` (adds precursor reutilization), plus `calibration` for mixing experiments. At the
-protein level, `riana rollup --model linear` fits a linearized simple model that supports
-comparing conditions. See the [Documentation](about.qmd#kinetic-models).
+A: `exponential` (one compartment; called `simple` before 1.2), plus `calibration` for mixing
+experiments. A precursor that rises after labeling starts is given as its rate constant (`fit --kp`
+or the SDRF), and each timepoint is solved for fraction new before k is fitted; this replaced the
+`guan` and `fornasiero` models in 1.2. At the protein level, `riana rollup --model linear` fits a
+linearized exponential model that supports comparing conditions. See the
+[Documentation](about.qmd#kinetic-models).
 
 #### Q: How is the fraction of new protein calculated, and can I restrict the isotopomers used?
 

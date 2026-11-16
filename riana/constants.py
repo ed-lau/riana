@@ -278,3 +278,42 @@ iso_abundances = [0.9893,  # C12
                   1.0,  # P31 (phosphorus is mononuclidic — only 31P is stable)
                   ]
 
+
+
+# --------------------------------------------------------------------------- #
+# Model names (fit --model / rollup --model)
+# --------------------------------------------------------------------------- #
+#: The first-order turnover curve θ(t) = 1 − e^{−kt} (fit and rollup default). Under a
+#: rising precursor (``fit --kp``) the fit solves each point for fraction new f and
+#: fits the same curve to it.
+EXPONENTIAL_MODEL = "exponential"
+#: The rollup's linearized model, φ = log(1 − θ) = −kt, fit jointly over a protein's
+#: conditions for a per-condition k and a Δk test (:mod:`riana.core.linear_model`).
+LINEAR_MODEL = "linear"
+#: The fit's through-origin recovery line for mixing-proportion (calibration) runs.
+CALIBRATION_MODEL = "calibration"
+#: Fit models (``riana fit --model``) and rollup models (``riana rollup --model``).
+FIT_MODELS = (EXPONENTIAL_MODEL, CALIBRATION_MODEL)
+ROLLUP_MODELS = (EXPONENTIAL_MODEL, LINEAR_MODEL)
+#: Earlier model names still accepted, mapped to the current name. Each alias goes one
+#: release after its rename ships. (``linear simple`` renamed 2026-11-13, ``simple``
+#: 2026-11-16.)
+MODEL_ALIASES = {"simple": EXPONENTIAL_MODEL, "linear simple": LINEAR_MODEL}
+#: Models removed in 1.2.0 (2026-11-16). A rising precursor is now solved at fit time
+#: (``riana fit --kp``), so a fit or rollup naming one of these is refused with that pointer.
+REMOVED_MODELS = ("guan", "fornasiero")
+
+
+def canonical_model(model: str) -> str:
+    """The current name of a model (``"simple"`` → ``"exponential"``, ``"linear
+    simple"`` → ``"linear"``); other names pass through unchanged."""
+    return MODEL_ALIASES.get(model, model)
+
+
+def removed_model_message(model: str) -> str:
+    """Why ``model`` (one of :data:`REMOVED_MODELS`) is refused and what to use instead."""
+    return (
+        f"--model {model} was removed in Riana 1.2.0. For a precursor that rises after "
+        "labeling starts, fit with the exponential model and the precursor rate constant "
+        "(riana fit --kp K_P, or the SDRF's characteristics[precursor rate constant]). "
+        "Each timepoint is then solved for fraction new before k is fitted.")

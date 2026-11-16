@@ -402,7 +402,7 @@ def test_rollup_interaction_keys_animals_on_individual(tmp_path):
 
 
 @pytest.mark.parametrize("extra, message", [
-    (["--model", "simple"], "needs --model 'linear'"),
+    (["--model", "exponential"], "needs --model 'linear'"),
     (["--model", "linear", "--experiment", "LA"], "drop --experiment"),
     (["--model", "linear", "--test-condition", "drug",
       "--reference-condition", "control"], "not among the conditions"),
@@ -432,13 +432,38 @@ def _stamp_fs_basis(fit_dir: Path, basis: str) -> None:
         path.write_text(lines + path.read_text())
 
 
-def test_rollup_on_fraction_new_refuses_guan(tmp_path):
+@pytest.mark.parametrize("model", ["guan", "fornasiero"])
+def test_rollup_refuses_the_removed_models(tmp_path, model):
     fit_dir = _multi_tissue_fit_dir(tmp_path)
-    _stamp_fs_basis(fit_dir, "f")
     result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(tmp_path / "out"),
-                                 "--model", "guan"])
+                                 "--model", model])
     assert result.exit_code != 0
-    assert "apply it twice" in _norm(result.output)
+    assert "removed in Riana 1.2.0" in _norm(result.output)
+
+
+def test_rollup_refuses_a_fit_made_with_a_removed_model(tmp_path):
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    for name in ("riana_fit_peptides.txt", "riana_fit_fractions.txt"):
+        path = fit_dir / name
+        path.write_text("# model guan\n" + path.read_text())
+    result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(tmp_path / "out")])
+    assert result.exit_code != 0
+    out = _norm(result.output)
+    assert "made with --model guan" in out and "Refit" in out
+
+
+def test_rollup_accepts_simple_as_the_old_name_of_exponential(tmp_path):
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    outs = {}
+    for model in ("simple", "exponential"):
+        out = tmp_path / model
+        result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(out),
+                                     "--model", model])
+        assert result.exit_code == 0, result.output
+        outs[model] = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
+    pd.testing.assert_frame_equal(outs["simple"], outs["exponential"])
+    log = (tmp_path / "simple" / "logfile.log").read_text()
+    assert "'simple' is now 'exponential'" in log
 
 
 def test_rollup_rejects_the_removed_wls_var_scheme(tmp_path):

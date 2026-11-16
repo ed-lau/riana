@@ -21,11 +21,10 @@ from riana.core import models
 from riana.gui.export import save_plot
 from riana.gui.plotting import plot_with_external_legend
 
-# Kinetic-model name → function (same mapping fit_run uses).
+# Fit-model name → function (same mapping fit_run uses). Anything else — the earlier
+# name "simple", a removed model in an old result header — draws the exponential.
 _MODEL_FNS = {
-    "simple": models.one_exponent,
-    "guan": models.two_compartment_guan,
-    "fornasiero": models.two_compartment_fornasiero,
+    "exponential": models.one_exponent,
     "calibration": models.calibration_line,
 }
 

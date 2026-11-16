@@ -73,6 +73,10 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
 
+from riana.constants import (
+    EXPONENTIAL_MODEL, LINEAR_MODEL, MODEL_ALIASES, REMOVED_MODELS, ROLLUP_MODELS,
+    canonical_model, removed_model_message,
+)
 from riana.core import models
 from riana.core.fitting import _solve_k_single_t
 from riana.exceptions import DataError
@@ -83,30 +87,20 @@ from riana.records import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_MODELS = {
-    "simple": models.one_exponent,
-    "guan": models.two_compartment_guan,
-    "fornasiero": models.two_compartment_fornasiero,
-}
-#: The linearized cross-sample model — not a ``curve_fit`` ODE like the others, but
-#: an OLS in φ = log(1−θ) space that fits a protein's conditions jointly to yield a
-#: Δk test (:mod:`riana.core.linear_model`). A ``model`` choice, mutually exclusive
-#: with ``_MODELS``.
-LINEAR_MODEL = "linear"
-#: Earlier names of :data:`LINEAR_MODEL`, still accepted (renamed 2026-11-13; the alias
-#: goes one release after the rename ships).
-LINEAR_MODEL_ALIASES = ("linear simple",)
+#: The nonlinear (``curve_fit``) rollup models. :data:`LINEAR_MODEL` (re-exported from
+#: :mod:`riana.constants`) is the other rollup model: a weighted least squares in
+#: φ = log(1−θ) space that fits a protein's conditions jointly for a Δk test
+#: (:mod:`riana.core.linear_model`).
+_MODELS = {EXPONENTIAL_MODEL: models.one_exponent}
+#: Earlier names of :data:`LINEAR_MODEL`, still accepted (see
+#: :data:`riana.constants.MODEL_ALIASES`).
+LINEAR_MODEL_ALIASES = tuple(k for k, v in MODEL_ALIASES.items() if v == LINEAR_MODEL)
 #: What a fit's ``fs`` holds — its ``# fs_basis`` header line
 #: (:func:`riana.core.fitting.precursor_header`): ``theta`` (precursor at plateau from
 #: t = 0, every fit before the rising-precursor solve), ``f`` (fraction new, every curve
 #: fit with a rising precursor) or ``mixed``.
 FS_BASES = ("theta", "f", "mixed")
 _K_DEG_INIT = 0.5
-
-
-def canonical_model(model: str) -> str:
-    """The current name of a rollup model (``"linear simple"`` → ``"linear"``)."""
-    return LINEAR_MODEL if model in LINEAR_MODEL_ALIASES else model
 
 
 def fit_basis_header(fit_file: str | os.PathLike[str]) -> dict[str, str]:
@@ -122,28 +116,33 @@ def fit_basis_header(fit_file: str | os.PathLike[str]) -> dict[str, str]:
     return out
 
 
-def check_fs_basis(fs_basis: str, model: str) -> None:
-    """Refuse rollup settings that are wrong when ``fs`` holds fraction new f.
+def check_fs_basis(fs_basis: str) -> None:
+    """Refuse a fit header whose ``fs_basis`` is not one of :data:`FS_BASES`.
 
-    Under a rising precursor the fit has already solved each point for f, which is
-    first-order whatever the precursor did, so the exponential refit and the linear
-    model apply unchanged (``wls`` is calibrated on f: false-positive rate 0.042 at α 0.05
-    in the Monte Carlo, ``reports/2026-11-12_deltak_inference_manual.md`` §6.2).
-    ``guan`` / ``fornasiero`` do not: they would apply the precursor a second time.
+    Every rollup model applies to every basis. Under a rising precursor the fit has
+    already solved each point for f, which is first-order whatever the precursor did,
+    so the exponential refit and the linear model apply unchanged (``wls`` is
+    calibrated on f: false-positive rate 0.042 at α 0.05 in the Monte Carlo,
+    ``reports/2026-11-12_deltak_inference_manual.md`` §6.2).
     """
     if fs_basis not in FS_BASES:
         raise DataError(
             f"unknown fs_basis {fs_basis!r} in the fit header; expected one of "
             f"{list(FS_BASES)}")
-    if fs_basis == "theta":
-        return
-    what = ("fraction new f" if fs_basis == "f"
-            else "fraction new f for some curves (fs_basis mixed)")
-    if model in ("guan", "fornasiero"):
+
+
+def check_fit_model(fit_file: str | os.PathLike[str]) -> None:
+    """Refuse a fit made with a model removed in 1.2.0 (its ``# model`` header line).
+
+    A guan / fornasiero peptide fit carries θ under a lagging precursor, which
+    neither rollup model describes; :data:`riana.constants.REMOVED_MODELS`.
+    """
+    from riana.io.writers import read_provenance_header
+    fit_model = read_provenance_header(fit_file).get("model")
+    if fit_model in REMOVED_MODELS:
         raise DataError(
-            f"the fit's fs holds {what}: the rising precursor (k_p) was already applied "
-            f"at fit, so a {model} refit would apply it twice. Use --model simple or "
-            f"--model {LINEAR_MODEL!r}.")
+            f"this fit was made with --model {fit_model}. "
+            + removed_model_message(fit_model) + " Refit, then roll up.")
 _K_DEG_BOUNDS = ([1e-4], [10.0])
 
 #: A normal's 5–95 percentile span is ``2 · 1.6449 · σ``; invert to recover σ
@@ -169,33 +168,25 @@ _GROUP_KEYS = list(PROTEIN_KEY_COLUMNS)
 #: passes the gate in *one*, leaking a bad-condition curve into the per-condition
 #: rollup and the two-condition Δk contrast.
 _CURVE_KEYS = list(CURVE_KEY_COLUMNS)
-#: Cross-condition peptide admission policies for the curation gates. A gate scores each
-#: ``(experiment, condition, concat)`` CURVE on its own per-condition fit stats; this
-#: decides how a peptide's per-condition pass/fail maps across the conditions it appears in
-#: (peptide identity = ``(experiment, concat)``; ``condition`` is the mapped axis):
-#:   ``"own"`` — keep a curve iff it passed in its OWN condition (default; per-condition,
-#:      so each condition's protein k / Δk term rests only on peptides that fit well there).
+#: Cross-condition peptide admission policies for the curation gates, least to most
+#: stringent. A gate scores each ``(experiment, condition, concat)`` CURVE on its own
+#: per-condition fit stats; this decides how a peptide's per-condition pass/fail maps
+#: across the conditions it appears in (peptide identity = ``(experiment, concat)``;
+#: ``condition`` is the mapped axis):
 #:   ``"any"`` — keep the peptide in ALL conditions it appears in if it passed in ANY one
 #:      (the pre-2026-08 behaviour; anti-conservative — a good-in-one fit drags its
 #:      bad-in-another curve into the contrast).
+#:   ``"own"`` — keep a curve iff it passed in its OWN condition (each condition's protein
+#:      k rests only on peptides that fit well there, but the conditions can rest on
+#:      DIFFERENT peptides, which confounds a comparison with peptide identity).
 #:   ``"all"`` — keep the peptide only if it passed in EVERY condition it appears in
-#:      (paired / common-support; the cleanest Δk basis — same peptides both sides — at
-#:      the cost of yield). Note a Δk under ``"own"`` can rest on DIFFERENT peptides per
-#:      condition, which confounds the contrast with peptide identity; ``"all"`` removes
-#:      that confound.
-_ADMISSION_POLICIES = ("own", "any", "all")
-#: Accepted CLI/API inputs: the three resolved policies plus ``"auto"`` (the default),
-#: which picks per-model — ``"all"`` for ``linear`` (the Δk path, where a
-#: different-peptides-per-condition contrast is a real confound) and ``"own"`` for the
-#: kinetic side-by-side models.
-_ADMISSION_INPUTS = ("auto",) + _ADMISSION_POLICIES
-
-
-def _resolve_admission(policy: str, model: str) -> str:
-    """Resolve ``"auto"`` to the model-appropriate policy; pass the others through."""
-    if policy == "auto":
-        return "all" if model == LINEAR_MODEL else "own"
-    return policy
+#:      (default; paired / common support — the same peptides on both sides of a
+#:      comparison, at the cost of yield).
+#: Only a multi-condition rollup is affected; with one condition the three coincide.
+_ADMISSION_POLICIES = ("any", "own", "all")
+#: The default policy, for every model (``auto`` — ``all`` for linear, ``own`` for the
+#: kinetic models — was retired 2026-11-16).
+DEFAULT_ADMISSION = "all"
 
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
 #: the selected ``method``; ``peptide_median_k`` is the near-free median of the
@@ -231,7 +222,7 @@ def rollup_proteins(
     peptides: pd.DataFrame,
     fractions: pd.DataFrame,
     *,
-    model: str = "simple",
+    model: str = EXPONENTIAL_MODEL,
     kinetic_kwargs: Mapping[str, float] | None = None,
     parsimony: str = "unique",
     method: str = "weighted",
@@ -242,7 +233,7 @@ def rollup_proteins(
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
     min_fit_points: int | None = None,
-    peptide_admission: str = "auto",
+    peptide_admission: str = DEFAULT_ADMISSION,
     workers: int = 1,
     n_boot: int = 200,
     boot_ci_pct: tuple[float, float] = (5.0, 95.0),
@@ -264,9 +255,11 @@ def rollup_proteins(
         fractions: ``riana_fit_fractions.txt`` content — needs ``concat``,
             ``protein id``, ``biological_replicate``, ``labeling_time``, ``fs``,
             ``fs_lower``, ``fs_upper``.
-        model: kinetic model for the refit (must match how peptides were fit).
-        kinetic_kwargs: ``k_p`` / ``k_r`` / ``r_p`` for guan/fornasiero
-            (ignored by ``simple``); ``a_0`` / ``a_max`` are pinned 0 / 1.
+        model: ``"exponential"`` (default; the nonlinear refit) or ``"linear"``
+            (the φ-space joint fit with a Δk test). Earlier names (``"simple"``,
+            ``"linear simple"``) are accepted.
+        kinetic_kwargs: extra keyword arguments for the exponential curve (none
+            are needed); ``a_0`` / ``a_max`` are pinned 0 / 1.
         parsimony: ``"unique"`` (default) or ``"isoform"`` (deferred).
         min_peptides: a protein needs at least this many attributed peptides to
             be reported.
@@ -296,14 +289,11 @@ def rollup_proteins(
             degenerate, so curation is this replicate floor + the ``k_cv`` gate
             (``k_cv_max``), with the R²/rescue machinery bypassed.
         peptide_admission: how a peptide's per-condition gate result maps across the
-            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"auto"`` (default)
-            → ``"all"`` for ``model="linear"`` (the Δk path, where a
-            different-peptides-per-condition contrast is a real confound) and ``"own"``
-            for the kinetic models. ``"own"`` — strictly per-condition. ``"any"`` —
-            passed-in-one ⇒ kept-in-all (the anti-conservative pre-2026-08 behaviour).
-            ``"all"`` — kept only if it passed in every condition it appears in (paired /
-            common-support, the cleanest Δk basis). Only bites a multi-condition rollup;
-            single-condition is unaffected.
+            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"all"``
+            (default) — kept only if it passed in every condition it appears in
+            (paired / common support). ``"own"`` — strictly per-condition. ``"any"`` —
+            passed-in-one ⇒ kept-in-all (anti-conservative). Only bites a
+            multi-condition rollup; single-condition is unaffected.
         method: ``"weighted"`` (default, the inverse-variance per-timepoint
             collapse; under ``model="linear"`` with each peptide's band level shared
             across conditions, :func:`_shared_bands`) or ``"pooled"`` (all
@@ -324,7 +314,7 @@ def rollup_proteins(
             ``model="linear simple"`` (the earlier name) is accepted.
         fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
             (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
-            ``"mixed"``, :func:`check_fs_basis` refuses guan/fornasiero.
+            ``"mixed"``; every rollup model applies to each (:func:`check_fs_basis`).
 
     Returns:
         One row per ``(experiment, condition, protein)`` — a ``method`` tag, the
@@ -336,22 +326,22 @@ def rollup_proteins(
         schema (per-condition φ-slope k + the protein-level Δk test).
     """
     model = canonical_model(model)
-    if model not in _MODELS and model != LINEAR_MODEL:
+    if model in REMOVED_MODELS:
+        raise DataError(removed_model_message(model))
+    if model not in ROLLUP_MODELS:
         raise DataError(
-            f"unknown kinetic model {model!r}; expected one of "
-            f"{sorted(_MODELS) + [LINEAR_MODEL]}")
-    check_fs_basis(fs_basis, model)
+            f"unknown rollup model {model!r}; expected one of {list(ROLLUP_MODELS)}")
+    check_fs_basis(fs_basis)
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")
     if method not in _METHODS:
         raise DataError(
             f"method must be one of {list(_METHODS)}, got {method!r}")
-    if peptide_admission not in _ADMISSION_INPUTS:
+    if peptide_admission not in _ADMISSION_POLICIES:
         raise DataError(
-            f"peptide_admission must be one of {list(_ADMISSION_INPUTS)}, "
+            f"peptide_admission must be one of {list(_ADMISSION_POLICIES)}, "
             f"got {peptide_admission!r}")
-    peptide_admission = _resolve_admission(peptide_admission, model)
     kk = dict(a_0=0.0, a_max=1.0, **dict(kinetic_kwargs or {}))
 
     peptides = _ensure_group_cols(peptides)
@@ -417,7 +407,7 @@ def rollup_proteins(
 
     if gate_sets:
         # Curves passing every active gate, then mapped across conditions by the
-        # --peptide-admission policy (default "own" = strictly per-condition).
+        # --peptide-admission policy (default "all" = passed in every condition).
         own = set.intersection(*gate_sets)
         admitted = _apply_admission_policy(peptides, own, peptide_admission)
         peptides = _filter_by_curve(peptides, admitted)

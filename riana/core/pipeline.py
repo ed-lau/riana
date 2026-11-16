@@ -462,8 +462,8 @@ def fit_project(
     Each curve's precursor: ``kp_override`` (CLI ``--kp``; ``inf`` forces the steady
     path) > the manifest's ``precursor_rate_constant`` (SDRF
     ``characteristics[precursor rate constant]``) > none. A finite k_p switches the
-    curve to the rising-precursor solve (``fs`` = fraction new f); the deprecated
-    guan/fornasiero models and calibration runs never use it. The per-curve values
+    curve to the rising-precursor solve (``fs`` = fraction new f); calibration runs
+    never use it. The per-curve values
     are returned in ``out.attrs["precursor_k_p"]`` (``{(experiment, condition): k_p or
     None}``) for the output header.
     """
@@ -506,10 +506,6 @@ def fit_project(
                 f"curve experiment={key[0]} condition={key[1] or '-'}: runs disagree on "
                 f"precursor_rate_constant ({sorted(vals)}); one k_p per curve.")
     exp_kp = {key: next(iter(vals)) for key, vals in exp_kp_values.items()}
-    if exp_kp and config.model in ("guan", "fornasiero"):
-        log.warning(
-            "--model %s models the precursor itself (deprecated): the manifest's "
-            "precursor_rate_constant is not applied.", config.model)
     curve_kp: dict[tuple[str, str], float | None] = {}
 
     results: list[pd.DataFrame] = []
@@ -520,8 +516,8 @@ def fit_project(
         is_calibration = (exp_type.get(group_key) == "calibration"
                           or config.model == "calibration")
         # Resolve the curve's precursor before any model swap (FitConfig rejects a
-        # k_p on the calibration / guan / fornasiero models).
-        if is_calibration or config.model in ("guan", "fornasiero"):
+        # k_p on the calibration model).
+        if is_calibration:
             kp, kp_src = None, ""
         elif kp_override is not None:
             kp = None if np.isinf(kp_override) else float(kp_override)

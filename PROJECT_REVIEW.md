@@ -135,8 +135,8 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   timepoint by a kinetic forward model (not the plateau mixture), the precursor curve is
   `RIA_max·(1−e^{−k_p·s})` with `k_p` set per experiment from the SDRF, and `k_p` is **not** fit
   from the data by default (per-peptide it is not identifiable; proteome-wide it is only weakly
-  identified on real data). **See the box below** for the agreed design, including removing
-  guan/fornasiero one release after the solve ships. Still open from the old item: a measured
+  identified on real data). **See the box below** for the agreed design. guan/fornasiero were
+  removed 2026-11-16, in the same release as the solve (item 5). Still open from the old item: a measured
   (non-parametric) precursor curve, if a dataset with one appears.
 - **Δk peptide collapse: per-point vs per-peptide scatter — HIGH PRIORITY, plan agreed
   2026-11-12, nothing built.** The collapse weights each peptide by its own per-condition band, so
@@ -482,7 +482,12 @@ rollup, linear Δk, interaction) runs unchanged on f.
    nothing in fit can count the precursor twice. One shared value across tissues and conditions
    unless the SDRF says otherwise. The fit logs which path ran and why (SDRF or CLI). `fit --model`
    keeps only `exponential` (rename of `simple`, alias kept) and `calibration` (auto from the SDRF).
-5. *Remove guan/fornasiero (user, 2026-11-11, plan 2026-11-12).* Both were written for the SILAC
+5. *Remove guan/fornasiero (user, 2026-11-11, plan 2026-11-12).* **DONE 2026-11-16: removed
+   outright in 1.2.0, the release that ships the solve (user, 2026-11-16, superseding the
+   deprecate-then-remove timing below).** Asking for either model, or rolling up a fit made
+   with one, is an error that points to k_p. `two_compartment_guan` went too, because the 3a
+   fit uses `models.rising_precursor_label`. The single-timepoint root-find stays, because that
+   curve uses it. CHANGELOG 2026-11-16. Both were written for the SILAC
    side of the SILAC-vs-D₂O comparison (Hammond et al., *MCP* 2022); amino-acid labeling is no
    longer a `--label` option, so they have no native use left. On D₂O they are biased: they fit
    their curves to θ, which is not label content under a rising precursor (report §4). Fornasiero's

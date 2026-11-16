@@ -123,7 +123,7 @@ def test_fit_run_recovers_k_deg_on_synthetic_data():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     config = FitConfig(
-        model="simple", label="hw", q_value=0.05, depth=3,
+        model="exponential", label="hw", q_value=0.05, depth=3,
         ria_max=0.06,
     )
 
@@ -166,7 +166,7 @@ def test_fit_run_min_spep_gate_drops_low_site_peptidoforms():
 
     def run(ms):
         return fit_run(
-            FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+            FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                       ria_max=0.06, min_spep=ms),
             dfs, coeffs, n_boot=0, random_state=42)
 
@@ -187,7 +187,7 @@ def test_fit_run_progress_callback_ticks_to_total():
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     seen: list[tuple[int, int]] = []
     fit_run(
-        FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+        FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                   ria_max=0.06, min_spep=0),                # keep all peptides
         dfs, coeffs, n_boot=0, random_state=42,
         progress_callback=lambda d, t: seen.append((d, t)))
@@ -204,7 +204,7 @@ def test_fit_run_fs_score_channels_runs_and_guards_missing_channels():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
 
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                     ria_max=0.06, score_channels=4)
     # (a) full iso0-5 integrate, score iso0-3 → runs and converges.
     result = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42)
@@ -230,7 +230,7 @@ def test_fit_run_fs_auto_runs_and_guards_base_channels():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
 
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                     ria_max=0.06, fs_auto=True)
     result = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42)
     assert result["k_deg"].notna().sum() >= int(0.9 * len(_TEST_PEPTIDES))
@@ -270,12 +270,12 @@ def test_fit_run_workers_deterministic():
         df[iso_cols] = noisy
 
     serial = fit_run(
-        FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+        FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                   ria_max=0.06, workers=1),
         dfs, coeffs, n_boot=50, random_state=42,
     ).sort_index()
     pooled = fit_run(
-        FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+        FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                   ria_max=0.06, workers=2),
         dfs, coeffs, n_boot=50, random_state=42,
     ).sort_index()
@@ -298,7 +298,7 @@ def test_fit_run_filters_by_depth():
     # Only feed 2 timepoints — fewer than depth=3.
     short_dfs = dfs[:2]
     config = FitConfig(
-        model="simple", label="hw", q_value=0.05, depth=3,
+        model="exponential", label="hw", q_value=0.05, depth=3,
         ria_max=0.06,
     )
     with pytest.raises(ValueError, match="No peptides survive"):
@@ -318,7 +318,7 @@ def test_depth_counts_distinct_timepoints_not_psm_rows():
     for ti, df in zip(_TIMES, dfs):
         df["labeling_time"] = float(ti)
         df["biological_replicate"] = 1
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3, ria_max=0.06)
 
     # 3 PSM rows but only 2 distinct timepoints (t0 repeated) -> filtered out.
     repeated = [dfs[0], dfs[1], dfs[0].copy()]
@@ -366,7 +366,7 @@ def test_multipoint_fs_rail_drop_excludes_railed_points_from_the_fit():
         cdf.loc[row, f"iso{k}"] = over[k]
 
     def run(rail_drop: bool):
-        cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+        cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                         ria_max=0.06, min_spep=0, fs_rail_drop=rail_drop)
         out = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42,
                       time_column="labeling_time")
@@ -420,7 +420,7 @@ def test_post_rail_drop_depth_recheck_uses_distinct_timepoints():
                 for k in range(6):
                     d.loc[d["concat"] == target, f"iso{k}"] = over[k]
             frames.append(d)
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                     ria_max=0.06, min_spep=0)
     out = fit_run(cfg, frames, coeffs, n_boot=0, time_column="labeling_time")
     # 2 distinct timepoints survive (t0, t1) over 4 rows -> below depth 3 -> nulled.
@@ -443,7 +443,7 @@ def test_single_timepoint_at_t0_is_nulled_not_fit_at_init_k():
         d["labeling_time"] = 0.0
         d["biological_replicate"] = br
         frames.append(d)
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=1,
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=1,
                     ria_max=0.06, min_spep=0)
     out = fit_run(cfg, frames, coeffs, n_boot=10, time_column="labeling_time")
     assert np.isnan(out.loc[target, "k_deg"])   # nulled, not the arbitrary init 0.5
@@ -480,7 +480,7 @@ def test_fs_rail_thresholds_default_and_override():
         dfs[4].loc[crow, f"iso{k}"] = over[k]
 
     def run(hi):
-        cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06,
+        cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3, ria_max=0.06,
                         min_spep=0, fs_rail_drop=True, fs_rail_hi=hi)
         out = fit_run(cfg, dfs, coeffs, n_boot=0, random_state=42,
                       time_column="labeling_time")
@@ -495,7 +495,7 @@ def test_fit_run_rejects_unknown_model():
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES[:1], coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES[:1], spep_by_seq=spep_by_seq)
     bad_config = FitConfig(
-        model="simple", label="hw", q_value=0.05, depth=3,
+        model="exponential", label="hw", q_value=0.05, depth=3,
         ria_max=0.06,
     )
     object.__setattr__(bad_config, "model", "nonexistent")
@@ -511,12 +511,12 @@ def test_fit_run_requires_canonical_isotopomers():
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
     # Drop the higher isotopomers so only m0-m3 remain (mimics too-narrow --iso).
     dfs = [df.drop(columns=["iso4", "iso5"]) for df in dfs]
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     with pytest.raises(ValueError, match="D2O fit needs isotopomers"):
         fit_run(config, dfs, coeffs, n_boot=10)
     # The guard names the active label (o18 vs D2O), not always "D2O".
-    o18_cfg = FitConfig(model="simple", label="o18", q_value=0.05, depth=3,
+    o18_cfg = FitConfig(model="exponential", label="o18", q_value=0.05, depth=3,
                         ria_max=0.06)
     with pytest.raises(ValueError, match="o18 fit needs isotopomers"):
         fit_run(o18_cfg, dfs, coeffs, n_boot=10)
@@ -540,7 +540,7 @@ def test_fit_run_handles_bracketed_modification_strings():
         df.loc[m, "sequence"] = "VAPEPTIDES[79.9663]K"
 
     config = FitConfig(
-        model="simple", label="hw", q_value=0.05, depth=3,
+        model="exponential", label="hw", q_value=0.05, depth=3,
         ria_max=0.06,
     )
     result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
@@ -558,7 +558,7 @@ def test_fit_run_emits_fractions_long_with_prediction_intervals():
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     result = fit_run(config, dfs, coeffs, n_boot=200, random_state=42)
 
@@ -626,7 +626,7 @@ def test_dmass_dspacing_known_answer_and_global_drift_cancels():
     drift cancels out of it while dmass records it."""
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3, ria_max=0.06)
 
     # (a) Uniform +5 mDa drift on every channel -> dmass ≈ 5 mDa everywhere;
     #     dspacing ≈ 0 (the M0-internal subtraction removes the global offset).
@@ -661,7 +661,7 @@ def test_dmass_is_additive_no_effect_on_k_deg():
     the FS / k_deg output identical (and omitting them omits the Δ columns)."""
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3, ria_max=0.06)
 
     base = fit_run(cfg, _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq),
                    coeffs, n_boot=0, random_state=42)
@@ -776,7 +776,7 @@ def test_breakdown_columns_and_exclude_mbr():
     for i, df in enumerate(dfs):
         df["evidence"] = "mbr" if i < 2 else "q_value"
 
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3, ria_max=0.06)
     inc = fit_run(cfg, dfs, coeffs, n_boot=50, random_state=42)
     # 8 timepoints, 2 marked MBR -> every peptide curve is 2 MBR + 6 clean.
     assert (inc["n_points"] == 8).all()
@@ -785,7 +785,7 @@ def test_breakdown_columns_and_exclude_mbr():
     assert (inc["n_clean"] == 6).all()
     assert inc.attrs["fractions_long"]["evidence"].eq("mbr").sum() == 2 * len(_TEST_PEPTIDES)
 
-    cfg_excl = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    cfg_excl = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                          ria_max=0.06, exclude_mbr=True)
     exc = fit_run(cfg_excl, dfs, coeffs, n_boot=50, random_state=42)
     assert (exc["n_points"] == 6).all()
@@ -800,7 +800,7 @@ def test_prediction_interval_widens_with_scatter():
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     clean = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
 
     rng = np.random.default_rng(0)
@@ -828,7 +828,7 @@ def test_peptide_summary_drops_per_timepoint_list_cells():
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
     dfs = _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq=spep_by_seq)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     result = fit_run(config, dfs, coeffs, n_boot=10, random_state=42)
 
@@ -880,7 +880,7 @@ def test_fit_merges_met_ox_with_unoxidized_into_one_curve():
             "percolator q-value": 1e-4, "protein id": "sp|P1|TEST",
             **{f"iso{n}": scaled[n] for n in range(6)},
         }]))
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=4,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=4,
                        ria_max=0.06)
     out = fit_run(config, dfs, coeffs, n_boot=50, random_state=42)
     # ONE merged result, keyed by the stripped fit key, pooling all 6 points.
@@ -898,7 +898,7 @@ import warnings
 
 from scipy.optimize import OptimizeWarning, curve_fit
 
-_SINGLE_KW = dict(a_0=0.0, a_max=1.0, k_p=0.5, k_r=0.05, r_p=10.0)
+_SINGLE_KW = dict(a_0=0.0, a_max=1.0, k_p=0.5)
 
 
 def test_solve_k_single_t_closed_form_matches_curve_fit():
@@ -915,15 +915,26 @@ def test_solve_k_single_t_closed_form_matches_curve_fit():
         assert k_closed == pytest.approx(-np.log(1 - fsbar) / t_star, rel=1e-9)
 
 
-def test_solve_k_single_t_guan_root_find_recovers_k():
-    """guan is strictly monotonic in k at a fixed k_p, so the pole-safe root-find
-    inverts it — where the default NLS init (0.5) sits on guan's k_p pole and can
-    null the fit."""
-    t_star, k_true = 1.0, 3.0
-    fs = float(models.two_compartment_guan(t_star, k_deg=k_true, **_SINGLE_KW))
-    k = _solve_k_single_t(t_star, np.full(4, fs), models.two_compartment_guan, _SINGLE_KW)
-    assert k is not None
-    assert k == pytest.approx(k_true, rel=1e-4)
+def test_solve_k_single_t_rising_precursor_root_find_recovers_k():
+    """The rising-precursor label-content curve is strictly monotonic in k at a fixed
+    k_p, so the pole-safe root-find inverts it — including at k = k_p."""
+    for t_star, k_true in ((1.0, 3.0), (2.0, 0.5)):
+        fs = float(models.rising_precursor_label(t_star, k_deg=k_true, **_SINGLE_KW))
+        k = _solve_k_single_t(t_star, np.full(4, fs), models.rising_precursor_label,
+                              _SINGLE_KW)
+        assert k is not None
+        assert k == pytest.approx(k_true, rel=1e-4)
+
+
+def test_fit_config_model_names():
+    """'exponential' is the default; 'simple' is normalized to it; guan / fornasiero
+    are refused with a pointer to --kp."""
+    from riana.config import FitConfig
+    assert FitConfig().model == "exponential"
+    assert FitConfig(model="simple").model == "exponential"
+    for removed in ("guan", "fornasiero"):
+        with pytest.raises(ValueError, match="--kp"):
+            FitConfig(model=removed)
 
 
 def test_solve_k_single_t_edge_cases():
@@ -966,7 +977,7 @@ def test_fit_run_single_timepoint_auto_relaxes_depth_and_solves_directly_no_warn
     and emits NO scipy OptimizeWarning — the point of the direct solve."""
     t_star, fs = 24.0, 0.5
     dfs, coeffs = _single_tp_dfs(t_star=t_star, fs=fs, n_rep=3)
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                     ria_max=0.06, min_spep=0)
     with warnings.catch_warnings():
         warnings.simplefilter("error", OptimizeWarning)   # any OptimizeWarning → fail
@@ -985,7 +996,7 @@ def test_fit_run_single_timepoint_ci_finite_for_replicates_nan_for_single():
     """Multi-replicate single-timepoint → a finite, non-degenerate k CI from the
     replicate scatter; a single-replicate peptide → NaN CI (undefined uncertainty,
     per b03484e)."""
-    cfg = FitConfig(model="simple", label="hw", q_value=0.05, depth=1,
+    cfg = FitConfig(model="exponential", label="hw", q_value=0.05, depth=1,
                     ria_max=0.06, min_spep=0)
     dfs, coeffs = _single_tp_dfs(t_star=24.0, fs=0.4, n_rep=3, jitter=0.03, seed=7)
     multi = fit_run(cfg, dfs, coeffs, n_boot=200, random_state=42,
@@ -1039,7 +1050,7 @@ def _rising_frame(coeffs, *, k=0.08, k_p=_KP, times=_RISE_TIMES, n_rep=1, noise=
 
 
 def _rising_config(**kw):
-    return FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.04,
+    return FitConfig(model="exponential", label="hw", q_value=0.05, depth=3, ria_max=0.04,
                      precursor_k_p=_KP, **kw)
 
 
@@ -1107,7 +1118,7 @@ def test_rising_precursor_rails_on_label_content():
 def test_steady_fit_has_no_label_content_column():
     coeffs = _coefficients_for_target_spep(_TEST_PEPTIDES, 8)
     spep_by_seq = _spep_by_seq_from_coefficients(_TEST_PEPTIDES, coeffs)
-    res = fit_run(FitConfig(model="simple", label="hw", q_value=0.05, depth=3),
+    res = fit_run(FitConfig(model="exponential", label="hw", q_value=0.05, depth=3),
                   _make_synthetic_dfs(_TEST_PEPTIDES, spep_by_seq), coeffs,
                   n_boot=0, random_state=1)
     assert res.attrs["precursor_k_p"] is None
@@ -1117,7 +1128,7 @@ def test_steady_fit_has_no_label_content_column():
 def test_precursor_k_p_config_validation():
     assert FitConfig(precursor_k_p=float("inf")).precursor_k_p is None
     for kw in ({"precursor_k_p": 0.0}, {"precursor_k_p": -1.0},
-               {"precursor_k_p": 0.1, "model": "guan"},
+               {"precursor_k_p": 0.1, "model": "nope"},
                {"precursor_k_p": 0.1, "model": "calibration"},
                {"precursor_k_p": 0.1, "label": "o18"}):
         with pytest.raises(ValueError):

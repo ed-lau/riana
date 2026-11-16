@@ -160,7 +160,7 @@ def test_fit_project_auto_dispatches_calibration_model(tmp_path):
 
     # config.model is the kinetic default; the manifest's calibration identity
     # must override it (the decided experiment-type dispatch).
-    auto = fit_project(FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    auto = fit_project(FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                                  ria_max=0.06), mf, coeffs, n_boot=0, random_state=1)
     slopes = auto["k_deg"].dropna().to_numpy()
     np.testing.assert_allclose(slopes, 1.0, atol=0.05)
@@ -184,7 +184,7 @@ def test_fit_project_resolves_ria_per_experiment(tmp_path, monkeypatch):
 
     coeffs = _coeffs()
     dfs = _make_timepoint_dfs(coeffs)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
 
     # Manifest rows carrying an experiment-level enrichment ≠ the 0.06 default.
@@ -344,7 +344,7 @@ def test_bioreps_stay_independent_points(tmp_path):
 def test_manifest_fit_matches_legacy_kdeg(tmp_path):
     coeffs = _coeffs()
     dfs = _make_timepoint_dfs(coeffs)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
 
     # Legacy positional path: time parsed from the sample string.
@@ -402,7 +402,7 @@ def test_fit_project_long_keeps_bioreps_separate(tmp_path):
             biological_replicate=2, condition="control")))
     mf = tmp_path / "riana_manifest.tsv"
     append_manifest(mf, rows)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     long = fit_project(config, mf, coeffs, n_boot=20).attrs["fractions_long"]
     assert set(long["biological_replicate"]) == {1, 2}
@@ -435,7 +435,7 @@ def test_fit_project_two_conditions_concat(tmp_path):
                 condition=cond)))
     mf = tmp_path / "riana_manifest.tsv"
     append_manifest(mf, rows)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     out = fit_project(config, mf, coeffs, n_boot=20)
     # Both curves survive the concat, tagged distinctly.
@@ -720,7 +720,7 @@ def test_fit_project_long_carries_individual_from_the_manifest(tmp_path):
     from dataclasses import replace
     coeffs = _coeffs()
     rows = _integrate_rows_from_dfs(tmp_path, _make_timepoint_dfs(coeffs))
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     plain = tmp_path / "plain_manifest.tsv"
     append_manifest(plain, rows)
@@ -739,9 +739,9 @@ def test_fit_project_long_carries_individual_from_the_manifest(tmp_path):
     assert (long["individual"] == long["labeling_time"].map(expected)).all()
 
 
-def test_fit_project_resolves_the_precursor_per_curve(tmp_path, monkeypatch, caplog):
+def test_fit_project_resolves_the_precursor_per_curve(tmp_path, monkeypatch):
     """k_p: --kp override (inf = steady) > the manifest's precursor_rate_constant > none;
-    never for the deprecated guan model; runs of one curve must agree."""
+    runs of one curve must agree."""
     import riana.core.fitting as fitting_mod
     from riana.exceptions import DataError
 
@@ -770,7 +770,7 @@ def test_fit_project_resolves_the_precursor_per_curve(tmp_path, monkeypatch, cap
         return real(cfg, *a, **k)
 
     monkeypatch.setattr(fitting_mod, "fit_run", _spy)
-    base = FitConfig(model="simple", label="hw", q_value=0.05, depth=3, ria_max=0.06)
+    base = FitConfig(label="hw", q_value=0.05, depth=3, ria_max=0.06)
     mf = manifest([0.5], "kp")
     assert read_manifest(mf)[0].identity.precursor_rate_constant == 0.5   # round-trips
 
@@ -780,11 +780,6 @@ def test_fit_project_resolves_the_precursor_per_curve(tmp_path, monkeypatch, cap
     fit_project(base, mf, coeffs, n_boot=0, random_state=0, kp_override=0.3)
     fit_project(base, mf, coeffs, n_boot=0, random_state=0, kp_override=float("inf"))
     assert seen == [0.3, None]
-    seen.clear()
-    with caplog.at_level("WARNING"):
-        fit_project(FitConfig(model="guan", label="hw", q_value=0.05, depth=3),
-                    mf, coeffs, n_boot=0, random_state=0)
-    assert seen == [None] and "deprecated" in caplog.text
     seen.clear()
     fit_project(base, manifest([None], "steady"), coeffs, n_boot=0, random_state=0)
     assert seen == [None]

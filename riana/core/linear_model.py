@@ -1,10 +1,10 @@
 """Linearized turnover model + cross-sample Δk (the ``linear`` rollup model).
 
-The nonlinear rollup models (``simple``/``guan``/``fornasiero``) fit one ``k_deg``
+The nonlinear rollup model (``exponential``) fits one ``k_deg``
 per ``(experiment, condition, protein)`` independently via ``curve_fit``. This
 module is the **linearized** alternative: it transforms fraction-new θ into
 clearance φ = ``log(1 − θ)`` — which is **linear in time through the origin**
-(φ = −k·t) for the simple one-exponent model — and fits the two conditions of a
+(φ = −k·t) for the one-exponent model — and fits the two conditions of a
 protein **jointly** in one OLS with a ``day:condition`` interaction. That joint
 fit is what yields a **cross-sample Δk** (the difference in slope) with a proper
 shared-variance p-value, then Benjamini-Hochberg across proteins.
@@ -66,7 +66,7 @@ _LOGGER = logging.getLogger(__name__)
 #: least-squares coefficient covariance via statsmodels (``conf_int`` / ``t_test``;
 #: WLS by default, OLS under ``weights="ols"``), i.e. a closed-form t-distribution
 #: interval. This is deliberately different from the
-#: nonlinear models (``simple`` / ``guan`` / ``fornasiero``), whose CIs are a
+#: nonlinear ``exponential`` model, whose CIs are a
 #: residual bootstrap in :func:`riana.core.protein._fit_kdeg`. The linearized
 #: model has a closed-form covariance, so bootstrapping it would add nothing —
 #: ``n_boot`` / ``random_state`` are ignored on this path.

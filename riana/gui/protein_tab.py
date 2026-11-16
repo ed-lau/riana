@@ -145,20 +145,13 @@ class ProteinTab(QWidget):
         form.addRow("Parsimony", self.parsimony_combo)
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["simple", "guan", "fornasiero", "linear"])
+        self.model_combo.addItems(["exponential", "linear"])
         self.model_combo.setToolTip(
-            "simple/guan/fornasiero: nonlinear curve_fit. 'linear': the "
+            "exponential: refit θ = 1 − e^(−kt) per condition. 'linear': the "
             "linearized φ=log(1−θ) cross-sample model — per-condition k + a Δk "
             "test (writes delta_k / delta_k_p_adj), plotted in φ-space.")
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
         form.addRow("Model", self.model_combo)
-
-        self.kp_spin = self._rate_spin(0.5)
-        form.addRow("k_p (guan/forn.)", self.kp_spin)
-        self.kr_spin = self._rate_spin(0.05)
-        form.addRow("k_r (fornasiero)", self.kr_spin)
-        self.rp_spin = self._rate_spin(10.0)
-        form.addRow("r_p (fornasiero)", self.rp_spin)
 
         # 'linear' only: plateau truncation + Δk reference condition.
         self.phi_limit_spin = QDoubleSpinBox()
@@ -272,16 +265,15 @@ class ProteinTab(QWidget):
 
         # Cross-condition peptide admission (only bites a multi-condition rollup).
         self.admission_combo = QComboBox()
-        self.admission_combo.addItems(["auto", "own", "any", "all"])
+        self.admission_combo.addItems(["any", "own", "all"])
+        self.admission_combo.setCurrentText("all")
         self.admission_combo.setToolTip(
             "How a peptide's per-condition curation result maps across conditions "
-            "(multi-condition rollups only). 'auto' (default): 'all' for the "
-            "'linear' Δk model, 'own' for the kinetic models. 'own': "
-            "per-condition — each condition's k / Δk term uses only peptides that pass "
-            "the gate THERE. 'any': passed-in-one ⇒ kept-in-all (anti-conservative). "
-            "'all': kept only if it passes in EVERY condition it appears in (paired / "
-            "common-support — the cleanest Δk basis, at the cost of yield). 'own' Δk "
-            "can rest on different peptides per condition, a confound 'all' removes.")
+            "(multi-condition rollups only), least to most stringent. 'any': passed in "
+            "one condition ⇒ kept in all (anti-conservative). 'own': kept in each "
+            "condition where it passes — the conditions can then rest on different "
+            "peptides. 'all' (default): kept only if it passes in EVERY condition it "
+            "appears in, so comparisons rest on the same peptides.")
         form.addRow("Peptide admission", self.admission_combo)
 
         self.workers_spin = QSpinBox()
@@ -333,20 +325,9 @@ class ProteinTab(QWidget):
         self._on_model_changed(self.model_combo.currentText())  # initial visibility
         return box
 
-    def _rate_spin(self, value: float) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
-        spin.setDecimals(4)
-        spin.setRange(0.0, 1000.0)
-        spin.setSingleStep(0.05)
-        spin.setValue(value)
-        return spin
-
     def _on_model_changed(self, model: str) -> None:
-        """Show the ODE rate knobs for the nonlinear models, the φ knobs for the
-        linear model — they are mutually exclusive."""
+        """Show the φ / Δk knobs only for the linear model."""
         linear = model == "linear"
-        for w in (self.kp_spin, self.kr_spin, self.rp_spin):
-            self._form.setRowVisible(w, not linear)
         for w in (self.phi_limit_spin, self.reference_combo, self.test_combo,
                   self.interaction_check):
             self._form.setRowVisible(w, linear)
@@ -458,9 +439,6 @@ class ProteinTab(QWidget):
             "method": self.method_combo.currentText(),
             "parsimony": self.parsimony_combo.currentText(),
             "model": self.model_combo.currentText(),
-            "kp": float(self.kp_spin.value()),
-            "kr": float(self.kr_spin.value()),
-            "rp": float(self.rp_spin.value()),
             "min_peptides": int(self.min_peptides_spin.value()),
             "min_points": int(self.min_points_spin.value()),
             "min_fit_points": (mfp if mfp > 0 else None),   # 0 = auto
@@ -549,8 +527,7 @@ class ProteinTab(QWidget):
             # inside a shared-pool worker (which breaks: BrokenProcessPool).
             executor = None if p["workers"] > 1 else self.pool
             self._future = loop.run_in_executor(
-                executor, run_rollup, str(fit_dir), p["model"],
-                p["kp"], p["kr"], p["rp"], p["parsimony"],
+                executor, run_rollup, str(fit_dir), p["model"], p["parsimony"],
                 p["min_peptides"], p["min_points"], p["min_fit_points"], p["min_r2"],
                 p["k_cv_max"], p["rescue_r2"], p["peptide_admission"], p["method"],
                 p["workers"], p["phi_limit"], p["reference_condition"],
@@ -640,8 +617,7 @@ class ProteinTab(QWidget):
                        f"(input manifest left untouched)")
         settings = {
             "model": params["model"], "method": params["method"],
-            "parsimony": params["parsimony"], "kp": params["kp"],
-            "kr": params["kr"], "rp": params["rp"],
+            "parsimony": params["parsimony"],
             "min_peptides": params["min_peptides"],
             "min_points": params["min_points"],
             "min_fit_points": params["min_fit_points"],
@@ -765,11 +741,9 @@ class ProteinTab(QWidget):
             self.curve.show_placeholder(f"{row['protein']}: no refit to show.")
             return
         t_list, fs_list = pts[0], pts[1]      # (t, fs[, var, df]) — curve needs t/fs
-        kinetic = dict(k_p=p.get("kp", 0.5), k_r=p.get("kr", 0.05),
-                       r_p=p.get("rp", 10.0))
         self.curve.plot_fit(
             str(row["protein"]), list(t_list), list(fs_list),
-            float(k), p.get("model", "simple"), kinetic,
+            float(k), p.get("model", "exponential"), {},
             ci_lo=_safe_float(row.get("ci_lo")),
             ci_hi=_safe_float(row.get("ci_hi")),
         )
@@ -843,7 +817,7 @@ class ProteinTab(QWidget):
             # The refit / φ-space curve needs the model that produced the results;
             # take it from the provenance header, the rest from the form.
             params = self.build_params()
-            from riana.core.protein import canonical_model  # 'linear simple' → 'linear'
+            from riana.core.protein import canonical_model  # 'simple' → 'exponential'
             params["model"] = canonical_model(header.get("model", params["model"]))
             self._result_df = proteins
             self._points = points

@@ -19,6 +19,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from riana.constants import (
+    EXPONENTIAL_MODEL, FIT_MODELS, REMOVED_MODELS, canonical_model,
+    removed_model_message,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class IntegrationConfig:
@@ -342,10 +347,12 @@ class FitConfig:
     implemented).
     """
 
-    #: -m / --model. Kinetic: "simple", "guan", "fornasiero"; or "calibration"
+    #: -m / --model. ``"exponential"`` (the kinetic curve) or ``"calibration"``
     #: (through-origin FS-vs-mixing-proportion recovery line, auto-dispatched for
-    #: calibration runs).
-    model: str = "simple"
+    #: calibration runs). The earlier name ``"simple"`` is accepted and normalized;
+    #: guan / fornasiero were removed in 1.2.0 (a rising precursor is
+    #: :attr:`precursor_k_p`).
+    model: str = "exponential"
     #: -l / --label. The labeling chemistry. ``"hw"`` (heavy water / D₂O,
     #: default) and ``"o18"`` (¹⁸O; length-model Spep + 3-isotope-O envelope,
     #: shipped and validated in 1.1.0) are both implemented — cell/tissue
@@ -354,13 +361,6 @@ class FitConfig:
     #: dropped from fitting (and the SILAC dual-channel ``-X/-F`` extraction knobs
     #: were retired in M7).
     label: str = "hw"
-    #: --kp under the (deprecated) guan / fornasiero models: their curve's precursor
-    #: rate constant.
-    k_p: float = 0.5
-    #: --kr. Reutilization rate constant for the Fornasiero model.
-    k_r: float = 0.05
-    #: --rp. Bound/free precursor ratio for the Fornasiero model.
-    r_p: float = 10.0
     #: -q / --q_value. Fit only data points with q-value below this.
     q_value: float = 1e-2
     #: -d / --depth. Fit only peptidoforms observed at >= this many **distinct
@@ -453,7 +453,7 @@ class FitConfig:
     #: plateau from t = 0 — today's θ, unchanged. Resolved per curve by
     #: :func:`riana.core.pipeline.fit_project` (``--kp`` > the manifest's
     #: ``precursor_rate_constant`` from the SDRF > ``None``); ``inf`` means ``None``.
-    #: Exponential model (``simple``) and ``hw`` only.
+    #: Exponential model and ``hw`` only.
     precursor_k_p: float | None = None
     #: -W / --workers. Number of **processes** for the per-peptide fit map. >1
     #: dispatches over a ``ProcessPoolExecutor`` to sidestep the GIL (the real
@@ -466,10 +466,12 @@ class FitConfig:
     out_dir: str = "."
 
     def __post_init__(self) -> None:
-        if self.model not in ("simple", "guan", "fornasiero", "calibration"):
+        object.__setattr__(self, "model", canonical_model(self.model))
+        if self.model in REMOVED_MODELS:
+            raise ValueError(removed_model_message(self.model))
+        if self.model not in FIT_MODELS:
             raise ValueError(
-                f"model must be simple/guan/fornasiero/calibration, "
-                f"got {self.model!r}")
+                f"model must be one of {list(FIT_MODELS)}, got {self.model!r}")
         if self.label not in ("hw", "o18"):
             raise ValueError(f"label must be 'hw' or 'o18', got {self.label!r}")
         if self.min_spep is None:
@@ -502,13 +504,10 @@ class FitConfig:
             elif not kp > 0:
                 raise ValueError(
                     f"precursor_k_p (--kp) must be > 0 (or inf), got {self.precursor_k_p}")
-            elif self.model != "simple":
+            elif self.model != EXPONENTIAL_MODEL:
                 raise ValueError(
                     "a rising precursor (k_p) applies to the exponential model only; "
-                    f"--model {self.model} " + (
-                        "models the precursor itself (deprecated)."
-                        if self.model in ("guan", "fornasiero")
-                        else "has no labeling time."))
+                    f"--model {self.model} has no labeling time.")
             elif self.label != "hw":
                 raise ValueError(
                     "a rising precursor (k_p) is supported for --label hw (D2O) only, "

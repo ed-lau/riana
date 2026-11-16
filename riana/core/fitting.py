@@ -17,8 +17,8 @@ For each peptide:
 2. **Per-timepoint FS** via :func:`algorithms.isotope_dist.solve_fs_d2o`
    using the computed Spep — full-envelope least-squares, not
    ``iso0 / Σ iso``.
-3. **Kinetic curve fit** of ``(t, FS)`` to the selected model
-   (simple / guan / fornasiero).
+3. **Kinetic curve fit** of ``(t, FS)`` to the exponential model (or, under a
+   rising precursor, to label content; or the calibration recovery line).
 4. **Bootstrap CI** on ``k_deg`` by resampling ``(t, FS)`` pairs with
    replacement; replaces the legacy ``sqrt(diag(pcov))`` heuristic.
 
@@ -70,9 +70,7 @@ from riana.utils import strip_concat
 _LOGGER = logging.getLogger(__name__)
 
 _MODELS: dict[str, Callable] = {
-    "simple": models.one_exponent,
-    "guan": models.two_compartment_guan,
-    "fornasiero": models.two_compartment_fornasiero,
+    "exponential": models.one_exponent,
     # Calibration recovery (mixing-proportion runs): a through-origin line FS≈f
     # fit by the same curve_fit path; ``k_deg`` holds the recovered slope, R² the
     # recovery quality. Dispatched automatically for experiment_type=="calibration"
@@ -131,8 +129,8 @@ def _solve_k_single_t(
     least-squares fit collapses to solving ``model(t_star, k) = mean(fs)`` for the
     one free parameter — an elementary closed form for ``one_exponent``
     (``k = -ln(1 - FSbar) / t_star``) and a bounded, pole-safe scalar root-find for
-    the monotonic two-compartment models (guan/fornasiero are strictly increasing in
-    k at a fixed ``k_p``). Reproduces the bounded ``curve_fit`` optimum (closed form
+    the rising-precursor label-content curve (strictly increasing in k at a fixed
+    ``k_p``). Reproduces the bounded ``curve_fit`` optimum (closed form
     exact; root-find to ~1e-6) with no iterative solve and no ``OptimizeWarning`` from
     the zero-residual-dof single point. Returns ``None`` when a direct solve does not
     apply (``t_star <= 0``, degenerate span, or the root-find fails), so the caller
@@ -159,9 +157,9 @@ def _solve_k_single_t(
             return lo
         return float(min(max(-np.log(frac) / t_star, lo), hi))
 
-    # Monotonic two-compartment model (k_p, k_r, r_p fixed): bounded root-find of
-    # model(t_star, k) - target. Pole-safe — guan has a removable ``k == k_p`` pole,
-    # so a tiny nudge recovers the finite limit if an evaluation lands on it.
+    # Monotonic label-content curve (k_p fixed): bounded root-find of
+    # model(t_star, k) - target. Pole-safe — a closed form with a removable
+    # ``k == k_p`` pole is nudged to its finite limit if an evaluation lands on it.
     def g(k: float) -> float:
         v = float(model_fn(t_star, k_deg=k, **kinetic_kwargs))
         if not np.isfinite(v):
@@ -466,7 +464,7 @@ def fit_run(
 
     Args:
         config: :class:`riana.config.FitConfig` (model, label, depth,
-            q-value, k_p / k_r / r_p, ria_max, workers).
+            q-value, precursor_k_p, ria_max, workers).
         integrate_dfs: one or more ``pandas.DataFrame`` in the ``_riana.txt``
             schema (``concat`` / ``sample`` / ``percolator q-value`` / ``isoN``).
         aa_coefficients: ``{aa_letter: coefficient}`` for per-peptide Spep
@@ -500,8 +498,8 @@ def fit_run(
     model_fn = _MODELS[config.model]
     if config.precursor_k_p is not None:
         # Rising precursor: the per-point solve gives f (and label content A); the
-        # peptide curve is fitted on A with the label-content (Guan) curve at this k_p.
-        # FitConfig has already restricted this to model 'simple' and label 'hw'.
+        # peptide curve is fitted on A with the label-content curve at this k_p.
+        # FitConfig has already restricted this to the exponential model and label 'hw'.
         model_fn = models.rising_precursor_label
         _LOGGER.info(
             "fit_run: rising precursor k_p=%g — per-point envelope solve for the "
@@ -908,11 +906,9 @@ def _fit_one_concat(
     # for FS ∈ [0, 1], independent of the experiment's precursor
     # enrichment (which is config.ria_max, passed to solve_fs_d2o above).
     # The legacy curve_fit also used a_max=1.0 (riana_fit.py:368).
-    kinetic_kwargs = dict(
-        a_0=0.0, a_max=1.0,
-        k_p=(float(config.precursor_k_p) if rising else config.k_p),
-        k_r=config.k_r, r_p=config.r_p,
-    )
+    kinetic_kwargs: dict[str, float] = dict(a_0=0.0, a_max=1.0)
+    if rising:
+        kinetic_kwargs["k_p"] = float(config.precursor_k_p)
 
     # A fit whose points all share one labeling time has a closed-form / root-find k
     # (see _solve_k_single_t): the 1-parameter LS collapses to model(t*, k)=mean(fs).
@@ -1233,8 +1229,8 @@ def precursor_header(value: object) -> dict[str, str]:
     (single-curve fit). Returns ``fs_basis`` — ``theta`` (precursor at plateau from
     t = 0), ``f`` (every curve rising: fraction new) or ``mixed`` — and, when any curve
     is rising, ``k_p_applied`` listing them (``experiment/condition=k_p; …``; the
-    config's own ``k_p`` line is the deprecated guan/fornasiero curve parameter, and
-    its ``precursor_k_p`` line only the ``--kp`` given). The rollup reads ``fs_basis``.
+    config's ``precursor_k_p`` line is only the ``--kp`` given). The rollup reads
+    ``fs_basis``.
     """
     if isinstance(value, dict):
         items = {k: v for k, v in value.items()}

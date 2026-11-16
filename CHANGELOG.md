@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Changed / Removed — models and peptide admission — 2026-11-16
+
+- **`simple` is now `exponential`** in `fit --model`, `rollup --model`, `FitConfig` and the app.
+  The old name is still accepted, with a warning on the command line, and goes in a later
+  release. Fit headers now read `# model exponential`. The model sets are:
+  - `fit`: `exponential` (default) or `calibration`;
+  - `rollup`: `exponential` (default) or `linear`.
+
+  The names live in `riana.constants` (`FIT_MODELS`, `ROLLUP_MODELS`, `MODEL_ALIASES`,
+  `canonical_model`).
+- **Removed: `--model guan` and `--model fornasiero`, with `--kr` and `--rp`** (fit, rollup and
+  the app), and rollup's `--kp`, which fed only them.
+  - *Why:* fitting θ with a lagging-precursor curve biased k by +5 % to +42 % in the
+    non-first-order feasibility study.
+  - *The replacement* is the rising-precursor solve at fit time: `fit --kp` or the SDRF's
+    `characteristics[precursor rate constant]`. Each timepoint is solved for fraction new f,
+    and the exponential model is fitted to it. `fit --kp` stays.
+  - *Refusals:*
+    - asking for a removed model is refused with that pointer;
+    - rollup refuses a fit whose header says `# model guan` or `# model fornasiero`;
+    - the app's "Load results" draws such a fit with the exponential curve and says so.
+  - `models.two_compartment_guan` and `models.two_compartment_fornasiero` are gone. The
+    rising-precursor curve (`models.rising_precursor_label`) is unchanged.
+  - Reproducing an older guan / fornasiero analysis (e.g. Hammond et al. 2022) needs
+    Riana ≤ 1.1.0.
+- **[RESULTS-AFFECTING] `--peptide-admission` defaults to `all` for every model.** A peptide is
+  used only if it passes curation in every condition it appears in. `auto`, which picked `all`
+  for `linear` and `own` for the kinetic models, is gone.
+  - Multi-condition `exponential` rollups change (they used `own`). Use `--peptide-admission
+    own` for the old behaviour.
+  - `linear` and single-condition rollups are unchanged.
+  - The policies, least to most stringent, are `any`, `own` and `all`.
+
 ### Changed — `linear` Δk: each peptide keeps one precision level across conditions — 2026-11-16
 
 - **[RESULTS-AFFECTING] The `linear` collapse now pools each peptide's band level over the

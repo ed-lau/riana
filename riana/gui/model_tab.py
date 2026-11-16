@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 from qasync import asyncSlot
 
 from riana.config import FitConfig
+from riana.constants import EXPONENTIAL_MODEL, REMOVED_MODELS, canonical_model
 from riana.core.fitting import available_coefficient_presets
 from riana.core.fitting import peptide_summary, precursor_header
 from riana.gui.curve_view import CurveView
@@ -150,10 +151,10 @@ class ModelTab(QWidget):
         form.addRow("Coefficients", _row(coeff_row))
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["simple", "guan", "fornasiero", "calibration"])
+        self.model_combo.addItems(["exponential", "calibration"])
         self.model_combo.setToolTip(
-            "Kinetic models (simple/guan/fornasiero) fit k_deg vs labeling time. "
-            "'calibration' fits a through-origin FS-vs-mixing-proportion recovery "
+            "'exponential' fits k_deg vs labeling time (θ = 1 − e^(−kt); fraction new "
+            "when the SDRF gives a precursor rate constant). 'calibration' fits a through-origin FS-vs-mixing-proportion recovery "
             "line (R² = recovery quality) — pick it for a mixing-calibration run, "
             "or use a manifest and it is auto-selected.")
         form.addRow("Model", self.model_combo)
@@ -220,13 +221,6 @@ class ModelTab(QWidget):
             "points — the with/without-MBR A/B.")
         form.addRow("MBR", self.exclude_mbr_check)
 
-        self.kp_spin = self._rate_spin(0.5)
-        form.addRow("k_p (guan/forn.)", self.kp_spin)
-        self.kr_spin = self._rate_spin(0.05)
-        form.addRow("k_r (fornasiero)", self.kr_spin)
-        self.rp_spin = self._rate_spin(10.0)
-        form.addRow("r_p (fornasiero)", self.rp_spin)
-
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, os.cpu_count() or 1)
         self.workers_spin.setValue(1)
@@ -274,14 +268,6 @@ class ModelTab(QWidget):
         self.error_label.setWordWrap(True)
         form.addRow(self.error_label)
         return box
-
-    def _rate_spin(self, value: float) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
-        spin.setDecimals(4)
-        spin.setRange(0.0, 1000.0)
-        spin.setSingleStep(0.05)
-        spin.setValue(value)
-        return spin
 
     def _build_results(self) -> QWidget:
         panel = QWidget()
@@ -400,9 +386,6 @@ class ModelTab(QWidget):
         return FitConfig(
             model=self.model_combo.currentText(),
             label=self.label_combo.currentText(),
-            k_p=float(self.kp_spin.value()),
-            k_r=float(self.kr_spin.value()),
-            r_p=float(self.rp_spin.value()),
             q_value=float(self.qvalue_spin.value()),
             depth=int(self.depth_spin.value()),
             min_spep=(None if self.min_spep_spin.value() < 0
@@ -630,7 +613,7 @@ class ModelTab(QWidget):
         cfg = self._last_config
         if cfg is None:
             return
-        kinetic = dict(k_p=cfg.k_p, k_r=cfg.k_r, r_p=cfg.r_p)
+        kinetic: dict = {}
         ev = row.get("evidence")
         mx = row.get("metox")
         fsds = row.get("fs_ds") if self._show_fsds_check.isChecked() else None
@@ -688,9 +671,14 @@ class ModelTab(QWidget):
             # The fitted curve needs the model that produced the results (only
             # k_deg is in the table); take model/label from the provenance header
             # and the rest from the current form.
+            fit_model = canonical_model(header.get("model", EXPONENTIAL_MODEL))
+            if fit_model in REMOVED_MODELS:
+                self._info(f"these results were fit with --model {fit_model} (removed "
+                           "in 1.2.0); curves are drawn with the exponential model.")
+                fit_model = EXPONENTIAL_MODEL
             self._last_config = dataclasses.replace(
                 self.build_config(),
-                model=header.get("model", "simple"),
+                model=fit_model,
                 label=header.get("label", self.label_combo.currentText()))
             self._result_df = result_df
             self._populate_results(result_df)

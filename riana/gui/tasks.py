@@ -189,9 +189,6 @@ def run_fit_manifest(
 def run_rollup(
     fit_dir: str,
     model: str,
-    kp: float,
-    kr: float,
-    rp: float,
     parsimony: str,
     min_peptides: int,
     min_points: int,
@@ -199,7 +196,7 @@ def run_rollup(
     min_r2: float | None = None,
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
-    peptide_admission: str = "auto",
+    peptide_admission: str = "all",
     method: str = "weighted",
     workers: int = 1,
     phi_limit: float = -4.0,
@@ -220,8 +217,9 @@ def run_rollup(
     (``run_in_executor(None, …)``), not the shared ``ProcessPoolExecutor`` — a
     pool worker spawning its own pool is a nested pool, which breaks
     (``BrokenProcessPool``). On a thread the pool is created from the main
-    process. The fit's ``fs_basis`` header is read here and checked as the CLI does
-    (:func:`riana.core.protein.check_fs_basis`). ``phi_limit`` / ``reference_condition`` / ``test_condition`` apply
+    process. The fit's header is read here and checked as the CLI does: a fit made
+    with a removed model is refused (:func:`riana.core.protein.check_fit_model`) and
+    ``fs_basis`` is validated (:func:`riana.core.protein.check_fs_basis`). ``phi_limit`` / ``reference_condition`` / ``test_condition`` apply
     only to ``model="linear"`` (``test_condition`` names the Δk comparison
     condition — the multi-group interim; needs ``reference_condition`` set too).
 
@@ -233,15 +231,15 @@ def run_rollup(
     """
     from pathlib import Path
 
-    from riana.core.protein import fit_basis_header, rollup_proteins
+    from riana.core.protein import check_fit_model, fit_basis_header, rollup_proteins
 
     fd = Path(fit_dir)
+    check_fit_model(fd / "riana_fit_fractions.txt")
     peptides = pd.read_table(fd / "riana_fit_peptides.txt", comment="#")
     fractions = pd.read_table(fd / "riana_fit_fractions.txt", comment="#")
     fs_basis = fit_basis_header(fd / "riana_fit_fractions.txt")["fs_basis"]
     result = rollup_proteins(
         peptides, fractions, model=model, method=method,
-        kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
         parsimony=parsimony, min_peptides=int(min_peptides),
         min_points=int(min_points), min_fit_points=min_fit_points, min_r2=min_r2,
         k_cv_max=float(k_cv_max), rescue_r2=float(rescue_r2),

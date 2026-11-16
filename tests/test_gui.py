@@ -147,7 +147,7 @@ def test_run_fit_worker_fits_synthetic_series(tmp_path):
     pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
                  ).to_csv(coeff_csv, index=False)
 
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     result = run_fit(config, paths, str(coeff_csv))
 
@@ -178,7 +178,7 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
     pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
                  ).to_csv(coeff_csv, index=False)
 
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     fit_df = run_fit(config, paths, str(coeff_csv))
     fit_dir = tmp_path / "fit"
@@ -188,7 +188,7 @@ def test_run_rollup_worker_rolls_fit_outputs_to_proteins(tmp_path):
         fit_dir / "riana_fit_fractions.txt", sep="\t", index=False)
 
     proteins, points = run_rollup(
-        str(fit_dir), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+        str(fit_dir), "exponential", "unique", 1, 3)
     assert {"protein", "method", "k_deg", "peptide_median_k"} <= set(proteins.columns)
     # Each synthetic peptide maps to its own protein (proteotypic) -> 5 proteins.
     assert len(proteins) == len(_TEST_PEPTIDES)
@@ -217,7 +217,7 @@ def test_run_rollup_forwards_min_fit_points(tmp_path, monkeypatch):
     (tmp_path / "riana_fit_fractions.txt").write_text(
         "concat\tlabeling_time\tfs\nA_2\t24.0\t0.4\n")
 
-    run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3, min_fit_points=3)
+    run_rollup(str(tmp_path), "exponential", "unique", 1, 3, min_fit_points=3)
     assert captured.get("min_fit_points") == 3
 
 
@@ -239,7 +239,7 @@ def test_run_rollup_reads_the_fit_fs_basis(tmp_path, monkeypatch):
         "# fs_basis f\nconcat\tprotein id\nA_2\tsp|P|X\n")
     (tmp_path / "riana_fit_fractions.txt").write_text(
         "# fs_basis f\n# k_p_applied 0.1\nconcat\tlabeling_time\tfs\nA_2\t24.0\t0.4\n")
-    run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    run_rollup(str(tmp_path), "exponential", "unique", 1, 3)
     assert captured.get("fs_basis") == "f"
 
 
@@ -268,12 +268,12 @@ def _build_manifest_project(tmp_path):
     pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
                  ).to_csv(coeff_csv, index=False)
 
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     fit_df = run_fit_manifest(config, str(mf), str(coeff_csv))
     prov = make_provenance(
-        {"model": "simple"}, id_source=str(mf),
-        extra={"model": "simple", "label": "hw", "coefficients": str(coeff_csv)})
+        {"model": "exponential"}, id_source=str(mf),
+        extra={"model": "exponential", "label": "hw", "coefficients": str(coeff_csv)})
     pep = tmp_path / "riana_fit_peptides.txt"
     write_dataframe_tsv(pep, peptide_summary(fit_df), prov, include_index=True,
                         float_format=ESTIMATE_FLOAT_FORMAT)
@@ -283,10 +283,10 @@ def _build_manifest_project(tmp_path):
     record_stage_rows(str(mf), "fit", [pep, frac], fit_df, prov)
 
     result, _points = run_rollup(
-        str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+        str(tmp_path), "exponential", "unique", 1, 3)
     rprov = make_provenance(
-        {"model": "simple"}, id_source=str(mf),
-        extra={"model": "simple", "method": "weighted", "parsimony": "unique"})
+        {"model": "exponential"}, id_source=str(mf),
+        extra={"model": "exponential", "method": "weighted", "parsimony": "unique"})
     rprot = tmp_path / "riana_rollup_proteins.txt"
     write_dataframe_tsv(rprot, result, rprov, include_index=False,
                         float_format=ESTIMATE_FLOAT_FORMAT)
@@ -318,7 +318,7 @@ def test_load_fit_results_reconstructs_curve_substrate(tmp_path):
     result, header = load_fit_results(str(mf))
     assert result.index.name == "concat"
     assert {"t", "fs", "evidence", "fs_ds", "dmass", "dspacing"} <= set(result.columns)
-    assert header.get("model") == "simple" and header.get("label") == "hw"
+    assert header.get("model") == "exponential" and header.get("label") == "hw"
     r = result[result["k_deg"].notna()].iloc[0]
     assert len(r["t"]) == len(r["fs"]) > 0  # aligned per-timepoint points
 
@@ -331,7 +331,7 @@ def test_load_rollup_results_reconstructs_table_and_points(tmp_path):
     mf = _build_manifest_project(tmp_path)
     proteins, points, header = load_rollup_results(str(mf))
     assert {"protein", "k_deg"} <= set(proteins.columns)
-    assert header.get("model") == "simple" and header.get("method") == "weighted"
+    assert header.get("model") == "exponential" and header.get("method") == "weighted"
     assert len(points) >= 1
     row = proteins.iloc[0]
     assert (row["experiment"], row["condition"], row["protein"]) in points
@@ -363,7 +363,7 @@ def test_run_rollup_emits_progress(tmp_path):
 
     _build_manifest_project(tmp_path)  # writes the fit outputs run_rollup reads
     q = _queue.Queue()
-    run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3,
+    run_rollup(str(tmp_path), "exponential", "unique", 1, 3,
                progress_queue=q)
     items = []
     while not q.empty():
@@ -389,7 +389,7 @@ def test_run_fit_manifest_emits_progress(tmp_path):
     coeff_csv = tmp_path / "coeffs.csv"
     pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
                  ).to_csv(coeff_csv, index=False)
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     q = _queue.Queue()
     run_fit_manifest(config, str(mf), str(coeff_csv), progress_queue=q)
@@ -438,7 +438,7 @@ def test_run_fit_manifest_worker_fits_from_manifest(tmp_path):
     pd.DataFrame({"amino_acid": list(coeffs), "coefficient": list(coeffs.values())}
                  ).to_csv(coeff_csv, index=False)
 
-    config = FitConfig(model="simple", label="hw", q_value=0.05, depth=3,
+    config = FitConfig(model="exponential", label="hw", q_value=0.05, depth=3,
                        ria_max=0.06)
     result = run_fit_manifest(config, str(mf), str(coeff_csv))
     assert {"k_deg", "condition", "experiment"} <= set(result.columns)
@@ -501,11 +501,12 @@ def test_key_form_fields_have_tooltips(main_window):
 def test_protein_tab_build_params_defaults(main_window):
     params = main_window.protein_tab.build_params()
     assert params["parsimony"] == "unique"
-    assert params["model"] == "simple"
+    assert params["model"] == "exponential"
     assert params["min_peptides"] == 2
     assert params["min_points"] == 3
     assert params["min_fit_points"] is None  # 0 on the spin -> auto (2 for single-tp)
     assert params["min_r2"] == 0.8  # gate on by default (0 on the spin -> None/off)
+    assert params["peptide_admission"] == "all"   # one default for every model
 
 
 def test_protein_tab_is_on_the_manifest_path(main_window):
@@ -627,11 +628,11 @@ def test_protein_tab_forks_on_different_output_dir(main_window, tmp_path):
     mf = _build_manifest_project(proj)  # integrate + fit + rollup rows on disk
     before = len(read_manifest(mf, stage="rollup"))
 
-    result, _pts = run_rollup(str(proj), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    result, _pts = run_rollup(str(proj), "exponential", "unique", 1, 3)
     tab = main_window.protein_tab
     fork = tmp_path / "fork"
     params = tab.build_params()
-    params.update(manifest=str(mf), out_dir=str(fork), model="simple",
+    params.update(manifest=str(mf), out_dir=str(fork), model="exponential",
                   method="weighted", parsimony="unique")
     tab._result_df = result
     tab._write_output(result, params)
@@ -672,14 +673,13 @@ def test_protein_tab_plots_refit_curve_on_row_selection(main_window):
 
 
 def test_protein_tab_linear_model_toggles_and_params(main_window):
-    """Selecting 'linear' swaps the ODE rate knobs for the φ + Δk-condition
-    knobs and surfaces the reference/test pair in build_params."""
+    """Selecting 'linear' shows the φ + Δk-condition knobs and surfaces the
+    reference/test pair in build_params."""
     tab = main_window.protein_tab
     tab.model_combo.setCurrentText("linear")
     assert tab.phi_limit_spin.isVisibleTo(tab)
     assert tab.reference_combo.isVisibleTo(tab)
     assert tab.test_combo.isVisibleTo(tab)
-    assert not tab.kp_spin.isVisibleTo(tab)
     # The dropdowns are auto-populated from the manifest; simulate that here.
     for combo in (tab.reference_combo, tab.test_combo):
         combo.addItems(["control", "drug"])
@@ -746,7 +746,7 @@ def test_curve_view_draws_ci_ribbon(main_window):
 
     cv = main_window.protein_tab.curve
     cv.plot_fit("PEP", [0, 1, 2, 4, 8], [0, 0.3, 0.5, 0.7, 0.85], 0.2,
-                "simple", {}, ci_lo=0.15, ci_hi=0.25)
+                "exponential", {}, ci_lo=0.15, ci_hi=0.25)
     items = cv.plot.items
     assert sum(isinstance(i, FillBetweenItem) for i in items) == 1
     assert sum(isinstance(i, PlotDataItem) for i in items) == 2  # points + fit line
@@ -767,7 +767,7 @@ def test_curve_view_splits_mbr_and_folded_points(main_window):
     cv = main_window.protein_tab.curve
     t = [0, 1, 2, 4]
     fs = [0.0, 0.3, 0.5, 0.7]
-    cv.plot_fit("PEP", t, fs, 0.2, "simple", {},
+    cv.plot_fit("PEP", t, fs, 0.2, "exponential", {},
                 evidence=["q_value", "mbr", "q_value", "q_value"],
                 metox=[False, False, True, False])
     series = [i for i in cv.plot.items if isinstance(i, PlotDataItem)]
@@ -970,7 +970,7 @@ def test_build_config_rejects_empty_isotopomers(main_window):
 def test_model_tab_build_config_defaults(main_window):
     cfg = main_window.model_tab.build_config()
     assert isinstance(cfg, FitConfig)
-    assert cfg.model == "simple"
+    assert cfg.model == "exponential"
     assert cfg.label == "hw"
     assert cfg.depth == 3
     assert cfg.ria_max == pytest.approx(0.06)
@@ -1070,7 +1070,7 @@ def test_curve_view_fit_overlays_fs_ds(main_window):
     t = [0.0, 1.0, 2.0, 4.0]
     fs = [0.0, 0.3, 0.5, 0.7]
     fs_ds = [0.0, 0.35, float("nan"), 0.66]  # one NaN point is dropped
-    cv.plot_fit("PEP", t, fs, 0.2, "simple", {}, fs_ds=fs_ds)
+    cv.plot_fit("PEP", t, fs, 0.2, "exponential", {}, fs_ds=fs_ds)
     series = {i.name(): i for i in cv.plot.items if isinstance(i, PlotDataItem)}
     fsds_series = [n for n in series if n and n.startswith("fs_ds")]
     assert fsds_series, "fs_ds overlay series missing"
@@ -1354,7 +1354,7 @@ def test_curve_view_export_writes_png(main_window, tmp_path):
     tab = main_window.model_tab
     assert not tab.curve.save_button.isEnabled()  # placeholder state
     tab.curve.plot_fit("PEP_2", [0.0, 1.0, 2.0], [0.0, 0.3, 0.5], 0.4,
-                       "simple", dict(k_p=0.5, k_r=0.05, r_p=10.0))
+                       "exponential", {})
     assert tab.curve.save_button.isEnabled()
 
     png = export_plot(tab.curve.plot, str(tmp_path / "fit.png"))
@@ -1457,7 +1457,7 @@ def test_curve_view_legend_is_outside_the_plot_viewbox(main_window):
     """The legend lives in its own column, not anchored inside the data ViewBox —
     so its MBR/fold sample glyphs can't be mistaken for plotted points."""
     cv = main_window.model_tab.curve
-    cv.plot_fit("PEP", [0, 1, 2], [0.0, 0.3, 0.5], 0.2, "simple", {},
+    cv.plot_fit("PEP", [0, 1, 2], [0.0, 0.3, 0.5], 0.2, "exponential", {},
                 evidence=["q_value", "mbr", "q_value"])
     # legend's parent is the dedicated legend ViewBox, not the plot's own ViewBox.
     assert cv.plot.legend.parentItem() is cv._legend_vb
@@ -1485,7 +1485,7 @@ def _interaction_fixture():
 def test_protein_tab_interaction_option_is_linear_only(main_window):
     tab = main_window.protein_tab
     tab.interaction_check.setChecked(True)
-    tab.model_combo.setCurrentText("simple")
+    tab.model_combo.setCurrentText("exponential")
     assert not tab.interaction_check.isVisibleTo(tab)
     assert tab.build_params()["interaction"] is False   # ignored off the linear model
     tab.model_combo.setCurrentText("linear")
@@ -1565,7 +1565,7 @@ def test_protein_tab_writes_and_reloads_the_interaction(main_window, tmp_path):
     from riana.io.manifest import read_manifest
 
     mf = _build_manifest_project(tmp_path)
-    result, _pts = run_rollup(str(tmp_path), "simple", 0.5, 0.05, 10.0, "unique", 1, 3)
+    result, _pts = run_rollup(str(tmp_path), "exponential", "unique", 1, 3)
     table, _points = _interaction_fixture()
     tab = main_window.protein_tab
     params = tab.build_params()

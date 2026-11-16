@@ -74,12 +74,9 @@ carry co-eluting interference.
 
 θ over labeling time t is fitted for the turnover rate constant k:
 
-- `simple` (default), one compartment: $\theta(t) = 1 - e^{-kt}$
-- `guan`, two compartments with precursor rate constant $k_p$ (`--kp`), as in Guan et al. 2012
-  ([PMID 22444387](https://pubmed.ncbi.nlm.nih.gov/22444387/)):
-  $$\theta(t) = 1 - \frac{k_p e^{-kt} - k e^{-k_p t}}{k_p - k}$$
-- `fornasiero`, which adds precursor reutilization from protein degradation (`--kr`, `--rp`), as in
-  Fornasiero et al. 2018 ([PMID 30315172](https://pubmed.ncbi.nlm.nih.gov/30315172/)).
+- `exponential` (default; `simple` before 1.2), one compartment: $\theta(t) = 1 - e^{-kt}$. A
+  precursor that rises after labeling starts is handled at the fit (`--kp`, below), not by a
+  different curve.
 - `calibration`, for mixing experiments: θ against the known labeled proportion, a line through the
   origin whose slope is the recovery (chosen automatically when the SDRF has a mixing proportion).
 
@@ -100,8 +97,8 @@ or with `fit --kp`, and `fit` solves each timepoint's envelope with the precurso
 then holds the fraction of protein made since labeling began, $f = 1 - e^{-kt}$, which stays
 first-order, so the rollup models apply unchanged — run `rollup --model linear` with the default
 weights, (1 − f̂)² (D~2~O, `--label hw`, only; `--kp inf` forces the precursor at plateau). The
-rollup reads the fit header's `fs_basis` and refuses `--model guan|fornasiero` on f (they would
-apply the precursor twice).
+rollup records the fit header's `fs_basis` in its own header. (This replaces the `guan` and
+`fornasiero` models, removed in 1.2: fitting θ with a lagging-precursor curve biased k.)
 
 The peptide fit and its R² then run on **label content** A, the peptide's mean enrichment as a
 fraction of the plateau enrichment (to first order, what the envelope's mean mass shift reads):
@@ -110,7 +107,8 @@ fraction of the plateau enrichment (to first order, what the envelope's mean mas
    $A_i = A(t_i; k_i)$.
 2. The peptide's k is fitted to the $A_i$ by unweighted least squares with
    $$A(t; k) = 1 - \frac{k_p e^{-kt} - k e^{-k_p t}}{k_p - k},$$
-   the Guan curve with $k_p$ fixed (it becomes $1 - e^{-kt}$ as $k_p \to \infty$).
+   the curve of Guan et al. 2012 ([PMID 22444387](https://pubmed.ncbi.nlm.nih.gov/22444387/))
+   with $k_p$ fixed (it becomes $1 - e^{-kt}$ as $k_p \to \infty$).
 3. R² and the uncertainty of k come from that fit exactly as today, so the admission gate is
    unchanged.
 
@@ -119,7 +117,7 @@ unlabeled and the plateau envelopes, which no longer gives the mean enrichment. 
 no protein can carry more label than the precursor has reached, so while the precursor is a few
 percent of plateau the envelope noise spans the whole range of f.
 
-|                     | today (`simple`)                 | rising precursor                                   |
+|                     | precursor at plateau             | rising precursor                                   |
 |---------------------|----------------------------------|----------------------------------------------------|
 | per-timepoint value | θ from the two-envelope solve    | $k_i$ from the precursor-aware solve → $A_i$ and $f_i$ |
 | peptide curve       | $1 - e^{-kt}$                    | the curve above, $k_p$ fixed                       |
@@ -149,9 +147,9 @@ also folds isoform-shared peptides into the canonical entry.
 
 **Admission.** A peptide enters the protein fit if its own fit has R² ≥ 0.8 (`--min-r2`), or, for a
 flat curve with a low R², if k is still tightly estimated (relative uncertainty below `--k-cv`).
-In a multi-condition rollup the gate is applied per condition, and under `linear` a peptide
-is used only if it passes in every condition (`--peptide-admission`), so both conditions rest on
-the same peptides.
+In a multi-condition rollup the gate is applied per condition, and a peptide is used only if it
+passes in every condition, so the conditions rest on the same peptides (`--peptide-admission all`,
+the default; `own` keeps it wherever it passes, `any` everywhere once it passes somewhere).
 
 **Protein k.** Within each biological replicate and timepoint, the peptides' θ are combined by
 inverse-variance weighting, and k is refitted on those points (`--method weighted`; `pooled` fits

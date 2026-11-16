@@ -516,10 +516,13 @@ def fit(
         "or a (feature, coefficient) CSV).",
     ),
     model: str = typer.Option(
-        "simple", "-m", "--model",
-        help="Kinetic model: simple (default), guan, fornasiero. Or 'calibration' "
-             "— a through-origin FS-vs-mixing-proportion recovery line (R² = "
-             "recovery quality); auto-selected on --manifest calibration runs."),
+        "exponential", "-m", "--model",
+        help="'exponential' (default): the first-order turnover curve θ = 1 − e^(−kt) "
+        "(with --kp, fitted to fraction new under a rising precursor). Or "
+        "'calibration': a through-origin FS-vs-mixing-proportion recovery line (R² = "
+        "recovery quality), auto-selected on --manifest calibration runs. The earlier "
+        "name 'simple' is still accepted; guan and fornasiero were removed in 1.2.0 "
+        "(use --kp)."),
     label: str = typer.Option(
         "hw", "-l", "--label",
         help="Labeling chemistry: 'hw' (heavy water / D2O, default) or 'o18' "
@@ -536,12 +539,7 @@ def fit(
         "began, and the peptide curve, R² and k CI are fitted on label content. "
         "Default: per experiment from the manifest's precursor_rate_constant (SDRF "
         "characteristics[precursor rate constant]); absent = precursor at plateau "
-        "from t = 0 (θ, as before). 'inf' forces that. Under the deprecated "
-        "guan / fornasiero models: their curve's k_p [default: 0.5]."),
-    kr: float = typer.Option(
-        0.05, "--kr", help="Reutilization rate constant (Fornasiero)."),
-    rp: float = typer.Option(
-        10.0, "--rp", help="Bound/free precursor ratio (Fornasiero)."),
+        "from t = 0 (θ, as before). 'inf' forces that."),
     q_value: float = typer.Option(
         1e-2, "-q", "--q_value", metavar="FDR",
         help="Fit only data points with q-value below this [default: 1e-2]."),
@@ -673,16 +671,10 @@ def fit(
 
     os.makedirs(out, exist_ok=True)
     try:
-        two_compartment = model in ("guan", "fornasiero")
         config = FitConfig(
             model=model,
             label=label,
-            k_p=(float(kp) if two_compartment and kp is not None
-                 else FitConfig.__dataclass_fields__["k_p"].default),
-            precursor_k_p=(float(kp) if not two_compartment and kp is not None
-                           else None),
-            k_r=float(kr),
-            r_p=float(rp),
+            precursor_k_p=(float(kp) if kp is not None else None),
             q_value=float(q_value),
             depth=int(depth),
             ria_max=(float(ria) if ria is not None
@@ -702,6 +694,9 @@ def fit(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("fit (typed pipeline)")
+    if config.model != model:
+        logger.warning("--model %r is now %r; the old name will be removed in a later "
+                       "release.", model, config.model)
     logger.info(
         "Spep gate: --min-spep %d%s",
         config.min_spep,
@@ -738,7 +733,7 @@ def fit(
         logger.info(f"fitting from manifest {manifest}")
         result_df = fit_project(
             config, manifest, coeffs, logger=logger, ria_override=ria,
-            kp_override=(None if config.model in ("guan", "fornasiero") else kp),
+            kp_override=kp,
             progress_callback=progress)
         progress.close()
         id_source = str(manifest)
@@ -869,15 +864,13 @@ def rollup(
         "recording stage='rollup' rows. With -o pointing elsewhere it forks a "
         "self-contained derived project there and leaves the input manifest untouched."),
     model: str = typer.Option(
-        "simple", "-m", "--model",
-        help="Kinetic model for the protein refit — match how the peptides were "
-        "fit (simple, guan, fornasiero). Or 'linear': the linearized "
-        "φ=log(1−θ) cross-sample model — fits a protein's conditions jointly for a "
-        "per-condition k and a Δk test (writes delta_k / delta_k_p / "
-        "delta_k_p_adj). Mutually exclusive with the ODE models. 'linear simple' "
-        "(the earlier name) is still accepted. When the fit applied a rising precursor "
-        "(its fs holds fraction new f), guan/fornasiero are refused: the precursor "
-        "is already in f."),
+        "exponential", "-m", "--model",
+        help="'exponential' (default): refit θ = 1 − e^(−kt) per (experiment, "
+        "condition, protein). 'linear': the linearized φ=log(1−θ) model — fits a "
+        "protein's conditions jointly for a per-condition k and a Δk test (writes "
+        "delta_k / delta_k_p / delta_k_p_adj). On a rising-precursor fit both apply "
+        "to fraction new f unchanged. The earlier names 'simple' and 'linear simple' "
+        "are still accepted."),
     phi_limit: float = typer.Option(
         -4.0, "--phi-limit", metavar="PHI",
         help="['linear' only] Plateau-truncation threshold in φ-space: "
@@ -918,12 +911,6 @@ def rollup(
         "blends both proteins' turnover, so it can't be attributed). 'isoform': "
         "also fold isoform-only-shared peptides into the canonical entry, unless "
         "an isoform in the group carries its own unique peptide."),
-    kp: float = typer.Option(
-        0.5, "--kp", help="Precursor rate constant (two-compartment models)."),
-    kr: float = typer.Option(
-        0.05, "--kr", help="Reutilization rate constant (Fornasiero)."),
-    rp: float = typer.Option(
-        10.0, "--rp", help="Bound/free precursor ratio (Fornasiero)."),
     min_peptides: int = typer.Option(
         2, "--min-peptides",
         help="Min attributed peptides for a protein to be reported [default: 2]."),
@@ -938,16 +925,13 @@ def rollup(
         "curation rides on this replicate floor + --k-cv, with R²/rescue bypassed), "
         "off otherwise. Set 3+ to require more replicates, or 1 to disable."),
     peptide_admission: str = typer.Option(
-        "auto", "--peptide-admission", metavar="POLICY",
+        "all", "--peptide-admission", metavar="POLICY",
         help="How a peptide's per-condition curation result maps across conditions in a "
-        "MULTI-condition rollup (single-condition is unaffected). 'auto' (default) → "
-        "'all' for `--model \"linear\"` (the Δk path, where a "
-        "different-peptides-per-condition contrast is a real confound) and 'own' for the "
-        "kinetic models. 'own': strictly per-condition — each condition's k / Δk term "
-        "uses only peptides that pass the gate THERE. 'any': passed-in-one ⇒ kept-in-all "
-        "(anti-conservative; the pre-2026-08 behaviour). 'all': kept only if it passes in "
-        "EVERY condition it appears in (paired / common-support — the cleanest Δk basis, "
-        "same peptides both sides, at the cost of yield)."),
+        "MULTI-condition rollup (single-condition is unaffected), least to most "
+        "stringent. 'any': passed in one condition ⇒ kept in all (anti-conservative). "
+        "'own': kept in each condition where it passes — the conditions can then rest "
+        "on different peptides. 'all' (default): kept only if it passes in EVERY "
+        "condition it appears in, so comparisons rest on the same peptides."),
     min_spep: Optional[int] = typer.Option(
         None, "--min-spep", metavar="N",
         help="Optional Spep (labelling-site) admission gate before rollup — drop "
@@ -1080,9 +1064,13 @@ def rollup(
         raise typer.BadParameter(
             "--test-condition must differ from --reference-condition — a condition "
             "compared to itself has no Δk.", param_hint="--test-condition")
-    from riana.core.protein import canonical_model, fit_basis_header
+    from riana.core.protein import canonical_model, check_fit_model, fit_basis_header
     renamed_from = model if canonical_model(model) != model else None
     model = canonical_model(model)
+    try:
+        check_fit_model(frac_path)
+    except DataError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     # What the fit's fs holds: theta, or fraction new f under a rising precursor.
     basis_extra = fit_basis_header(frac_path)
     fs_basis = basis_extra["fs_basis"]
@@ -1123,7 +1111,6 @@ def rollup(
     try:
         result = rollup_proteins(
             peptides, fractions, model=model, method=method,
-            kinetic_kwargs=dict(k_p=kp, k_r=kr, r_p=rp),
             parsimony=parsimony, min_peptides=int(min_peptides),
             min_points=int(min_points), min_spep=min_spep, min_r2=min_r2,
             k_cv_max=float(k_cv), rescue_r2=float(rescue_r2),
@@ -1141,7 +1128,7 @@ def rollup(
 
     out_path = Path(out) / "riana_rollup_proteins.txt"
     settings = {
-        "model": model, "parsimony": parsimony, "kp": kp, "kr": kr, "rp": rp,
+        "model": model, "parsimony": parsimony,
         "min_peptides": min_peptides, "min_points": min_points,
         "min_fit_points": min_fit_points, "peptide_admission": peptide_admission,
         "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "method": method,

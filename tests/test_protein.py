@@ -281,10 +281,10 @@ def test_rollup_single_timepoint_auto_detects_and_curates_on_replicates_and_kcv(
                          "biological_replicate": br, "labeling_time": T,
                          "fs": 0.38, "fs_lower": 0.36, "fs_upper": 0.40})
     frac = pd.DataFrame(rows)
-    auto = rollup_proteins(pep, frac, model="simple", min_points=1,
+    auto = rollup_proteins(pep, frac, model="exponential", min_points=1,
                            min_peptides=1, n_boot=20).set_index("protein")
     assert int(auto.loc["P1", "n_peptides"]) == 1     # only the replicated A survives
-    off = rollup_proteins(pep, frac, model="simple", min_points=1, min_peptides=1,
+    off = rollup_proteins(pep, frac, model="exponential", min_points=1, min_peptides=1,
                           min_fit_points=1, k_cv_max=0.0, n_boot=20).set_index("protein")
     assert int(off.loc["P1", "n_peptides"]) == 2      # gates disabled -> A and B
 
@@ -487,7 +487,7 @@ def test_rollup_gates_are_per_condition_not_leaked_across_conditions():
                               "fs_lower": theta - 0.01, "fs_upper": theta + 0.01})
     pep, frac = pd.DataFrame(pep_rows), pd.DataFrame(frac_rows)
     out = rollup_proteins(pep, frac, min_r2=0.8, min_peptides=1, min_points=3,
-                          n_boot=20).set_index("condition")
+                          n_boot=20, peptide_admission="own").set_index("condition")
     assert int(out.loc["ctrl", "n_peptides"]) == 2   # both peptides pass in ctrl
     assert int(out.loc["drug", "n_peptides"]) == 1   # only QEP; PEP must NOT leak in
 
@@ -547,30 +547,25 @@ def test_unknown_peptide_admission_raises():
         rollup_proteins(pep, frac, min_r2=0.8, peptide_admission="bogus")
 
 
-def test_resolve_admission_auto_per_model():
-    """'auto' resolves to 'all' for the linear-simple Δk model, 'own' for the kinetic
-    models; explicit policies pass through unchanged."""
-    from riana.core.protein import _resolve_admission
-    assert _resolve_admission("auto", "linear") == "all"
-    assert _resolve_admission("auto", "simple") == "own"
-    assert _resolve_admission("auto", "guan") == "own"
-    for p in ("own", "any", "all"):
-        assert _resolve_admission(p, "linear") == p
-        assert _resolve_admission(p, "simple") == p
+def test_auto_admission_is_retired():
+    pep, frac = _two_condition_gate_frames()
+    with pytest.raises(DataError, match="peptide_admission"):
+        rollup_proteins(pep, frac, min_r2=0.8, peptide_admission="auto")
 
 
-def test_peptide_admission_auto_defaults_all_for_linear_simple():
-    """model='linear' + default 'auto' resolves to 'all' (paired): a peptide that
-    fails the gate in one condition is dropped from BOTH, so the Δk basis is the same
-    peptides on both sides. Explicit 'own' instead keeps it on its passing side."""
+@pytest.mark.parametrize("model", ["exponential", "linear"])
+def test_peptide_admission_defaults_to_all_for_every_model(model):
+    """The default is 'all' (paired) for both rollup models: a peptide that fails the
+    gate in one condition is dropped from BOTH, so the conditions rest on the same
+    peptides. Explicit 'own' instead keeps it on its passing side."""
     pep, frac = _two_condition_gate_frames()   # PEP passes ctrl only; QEP passes both
-    auto = rollup_proteins(pep, frac, model="linear", reference_condition="ctrl",
-                           min_r2=0.8, min_peptides=1).set_index("condition")
-    own = rollup_proteins(pep, frac, model="linear", reference_condition="ctrl",
-                          min_r2=0.8, min_peptides=1,
-                          peptide_admission="own").set_index("condition")
-    assert int(auto.loc["ctrl", "n_peptides"]) == 1   # auto->all: PEP dropped (fails drug)
-    assert int(own.loc["ctrl", "n_peptides"]) == 2    # own: PEP kept where it passes
+    kw = dict(model=model, min_r2=0.8, min_peptides=1, n_boot=20)
+    if model == "linear":
+        kw["reference_condition"] = "ctrl"
+    default = rollup_proteins(pep, frac, **kw).set_index("condition")
+    own = rollup_proteins(pep, frac, peptide_admission="own", **kw).set_index("condition")
+    assert int(default.loc["ctrl", "n_peptides"]) == 1   # all: PEP dropped (fails drug)
+    assert int(own.loc["ctrl", "n_peptides"]) == 2       # own: PEP kept where it passes
 
 
 def test_rollup_workers_give_identical_result():
@@ -729,36 +724,52 @@ def test_rollup_fractions_carry_individual_when_the_fit_did():
 # --------------------------------------------------------------------------- #
 # Model name + what the fit's fs holds (rising precursor, 2026-11-13)
 # --------------------------------------------------------------------------- #
-def test_linear_model_accepts_its_earlier_name():
+def test_models_accept_their_earlier_names():
     from riana.core.protein import LINEAR_MODEL, canonical_model
 
     assert LINEAR_MODEL == "linear"
     assert canonical_model("linear simple") == "linear"
-    assert canonical_model("simple") == "simple"
+    assert canonical_model("simple") == "exponential"
+    assert canonical_model("exponential") == "exponential"
 
 
-@pytest.mark.parametrize("basis, model, message", [
-    ("f", "guan", "apply it twice"),
-    ("mixed", "fornasiero", "apply it twice"),
-    ("phi", "linear", "unknown fs_basis"),
-])
-def test_check_fs_basis_refuses_settings_wrong_on_fraction_new(basis, model, message):
+def test_simple_alias_rolls_up_as_exponential():
+    pep, frac = _make_frames({"sp|P0|X": 0.5})
+    a = rollup_proteins(pep, frac, model="simple", n_boot=20)
+    b = rollup_proteins(pep, frac, model="exponential", n_boot=20)
+    pd.testing.assert_frame_equal(a, b)
+
+
+@pytest.mark.parametrize("model", ["guan", "fornasiero"])
+def test_removed_models_are_refused_with_a_pointer_to_kp(model):
+    pep, frac = _make_frames({"sp|P0|X": 0.5})
+    with pytest.raises(DataError, match=r"removed in Riana 1\.2\.0.*--kp"):
+        rollup_proteins(pep, frac, model=model)
+
+
+def test_check_fs_basis_refuses_an_unknown_basis():
     from riana.core.protein import check_fs_basis
 
-    with pytest.raises(DataError, match=message):
-        check_fs_basis(basis, model)
+    with pytest.raises(DataError, match="unknown fs_basis"):
+        check_fs_basis("phi")
+    for basis in ("theta", "f", "mixed"):   # every rollup model applies to each
+        check_fs_basis(basis)
 
 
-@pytest.mark.parametrize("basis, model", [
-    ("theta", "linear"),                # θ: unchanged
-    ("theta", "guan"),
-    ("f", "linear"),                    # f: the linear model and the simple refit apply
-    ("f", "simple"),
-])
-def test_check_fs_basis_allows_the_rest(basis, model):
-    from riana.core.protein import check_fs_basis
+@pytest.mark.parametrize("fit_model, refused", [
+    ("guan", True), ("fornasiero", True), ("simple", False),
+    ("exponential", False), (None, False)])
+def test_check_fit_model_refuses_fits_from_removed_models(tmp_path, fit_model, refused):
+    from riana.core.protein import check_fit_model
 
-    check_fs_basis(basis, model)
+    f = tmp_path / "riana_fit_fractions.txt"
+    head = "# riana 1.1.0\n" + (f"# model {fit_model}\n" if fit_model else "")
+    f.write_text(head + "concat\tfs\n")
+    if refused:
+        with pytest.raises(DataError, match=f"made with --model {fit_model}"):
+            check_fit_model(f)
+    else:
+        check_fit_model(f)
 
 
 def test_fit_basis_header_reads_the_fit_header(tmp_path):
