@@ -8,9 +8,12 @@
 > - the models are `exponential`, `linear` and `calibration`, with guan / fornasiero removed;
 > - `--level peptide` is E+time / EJ+time.
 >
-> Open from it: the ATR–EDL time-split reading, and the Δk residual-variance moderation (§3
-> box *Δk peptide collapse*; evaluation report `reports/2026-11-14_wls_var_D_E_evaluation.md`
-> §5, §9). **This document is the
+> Open from it (§3 item *Δk peptide collapse*; evaluation report
+> `reports/2026-11-14_wls_var_D_E_evaluation.md` §6, §9): the ATR–EDL time-split reading,
+> longitudinal designs and the f route at the peptide level, whether `--level peptide` becomes
+> the default, and the Δk residual-variance moderation. Most `runs/` artifacts predate the
+> 2026-11-11 envelope binning fix and the 2026-11-16 rollup changes; re-running them is queued.
+> **This document is the
 > forward-looking roadmap — it lists OPEN work only.** The as-shipped record lives in
 > `CHANGELOG.md`; design decisions / point-in-time findings live in the `memory/` files
 > and `reports/*.md`. §2 and the M1–M4 pointers are kept as collapsed anchors because
@@ -71,8 +74,10 @@ August: multi-factor designs (`--experiment-column`, `rollup --plot`, per-experi
 animal slope** (`rollup --interaction`; `individual` IDs, Satterthwaite df, GUI tab), the
 isotope-envelope binning fix, the docs refresh, the **rising D₂O precursor fit** (`fit --kp`,
 per-point envelope solve → fraction new f) and its rollup stage (`linear`, was `linear simple`;
-`wls-var` refused on f, then removed 2026-11-15). One known issue is open: the Δk collapse
-mixing (§6).
+`wls-var` refused on f, then removed 2026-11-15), and (2026-11-16) the **rollup redesign**: the
+shared-band `linear` collapse (which resolved the Δk collapse-mixing known issue), admission
+default `all`, the `exponential` / `linear` / `calibration` model set with guan / fornasiero
+removed, and `--level peptide` (E+time / EJ+time).
 
 #### In scope — the release spine
 
@@ -81,8 +86,8 @@ mixing (§6).
 Single-timepoint data (TMT, dimethyl, any one-labeling-time run) — the flagship 1.2.0
 substrate — is now handled directly. **Shipped:** fit-step detection + `--depth` auto-relax;
 the direct k solve (closed form `k̂ = −ln(1 − F̄S)/t*` for `simple`, pole-safe Brent root-find
-for guan/fornasiero) replacing futile NLS in **both** `_fit_one_concat` and the rollup refit
-`_fit_kdeg`, routed locally by `np.ptp(t)==0` (so multi-timepoint peptides that collapse to one
+for guan/fornasiero — since their removal 2026-11-16 it serves the rising-precursor curve)
+replacing futile NLS in **both** `_fit_one_concat` and the rollup refit `_fit_kdeg`, routed locally by `np.ptp(t)==0` (so multi-timepoint peptides that collapse to one
 t after rail-drop benefit too); R²→NaN; the single-point `OptimizeWarning` gone. **GUI:** the
 rollup tab exposes **Min fit points** and relabels **Max k_cv** (secondary rescue vs
 single-timepoint primary gate) + a single-timepoint hint; the fit tab's summary and Depth
@@ -143,63 +148,24 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   identified on real data). **See the box below** for the agreed design. guan/fornasiero were
   removed 2026-11-16, in the same release as the solve (item 5). Still open from the old item: a measured
   (non-parametric) precursor curve, if a dataset with one appears.
-- **Δk peptide collapse: per-point vs per-peptide scatter — HIGH PRIORITY, plan agreed
-  2026-11-12, nothing built.** The collapse weights each peptide by its own per-condition band, so
-  the two conditions average the same peptides in different proportions; with real within-protein
-  peptide k spread (CV ~0.2) that is a Δk which is not turnover (*mechanism 1*). On ATF6 it
-  accounts for most shipped calls (Δk 37 → 0, interaction 86 → 2 with shared proportions; lve_atr
-  250 → 244). The user is also not convinced by `wls-var` even on θ (its evidence never had
-  peptide offsets or animals). Plan, candidates (A shipped `wls`, B `wls-var`, C shared
-  proportions, D random-effects collapse with τ², E peptide-level mixed model with an animal
-  slope) and the evidence order (calibrated simulation → real-data permutation nulls → agreement
-  with peptides' own Δk → precision): `reports/2026-11-12_deltak_inference_manual.md` §8.1.
-  Also there: the interaction's additive animal slope vs proportional animal effects (§8.2).
-  Comes **before** the residual-variance moderation below, which should moderate the winner.
-  *To do first for it:* run **EDL / SOL** (the lve_atr sister comparison, Study 4) through
-  current Riana — no current-version fit exists yet.
-  *Order (user, 2026-11-13):* after the rising-precursor rollup stage and the non-primed D₂O
-  dataset analysis and its (local) report — **both done 2026-11-13** — write a **new plan** from
-  §8.1: does `wls-var` do what it is meant to (weight by measured precision) at all, and should it
-  be replaced by a peptide-specific term — a peptide offset modelled in the collapse (L1), or Ṽ
-  replaced by the across-peptide scatter. **Scope approved 2026-11-13:**
-  `reports/2026-11-13_wls_var_and_collapse_plan.md`. **Evaluation done 2026-11-14:**
-  `reports/2026-11-14_wls_var_D_E_evaluation.md` (verdict and numbers there, not here).
-  **Decided (user, 2026-11-15):** remove `wls-var` now; do not build D; build the peptide-level
-  model after the EDL / SOL data drop (the combined ATR / LVE / EDL / SOL search), with **E vs
-  E+time still to be debated** (simplicity vs calibration and power; trade-off table and the
-  deciding data in report §5 Q3); test per-protein Δk as is (report §9 item 1). **2026-11-16:**
-  EDL / SOL evaluated and E+time rerun on Powell + GLS (report §4b). E vs E+time is settled for
-  E+time. **Decided 2026-11-16 (report §5 Q3): both steps.**
-  - **Built 2026-11-16** (CHANGELOG):
-    - C is the `linear` collapse (`protein._shared_bands`).
-    - `--peptide-admission any|own|all`, with a default of `all`.
-    - `--model exponential|linear|calibration`; guan / fornasiero removed.
-    - `--level protein|peptide`: `peptide` is E+time under `linear`
-      (`riana.core.peptide_model`), with EJ+time for `--interaction` and automatic animal
-      pairing. `pooled` is dropped.
-  - **Still open:**
-    - The ATR–EDL time-split reading (1.26; report §9).
-    - Longitudinal designs (E+time falls back to E there; report §6).
-    - The f route for the peptide level, which was not evaluated (report §6).
-    - Whether `--level peptide` should become the default after more designs.
-
-  *Direction (user,
-  2026-11-13):* D (random-effects collapse, shared levels) as the `wls-var` replacement, E
-  (peptide-level mixed model) later as the main route; D upgrades `--method weighted`, E replaces
-  pseudoreplicated `pooled` (as a new method name). Refinements in manual §8.1 "Direction";
-  **options under evaluation, not decided** (how `--method` × `--model` × `--linear-weights`
-  combine after the cleanup; how τ² is modelled in D — shape candidates, pooled estimator, check)
-  in §8.1 "Options under evaluation (2026-11-13)".
-- **TODO — paired within-animal comparisons (user, 2026-11-13).** When the two conditions are
-  tissues (or other strata) of the *same* animals in one experiment, the Δk test does not read
-  `characteristics[individual]` (only `--interaction`, which needs ≥ 2 experiments × 2
-  conditions, does). Each animal's two tissues enter as independent points: the animal's shared
-  enrichment and turnover nearly cancel from the contrast but stay in the error, so the test is
-  conservative with respect to animals and loses power. Build the paired analysis: the
-  interaction model's random animal slope with tissue as the within-animal factor,
-  φ ~ 0 + day:tissue + (0 + day | animal) (reduces to today's fit when σ²_animal = 0). Mechanism
-  1 is not removed by pairing. Candidate E (§8.1) covers it; build with E or as a standalone
-  `--paired` first if a dataset needs it sooner. Manual §8.2.
+- **Δk peptide collapse — BUILT 2026-11-16** (CHANGELOG `[Unreleased]`, the three 2026-11-16
+  entries). History: manual `reports/2026-11-12_deltak_inference_manual.md` §8.1, plan
+  `reports/2026-11-13_wls_var_and_collapse_plan.md`, evaluation
+  `reports/2026-11-14_wls_var_D_E_evaluation.md` (verdict and numbers there, not here). C (shared
+  band levels) is the `linear` collapse; `--peptide-admission any|own|all` defaults to `all`;
+  `--level peptide` fits E+time (EJ+time under `--interaction`) with automatic animal pairing;
+  `--level protein` (the collapse) stays the default (user, 2026-11-16). **Still open:**
+  - *ATR–EDL time-split reading* (T3 1.26, about 2 SE high; C and E also high there; report §4b,
+    §9 item 5). Unexplained; look again when a second heart–muscle dataset exists.
+  - *Longitudinal designs* (one animal at several times): E+time falls back to E; not tested, and
+    a run effect beside the animal slope may be needed (report §6).
+  - *The f route* (`fit --kp`) at the peptide level: not evaluated (report §6).
+  - *Default level:* whether `--level peptide` becomes the default after more designs.
+  - *T6 LV–RV* (0.88): a peptide × condition variance component, untested (report §9 item 2).
+- **Paired within-animal comparisons — covered by `--level peptide` (2026-11-16).** When the
+  same `characteristics[individual]` carries both conditions (tissues of the same animals),
+  E+time adds the animal × condition term and tests on animals − 1 df; detected from the data,
+  no flag. The protein level (the collapse) stays unpaired by design (user, 2026-11-16).
 - **TODO — k measurability and animal-level diagnostics in the rollup output (found 2026-11-13,
   k-stability check on the non-primed D₂O set; local report).** Nothing built.
   - *Unmeasurable k is not flagged.* `to_phi` clamps θ/f at 0.001, so a linear-model k is always
@@ -262,7 +228,7 @@ The 2026-06 build cycle (`memory/m8_adaptive_niso_robust_envelope.md`;
 
 ##### Δk residual-variance moderation — characterize the baseline first
 
-**What it is.** The `linear simple` Δk test estimates each protein's residual variance `s²_g`
+**What it is.** The `linear` Δk test estimates each protein's residual variance `s²_g`
 from that protein's own collapsed points, with `d_g = N_g − p_g` df (`N_g` points after the
 φ/t filters, `p_g` condition slopes). limma (Smyth 2004) moderates it across proteins:
 `s̃²_g = (d₀·s₀² + d_g·s²_g)/(d₀ + d_g)`, and the moderated t has `d_g + d₀` df, with `(d₀, s₀²)`
@@ -307,8 +273,9 @@ allow a Δk); `runs/timeseries_dia` (sparse 3-timepoint DIA; not rolled up). Add
 they arrive (more tissues, more than two conditions, longitudinal sampling).
 
 **Enabling change (small, no change to results):** write each protein's residual variance and its
-df beside `delta_k_se` in `riana_rollup_proteins.txt` (e.g. `delta_k_s2`, `delta_k_df`). Items
-1–3 currently have to be recomputed outside Riana. Do this first when the work resumes.
+df beside `delta_k_se` in `riana_rollup_proteins.txt` (e.g. `delta_k_s2`, `delta_k_df`; the
+peptide level already writes `delta_k_df`). Items 1–3 currently have to be recomputed outside
+Riana. Do this first when the work resumes.
 
 **Build / skip rule (proposed; confirm when the table exists).** Build it (opt-in first) if, in a
 design Riana supports, a material share of tested proteins (≥ ~20 %) has `d_g ≤ 5` **and** the
@@ -345,22 +312,22 @@ manifest `precursor_rate_constant`. Choices made while building:
 - *Var(f).* Not the envelope Jacobian of item 3: the peptide's label-content residual-bootstrap
   band (as θ's band today) divided by the gain ∂A/∂f at f̂. **But `wls-var` on f is
   miscalibrated** (Monte Carlo below) — the rollup on f uses `wls`; items 3 and 7 are revised.
-- *Header:* `fs_basis theta|f|mixed` and `k_p_applied` per curve (the config's own `k_p` line is
-  the deprecated guan/fornasiero parameter).
+- *Header:* `fs_basis theta|f|mixed` and `k_p_applied` per curve (the config's `k_p` / `k_r` / `r_p`,
+  the guan/fornasiero parameters, were removed 2026-11-16).
 - *Scope:* D₂O only; `fs_ds` not computed on f; a curve's runs must agree on k_p; `--kp inf`
-  forces the steady path; never applied to calibration runs or under guan/fornasiero.
+  forces the steady path; never applied to calibration runs.
 - *Cost:* same as the θ fit (convolution envelopes per peptide × timepoint, not cached run-wide).
 - On the real dataset k, R² and gate yield matched the prototype (k within ~3 %, R² ρ 0.998).
 
 **Rollup stage (7) BUILT 2026-11-13, except the default:** rollup reads the fit's `fs_basis`
 (`protein.fit_basis_header`), echoes `fs_basis`/`k_p_applied` in its headers outside the config
-hash, and on f/mixed refuses guan/fornasiero (`protein.check_fs_basis`; CLI and GUI; it also
-refused `--linear-weights wls-var` until that was removed 2026-11-15); `linear simple` → `linear` with the old name accepted
+hash, and on f/mixed refused guan/fornasiero (`protein.check_fs_basis`; moot since their removal
+2026-11-16, and it also refused `--linear-weights wls-var` until that was removed 2026-11-15); `linear simple` → `linear` with the old name accepted
 (warning). The Monte Carlo bench runs its f + `wls-var` arm with the refusal lifted (audit only;
-reproduces the stored arm exactly). **Default flip to `linear` held:** it would make the shipped
-per-condition collapse (known issue, manual §7) everyone's default Δk — flip once §8.1 decides.
-**Remaining:** the default (7), deprecations (5) and the `exponential` name (4), GUI φ-axis
-labels (say θ on f), validation before merge.
+reproduces the stored arm exactly). **Default flip to `linear` held (user):** the collapse issue that
+blocked it was resolved 2026-11-16 (shared bands), so the flip is now only a decision, not to be
+made unasked. **Remaining:** the default (7), GUI φ-axis labels (say θ on f), validation before
+merge. Done 2026-11-16: the removal (5) and the `exponential` name (4).
 **k_p hint (2026-11-13), refits deferred (user).** On the non-primed set, mid-course timepoints sat
 below the fitted curves in every condition and tissue on a fixed protein set, while late ones sat
 on them — the pattern a k_p set too fast produces (labeling lags the assumed precursor). It
@@ -502,7 +469,8 @@ rollup, linear Δk, interaction) runs unchanged on f.
    longer a `--label` option, so they have no native use left. On D₂O they are biased: they fit
    their curves to θ, which is not label content under a rising precursor (report §4). Fornasiero's
    label recycling has not been seen with D₂O; if it ever matters it returns as a precursor curve
-   P(s) fed to the same per-point solve, not as a curve model. **Plan:**
+   P(s) fed to the same per-point solve, not as a curve model. **Original plan (superseded
+   2026-11-16):**
    - *Timing.* Deprecate in the release that ships the rising-precursor solve, **not before**:
      without the solve, non-primed D₂O data would have no correction at all, and ignoring the
      precursor biases k further (low, by 25–86 % in the slow regime) than today's guan does (high,
@@ -525,7 +493,9 @@ rollup, linear Δk, interaction) runs unchanged on f.
    `--peptide-admission auto` resolves to `all` (fewer peptides per protein in multi-condition
    runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input
    (`# fs_basis f`, any finite k_p) the line and the interaction use **`wls`** (`wls-var`,
-   miscalibrated there, is removed altogether since 2026-11-15).
+   miscalibrated there, is removed altogether since 2026-11-15). **Done 2026-11-16 except the
+   default:** `--level protein|peptide` replaced `--method` (`pooled` dropped), and admission
+   defaults to `all` for every model (`auto` gone).
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
@@ -641,8 +611,10 @@ FS solve, limited-isotopomer scoring (`--fs` / `--fs auto`), the MS1 peak precac
 
 #### Track C — fitting / modeling science
 
-Shipped (CHANGELOG): M5 per-timepoint fraction-new, the fit-model set (simple/guan/fornasiero/
-calibration), protein rollup, the `linear simple` cross-condition Δk (WLS default), the ¹⁸O
+Shipped (CHANGELOG): M5 per-timepoint fraction-new, the fit-model set (`exponential`, was
+`simple`, and `calibration`; guan / fornasiero removed 2026-11-16), protein rollup, the `linear`
+(was `linear simple`) cross-condition Δk (WLS default; shared-band collapse and `--level
+peptide` 2026-11-16), the ¹⁸O
 rewrite, M7 PTM-aware envelope, 2D-LC fraction collapse, TMT/TMTpro, dimethyl channel→sample
 intake, the multi-point FS rail-drop, and (2026-08-09) multi-factor stratification
 (`integrate --experiment-column`), `rollup --plot` / `--experiment`, and per-experiment Δk BH,
@@ -655,7 +627,7 @@ and (2026-11-10) the experiment × condition interaction with a random animal ef
 - **Experiment × condition interaction — remaining.** Shipped 2026-11-10/11 as
   `rollup --interaction` and the GUI Protein tab's *Interaction* option (animal from
   `characteristics[individual]`, Satterthwaite df on the ratio-scale test, singular fits kept;
-  `CHANGELOG.md`). Open: *>2 conditions* — two conditions per run today
+  `CHANGELOG.md`), and 2026-11-16 at the peptide level (EJ+time, `--level peptide`). Open: *>2 conditions* — two conditions per run today
   (`--reference-condition` / `--test-condition`). **Deferred until a dataset with three or more
   conditions exists to test on**; ties to the all-pairwise item above.
 - **[HIGH PRIORITY — DEFERRED] Residual-variance moderation for the Δk t-test (limma-style).**
@@ -750,10 +722,11 @@ stays a linear `integrate → fit → rollup` chain glued by the manifest — or
   variance, which is noisy when a protein has few points (single-timepoint and sparse designs).
   Moderation across proteins is high priority but deferred (§3, the *Δk residual-variance
   moderation* box).
-- **Δk collapse mixes conditions differently (known issue, 2026-11-12).** Per-condition peptide
-  weights average the same peptides in different proportions per condition, so a Δk can arise
-  that is not turnover (manual §7; fix candidates and options under evaluation in §8.1; §3 box
-  *Δk peptide collapse*). The `linear` default flip waits on it.
+- **Peptide-level Δk (`--level peptide`): one high time-split reading.** On Boulder ATR–EDL
+  the time-split ratio reads 1.26 (SE too narrow; the other five tissue pairs 0.96–1.07);
+  unexplained (§3 item *Δk peptide collapse*). Longitudinal designs and the f route are not yet
+  evaluated at the peptide level. (The 2026-11-12 collapse-mixing known issue was resolved
+  2026-11-16 by the shared band level.)
 - **Unmeasurable k is not flagged** in the rollup output (k is always positive; a k CI reaching 0
   reads as a long t½). §3 TODO *k measurability and animal-level diagnostics*.
 - **Memory** is bounded — streaming/indexed mzML, one fraction at a time (`io/mzml.py`).
