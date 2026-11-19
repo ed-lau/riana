@@ -2,7 +2,7 @@
 # Regenerates every Monte Carlo number in reports/2026-11-12_deltak_inference_manual.md.
 #
 #   bash tests/benchmark/run_deltak_mc.sh            # ~1.5 h on 24 cores
-#   W=8 OUT=runs/my_mc bash tests/benchmark/run_deltak_mc.sh
+#   W=8 OUT=runs/deltak_eval/my_mc bash tests/benchmark/run_deltak_mc.sh
 #
 # Each arm writes <arm>/ratio<r>_params.json (settings, commit, tree state) and
 # <arm>/ratio<r>_results.tsv (the shipped CLI's rejection rates); the evaluator then
@@ -10,7 +10,7 @@
 # $OUT/evaluation.tsv. Seeds are fixed (bench default 20261112 + dataset + 1000·ratio).
 set -euo pipefail
 W=${W:-22}
-OUT=${OUT:-runs/deltak_mc}
+OUT=${OUT:-runs/deltak_eval/deltak_mc}
 PY=${PY:-python}
 B() { "$PY" -m tests.benchmark.bench_rising_null -W "$W" --proteins 250 "$@"; }
 

@@ -35,7 +35,7 @@ k recovery against truth.
     python -m tests.benchmark.bench_rising_null --datasets 4 --proteins 250 -W 14
     python -m tests.benchmark.bench_rising_null --ratio 1.5 --datasets 1
 
-Outputs (large, regenerable) go to ``--work`` (default ``runs/bench_rising_null``, gitignored).
+Outputs (large, regenerable) go to ``--work`` (default ``runs/deltak_eval/bench_rising_null``, gitignored).
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ def main() -> None:
                     help="true k_B / k_A in every tissue (1 = the null)")
     ap.add_argument("--seed", type=int, default=20261112)
     ap.add_argument("-W", "--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
-    ap.add_argument("--work", default="runs/bench_rising_null")
+    ap.add_argument("--work", default="runs/deltak_eval/bench_rising_null")
     ap.add_argument("--animal-k-sd", type=float, default=ANIMAL_K_SD,
                     help="per-animal × protein turnover SD (log scale); 0 turns it off")
     ap.add_argument("--ria-cv", type=float, default=RIA_CV,

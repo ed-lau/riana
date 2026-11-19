@@ -37,11 +37,11 @@ from riana.core.pipeline import fit_project
 RUNS = {
     "boomi_ipsc_d2o": ("alamillo_2025_ipsc", "hw"),
     "juber_ac16_d2o": ("alamillo_2025_ac16", "hw"),
-    "lve_atr_clean":  ("deberneh_2025_rss",  "hw"),
+    "timeseries_boulder4": ("deberneh_2025_rss", "hw"),  # was lve_atr_clean (same LV/atrium files)
     "boomi_ipsc_o18": ("juber_2026_o18_ac16", "o18"),
     "juber_ac16_o18": ("juber_2026_o18_ac16", "o18"),
 }
-D2O = ["boomi_ipsc_d2o", "juber_ac16_d2o", "lve_atr_clean"]
+D2O = ["boomi_ipsc_d2o", "juber_ac16_d2o", "timeseries_boulder4"]
 # (label, hi, lo). None = the shipped default rails (1.05 / -0.05).
 CONFIGS = [
     ("clamp",         1.199, -0.099),
@@ -80,7 +80,7 @@ def run(names, depth, workers, n_boot):
         coef, label = RUNS[name]
         load = load_o18_coefficients if label == "o18" else load_aa_coefficients
         coeffs = load(coef)
-        manifest = f"runs/{name}/riana_manifest.tsv"
+        manifest = f"runs/{name}/integrate/riana_manifest.tsv"
         clamp_adm = None
         base = 0
         for lbl, hi, lo in CONFIGS:

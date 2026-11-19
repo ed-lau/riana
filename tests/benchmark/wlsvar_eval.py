@@ -32,9 +32,9 @@ Tests:
   experiment), then the T3 z between the two genotypes' chamber Δk. No refit: the curves
   are per (chamber, genotype) either way.
 
-python tests/benchmark/wlsvar_eval.py t3 runs/wlsvar_eval/lve_atr/t3_odd runs/wlsvar_eval/lve_atr/t3_even --ref control --test atrium
-python tests/benchmark/wlsvar_eval.py null runs/wlsvar_eval/boomi/t1/t1_* --ref A --test B
-python tests/benchmark/wlsvar_eval.py t6 runs/wlsvar_eval/atf6/fit --ref LV --test RV
+python tests/benchmark/wlsvar_eval.py t3 runs/deltak_eval/wlsvar_eval/lve_atr/t3_odd runs/deltak_eval/wlsvar_eval/lve_atr/t3_even --ref control --test atrium
+python tests/benchmark/wlsvar_eval.py null runs/deltak_eval/wlsvar_eval/boomi/t1/t1_* --ref A --test B
+python tests/benchmark/wlsvar_eval.py t6 runs/deltak_eval/wlsvar_eval/atf6/fit --ref LV --test RV
 """
 from __future__ import annotations
 

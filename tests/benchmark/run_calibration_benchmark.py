@@ -12,7 +12,7 @@ baseline rather than an ad-hoc re-run. See
 
 Output layout (per line)::
 
-    runs/calib_<line>/                      # gitignored, regenerable
+    runs/calibration/calib_<line>/          # gitignored, regenerable
       <label>/
         recovery/fs_method_compare_summary.json   # the recovery anchor
         recovery/fs_method_compare.csv
@@ -149,7 +149,7 @@ def _run_recovery(line: str, integrate_dir: Path, out_dir: Path,
 def _append_baseline(line: str, label: str, args: argparse.Namespace,
                      summary: dict) -> None:
     new = summary["new_overall"]
-    md_path = RUNS_ROOT / f"calib_{line}" / "BASELINE.md"
+    md_path = RUNS_ROOT / "calibration" / f"calib_{line}" / "BASELINE.md"
     md_path.parent.mkdir(parents=True, exist_ok=True)
     if not md_path.exists():
         md_path.write_text(
@@ -184,7 +184,7 @@ def run_one(line: str, args: argparse.Namespace) -> dict:
         print(f"\n=== {line.upper()} [{label}]: reusing integrate "
               f"({integrate_dir}) ===")
 
-    analysis_home = RUNS_ROOT / f"calib_{line}" / label
+    analysis_home = RUNS_ROOT / "calibration" / f"calib_{line}" / label
     score_channels = _score_channels(args.fs)
     summary = _run_recovery(line, integrate_dir, analysis_home / "recovery",
                             score_channels, args.ria)
@@ -220,7 +220,7 @@ def main() -> None:
     parser.add_argument("--label", required=True,
                         help="config subdir name (e.g. v1.0.0, baseline, mt10, "
                         "adaptive) — both the integrate_outputs/<label> dir and "
-                        "the runs/calib_<line>/<label> analysis home")
+                        "the runs/calibration/calib_<line>/<label> analysis home")
     # Integrate knobs (passthrough -> run_line overrides).
     parser.add_argument("--peak-rt", choices=["ms2", "apex"], default="ms2")
     parser.add_argument("--mass-tol", type=float, default=15.0,

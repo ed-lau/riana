@@ -36,10 +36,10 @@ with a θ-proportional offset, τ ∝ θ: the implied τ_rel = τ / g (or τ / �
 for the right one. (c) τ² against the cell variance Ṽ (median per bin): where τ² ≪ Ṽ at the
 late, slope-carrying points, D reduces to C plus a cell variance.
 
-python tests/benchmark/wlsvar_wp1.py q1 runs/wlsvar_eval/boomi/fit
-python tests/benchmark/wlsvar_wp1.py q1 runs/wlsvar_eval/lve_atr/fit --ref control --test atrium
-python tests/benchmark/wlsvar_wp1.py tau runs/wlsvar_eval/boomi/fit
-python tests/benchmark/wlsvar_wp1.py animal runs/wlsvar_eval/atf6/fit --ref control --test ATF6-KO
+python tests/benchmark/wlsvar_wp1.py q1 runs/deltak_eval/wlsvar_eval/boomi/fit
+python tests/benchmark/wlsvar_wp1.py q1 runs/deltak_eval/wlsvar_eval/lve_atr/fit --ref control --test atrium
+python tests/benchmark/wlsvar_wp1.py tau runs/deltak_eval/wlsvar_eval/boomi/fit
+python tests/benchmark/wlsvar_wp1.py animal runs/deltak_eval/wlsvar_eval/atf6/fit --ref control --test ATF6-KO
 """
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ proportion (``labeling_time``).
 
 Usage:
   python -m tests.benchmark.bench_mass_defect_theta \
-      runs/calib_ac16_v1/riana_fit_fractions.txt --coefficients ac16 --ria 0.06
+      runs/calibration/calib_ac16_v1/current/riana_fit_fractions.txt --coefficients ac16 --ria 0.06
   ... add --no-anchor to use the theory fallback everywhere (A/B the anchor).
 """
 from __future__ import annotations

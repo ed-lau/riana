@@ -35,8 +35,8 @@ their overlap with the shipped default, each protein's Δk against its peptides'
 fit's per-peptide curves, no collapse), the size of the mixing shift against the SE, and the
 spread of the per-peptide band-variance ratio between the conditions.
 
-    python -m tests.benchmark.eval_rising_variance runs/deltak_mc
-    python -m tests.benchmark.eval_rising_variance runs/atf6_individual/fit --real control ATF6-KO
+    python -m tests.benchmark.eval_rising_variance runs/deltak_eval/deltak_mc
+    python -m tests.benchmark.eval_rising_variance runs/timeseries_atf6/archive/atf6_individual/fit --real control ATF6-KO
 
 Reference: ``reports/2026-11-12_deltak_inference_manual.md``.
 """
@@ -457,7 +457,7 @@ def main(root: str, workers: int = 16) -> None:
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("root", nargs="?", default="runs/deltak_mc",
+    ap.add_argument("root", nargs="?", default="runs/deltak_eval/deltak_mc",
                     help="Monte Carlo root (run_deltak_mc.sh's OUT), or a fit directory with --real")
     ap.add_argument("-W", "--workers", type=int, default=16)
     ap.add_argument("--real", nargs=2, metavar=("REFERENCE", "TEST"),

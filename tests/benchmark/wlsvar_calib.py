@@ -22,8 +22,8 @@ admission and parsimony), so real and simulated data go through the same estimat
   the share of its variance that the tissues have in common, after removing the animals'
   own cross-tissue covariance ÷ n (``day_shared_frac``; ATF6 0.85).
 
-python tests/benchmark/wlsvar_calib.py runs/wlsvar_eval/atf6/fit --ref control --test ATF6-KO
-python tests/benchmark/wlsvar_calib.py runs/wlsvar_calib/try1/ratio1_0/theta --ref A --test B
+python tests/benchmark/wlsvar_calib.py runs/deltak_eval/wlsvar_eval/atf6/fit --ref control --test ATF6-KO
+python tests/benchmark/wlsvar_calib.py runs/deltak_eval/wlsvar_calib/try1/ratio1_0/theta --ref A --test B
 """
 from __future__ import annotations
 

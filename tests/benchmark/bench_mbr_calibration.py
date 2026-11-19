@@ -10,8 +10,8 @@ elution), so a transferred point at proportion f should still recover θ ≈ f.
 Run ``integrate --mbr`` on the calibration mzTab first (the gate defaults apply)::
 
     riana integrate data/calibration_ac16/mzml <…>.mzTab \\
-        --sdrf data/calibration_ac16/samplesheet_ac16.sdrf.tsv --mbr -o runs/cal_ac16_mbr
-    python tests/benchmark/bench_mbr_calibration.py --run runs/cal_ac16_mbr --coefficients ac16
+        --sdrf data/calibration_ac16/samplesheet_ac16.sdrf.tsv --mbr -o runs/calibration/cal_ac16_mbr/integrate
+    python tests/benchmark/bench_mbr_calibration.py --run runs/calibration/cal_ac16_mbr/integrate --coefficients ac16
 
 Reports, per proportion and overall, the θ-recovery error |θ − f| and bias (θ − f)
 for MBR transfers vs direct (q-value) IDs — the direct test of whether transferred

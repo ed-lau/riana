@@ -52,10 +52,10 @@ Each dataset is scored under the variants in ``VARIANTS`` (A, B, C, C + ``wls-va
 join in WP4) and the shipped interaction under A and C. ``--calib`` also prints the WP3
 calibration statistics (``wlsvar_calib.py``) for the dataset.
 
-    python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_calib/try1 --proteins 300 --calib
-    python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/null --datasets 10
-    python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/r15 --ratio 1.5 --datasets 4
-    python tests/benchmark/wlsvar_sim.py --work runs/wlsvar_sim/null --score-only
+    python tests/benchmark/wlsvar_sim.py --work runs/deltak_eval/wlsvar_calib/try1 --proteins 300 --calib
+    python tests/benchmark/wlsvar_sim.py --work runs/deltak_eval/wlsvar_sim/null --datasets 10
+    python tests/benchmark/wlsvar_sim.py --work runs/deltak_eval/wlsvar_sim/r15 --ratio 1.5 --datasets 4
+    python tests/benchmark/wlsvar_sim.py --work runs/deltak_eval/wlsvar_sim/null --score-only
 """
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tests.benchmark.bench_rising_null import _random_peptide  # noqa: E402
 
 COEFFS = "deberneh_2025_rss"
-PARAMS = dict(                     # WP3 calibration to ATF6 (runs/wlsvar_calib/try6)
+PARAMS = dict(                     # WP3 calibration to ATF6 (runs/deltak_eval/wlsvar_calib/try6)
     days=[1.0, 3.0, 7.0, 10.0, 14.0],
     tissues={"LV": 1.0, "RV": 1.0, "LA": 1.17, "RA": 1.15},
     animals=3, ria=0.046, kp=100.0,

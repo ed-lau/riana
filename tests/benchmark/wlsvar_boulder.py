@@ -19,8 +19,8 @@ cov(j, l). A proportional deviation (δk ∝ k) has equal loadings on the r scal
 on the d scale; an additive one (δk the same in every tissue) the reverse. The same for the
 proteome-wide day shift (median r over proteins per tissue × day).
 
-python tests/benchmark/wlsvar_boulder.py pairs runs/wlsvar_eval/boulder4/fit runs/wlsvar_eval/boulder4/pairs
-python tests/benchmark/wlsvar_boulder.py tissues runs/wlsvar_eval/boulder4/fit
+python tests/benchmark/wlsvar_boulder.py pairs runs/deltak_eval/wlsvar_eval/boulder4/fit runs/deltak_eval/wlsvar_eval/boulder4/pairs
+python tests/benchmark/wlsvar_boulder.py tissues runs/deltak_eval/wlsvar_eval/boulder4/fit
 """
 from __future__ import annotations
 

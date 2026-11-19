@@ -51,14 +51,15 @@ Usage
     python -m tests.benchmark.bench_linear_weights all --regime both --plot 36_out  # homo vs hetero
     python -m tests.benchmark.bench_linear_weights recover --regime hetero --spread 0.8 --var-df 16
     python -m tests.benchmark.bench_linear_weights varweight --nsim 500      # the 2×2 effect size
-    python -m tests.benchmark.bench_linear_weights real --run runs/lve_atr_clean \
-        --reference control --test atrium
+    python -m tests.benchmark.bench_linear_weights real --run runs/timeseries_boulder4/current \
+        --reference "left ventricle" --test "left atrium"
 
 ``--regime {homo,hetero,both}`` is the homo/hetero switch for recover/power/efficiency (with
 ``--spread`` the hetero magnitude and ``--var-df`` the Var-estimate fidelity); ``both`` overlays
 the two scenarios in one table/plot.
 
-Calibrated defaults come from `runs/lve_atr_clean`: σ_θ ≈ 0.056, days 0..30, and the
+Calibrated defaults come from the Boulder LV/atrium set (`runs/lve_atr_clean`, since 2026-11-17 in
+`runs/timeseries_boulder4`): σ_θ ≈ 0.056, days 0..30, and the
 empirical protein-k percentiles (5/25/50/75/95 = 0.03/0.05/0.075/0.11/0.216 /day).
 """
 from __future__ import annotations
@@ -889,10 +890,10 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("cmd", choices=["diagnose", "recover", "power", "efficiency",
                                    "varweight", "moderate", "measure", "irls", "real", "all"])
-    p.add_argument("--run", default="runs/lve_atr_clean",
+    p.add_argument("--run", default="runs/timeseries_boulder4/current",
                    help="a rollup run dir holding riana_rollup_fractions.txt")
-    p.add_argument("--reference", default="control")
-    p.add_argument("--test", default="atrium")
+    p.add_argument("--reference", default="left ventricle")
+    p.add_argument("--test", default="left atrium")
     p.add_argument("--sigma", type=float, default=SIGMA_THETA,
                    help=f"per-point θ-scale noise SD (default {SIGMA_THETA}, from lve_atr)")
     p.add_argument("--regime", choices=["homo", "hetero", "both"], default="homo",

@@ -38,7 +38,7 @@ ARMS = [
 
 def run(run_name, coefficients, workers, n_boot):
     coeffs = load_aa_coefficients(coefficients)
-    manifest = f"runs/{run_name}/riana_manifest.tsv"
+    manifest = f"runs/{run_name}/integrate/riana_manifest.tsv"
     for lbl, drop, hi, lo in ARMS:
         t0 = time.time()
         cfg = FitConfig(model="simple", label="hw", q_value=1e-2, depth=1, ria_max=0.06,
