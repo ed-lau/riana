@@ -125,5 +125,8 @@ runs/
 36_out/
 
 # Technical-note write-up + figure notebooks — a paper artifact, not part of the
-# shippable package. Maintained separately (see notes/technical_note/00_overview.md).
+# shippable package. Its own git repo, one folder per note (see notes/o18-science/00_overview.md).
 notes/
+
+# Ad-hoc local analysis scripts and outputs (not tracked)
+scratchpad/

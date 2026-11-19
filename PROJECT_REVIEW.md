@@ -1,18 +1,22 @@
 # Riana — Roadmap & TODO (v1.2.0 forward)
 
-> **Status (2026-11-16):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
+> **Status (2026-11-19):** `1.1.0` is **fully released** (PyPI, GitHub, Zenodo, `master`
 > merged back). Active development is on the **`1.2.0` branch**. **The rollup redesign was
 > built 2026-11-16:**
 > - C (shared band levels) is the `linear` collapse;
-> - admission defaults to `all`;
+> - admission `auto`: `all` for the protein-level linear Δk, `own` for `--level peptide` and the
+>   exponential model (2026-11-18); one peptide reports a protein (2026-11-17); a linear rollup uses
+>   only its reference / test conditions, and a Δk needs a peptide in both (2026-11-18/19);
 > - the models are `exponential`, `linear` and `calibration`, with guan / fornasiero removed;
 > - `--level peptide` is E+time / EJ+time.
 >
 > Open from it (§3 item *Δk peptide collapse*; evaluation report
 > `reports/2026-11-14_wls_var_D_E_evaluation.md` §6, §9): the ATR–EDL time-split reading,
 > longitudinal designs and the f route at the peptide level, whether `--level peptide` becomes
-> the default, and the Δk residual-variance moderation. Most `runs/` artifacts predate the
-> 2026-11-11 envelope binning fix and the 2026-11-16 rollup changes; re-running them is queued.
+> the default, the slightly high single-peptide stratum, and the Δk residual-variance moderation.
+> Every `runs/` dataset was re-rolled under the 2026-11-19 rules (local `runs/README.md`; calls in
+> the as-built Δk manual `reports/2026-11-16_deltak_inference_manual.md` §8.5, admission evidence
+> §8.6); the ATF6 notebook and the ¹⁸O note were regenerated from them.
 > **This document is the
 > forward-looking roadmap — it lists OPEN work only.** The as-shipped record lives in
 > `CHANGELOG.md`; design decisions / point-in-time findings live in the `memory/` files
@@ -76,7 +80,7 @@ isotope-envelope binning fix, the docs refresh, the **rising D₂O precursor fit
 per-point envelope solve → fraction new f) and its rollup stage (`linear`, was `linear simple`;
 `wls-var` refused on f, then removed 2026-11-15), and (2026-11-16) the **rollup redesign**: the
 shared-band `linear` collapse (which resolved the Δk collapse-mixing known issue), admission
-default `all`, the `exponential` / `linear` / `calibration` model set with guan / fornasiero
+`auto` by model and level (2026-11-18), the `exponential` / `linear` / `calibration` model set with guan / fornasiero
 removed, and `--level peptide` (E+time / EJ+time).
 
 #### In scope — the release spine
@@ -149,10 +153,12 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   removed 2026-11-16, in the same release as the solve (item 5). Still open from the old item: a measured
   (non-parametric) precursor curve, if a dataset with one appears.
 - **Δk peptide collapse — BUILT 2026-11-16** (CHANGELOG `[Unreleased]`, the three 2026-11-16
-  entries). History: manual `reports/2026-11-12_deltak_inference_manual.md` §8.1, plan
+  entries). Reference: the as-built manual `reports/2026-11-16_deltak_inference_manual.md`.
+  History: the 11-12 manual §8.1, plan
   `reports/2026-11-13_wls_var_and_collapse_plan.md`, evaluation
   `reports/2026-11-14_wls_var_D_E_evaluation.md` (verdict and numbers there, not here). C (shared
-  band levels) is the `linear` collapse; `--peptide-admission any|own|all` defaults to `all`;
+  band levels) is the `linear` collapse; `--peptide-admission auto` (default) resolves to `all` at
+  the protein level and `own` at the peptide level (2026-11-18 admission evaluation, manual §8.6);
   `--level peptide` fits E+time (EJ+time under `--interaction`) with automatic animal pairing;
   `--level protein` (the collapse) stays the default (user, 2026-11-16). **Still open:**
   - *ATR–EDL time-split reading* (T3 1.26, about 2 SE high; C and E also high there; report §4b,
@@ -162,6 +168,11 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   - *The f route* (`fit --kp`) at the peptide level: not evaluated (report §6).
   - *Default level:* whether `--level peptide` becomes the default after more designs.
   - *T6 LV–RV* (0.88): a peptide × condition variance component, untested (report §9 item 2).
+  - *Single-peptide proteins* (since one peptide reports a protein, 2026-11-17): rejection
+    0.059–0.062 at α 0.05 on the ATF6 genotype permutation at both levels. The ≥ 2-peptide
+    stratum sits below nominal (0.016–0.039), so the pooled rate holds. Watch it where
+    single-peptide proteins dominate a call list; candidate remedies are a stratum flag in the
+    output or the residual-variance moderation below (manual §8.6, §11 item 11).
 - **Paired within-animal comparisons — covered by `--level peptide` (2026-11-16).** When the
   same `characteristics[individual]` carries both conditions (tissues of the same animals),
   E+time adds the animal × condition term and tests on animals − 1 df; detected from the data,
@@ -264,12 +275,12 @@ designs with many conditions give far fewer. We do not yet know where real proje
 6. **Yield:** BH hits at 0.05, per experiment.
 
 Existing runs to start from, spanning the designs: `runs/timeseries_atf6` (in-vivo DIA, 4 tissues
-× 5 timepoints × 3 animals, 2 conditions); `runs/lve_atr_clean` (in-vivo DDA, ventricle vs
-atrium); `runs/boomi_ipsc_d2o` / `_o18`, `runs/juber_ac16_d2o` / `_o18`, `runs/timeseries_lauren9`,
+× 5 timepoints × 3 animals, 2 conditions); `runs/timeseries_boulder4` (in-vivo DDA, LV / atrium /
+EDL / soleus of one mouse per day; the LV / atrium files were `runs/lve_atr_clean`); `runs/boomi_ipsc_d2o` / `_o18`, `runs/juber_ac16_d2o` / `_o18`, `runs/timeseries_lauren9`,
 `runs/timeseries_lauren5_7_ipsc_mesoderm_o18` (cell culture, rich D₂O / ¹⁸O series);
 `runs/dimethyl_duplex` (single timepoint, dimethyl); `runs/splatd2o_tmt16`, `runs/splatd2o_cm_tmt18`
 (single timepoint, TMT; rolled up with the kinetic model only so far, and pooled plexes may not
-allow a Δk); `runs/timeseries_dia` (sparse 3-timepoint DIA; not rolled up). Add complex samples as
+allow a Δk). Add complex samples as
 they arrive (more tissues, more than two conditions, longitudinal sampling).
 
 **Enabling change (small, no change to results):** write each protein's residual variance and its
@@ -495,7 +506,8 @@ rollup, linear Δk, interaction) runs unchanged on f.
    (`# fs_basis f`, any finite k_p) the line and the interaction use **`wls`** (`wls-var`,
    miscalibrated there, is removed altogether since 2026-11-15). **Done 2026-11-16 except the
    default:** `--level protein|peptide` replaced `--method` (`pooled` dropped), and admission
-   defaults to `all` for every model (`auto` gone).
+   is `auto` again, now by model and level (2026-11-18: `all` for the protein-level linear Δk,
+   `own` otherwise).
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
@@ -747,6 +759,7 @@ and "M8" in memory). **Root cause:** three sources overlap and none is authorita
 - **`reports/*.md`** — point-in-time analyses/benchmarks. Never edited after the fact; superseded
   by a newer dated report.
 
-**Immediate cleanups queued:** this rewrite fixes the PROJECT_REVIEW staleness; the `memory/`
-files (`v1_2_0_dev_line`, `silac_dimethyl_multiplexing`, the MEMORY.md `dea65f1`-unpushed line, and
-the A4 "M8 vs 1.2.0" label) still need a status refresh — do it alongside the single-timepoint work.
+**The 2026-07-21 cleanups are done** (checked 2026-11-16): the `memory/` status lines are
+current, `dea65f1` is pushed, and A4 is the old "M8" adaptive-N_ISO idea, deferred beyond 1.2.0.
+The Δk reference is `reports/2026-11-16_deltak_inference_manual.md` (it supersedes the 11-12
+manual); Δk variance numbers live there, not here.

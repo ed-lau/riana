@@ -1,5 +1,7 @@
 # Δk inference in Riana — technical manual: variance sources, weights and their calibration
 
+> **Superseded 2026-11-16** by [the as-built manual](2026-11-16_deltak_inference_manual.md) (rollup redesign: shared-band `linear` collapse, `--level peptide`, `wls-var` removed). This manual is kept as the record of the pre-redesign pipeline and of the Monte Carlo (§6) and real-data (§7) evidence.
+
 2026-11-12 · branch `1.2.0` · simulation code `5d0ebe7` (unchanged `riana/` since) · **Status:
 reference.** This is the single place that states how the `linear simple` rollup's Δk test and
 the `--interaction` model handle variance, what each weighting option computes, what evidence
