@@ -673,9 +673,8 @@ optimizer (Track B) — and, when built, the yield-gap diagnosis follow-up
 
 Shipped (CHANGELOG): sortable tables + PNG export, GUI `-W/--workers`, advanced-knob exposure,
 the Δmass/`fs_ds` overlay, isotopomer bar chart, fixed hint area, CLI progress bars, Load-results
-on all three tabs, and determinate progress bars. **Open:**
-- **[1.2.0 easy win] Package `riana gui` as a standalone app** — PyInstaller / py2app bundle
-  (`.app`/`.exe`, real macOS Dock icon). Nearer-term than the Electron rewrite.
+on all three tabs, determinate progress bars, and the PyInstaller standalone bundle
+(`packaging/`, 2026-08-08; GUI launch is checked by hand). **Open:**
 - **Protein (rollup) tab: show the project's experiments and conditions before a run** (low priority,
   user-suggested 2026-11-11) — e.g. "4 experiments (LA, LV, RA, RV) × 2 conditions" under the
   manifest field, read from the manifest's integrate rows, so the Reference / Test / Interaction
