@@ -45,7 +45,10 @@ fails too, or the animal variance is at 0: weighted least squares with no random
 the experiment's two conditions. A condition of the pair that a protein lacks (or that has
 fewer than two animals left) leaves that protein with the other condition's k only, fitted
 by the same model on one condition. An experiment with more than two conditions needs the
-pair named.
+pair named. Δk rests on the peptides seen in both conditions (each one's offset cancels);
+a peptide in one condition only sharpens that condition's k and the variance components. A
+protein whose two conditions share no peptide has no Δk (k per condition only), and a
+design whose fixed effects are not all identified is not fitted.
 
 **Per-condition k CI.** From the same covariance, at df = times − 1 when the time slope is in
 the model (the time stratum carries k's variance) and at the Δk df otherwise. The Δk test is
@@ -67,6 +70,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from riana.multiplex import peptide_identity
 from riana.progress import iter_progress
 
 _LOGGER = logging.getLogger(__name__)
@@ -103,6 +107,30 @@ def _animal_keys(g: pd.DataFrame) -> np.ndarray:
         named = g["individual"].map(individual_label).astype(str)
         return np.where(named != "", "i:" + named, comp)
     return comp.to_numpy()
+
+
+def _shares_peptide(g: pd.DataFrame, a: str, b: str) -> bool:
+    """Whether conditions ``a`` and ``b`` hold at least one peptide in common — what a
+    peptide-level Δk rests on (a peptide seen in one condition only enters that
+    condition's k and the variance components, not Δk)."""
+    cond = g["condition"].astype(str)
+    return bool(set(g["concat"][cond == a]) & set(g["concat"][cond == b]))
+
+
+def _pos_def(V: np.ndarray) -> bool:
+    return bool(np.all(np.isfinite(V)) and np.all(np.linalg.eigvalsh((V + V.T) / 2) > 0))
+
+
+def _by_identity(fractions: pd.DataFrame) -> pd.DataFrame:
+    """``concat`` → the peptide's identity across samples (channel-label tokens removed,
+    :func:`riana.multiplex.peptide_identity`): the peptide offsets, the shared-peptide
+    check and the peptide counts then treat a dimethyl light and heavy form as one."""
+    return fractions.assign(concat=peptide_identity(fractions["concat"]))
+
+
+def _full_rank(X: np.ndarray) -> bool:
+    """Every fixed effect identified (a guard against designs the checks above miss)."""
+    return bool(np.linalg.matrix_rank(X) == X.shape[1])
 
 
 def _sum_to_zero(pep: np.ndarray) -> tuple[np.ndarray, int]:
@@ -172,7 +200,7 @@ def _fit_animal(g: pd.DataFrame, conds: list[str], phi_limit: float) -> dict | N
     X = np.column_stack([t * m for m in is_c] + [t * C[pep, j] for j in range(P - 1)])
     y = phi
     n, p = X.shape
-    if n <= p + 2:
+    if n <= p + 2 or not _full_rank(X):
         return None
     b0 = np.linalg.lstsq(X, y, rcond=None)[0]
     w = np.exp(2 * np.maximum(X @ b0, phi_limit))
@@ -204,7 +232,10 @@ def _fit_animal(g: pd.DataFrame, conds: list[str], phi_limit: float) -> dict | N
                 continue
             bb = np.asarray(res.fe_params, float)
             VV = np.asarray(res.cov_params(), float)[:p, :p]
-            if _slope_var(VV, K) > 0:
+            # statsmodels' inverse Hessian can be indefinite near the variance boundary
+            # (a negative per-condition variance, a Δk SE from a broken matrix): such a
+            # fit falls through to the next design, finally WLS.
+            if _slope_var(VV, K) > 0 and _pos_def(VV[:K, :K]):
                 b, V, random = bb, VV, "animal"
                 break
         except Exception:  # noqa: BLE001 - statsmodels raises various
@@ -247,7 +278,7 @@ def _fit_time(g: pd.DataFrame, conds: list[str], phi_limit: float) -> dict | Non
     X = np.column_stack([t * m for m in is_c] + [t * C[pep, j] for j in range(P - 1)])
     y = phi
     n, p = X.shape
-    if n <= p + 3:
+    if n <= p + 3 or not _full_rank(X):
         return None
     b0 = np.linalg.lstsq(X, y, rcond=None)[0]
     w = np.exp(2 * np.maximum(X @ b0, phi_limit))
@@ -310,6 +341,11 @@ def _rows_for(exp: str, prot: str, g: pd.DataFrame, pair: list[str],
     conds = [c for c in pair if len(np.unique(animal[keep & (cond == c)])) >= 2]
     if not conds:
         return []
+    if len(conds) == 2 and not _shares_peptide(g[keep], *conds):
+        # Δk is a within-peptide contrast (each peptide's offset is shared by the two
+        # conditions): with no peptide in both, it is not identified — k per condition only.
+        return [r for c in conds
+                for r in _rows_for(exp, prot, g[cond == c], [c], phi_limit)]
     sub = g[np.isin(cond, conds)]
     fit = _fit_time(sub, conds, phi_limit)
     if fit is None and len(conds) == 2:          # no Δk: each condition's k alone
@@ -414,7 +450,7 @@ def fit_peptide_deltak(
     reference_condition: str | None = None,
     test_condition: str | None = None,
     phi_limit: float = -4.0,
-    min_peptides: int = 2,
+    min_peptides: int = 1,
     workers: int = 1,
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
@@ -449,6 +485,7 @@ def fit_peptide_deltak(
     columns = [*LINEAR_COLUMNS, *PEPTIDE_LEVEL_COLUMNS]
     if fractions.empty:
         return pd.DataFrame(columns=columns)
+    fractions = _by_identity(fractions)
     _check_pair_conditions(fractions, reference_condition, test_condition)
     pairs = _experiment_pairs(fractions, reference_condition, test_condition)
     f = _admitted(fractions, pairs, min_peptides, ["experiment", "condition", "protein"])
@@ -575,7 +612,10 @@ def _interaction_rows(prot: str, g: pd.DataFrame, ref: str, test: str,
     g["animal"] = _animal_keys(g)
     ok = (g.groupby(["experiment", "condition"])["animal"].nunique().unstack()
           .reindex(columns=[ref, test]).fillna(0))     # a missing condition counts as 0
-    exps = sorted(e for e in ok.index if ok.loc[e].min() >= 2)
+    # an experiment enters when both conditions have two animals and share a peptide
+    # (its Δk is a within-peptide contrast, as in the Δk model)
+    exps = sorted(e for e in ok.index if ok.loc[e].min() >= 2
+                  and _shares_peptide(g[g["experiment"] == e], ref, test))
     if len(exps) < 2:
         return []
     m = g["experiment"].isin(exps).to_numpy()
@@ -602,7 +642,7 @@ def _interaction_rows(prot: str, g: pd.DataFrame, ref: str, test: str,
     animal, uniq = pd.factorize(g["animal"])
     cell = pd.factorize(g["animal"] + "|" + g["experiment"].astype(str))[0]
     n_anim, n_cell = len(uniq), int(cell.max()) + 1
-    if n <= p + 3 or n_cell <= n_anim:
+    if n <= p + 3 or n_cell <= n_anim or not _full_rank(X):
         return []
     b0 = np.linalg.lstsq(X, y, rcond=None)[0]
     w = np.exp(2 * np.maximum(X @ b0, phi_limit))
@@ -707,7 +747,7 @@ def fit_peptide_interaction(
     reference_condition: str,
     test_condition: str,
     phi_limit: float = -4.0,
-    min_peptides: int = 2,
+    min_peptides: int = 1,
     workers: int = 1,
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
@@ -727,6 +767,7 @@ def fit_peptide_interaction(
     if missing:
         raise DataError(f"peptide-level points missing columns {sorted(missing)}.")
     ref, test = str(reference_condition), str(test_condition)
+    fractions = _by_identity(fractions)
     _check_pair_conditions(fractions, ref, test)
     columns = [*INTERACTION_COLUMNS, *PEPTIDE_INTERACTION_COLUMNS]
     pairs = {str(e): [ref, test] for e in fractions["experiment"].astype(str).unique()}

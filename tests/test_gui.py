@@ -502,11 +502,11 @@ def test_protein_tab_build_params_defaults(main_window):
     params = main_window.protein_tab.build_params()
     assert params["parsimony"] == "unique"
     assert params["model"] == "exponential"
-    assert params["min_peptides"] == 2
+    assert params["min_peptides"] == 1
     assert params["min_points"] == 3
     assert params["min_fit_points"] is None  # 0 on the spin -> auto (2 for single-tp)
     assert params["min_r2"] == 0.8  # gate on by default (0 on the spin -> None/off)
-    assert params["peptide_admission"] == "all"   # one default for every model
+    assert params["peptide_admission"] == "auto"  # all for the linear Δk, own otherwise
 
 
 def test_protein_tab_is_on_the_manifest_path(main_window):

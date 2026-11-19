@@ -919,8 +919,10 @@ def rollup(
         "also fold isoform-only-shared peptides into the canonical entry, unless "
         "an isoform in the group carries its own unique peptide."),
     min_peptides: int = typer.Option(
-        2, "--min-peptides",
-        help="Min attributed peptides for a protein to be reported [default: 2]."),
+        1, "--min-peptides",
+        help="Min attributed peptides (passing the gates) for a protein to be "
+        "reported in a condition [default: 1 — one good peptide; 2 was the default "
+        "before 1.2.0]."),
     min_points: int = typer.Option(
         3, "--min-points",
         help="Min collapsed (t, theta) points for the refit [default: 3]."),
@@ -932,13 +934,16 @@ def rollup(
         "curation rides on this replicate floor + --k-cv, with R²/rescue bypassed), "
         "off otherwise. Set 3+ to require more replicates, or 1 to disable."),
     peptide_admission: str = typer.Option(
-        "all", "--peptide-admission", metavar="POLICY",
+        "auto", "--peptide-admission", metavar="POLICY",
         help="How a peptide's per-condition curation result maps across conditions in a "
-        "MULTI-condition rollup (single-condition is unaffected), least to most "
-        "stringent. 'any': passed in one condition ⇒ kept in all (anti-conservative). "
-        "'own': kept in each condition where it passes — the conditions can then rest "
-        "on different peptides. 'all' (default): kept only if it passes in EVERY "
-        "condition it appears in, so comparisons rest on the same peptides."),
+        "MULTI-condition rollup (single-condition is unaffected). 'any': passed in one "
+        "condition ⇒ kept in all (anti-conservative). 'own': kept in each condition "
+        "where it passes — the conditions can then rest on different peptides. 'all': "
+        "kept only if it passes in EVERY condition it appears in (for --model linear, "
+        "the reference and the test), so comparisons rest on the same peptides. 'auto' "
+        "(default): 'all' for the protein-level linear Δk, 'own' for --level peptide "
+        "(its Δk is within-peptide) and for the exponential / calibration models (no "
+        "Δk)."),
     min_spep: Optional[int] = typer.Option(
         None, "--min-spep", metavar="N",
         help="Optional Spep (labelling-site) admission gate before rollup — drop "
@@ -1142,6 +1147,13 @@ def rollup(
         parsimony=parsimony, min_spep=min_spep, min_r2=min_r2, k_cv_max=float(k_cv),
         rescue_r2=float(rescue_r2), min_fit_points=min_fit_points,
         peptide_admission=str(peptide_admission), exclude_mbr=bool(exclude_mbr))
+    from riana.core.protein import resolve_admission
+    try:
+        admission = resolve_admission(str(peptide_admission), model, level)
+    except DataError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--peptide-admission") from exc
+    logger.info("peptide admission: %s%s", admission,
+                " (auto)" if peptide_admission == "auto" else "")
     try:
         result = rollup_proteins(
             peptides, fractions, model=model, level=level,
@@ -1160,7 +1172,7 @@ def rollup(
     settings = {
         "model": model, "parsimony": parsimony,
         "min_peptides": min_peptides, "min_points": min_points,
-        "min_fit_points": min_fit_points, "peptide_admission": peptide_admission,
+        "min_fit_points": min_fit_points, "peptide_admission": admission,
         "min_r2": min_r2, "k_cv": k_cv, "rescue_r2": rescue_r2, "level": level,
         "phi_limit": phi_limit, "linear_weights": linear_weights,
         "reference_condition": reference_condition,
@@ -1204,15 +1216,19 @@ def rollup(
             if level == "peptide":
                 from riana.core.peptide_model import fit_peptide_interaction
                 from riana.core.protein import gate_peptides
-                _, gated = gate_peptides(peptides, fractions, **gate_kw)
+                _, gated = gate_peptides(
+                    peptides, fractions, model=model, level=level,
+                    reference_condition=int_ref, test_condition=int_test, **gate_kw)
                 inter = fit_peptide_interaction(
                     gated, reference_condition=int_ref, test_condition=int_test,
                     phi_limit=float(phi_limit), min_peptides=int(min_peptides),
                     workers=int(workers), progress_callback=int_progress)
             else:
                 from riana.core.interaction_model import fit_interaction
+                from riana.core.protein import interaction_points
                 inter = fit_interaction(
-                    rollup_fractions.rename(columns={"fs": "theta"}),
+                    interaction_points(result, rollup_fractions).rename(
+                        columns={"fs": "theta"}),
                     reference_condition=int_ref, test_condition=int_test,
                     phi_limit=float(phi_limit), weights=str(linear_weights),
                     workers=int(workers),

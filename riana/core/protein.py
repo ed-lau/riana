@@ -83,6 +83,7 @@ from riana.constants import (
 from riana.core import models
 from riana.core.fitting import _solve_k_single_t
 from riana.exceptions import DataError
+from riana.multiplex import peptide_identity
 from riana.progress import iter_progress
 from riana.records import (
     CURVE_KEY_COLUMNS, GROUP_KEY_COLUMNS, PROTEIN_KEY_COLUMNS,
@@ -174,8 +175,9 @@ _CURVE_KEYS = list(CURVE_KEY_COLUMNS)
 #: Cross-condition peptide admission policies for the curation gates, least to most
 #: stringent. A gate scores each ``(experiment, condition, concat)`` CURVE on its own
 #: per-condition fit stats; this decides how a peptide's per-condition pass/fail maps
-#: across the conditions it appears in (peptide identity = ``(experiment, concat)``;
-#: ``condition`` is the mapped axis):
+#: across the conditions it appears in (peptide identity = ``(experiment, concat)``
+#: without channel-label tokens, :func:`riana.multiplex.peptide_identity`; ``condition``
+#: is the mapped axis):
 #:   ``"any"`` — keep the peptide in ALL conditions it appears in if it passed in ANY one
 #:      (the pre-2026-08 behaviour; anti-conservative — a good-in-one fit drags its
 #:      bad-in-another curve into the contrast).
@@ -183,13 +185,30 @@ _CURVE_KEYS = list(CURVE_KEY_COLUMNS)
 #:      k rests only on peptides that fit well there, but the conditions can rest on
 #:      DIFFERENT peptides, which confounds a comparison with peptide identity).
 #:   ``"all"`` — keep the peptide only if it passed in EVERY condition it appears in
-#:      (default; paired / common support — the same peptides on both sides of a
-#:      comparison, at the cost of yield).
-#: Only a multi-condition rollup is affected; with one condition the three coincide.
+#:      (paired / common support — the same peptides on both sides of a comparison, at
+#:      the cost of yield).
+#: Only a multi-condition rollup is affected; with one condition the three coincide. A
+#: linear rollup is first scoped to its two contrast conditions (:func:`gate_peptides`),
+#: so "every condition" means the reference and the test.
 _ADMISSION_POLICIES = ("any", "own", "all")
-#: The default policy, for every model (``auto`` — ``all`` for linear, ``own`` for the
-#: kinetic models — was retired 2026-11-16).
-DEFAULT_ADMISSION = "all"
+#: Accepted inputs: the three policies plus ``"auto"`` (the default, :func:`resolve_admission`).
+ADMISSION_INPUTS = ("auto", *_ADMISSION_POLICIES)
+DEFAULT_ADMISSION = "auto"
+
+
+def resolve_admission(policy: str, model: str, level: str = "protein") -> str:
+    """The policy a rollup applies: ``"auto"`` → ``"all"`` for the protein-level linear
+    Δk (its collapse compares peptide mixtures, so they must match: the 2026-11-17
+    nulls hold under ``all`` and fail under ``own``); ``"own"`` for ``--level peptide``
+    (its Δk is within-peptide, so one-sided peptides only inform each condition's k; it
+    holds the nulls under both) and for the exponential and calibration models (no Δk:
+    each condition's k stands alone). Other policies pass through."""
+    if policy not in ADMISSION_INPUTS:
+        raise DataError(
+            f"peptide_admission must be one of {list(ADMISSION_INPUTS)}, got {policy!r}")
+    if policy != "auto":
+        return policy
+    return "all" if (canonical_model(model) == LINEAR_MODEL and level == "protein") else "own"
 
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
 #: the collapse refit (``level`` = ``"protein"``); ``peptide_median_k`` is the
@@ -240,26 +259,32 @@ def gate_peptides(
     min_fit_points: int | None = None,
     peptide_admission: str = DEFAULT_ADMISSION,
     exclude_mbr: bool = False,
+    model: str = EXPONENTIAL_MODEL,
+    level: str = "protein",
+    reference_condition: str | None = None,
+    test_condition: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Attribution and curation: the ``(peptides, fractions)`` a rollup fits.
 
-    Protein attribution (``parsimony``), the optional MBR and Spep filters, and the
-    per-condition curation gates mapped across conditions by ``peptide_admission``.
-    The arguments are those of :func:`rollup_proteins`, which calls this first; the
-    peptide-level interaction (:func:`riana.core.peptide_model.fit_peptide_interaction`)
-    starts from the same gated points.
+    A linear rollup is first scoped to its contrast (:func:`scope_to_contrast`); then
+    protein attribution (``parsimony``), the optional MBR and Spep filters, and the
+    per-condition curation gates mapped across conditions by ``peptide_admission``
+    (``"auto"`` resolved by :func:`resolve_admission`). The arguments are those of
+    :func:`rollup_proteins`, which calls this first; the peptide-level interaction
+    (:func:`riana.core.peptide_model.fit_peptide_interaction`) starts from the same
+    gated points.
     """
     if parsimony not in _PARSIMONY:
         raise DataError(
             f"parsimony must be one of {list(_PARSIMONY)}, got {parsimony!r}")
-    if peptide_admission not in _ADMISSION_POLICIES:
-        raise DataError(
-            f"peptide_admission must be one of {list(_ADMISSION_POLICIES)}, "
-            f"got {peptide_admission!r}")
+    peptide_admission = resolve_admission(peptide_admission, model, level)
     peptides = _ensure_group_cols(peptides)
     fractions = _ensure_group_cols(fractions)
     if "concat" not in peptides.columns:
         raise DataError("peptides input is missing the 'concat' column.")
+    peptides, fractions = scope_to_contrast(
+        peptides, fractions, model=model, reference_condition=reference_condition,
+        test_condition=test_condition)
     # Decide attribution once over the peptide map, then apply to both frames.
     mapping = _resolve_parsimony(peptides, parsimony)
     peptides = _apply_parsimony(peptides, mapping)
@@ -327,6 +352,65 @@ def gate_peptides(
     return peptides, fractions
 
 
+def scope_to_contrast(
+    peptides: pd.DataFrame,
+    fractions: pd.DataFrame,
+    *,
+    model: str,
+    reference_condition: str | None = None,
+    test_condition: str | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Keep only the two conditions a linear Δk compares.
+
+    Admission (``all``), the shared band levels and the joint fit's pooled residual
+    variance would otherwise span every condition in the table, so a third tissue's
+    peptides and noise would change an A-vs-B result. With ``reference_condition`` and
+    ``test_condition`` named, the other conditions are dropped (each experiment keeps
+    its rows of the pair). Without both, an experiment may hold at most two conditions.
+    The exponential and calibration models (no Δk) pass through unchanged.
+    """
+    if canonical_model(model) != LINEAR_MODEL or fractions.empty:
+        return peptides, fractions
+    conds = fractions.groupby("experiment")["condition"].agg(
+        lambda s: sorted(set(s.astype(str))))
+    present = set().union(*conds) if len(conds) else set()
+    for role, cond in (("reference", reference_condition), ("test", test_condition)):
+        if cond is not None and str(cond) not in present:
+            raise DataError(
+                f"{role} condition {cond!r} is not among the conditions in the data "
+                f"({sorted(present)}). Check the spelling / the SDRF condition values.")
+    if reference_condition is not None and test_condition is not None:
+        pair = {str(reference_condition), str(test_condition)}
+        other = sorted(present - pair)
+        if other:
+            _LOGGER.info("linear Δk %s vs %s: the rollup uses those two conditions only "
+                         "(not in it: %s).", test_condition, reference_condition, other)
+            peptides = peptides[peptides["condition"].astype(str).isin(pair)]
+            fractions = fractions[fractions["condition"].astype(str).isin(pair)]
+        return peptides, fractions
+    over = {str(e): c for e, c in conds.items() if len(c) > 2}
+    if over:
+        raise DataError(
+            "the linear model compares two conditions, but "
+            + "; ".join(f"experiment {e!r} has {len(c)} ({', '.join(c)})"
+                        for e, c in over.items())
+            + ". Name the pair with --reference-condition and --test-condition.")
+    return peptides, fractions
+
+
+class _SharedAttr(dict):
+    """A ``DataFrame.attrs`` payload that derived frames share instead of copying.
+
+    pandas deep-copies ``attrs`` into every slice, row and group taken from a frame.
+    For the per-protein points of a large rollup that is ~1 s each, and per-protein
+    loops (the interaction filter, the ``--plot`` pages) then take an hour. Read-only
+    by convention.
+    """
+
+    def __deepcopy__(self, memo: dict) -> "_SharedAttr":
+        return self
+
+
 def rollup_proteins(
     peptides: pd.DataFrame,
     fractions: pd.DataFrame,
@@ -335,7 +419,7 @@ def rollup_proteins(
     kinetic_kwargs: Mapping[str, float] | None = None,
     parsimony: str = "unique",
     level: str = "protein",
-    min_peptides: int = 2,
+    min_peptides: int = 1,
     min_points: int = 3,
     min_spep: int | None = None,
     min_r2: float | None = None,
@@ -370,8 +454,9 @@ def rollup_proteins(
         kinetic_kwargs: extra keyword arguments for the exponential curve (none
             are needed); ``a_0`` / ``a_max`` are pinned 0 / 1.
         parsimony: ``"unique"`` (default) or ``"isoform"`` (deferred).
-        min_peptides: a protein needs at least this many attributed peptides to
-            be reported.
+        min_peptides: a protein needs at least this many attributed peptides
+            (in a condition) to be reported; 1 (default since 2026-11-17) reports
+            single-peptide proteins — one well-fitted peptide is a measurement.
         min_points: the refit needs at least this many collapsed ``(t, θ)``
             points.
         min_spep: optional Spep (labelling-site) admission gate applied *before*
@@ -398,11 +483,12 @@ def rollup_proteins(
             degenerate, so curation is this replicate floor + the ``k_cv`` gate
             (``k_cv_max``), with the R²/rescue machinery bypassed.
         peptide_admission: how a peptide's per-condition gate result maps across the
-            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"all"``
-            (default) — kept only if it passed in every condition it appears in
-            (paired / common support). ``"own"`` — strictly per-condition. ``"any"`` —
-            passed-in-one ⇒ kept-in-all (anti-conservative). Only bites a
-            multi-condition rollup; single-condition is unaffected.
+            conditions it appears in (:data:`_ADMISSION_POLICIES`). ``"all"`` — kept
+            only if it passed in every condition it appears in (paired / common
+            support). ``"own"`` — strictly per-condition. ``"any"`` — passed-in-one ⇒
+            kept-in-all (anti-conservative). ``"auto"`` (default) — ``all`` for the
+            protein-level linear Δk, ``own`` for ``level="peptide"`` and the other
+            models (:func:`resolve_admission`). Only bites a multi-condition rollup.
         level: ``"protein"`` (default; the inverse-variance per-timepoint collapse,
             under ``model="linear"`` with each peptide's band level shared across
             conditions, :func:`_shared_bands`) or ``"peptide"`` (``model="linear"``
@@ -418,9 +504,10 @@ def rollup_proteins(
         phi_limit / reference_condition / test_condition: only for
             ``model="linear"`` — the plateau-truncation threshold in φ-space
             (default −4 ≈ θ 0.98) and the Δk contrast conditions. ``reference`` is
-            the baseline (default the alphabetically-first); naming ``test`` as well
-            contrasts that specific pair even when >2 conditions are present (the
-            multi-group interim — see :func:`riana.core.linear_model.fit_linear_deltak`).
+            the baseline (default the alphabetically-first). With both named, the
+            rollup uses those two conditions only — admission, the shared bands and
+            the joint fit — and drops the others (:func:`scope_to_contrast`); without
+            both, an experiment may hold at most two conditions.
             ``model="linear simple"`` (the earlier name) is accepted.
         fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
             (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
@@ -453,7 +540,9 @@ def rollup_proteins(
     peptides, fractions = gate_peptides(
         peptides, fractions, parsimony=parsimony, min_spep=min_spep, min_r2=min_r2,
         k_cv_max=k_cv_max, rescue_r2=rescue_r2, min_fit_points=min_fit_points,
-        peptide_admission=peptide_admission, exclude_mbr=exclude_mbr)
+        peptide_admission=peptide_admission, exclude_mbr=exclude_mbr, model=model,
+        level=level, reference_condition=reference_condition,
+        test_condition=test_condition)
 
     stats = _peptide_stats(peptides, min_peptides=min_peptides)
     # Per-protein data-point census from the (filtered) fraction points: how many
@@ -472,7 +561,7 @@ def rollup_proteins(
             reference_condition=reference_condition,
             test_condition=test_condition, workers=workers,
             progress_callback=progress_callback)
-        result.attrs["point_individuals"] = _point_individuals(fractions)
+        result.attrs["point_individuals"] = _SharedAttr(_point_individuals(fractions))
         return result
 
     model_fn = _MODELS[model]
@@ -495,8 +584,8 @@ def rollup_proteins(
     )
     # The collapsed (t, θ) points behind each refit, for the GUI curve view.
     # Keyed by (experiment, condition, protein).
-    result.attrs["protein_points"] = points
-    result.attrs["point_individuals"] = _point_individuals(fractions)
+    result.attrs["protein_points"] = _SharedAttr(points)
+    result.attrs["point_individuals"] = _SharedAttr(_point_individuals(fractions))
     return result
 
 
@@ -547,7 +636,7 @@ def _rollup_linear(
             long, phi_limit=phi_limit, min_points=min_points,
             weights=linear_weights,
             reference_condition=reference_condition,
-            test_condition=test_condition,
+            test_condition=test_condition, no_contrast=_unshared(fractions),
             progress_callback=progress_callback)
         columns = PROTEIN_LINEAR_COLUMNS
 
@@ -567,8 +656,43 @@ def _rollup_linear(
                g["biological_replicate"].tolist())
         for keys, g in long.groupby(_GROUP_KEYS, sort=False)
     }
-    result.attrs["protein_points"] = points
+    result.attrs["protein_points"] = _SharedAttr(points)
     return result
+
+
+def _unshared(fractions: pd.DataFrame) -> set[tuple[str, str]]:
+    """``(experiment, protein)`` with two conditions but no peptide in both (identity per
+    :func:`riana.multiplex.peptide_identity`): its Δk would compare different peptides, so
+    it gets k per condition only, as at the peptide level. ``fractions`` is already scoped
+    to the contrast (:func:`scope_to_contrast`), so two conditions are the pair."""
+    if fractions.empty:
+        return set()
+    f = fractions[["experiment", "condition", "protein", "concat"]].drop_duplicates()
+    f = f.assign(pep=peptide_identity(f["concat"]))
+    keys = ["experiment", "protein"]
+    n_cond = f.groupby(keys)["condition"].nunique()
+    per_pep = f.groupby([*keys, "pep"])["condition"].nunique()
+    shared = set(per_pep[per_pep >= 2].reset_index()[keys].itertuples(index=False, name=None))
+    return set(n_cond[n_cond >= 2].index) - shared
+
+
+def interaction_points(result: pd.DataFrame, rollup_fractions: pd.DataFrame) -> pd.DataFrame:
+    """The rollup points the protein-level interaction fits: a protein's experiment whose
+    two conditions both have a k but no Δk (no shared peptide, :func:`_unshared`) is left
+    out of that protein's interaction, as :func:`riana.core.peptide_model.
+    fit_peptide_interaction` leaves it out at the peptide level."""
+    if rollup_fractions.empty or "delta_k" not in result.columns:
+        return rollup_fractions
+    r = result.loc[result["k_deg"].notna(),
+                   ["experiment", "protein", "condition", "delta_k"]]
+    g = r.groupby(["experiment", "protein"], sort=False)
+    drop = g["condition"].nunique().ge(2) & g["delta_k"].count().eq(0)
+    drop_keys = set(drop[drop].index)
+    if not drop_keys:
+        return rollup_fractions
+    keep = [k not in drop_keys for k in zip(rollup_fractions["experiment"],
+                                            rollup_fractions["protein"])]
+    return rollup_fractions[keep]
 
 
 def individual_label(value: object) -> str:
@@ -782,24 +906,25 @@ def _apply_admission_policy(peptides: pd.DataFrame, own: set, policy: str) -> se
     """Map the per-curve ``own``-admitted set across conditions per :data:`_ADMISSION_POLICIES`.
 
     ``own`` is the set of ``(experiment, condition, concat)`` curves that passed the gate
-    on their own stats. Peptide identity is ``(experiment, concat)``; ``condition`` is the
-    axis the gate result is mapped over. Returns the final admitted curve-key set.
+    on their own stats. Peptide identity is ``(experiment, concat)`` without channel-label
+    tokens (:func:`riana.multiplex.peptide_identity` — a dimethyl light and heavy form are
+    one peptide); ``condition`` is the axis the gate result is mapped over. Returns the
+    final admitted curve-key set.
     """
     if policy == "own":
         return own
-    appear: dict[tuple, set] = {}   # (experiment, concat) -> conditions it appears in
-    for exp, cond, concat in peptides[_CURVE_KEYS].itertuples(index=False, name=None):
-        appear.setdefault((exp, concat), set()).add(cond)
-    passed: dict[tuple, set] = {}   # (experiment, concat) -> conditions it passed the gate in
-    for exp, cond, concat in own:
-        passed.setdefault((exp, concat), set()).add(cond)
+    curves = peptides[_CURVE_KEYS].drop_duplicates()
+    ident = dict(zip(curves["concat"], peptide_identity(curves["concat"])))
+    appear: dict[tuple, set] = {}   # (experiment, identity) -> its curves
+    for exp, cond, concat in curves.itertuples(index=False, name=None):
+        appear.setdefault((exp, ident[concat]), set()).add((exp, cond, concat))
     out: set = set()
-    for pep, conds in appear.items():
-        ok = passed.get(pep, set())
-        keep = bool(ok) if policy == "any" else (ok >= conds)  # any: >=1 cond; all: every cond
-        if keep:
-            exp, concat = pep
-            out.update((exp, cond, concat) for cond in conds)
+    for keys in appear.values():
+        ok = keys & own
+        # any: one curve passed; all: every curve of the peptide passed (one per
+        # condition, or a channel's form each when two share a condition)
+        if (bool(ok) if policy == "any" else ok == keys):
+            out.update(keys)
     return out
 
 
@@ -1055,12 +1180,13 @@ def _shared_bands(fractions: pd.DataFrame) -> pd.DataFrame:
     different k in different proportions — a spurious Δk from peptide composition
     alone (reports/2026-11-14_wls_var_D_E_evaluation.md, candidate C).
 
-    Per ``(experiment, concat, condition)`` the mean σ² over the peptide's points
+    Per ``(experiment, peptide, condition)`` the mean σ² over the peptide's points
     is m_c; over all its conditions, m. Each point's band is scaled by √(m/m_c), so
     the time profile within a condition is kept and the level becomes the peptide's
     pooled one. Peptides in a single condition (and so every single-condition
     rollup) are returned unchanged, as are points without a usable band (the
-    collapse fills those with the cell median).
+    collapse fills those with the cell median). The peptide is its ``concat``
+    without channel-label tokens (:func:`riana.multiplex.peptide_identity`).
     """
     if fractions.empty or fractions["condition"].nunique() < 2:
         return fractions
@@ -1070,11 +1196,12 @@ def _shared_bands(fractions: pd.DataFrame) -> pd.DataFrame:
     hi = f["fs_upper"].to_numpy(dtype=float)
     with np.errstate(invalid="ignore"):
         s2 = ((hi - lo) / _PI_SPAN_SIGMA) ** 2
-    keys = f[["experiment", "concat", "condition"]].assign(
+    keys = f[["experiment", "condition"]].assign(
+        pep=peptide_identity(f["concat"]),
         s2=np.where(np.isfinite(s2) & (s2 > 0), s2, np.nan))
-    m_c = keys.groupby(["experiment", "concat", "condition"])["s2"].transform("mean")
-    m = keys.groupby(["experiment", "concat"])["s2"].transform("mean")
-    multi = keys.groupby(["experiment", "concat"])["condition"].transform("nunique") > 1
+    m_c = keys.groupby(["experiment", "pep", "condition"])["s2"].transform("mean")
+    m = keys.groupby(["experiment", "pep"])["s2"].transform("mean")
+    multi = keys.groupby(["experiment", "pep"])["condition"].transform("nunique") > 1
     r = np.sqrt(m / m_c).where(multi).fillna(1.0).to_numpy()
     move = r != 1.0
     f = f.copy()

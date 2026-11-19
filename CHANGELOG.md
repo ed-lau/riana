@@ -9,6 +9,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Changed — admission by model and level; a linear rollup uses only its pair; Δk needs a shared peptide; Fixed — dimethyl forms pair across conditions — 2026-11-18
+
+- **Results-affecting: `--peptide-admission auto` is the default again, now resolved by model
+  and level.** It means `all` for the protein-level linear Δk and `own` for `--level peptide`
+  and the exponential / calibration models. The provenance header records the resolved
+  policy. Why:
+  - Protein-level `own` fails its nulls (ATF6 animal permutations reject 18 % at α 0.05, ~370
+    false BH calls per permutation; `all` 4.7 %).
+  - The peptide level holds them under both policies (`own` 3.1 %): its Δk is within-peptide,
+    so one-sided peptides only inform each condition's k. Under `own` the peptide level gives
+    a k for more proteins (ATF6 5,732 → 7,794) at the same Δk tests.
+  - The exponential model has no Δk. Under `all`, a condition's k depended on which other
+    conditions were in the table; it now uses each condition's own passes (the 1.1.0
+    behaviour). Boulder4 per-tissue k: 960 → 1,165 proteins.
+  - Evidence: `runs/deltak_eval/admission/` (local).
+- **Results-affecting: a linear rollup uses only its reference and test conditions.**
+  - With both named, admission, the shared band levels, the joint fit (its pooled residual
+    variance) and the peptide-level interaction see only those two conditions, and the other
+    conditions' rows are dropped. So a third tissue in the table no longer changes an A-vs-B Δk.
+  - Boulder LV vs atrium from the 4-tissue fit: 484 → 569 tests. This equals the result from a
+    table cut to the two tissues, byte for byte.
+  - Without both named, an experiment may hold at most two conditions; `--level peptide`
+    already required the pair. Linear rollups of two-condition tables are unchanged.
+- **Results-affecting: the protein-level Δk needs a peptide shared by the two conditions**, as
+  the peptide level does.
+  - Under `all`, a peptide measured in one condition only is kept, so a protein whose
+    conditions share no peptide got a Δk that compared different peptides.
+  - At one peptide such a comparison made ATF6's only per-chamber call (Dazap1, right atrium:
+    control on one peptide, KO on another).
+  - Such a protein now gets k per condition and no Δk, and the protein-level interaction leaves
+    that experiment out (`interaction_points`).
+  - Boulder LV vs atrium: 569 → 547 tests; SCVI480 mesoderm: 674 → 672. The protein and
+    peptide levels now test the same proteins.
+- **Fixed: a dimethyl light and heavy form of a peptide were two peptides to the rollup.** The
+  channel label (UNIMOD 36 / 199 / 330) is part of `concat`, so control (light) and
+  rapamycin (heavy) shared no peptide. As a result:
+  - `all` behaved as `own`, and the shared band level did not apply.
+  - `--level peptide` gave no Δk.
+
+  Admission, the shared bands and the peptide-level model now match peptides without the
+  label (`riana.multiplex.peptide_identity`; the fit still keeps each form as its own curve).
+- **Fixed: `rollup --plot` and `--interaction` spent up to an hour copying the rollup's curve
+  points.** pandas deep-copies `DataFrame.attrs` into every slice, row and group, and the
+  rollup result carries each protein's collapsed points there, about 1 s per copy on a large
+  rollup. The per-protein loops therefore paid it once per protein: on ATF6, `--plot` took 41
+  min and the interaction filter 64 min. The points are now shared, not copied. `--plot` takes
+  2 min and the interaction filter under 1 s; the outputs are unchanged.
+
+### Changed — `rollup --min-peptides` defaults to 1; Fixed — peptide-level Δk without a shared peptide — 2026-11-17
+
+- **Results-affecting: `--min-peptides` 2 → 1** (CLI, `rollup_proteins`, the peptide-level
+  model and the GUI). One peptide that passes the gates now reports its protein. The 2-peptide
+  rule removed most of the proteins a Δk could test; for example, Boulder LV vs atrium tests
+  348 proteins at 2 and 569 at 1 (counted on the gated peptides). Pass `--min-peptides 2` for
+  the old behaviour.
+- **Fixed: `--level peptide` reported a Δk for a protein whose two conditions share no
+  peptide.** Δk is a within-peptide contrast (each peptide's offset is shared by the
+  conditions), so it is not identified then. Some of those fits went to the no-random-effects
+  path and returned a junk k (e.g. 0.0625) with an SE near 10⁶ and p = 1; they now get k per
+  condition and no Δk. The peptide-level interaction skips an experiment whose conditions share
+  no peptide, and both models refuse a design whose fixed effects are not all identified.
+  Protein-level (`--level protein`) results are unchanged by the fix.
+- **Fixed: `--level peptide` could use a broken mixed-model covariance.** When the E+time fit
+  falls back to the per-animal random-slope model, it read statsmodels' inverse Hessian, which
+  can be indefinite near the variance boundary. A condition's k then got no CI, and the Δk SE
+  came from that matrix (P40142, Boulder LV vs atrium: SE 0.012, p 0.055; refit 0.021, p 0.48).
+  Such a design now falls through to the next one (one shared animal slope, then WLS). This
+  affected 2–6 proteins per Boulder tissue pair and 1 in SCVI480 mesoderm.
+
+### Docs — as-built Δk manual; ATF6 notebook on the redesign; benches on the new `runs/` layout — 2026-11-16
+
+- **`reports/2026-11-16_deltak_inference_manual.md`** documents the `linear` rollup as built:
+  the protein level (shared-band collapse C + WLS) and `--level peptide` (E+time / EJ+time), the
+  variance sources each handles, gates and admission, the yardstick results, how to choose a
+  level, and the open items. It supersedes the 2026-11-12 manual, which now says so.
+- **`notebooks/atf6_biology.ipynb`** re-executed on the refit of the full ATF6 set at `6efcee3`
+  (with the SDRF animal IDs) and its text rewritten. Per-chamber Δk calls 37 → 0; ratio-scale
+  interaction calls 86 → 2 (Cops3, Dync1h1). Smyd1 is no longer significant (p_adj 0.96). The
+  `wls-var` comparison section is replaced by a note that the option was removed. The notebook
+  now checks its interaction refit against the CLI's `riana_rollup_interaction.txt` (identical
+  calls).
+- **Benchmarks default to the reorganized `runs/` layout** (local `runs/README.md` maps the old
+  paths): integrate manifests at `runs/<dataset>/integrate/`, current fits at
+  `runs/<dataset>/current/`, the Δk evaluation under `runs/deltak_eval/`, calibration sets under
+  `runs/calibration/`. Defaults and docstring examples only; no logic change.
+
 ### Added — `rollup --level peptide`: the peptide-level Δk and interaction — 2026-11-16
 
 - **`--level protein|peptide` replaces `--method`.**

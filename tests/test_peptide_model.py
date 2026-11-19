@@ -88,6 +88,31 @@ def test_longitudinal_design_falls_back_to_the_animal_model():
     assert row["random_effects"] in ("animal", "none")
 
 
+def test_an_indefinite_mixed_model_covariance_falls_through(monkeypatch):
+    """statsmodels' inverse Hessian can be indefinite near the variance boundary (seen on
+    paired tissues: a negative per-condition variance → no CI, a Δk SE from a broken
+    matrix). Such a design is skipped; the fallback WLS gives finite CIs."""
+    from statsmodels.regression import mixed_linear_model as mlm
+
+    class _Broken:
+        def __init__(self, endog, exog, **_):
+            self.p = exog.shape[1]
+            self.fe = np.linalg.lstsq(exog, endog, rcond=None)[0]
+
+        def fit(self, **_):
+            V = np.eye(self.p) * 1e-4
+            V[1, 1] = -1e-5                       # indefinite, Δk variance still > 0
+            return type("R", (), dict(
+                converged=True, fe_params=self.fe, cov_re=np.array([[1e-3]]),
+                scale=1e-4, cov_params=lambda _s: V))()
+
+    monkeypatch.setattr(mlm, "MixedLM", _Broken)
+    f = _points({"ctrl": 0.10, "ko": 0.12}, longitudinal=True, seed=2)
+    out = fit_peptide_deltak(f, reference_condition="ctrl", test_condition="ko")
+    assert (out["random_effects"] == "none").all()
+    assert out[["ci_lo", "ci_hi", "delta_k_se"]].notna().all().all()
+
+
 def test_a_protein_with_one_condition_gets_k_without_delta_k():
     f = _points({"ctrl": 0.10, "ko": 0.15})
     f = pd.concat([f, _points({"ctrl": 0.07}, protein="P1", seed=3)], ignore_index=True)
@@ -109,10 +134,56 @@ def test_more_than_two_conditions_need_the_pair_named():
         fit_peptide_deltak(f, reference_condition="a", test_condition="zz")
 
 
+def test_delta_k_needs_a_peptide_in_both_conditions():
+    """Δk is a within-peptide contrast: one shared peptide carries it (the one-sided
+    peptides enter only their condition's k); with none it is not identified, so the
+    protein gets k per condition and no Δk (once a rank-deficient fit with SE ~1e6)."""
+    f = _points({"ctrl": 0.10, "ko": 0.15}, n_pep=4)
+    ctrl, ko = f["condition"] == "ctrl", f["condition"] == "ko"
+    one = f[(ctrl & f["concat"].isin(["PEP0_2", "PEP1_2", "PEP2_2"]))
+            | (ko & f["concat"].isin(["PEP2_2", "PEP3_2"]))]
+    row = fit_peptide_deltak(one, reference_condition="ctrl").iloc[0]
+    assert row["delta_k"] == pytest.approx(0.05, abs=0.015)
+    assert np.isfinite(row["delta_k_se"]) and row["delta_k_se"] < 0.01
+    none = f[(ctrl & f["concat"].isin(["PEP0_2", "PEP1_2"]))
+             | (ko & f["concat"].isin(["PEP2_2", "PEP3_2"]))]
+    out = fit_peptide_deltak(none, reference_condition="ctrl").set_index("condition")
+    assert set(out.index) == {"ctrl", "ko"}
+    assert out["delta_k"].isna().all()
+    assert out.loc["ctrl", "k_deg"] == pytest.approx(0.10, abs=0.015)
+    assert out.loc["ko", "k_deg"] == pytest.approx(0.15, abs=0.015)
+
+
+def test_dimethyl_channel_forms_pair_at_the_peptide_level():
+    """Light (control) and heavy (treatment) dimethyl forms of a peptide are one peptide:
+    the Δk is estimated as for unlabelled peptides, not refused for want of a shared one."""
+    f = _points({"ctrl": 0.10, "ko": 0.15}, seed=4)
+    tag = f["condition"].map({"ctrl": "[UNIMOD:36]", "ko": "[UNIMOD:330]"})
+    f["concat"] = tag + f["concat"].str.replace("_2", "K", regex=False) + tag + "_2"
+    out = fit_peptide_deltak(f, reference_condition="ctrl", test_condition="ko")
+    ref = fit_peptide_deltak(_points({"ctrl": 0.10, "ko": 0.15}, seed=4),
+                             reference_condition="ctrl", test_condition="ko")
+    assert out["delta_k"].iloc[0] == pytest.approx(ref["delta_k"].iloc[0])
+    assert out["delta_k_se"].iloc[0] == pytest.approx(ref["delta_k_se"].iloc[0])
+
+
+def test_peptide_interaction_skips_an_experiment_without_a_shared_peptide():
+    f = _points({"ctrl": 0.10, "ko": 0.13}, experiments=("LA", "LV", "RV"), paired=True,
+                n_pep=3, seed=7)
+    full = fit_peptide_interaction(f, reference_condition="ctrl", test_condition="ko")
+    assert set(full["experiment"]) == {"LA", "LV", "RV"}
+    rv = f["experiment"] == "RV"
+    cut = f[~rv | ((f["condition"] == "ctrl") & (f["concat"] == "PEP0_2"))
+            | ((f["condition"] == "ko") & (f["concat"] == "PEP1_2"))]
+    out = fit_peptide_interaction(cut, reference_condition="ctrl", test_condition="ko")
+    assert set(out["experiment"]) == {"LA", "LV"}
+
+
 def test_min_peptides_and_workers():
     f = _points({"ctrl": 0.10, "ko": 0.15})
     one = f[f["concat"] == "PEP0_2"]
     assert fit_peptide_deltak(one, min_peptides=2).empty
+    assert not fit_peptide_deltak(one).empty          # default 1: one good peptide
     f2 = pd.concat([f, _points({"ctrl": 0.06, "ko": 0.06}, protein="P1", seed=4)],
                    ignore_index=True)
     serial = fit_peptide_deltak(f2, reference_condition="ctrl")

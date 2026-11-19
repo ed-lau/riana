@@ -28,8 +28,9 @@ The full list is in the repository `CHANGELOG.md`.
 * **Interaction with a random animal effect.** `rollup --interaction` (the Protein tab's
   *Interaction* option) tests whether a condition's effect differs between tissues of the same
   animals. Animals are read from `characteristics[individual]`.
-* **Curation (changes results).** Rollup gates are applied per condition, and a peptide is used
-  only if it passes in every condition (`--peptide-admission`, below). Out-of-range θ
+* **Curation (changes results).** Rollup gates are applied per condition, and how a peptide's
+  result carries across conditions is `--peptide-admission` (below). One peptide that passes the
+  gates reports its protein (`--min-peptides` default 1, was 2). Out-of-range θ
   points are dropped before fitting (`--no-fs-rail-drop` restores the old behaviour). Peptides with
   non-standard residues (U, O, B, Z, J, X) are dropped at intake.
 * **`rollup --model linear`** (was `linear simple`; the old name is still accepted). The rollup
@@ -43,9 +44,15 @@ The full list is in the repository `CHANGELOG.md`.
   animal; paired automatically when animals carry both conditions), and with `--interaction` the
   matching joint model. `--level` replaces `--method`: `--method weighted` is `--level protein`
   (still accepted), and `pooled` is removed. The protein table's `method` column is now `level`.
-* **Peptide admission (changes results).** `--peptide-admission` defaults to `all` for every model
-  (a peptide is used only if it passes curation in every condition); `auto` is gone. This changes
-  multi-condition `exponential` rollups, which used `own` before.
+* **Peptide admission (changes results).** `--peptide-admission auto` (the default) means `all`
+  for the protein-level linear Δk (a peptide is used only if it passes curation in both
+  conditions) and `own` for `--level peptide` and the exponential model (each condition keeps the
+  peptides that pass there).
+* **A linear Δk uses only its two conditions (changes results).** With `--reference-condition`
+  and `--test-condition` named, admission and the fit see only those two conditions, so a third
+  tissue in the table no longer changes the result. A Δk needs at least one peptide measured in
+  both conditions; otherwise each condition gets its k and no Δk. Dimethyl light and heavy forms
+  of a peptide count as the same peptide.
 * **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
 * **Δk peptide mixing fixed (changes results).** Under `rollup --model linear` each peptide now
   carries one precision level across the conditions, so a protein's per-timepoint averages mix the

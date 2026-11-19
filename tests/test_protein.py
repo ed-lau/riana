@@ -372,6 +372,9 @@ def test_min_peptides_filters_small_proteins():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, n_pep=1)
     out = rollup_proteins(pep, frac, min_peptides=2, n_boot=20)
     assert out.empty or "P0" not in set(out["protein"])
+    # default (since 2026-11-17): one good peptide reports the protein
+    out = rollup_proteins(pep, frac, n_boot=20)
+    assert "P0" in set(out["protein"])
 
 
 def test_condition_groups_stay_separate():
@@ -539,25 +542,87 @@ def test_unknown_peptide_admission_raises():
         rollup_proteins(pep, frac, min_r2=0.8, peptide_admission="bogus")
 
 
-def test_auto_admission_is_retired():
-    pep, frac = _two_condition_gate_frames()
-    with pytest.raises(DataError, match="peptide_admission"):
-        rollup_proteins(pep, frac, min_r2=0.8, peptide_admission="auto")
+@pytest.mark.parametrize("model, level, expected", [
+    ("exponential", "protein", "own"), ("calibration", "protein", "own"),
+    ("linear", "protein", "all"), ("linear", "peptide", "own"),
+    ("simple", "protein", "own"), ("linear simple", "protein", "all")])
+def test_auto_admission_resolves_by_model_and_level(model, level, expected):
+    from riana.core.protein import resolve_admission
+    assert resolve_admission("auto", model, level) == expected
+    assert resolve_admission("any", model, level) == "any"     # explicit passes through
 
 
-@pytest.mark.parametrize("model", ["exponential", "linear"])
-def test_peptide_admission_defaults_to_all_for_every_model(model):
-    """The default is 'all' (paired) for both rollup models: a peptide that fails the
-    gate in one condition is dropped from BOTH, so the conditions rest on the same
-    peptides. Explicit 'own' instead keeps it on its passing side."""
+@pytest.mark.parametrize("model, ctrl_peptides", [("exponential", 2), ("linear", 1)])
+def test_default_admission_is_own_for_exponential_and_all_for_linear(model, ctrl_peptides):
+    """The default 'auto': the linear Δk (protein level) keeps only peptides passing in
+    both conditions; the exponential k (no Δk) keeps each condition's own passes, so a
+    condition's k does not depend on the other conditions in the table."""
     pep, frac = _two_condition_gate_frames()   # PEP passes ctrl only; QEP passes both
     kw = dict(model=model, min_r2=0.8, min_peptides=1, n_boot=20)
     if model == "linear":
         kw["reference_condition"] = "ctrl"
     default = rollup_proteins(pep, frac, **kw).set_index("condition")
-    own = rollup_proteins(pep, frac, peptide_admission="own", **kw).set_index("condition")
-    assert int(default.loc["ctrl", "n_peptides"]) == 1   # all: PEP dropped (fails drug)
-    assert int(own.loc["ctrl", "n_peptides"]) == 2       # own: PEP kept where it passes
+    assert int(default.loc["ctrl", "n_peptides"]) == ctrl_peptides
+    assert int(default.loc["drug", "n_peptides"]) == 1
+
+
+def test_linear_rollup_uses_only_the_named_pair():
+    """With a third condition in the table, a linear Δk equals the one made from the
+    table cut to the pair: the third condition's peptides do not enter admission (PEP
+    fails only in 'other'), the shared bands or the joint fit, and its rows are dropped."""
+    pep, frac = _two_condition_gate_frames()
+    k, times = 0.1, (0, 1, 2, 3, 4, 6, 8, 10)
+    rng = np.random.default_rng(3)
+    for concat, r2 in (("PEP_2", 0.30), ("QEP_2", 0.95)):
+        pep = pd.concat([pep, pd.DataFrame([{
+            "concat": concat, "protein id": "sp|P0|X", "condition": "other",
+            "k_deg": k, "R_squared": r2, "ci_lo": k * 0.98, "ci_hi": k * 1.02}])])
+        theta = 1.0 - np.exp(-0.2 * np.array(times)) + rng.normal(0, 0.03, len(times))
+        frac = pd.concat([frac, pd.DataFrame({
+            "concat": concat, "protein id": "sp|P0|X", "condition": "other",
+            "biological_replicate": 1, "labeling_time": np.array(times, float),
+            "fs": theta, "fs_lower": theta - 0.05, "fs_upper": theta + 0.05})])
+    pep.loc[(pep.concat == "PEP_2") & (pep.condition == "drug"), "R_squared"] = 0.95
+    kw = dict(model="linear", min_r2=0.8, reference_condition="ctrl",
+              test_condition="drug")
+    full = rollup_proteins(pep, frac, **kw)
+    pair = rollup_proteins(pep[pep.condition != "other"], frac[frac.condition != "other"],
+                           **kw)
+    assert set(full["condition"]) == {"ctrl", "drug"}
+    pd.testing.assert_frame_equal(full, pair)
+    assert int(full["n_peptides"].iloc[0]) == 2          # PEP kept: 'other' is not asked
+
+
+def test_linear_rollup_with_three_conditions_needs_the_pair():
+    pep, frac = _two_condition_gate_frames()
+    frac = pd.concat([frac, frac.assign(condition="other")])
+    pep = pd.concat([pep, pep.assign(condition="other")])
+    with pytest.raises(DataError, match="Name the pair"):
+        rollup_proteins(pep, frac, model="linear", min_r2=0.8)
+    with pytest.raises(DataError, match="Name the pair"):
+        rollup_proteins(pep, frac, model="linear", min_r2=0.8, reference_condition="ctrl")
+    with pytest.raises(DataError, match="not among the conditions"):
+        rollup_proteins(pep, frac, model="linear", min_r2=0.8, reference_condition="ctrl",
+                        test_condition="drgu")
+    assert set(rollup_proteins(pep, frac, min_r2=0.8, n_boot=10)["condition"]) == {
+        "ctrl", "drug", "other"}                         # exponential: no contrast
+
+
+def test_dimethyl_channel_forms_are_one_peptide_across_conditions():
+    """A dimethyl light form (control channel) and heavy form (treatment channel) of a
+    peptide are the same peptide to the rollup: admission 'all' pairs them (the heavy
+    form failing drops the light one), as for an unlabelled peptide."""
+    pep, frac = _two_condition_gate_frames()
+    tag = {"ctrl": "[UNIMOD:36]", "drug": "[UNIMOD:330]"}
+    for df in (pep, frac):
+        df["concat"] = [f"{tag[c]}{s[:-2]}K{tag[c]}_2"
+                        for s, c in zip(df["concat"], df["condition"])]
+    out = rollup_proteins(pep, frac, model="linear", min_r2=0.8,
+                          reference_condition="ctrl").set_index("condition")
+    assert int(out.loc["ctrl", "n_peptides"]) == 1       # PEP's heavy form fails drug
+    own = rollup_proteins(pep, frac, model="linear", min_r2=0.8, reference_condition="ctrl",
+                          peptide_admission="own").set_index("condition")
+    assert int(own.loc["ctrl", "n_peptides"]) == 2
 
 
 def test_rollup_workers_give_identical_result():
@@ -578,7 +643,7 @@ def _make_two_condition_frames(k_by_prot_cond, *, n_pep=3,
     for pi, (prot, by_cond) in enumerate(k_by_prot_cond.items()):
         for cond, k in by_cond.items():
             for j in range(n_pep):
-                concat = f"PEP{pi}_{cond}_{j}_2"
+                concat = f"PEP{pi}_{j}_2"   # the same peptide in every condition
                 pep_rows.append({"concat": concat, "protein id": prot,
                                  "k_deg": k, "condition": cond})
                 for t in times:
@@ -775,3 +840,44 @@ def test_fit_basis_header_reads_the_fit_header(tmp_path):
     new = tmp_path / "new.txt"
     new.write_text("# riana 1.2.0\n# fs_basis f\n# k_p_applied A/ctrl=0.1\nconcat\tfs\n")
     assert fit_basis_header(new) == {"fs_basis": "f", "k_p_applied": "A/ctrl=0.1"}
+
+
+def test_protein_level_delta_k_needs_a_shared_peptide():
+    """A protein whose two conditions share no peptide gets k per condition but no Δk
+    (it would compare different peptides), as at the peptide level; BH runs over the
+    proteins that have one. The interaction input drops that experiment for it."""
+    from riana.core.protein import build_rollup_fractions, interaction_points
+    pep, frac = _make_two_condition_frames({
+        "sp|P0|X": {"control": 0.05, "atrium": 0.10},
+        "sp|P1|Y": {"control": 0.08, "atrium": 0.12},
+    })
+    split = lambda df: df.assign(concat=np.where(   # P1: different peptides per condition
+        df["protein id"].str.contains("P1"), df["concat"] + "_" + df["condition"], df["concat"]))
+    pep, frac = split(pep), split(frac)
+    res = rollup_proteins(pep, frac, model="linear", reference_condition="control")
+    p1 = res[res["protein"] == "P1"]
+    assert len(p1) == 2 and p1["k_deg"].notna().all()
+    assert p1["delta_k"].isna().all() and p1["delta_k_p_adj"].isna().all()
+    p0 = res[res["protein"] == "P0"]
+    assert p0["delta_k"].iloc[0] == pytest.approx(0.05, abs=1e-3)
+    pts = interaction_points(res, build_rollup_fractions(res))
+    assert set(pts["protein"]) == {"P0"}
+
+
+@pytest.mark.parametrize("model", ["linear", "exponential"])
+def test_rollup_attrs_are_shared_not_copied_into_slices(model):
+    """pandas deep-copies ``attrs`` into every slice, row and group; the per-protein
+    points must be shared instead, or per-protein loops over a large rollup (the
+    interaction filter, --plot) spend ~1 s per protein copying them."""
+    pep, frac = _make_two_condition_frames({
+        "sp|P0|X": {"control": 0.05, "atrium": 0.10},
+        "sp|P1|Y": {"control": 0.08, "atrium": 0.12},
+    })
+    res = rollup_proteins(pep, frac, model=model, reference_condition="control")
+    points = res.attrs["protein_points"]
+    assert points
+    _, row = next(res.iterrows())
+    for derived in (res[res["k_deg"].notna()], row,
+                    next(iter(res.groupby("protein")))[1]):
+        assert derived.attrs["protein_points"] is points
+        assert derived.attrs["point_individuals"] is res.attrs["point_individuals"]

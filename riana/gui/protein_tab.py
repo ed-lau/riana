@@ -202,7 +202,7 @@ class ProteinTab(QWidget):
         self.min_peptides_spin.setToolTip(
             "Minimum attributed peptides for a protein to be reported.")
         self.min_peptides_spin.setRange(1, 1000)
-        self.min_peptides_spin.setValue(2)
+        self.min_peptides_spin.setValue(1)
         form.addRow("Min peptides", self.min_peptides_spin)
 
         self.min_points_spin = QSpinBox()
@@ -270,15 +270,17 @@ class ProteinTab(QWidget):
 
         # Cross-condition peptide admission (only bites a multi-condition rollup).
         self.admission_combo = QComboBox()
-        self.admission_combo.addItems(["any", "own", "all"])
-        self.admission_combo.setCurrentText("all")
+        self.admission_combo.addItems(["auto", "any", "own", "all"])
+        self.admission_combo.setCurrentText("auto")
         self.admission_combo.setToolTip(
             "How a peptide's per-condition curation result maps across conditions "
-            "(multi-condition rollups only), least to most stringent. 'any': passed in "
-            "one condition ⇒ kept in all (anti-conservative). 'own': kept in each "
-            "condition where it passes — the conditions can then rest on different "
-            "peptides. 'all' (default): kept only if it passes in EVERY condition it "
-            "appears in, so comparisons rest on the same peptides.")
+            "(multi-condition rollups only). 'any': passed in one condition ⇒ kept in "
+            "all (anti-conservative). 'own': kept in each condition where it passes — "
+            "the conditions can then rest on different peptides. 'all': kept only if it "
+            "passes in EVERY condition it appears in (for the linear model, the "
+            "reference and the test), so comparisons rest on the same peptides. 'auto' "
+            "(default): 'all' for the protein-level linear Δk, 'own' for the peptide "
+            "level and the exponential / calibration models.")
         form.addRow("Peptide admission", self.admission_combo)
 
         self.workers_spin = QSpinBox()
@@ -561,8 +563,10 @@ class ProteinTab(QWidget):
                             p["peptide_admission"], int_pair[0], int_pair[1],
                             p["phi_limit"], p["workers"], progress_q)
                     else:
+                        from riana.core.protein import interaction_points
                         self._future = loop.run_in_executor(
-                            executor, run_interaction, rollup_fractions, int_pair[0],
+                            executor, run_interaction,
+                            interaction_points(result, rollup_fractions), int_pair[0],
                             int_pair[1], p["phi_limit"], p["workers"], progress_q)
                     interaction = await self._future
                     if self._cancelled:
@@ -621,7 +625,7 @@ class ProteinTab(QWidget):
         # chain); a *different* Output dir forks a self-contained derived project
         # there, leaving the input manifest untouched. Mirrors `rollup --manifest`.
         from riana.core.pipeline import record_stage_rows, resolve_manifest_write
-        from riana.core.protein import build_rollup_fractions
+        from riana.core.protein import build_rollup_fractions, resolve_admission
 
         manifest = Path(params["manifest"])
         out_dir, target_manifest = resolve_manifest_write(
@@ -640,7 +644,8 @@ class ProteinTab(QWidget):
             # provenance key, so a GUI- and CLI-produced rollup of the same project
             # hash to the same config_hash.
             "k_cv": params["k_cv_max"], "rescue_r2": params["rescue_r2"],
-            "peptide_admission": params["peptide_admission"],
+            "peptide_admission": resolve_admission(
+                params["peptide_admission"], params["model"], params["level"]),
             "phi_limit": params["phi_limit"],
             "reference_condition": params["reference_condition"],
             "test_condition": params["test_condition"],

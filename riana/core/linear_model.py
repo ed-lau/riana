@@ -49,7 +49,7 @@ model.
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import Callable, Collection
 
 import numpy as np
 import pandas as pd
@@ -162,6 +162,7 @@ def fit_linear_deltak(
     min_points_per_condition: int = 2,
     reference_condition: str | None = None,
     test_condition: str | None = None,
+    no_contrast: Collection[tuple[str, str]] | None = None,
     weights: str = "wls",
     progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> pd.DataFrame:
@@ -194,10 +195,15 @@ def fit_linear_deltak(
             works even when a protein has **more than two** conditions (an interim
             for multi-group projects, ahead of full all-pairwise/Tukey). The extra
             conditions still contribute their own k rows **and** the shared residual
-            variance the contrast's SE pools over, so scope the conditions in the
-            SDRF/project deliberately if that pooling is unwanted. When
+            variance the contrast's SE pools over. (:func:`riana.core.protein.
+            rollup_proteins` scopes its input to the named pair first, so a rollup
+            never pools over other conditions.) When
             ``test_condition`` is ``None`` the legacy auto mode applies: a contrast
             is emitted only for a protein with exactly two qualifying conditions.
+        no_contrast: ``(experiment, protein)`` pairs that get k per condition but no
+            Δk — the rollup passes those whose two conditions share no peptide, whose
+            Δk would compare different peptides
+            (:func:`riana.core.protein._rollup_linear`).
         weights: ``"wls"`` (default) or ``"ols"`` — see :data:`LINEAR_WEIGHT_SCHEMES`
             and the "Weighting" note in the module docstring. ``"ols"`` reproduces the
             pre-2026-07 unweighted estimator (anti-conservative; for audit only).
@@ -263,6 +269,7 @@ def fit_linear_deltak(
                 "column in the SDRF.)",
                 named, len(lacking), len(by_exp), lacking)
 
+    skip = set(no_contrast or ())
     rows: list[dict] = []
     grouped = points.groupby(["experiment", "protein"], sort=False)
     for (exp, prot), grp in iter_progress(grouped, grouped.ngroups, progress_callback):
@@ -347,7 +354,9 @@ def fit_linear_deltak(
                     float(np.ravel(tt.pvalue)[0]))
 
         delta_k = delta_se = delta_p = float("nan")
-        if reference_condition is not None and test_condition is not None:
+        if (exp, prot) in skip:
+            pass
+        elif reference_condition is not None and test_condition is not None:
             if (reference_condition in coef and test_condition in coef
                     and coef[reference_condition] in slope.index
                     and coef[test_condition] in slope.index):

@@ -26,8 +26,13 @@ the pinned-isotope pseudo-elements TMT introduced.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,22 @@ for _lbl in REGISTRY:
             _CV_TO_CHANNEL[_ch.cv_term.upper()] = (_lbl.name, _ch.name)
         if _ch.mod is not None:
             _MOD_TO_CHANNEL[_ch.mod] = (_lbl.name, _ch.name)
+
+
+#: UniMod ids of the intake-wired channel labels (dimethyl 36 / 199 / 330). The label
+#: marks the sample, not the peptide: the fit keeps each channel's form as its own curve,
+#: but the rollup matches a peptide across conditions without it (:func:`peptide_identity`).
+SAMPLE_AXIS_MODS: frozenset[int] = frozenset(_MOD_TO_CHANNEL)
+_LABEL_TOKEN = re.compile(
+    r"\[UNIMOD:(?:%s)\]" % "|".join(str(m) for m in sorted(SAMPLE_AXIS_MODS)))
+
+
+def peptide_identity(concat: pd.Series) -> pd.Series:
+    """A peptide's identity across samples: each ``concat`` without its channel-label
+    tokens, so a dimethyl light form (control) and heavy form (treatment) of the same
+    peptide and charge are the same peptide — for cross-condition admission, the shared
+    band level and the peptide-level model. Other mods stay in the identity."""
+    return concat.astype(str).str.replace(_LABEL_TOKEN, "", regex=True)
 
 
 def _cv_name(cell: str) -> str | None:

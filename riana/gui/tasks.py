@@ -196,7 +196,7 @@ def run_rollup(
     min_r2: float | None = None,
     k_cv_max: float = 0.2,
     rescue_r2: float = 0.6,
-    peptide_admission: str = "all",
+    peptide_admission: str = "auto",
     level: str = "protein",
     workers: int = 1,
     phi_limit: float = -4.0,
@@ -452,7 +452,9 @@ def run_peptide_interaction(
     _, gated = gate_peptides(
         peptides, fractions, parsimony=parsimony, min_r2=min_r2,
         k_cv_max=float(k_cv_max), rescue_r2=float(rescue_r2),
-        min_fit_points=min_fit_points, peptide_admission=str(peptide_admission))
+        min_fit_points=min_fit_points, peptide_admission=str(peptide_admission),
+        model="linear", level="peptide", reference_condition=reference_condition,
+        test_condition=test_condition)
     table = fit_peptide_interaction(
         gated, reference_condition=reference_condition, test_condition=test_condition,
         phi_limit=float(phi_limit), min_peptides=int(min_peptides), workers=int(workers),

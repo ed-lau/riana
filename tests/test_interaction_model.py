@@ -60,7 +60,7 @@ NLME = {
 #   lmer(phi*sw ~ 0 + X*sw + (0 + day*sw | animal), REML = TRUE)  (= the √w-scaled fit)
 #   contestMD(m, L) with L = the ratio test's delta-method contrast (2 × 6), and with
 #   L = the shift column alone (1 × 6, the one-df branch).
-# Script: runs/interaction_satterthwaite/{export.py, lmertest_ref.R} (gitignored).
+# Script: runs/deltak_eval/interaction_satterthwaite/{export.py, lmertest_ref.R} (gitignored).
 LMERTEST = {"ratio_ddf": 66.280716, "shift_ddf": 23.139048}
 
 

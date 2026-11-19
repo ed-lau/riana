@@ -147,9 +147,13 @@ also folds isoform-shared peptides into the canonical entry.
 
 **Admission.** A peptide enters the protein fit if its own fit has R² ≥ 0.8 (`--min-r2`), or, for a
 flat curve with a low R², if k is still tightly estimated (relative uncertainty below `--k-cv`).
-In a multi-condition rollup the gate is applied per condition, and a peptide is used only if it
-passes in every condition, so the conditions rest on the same peptides (`--peptide-admission all`,
-the default; `own` keeps it wherever it passes, `any` everywhere once it passes somewhere).
+One such peptide reports a protein (`--min-peptides`, default 1). In a multi-condition rollup the
+gate is applied per condition. For the linear Δk at the protein level a peptide is used only if it
+passes in both conditions, so the two sides rest on the same peptides (`--peptide-admission all`);
+at the peptide level and for the exponential model each condition keeps the peptides that pass
+there (`own`). The default `auto` picks between them; `any` keeps a peptide everywhere once it
+passes somewhere. A linear Δk uses only the two conditions it compares, and needs at least one
+peptide measured in both.
 
 **Protein k.** Within each biological replicate and timepoint, the peptides' θ are combined by
 inverse-variance weighting, and k is refitted on those points (`--level protein`, the default). The
