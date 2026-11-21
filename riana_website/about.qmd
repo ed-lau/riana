@@ -159,14 +159,17 @@ peptide measured in both.
 inverse-variance weighting, and k is refitted on those points (`--level protein`, the default). The
 median of the peptides' k is reported alongside.
 
-### Comparing conditions (`linear`)
+### Comparing conditions (`linear`, the default)
 
-`--model linear` (earlier `linear simple`, still accepted) linearizes the simple model,
-φ = log(1 − θ) = −k t, and fits a protein's conditions together by weighted least squares (weights from the
-delta method, which keeps the noisy near-plateau points from dominating; points past `--phi-limit`
-are dropped). It reports each condition's k and the difference Δk = k(test) − k(reference), with a
-t-test and Benjamini–Hochberg adjustment within each experiment. `--reference-condition` and
-`--test-condition` choose the pair. `--plot` writes the φ-space curves to a PDF per experiment.
+`--model linear` (the default since 1.2; earlier `linear simple`, still accepted) linearizes the
+exponential model, φ = log(1 − θ) = −k t, and fits a protein's conditions together by weighted
+least squares (weights from the delta method, which keeps the noisy near-plateau points from
+dominating; points past `--phi-limit` are dropped). It reports each condition's k and the
+difference Δk = k(test) − k(reference), with a t-test and Benjamini–Hochberg adjustment within
+each experiment. `--reference-condition` and `--test-condition` choose the pair; an experiment with
+more than two conditions needs both. `--plot` writes the φ-space curves to a PDF per experiment.
+`--model exponential` (the default before 1.2) refits θ = 1 − e^(−kt) per condition instead, with
+no Δk.
 
 Each timepoint's point is an inverse-variance average of the protein's peptides. Under `linear`
 each peptide carries one precision level across the conditions (its level pooled over them; the

@@ -30,6 +30,7 @@ from typing import List, Optional
 import typer
 
 from riana import __version__
+from riana.constants import DEFAULT_ROLLUP_MODEL
 
 app = typer.Typer(
     add_completion=False,
@@ -864,13 +865,16 @@ def rollup(
         "recording stage='rollup' rows. With -o pointing elsewhere it forks a "
         "self-contained derived project there and leaves the input manifest untouched."),
     model: str = typer.Option(
-        "exponential", "-m", "--model",
-        help="'exponential' (default): refit θ = 1 − e^(−kt) per (experiment, "
-        "condition, protein). 'linear': the linearized φ=log(1−θ) model — fits a "
-        "protein's conditions jointly for a per-condition k and a Δk test (writes "
-        "delta_k / delta_k_p / delta_k_p_adj). On a rising-precursor fit both apply "
-        "to fraction new f unchanged. The earlier names 'simple' and 'linear simple' "
-        "are still accepted."),
+        DEFAULT_ROLLUP_MODEL, "-m", "--model",
+        help="'linear' (default since 1.2.0): the linearized φ=log(1−θ) model — fits "
+        "a protein's conditions jointly for a per-condition k and, with two "
+        "conditions, a Δk test (writes delta_k / delta_k_p / delta_k_p_adj); an "
+        "experiment with more than two conditions needs the pair named "
+        "(--reference-condition / --test-condition). 'exponential' (the default "
+        "before 1.2.0): refit θ = 1 − e^(−kt) per (experiment, condition, protein), "
+        "with no Δk. On a rising-precursor fit both apply to fraction new f "
+        "unchanged. The earlier names 'simple' and 'linear simple' are still "
+        "accepted."),
     phi_limit: float = typer.Option(
         -4.0, "--phi-limit", metavar="PHI",
         help="['linear' only] Plateau-truncation threshold in φ-space: "
@@ -1264,7 +1268,7 @@ def rollup(
             from riana.core.rollup_plot import render_linear_pdf
             pdfs = render_linear_pdf(
                 result, rollup_fractions, Path(out), phi_limit=float(phi_limit),
-                workers=int(workers),
+                workers=int(workers), fs_basis=fs_basis,
                 progress=lambda p, n: logger.info("wrote %s (%d proteins)", p, n))
             written.extend(pdfs)
 

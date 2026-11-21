@@ -77,8 +77,8 @@ import pandas as pd
 from scipy.optimize import curve_fit
 
 from riana.constants import (
-    EXPONENTIAL_MODEL, LINEAR_MODEL, MODEL_ALIASES, REMOVED_MODELS, ROLLUP_MODELS,
-    canonical_model, removed_model_message,
+    DEFAULT_ROLLUP_MODEL, EXPONENTIAL_MODEL, LINEAR_MODEL, MODEL_ALIASES, REMOVED_MODELS,
+    ROLLUP_MODELS, canonical_model, removed_model_message,
 )
 from riana.core import models
 from riana.core.fitting import _solve_k_single_t
@@ -259,7 +259,7 @@ def gate_peptides(
     min_fit_points: int | None = None,
     peptide_admission: str = DEFAULT_ADMISSION,
     exclude_mbr: bool = False,
-    model: str = EXPONENTIAL_MODEL,
+    model: str = DEFAULT_ROLLUP_MODEL,
     level: str = "protein",
     reference_condition: str | None = None,
     test_condition: str | None = None,
@@ -394,7 +394,8 @@ def scope_to_contrast(
             "the linear model compares two conditions, but "
             + "; ".join(f"experiment {e!r} has {len(c)} ({', '.join(c)})"
                         for e, c in over.items())
-            + ". Name the pair with --reference-condition and --test-condition.")
+            + ". Name the pair with --reference-condition and --test-condition, or use "
+            "--model exponential for each condition's k without a Δk.")
     return peptides, fractions
 
 
@@ -415,7 +416,7 @@ def rollup_proteins(
     peptides: pd.DataFrame,
     fractions: pd.DataFrame,
     *,
-    model: str = EXPONENTIAL_MODEL,
+    model: str = DEFAULT_ROLLUP_MODEL,
     kinetic_kwargs: Mapping[str, float] | None = None,
     parsimony: str = "unique",
     level: str = "protein",
@@ -448,9 +449,9 @@ def rollup_proteins(
         fractions: ``riana_fit_fractions.txt`` content — needs ``concat``,
             ``protein id``, ``biological_replicate``, ``labeling_time``, ``fs``,
             ``fs_lower``, ``fs_upper``.
-        model: ``"exponential"`` (default; the nonlinear refit) or ``"linear"``
-            (the φ-space joint fit with a Δk test). Earlier names (``"simple"``,
-            ``"linear simple"``) are accepted.
+        model: ``"linear"`` (default since 1.2.0; the φ-space joint fit with a Δk
+            test) or ``"exponential"`` (the nonlinear refit; the default before
+            1.2.0). Earlier names (``"simple"``, ``"linear simple"``) are accepted.
         kinetic_kwargs: extra keyword arguments for the exponential curve (none
             are needed); ``a_0`` / ``a_max`` are pinned 0 / 1.
         parsimony: ``"unique"`` (default) or ``"isoform"`` (deferred).

@@ -93,6 +93,16 @@ def to_phi(
     return np.log(1.0 - th)
 
 
+def phi_axis_label(fs_basis: str = "theta") -> str:
+    """The φ axis label for what the fit's ``fs`` holds (its ``# fs_basis`` header).
+
+    ``theta`` → ``φ = log(1 − θ)``; ``f`` (fraction new under a rising precursor,
+    ``fit --kp``) → ``φ = log(1 − f)``; ``mixed`` (some curves of each) names both.
+    """
+    symbol = {"theta": "θ", "f": "f"}.get(fs_basis, "θ or f")
+    return f"φ = log(1 − {symbol})"
+
+
 def truncate_plateau(
     day: np.ndarray, phi: np.ndarray, *, phi_limit: float = -4.0
 ) -> tuple[np.ndarray, np.ndarray]:

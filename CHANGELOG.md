@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.2.0 development line (branch `1.2.0`).
 
+### Changed — `rollup --model` defaults to `linear` — 2026-11-21
+
+- **Results-affecting: `riana rollup` without `--model` now runs `linear`** (was
+  `exponential`), on the CLI, in the app's Protein tab and in
+  `riana.core.protein.rollup_proteins` (`constants.DEFAULT_ROLLUP_MODEL`). A two-condition project
+  gets each condition's k and the Δk test by default; a one-condition project gets each protein's
+  φ-slope k (analytic CI) instead of the exponential refit (bootstrap CI and R²).
+  - Why: the issue that held the flip (the per-condition peptide collapse, manual §7) was fixed by
+    the shared band levels (2026-11-16), and the linear rollup now holds its nulls (manual §8.5).
+  - An experiment with more than two conditions needs the pair named
+    (`--reference-condition` / `--test-condition`); the error now also points to
+    `--model exponential` for each condition's k without a Δk. Example: Boulder's 4-tissue
+    per-tissue k is `--model exponential`.
+  - `--peptide-admission auto` follows the model, so the default rollup now admits under `all`.
+  - Pass `--model exponential` to reproduce a 1.1.0 rollup.
+
+### Fixed — φ axes on a rising-precursor fit — 2026-11-21
+
+- The φ-space plots (the app's Protein and Interaction views, `rollup --plot` PDFs) label the axis
+  `φ = log(1 − f)` when the fit's `fs` is fraction new f (`fit --kp`), instead of always θ. The
+  app reads the basis from the fit on a run and from the rollup header on *Load results*.
+- Benchmarks: `bench_rt_alignment.py` and `run_integrate_invivo.py` default to the Boulder
+  4-tissue search (`data/timeseries_boulder_4tissues`; `--chamber` adds EDL / SOL), and
+  `bench_dimethyl_spillover.py` to the FASTA in `data/timeseries_atf6/quantms_params`, as the
+  `timeseries_lve`, `timeseries_lve_atr` and `timeseries_dia` data folders are removed.
+
 ### Changed — admission by model and level; a linear rollup uses only its pair; Δk needs a shared peptide; Fixed — dimethyl forms pair across conditions — 2026-11-18
 
 - **Results-affecting: `--peptide-admission auto` is the default again, now resolved by model

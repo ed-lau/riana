@@ -204,7 +204,7 @@ def test_rollup_proteins_peptide_level():
     assert res["delta_k"].iloc[0] == pytest.approx(0.05, abs=0.01)
     assert res.attrs["protein_points"]          # the collapsed display points
     with pytest.raises(DataError, match="needs model 'linear'"):
-        rollup_proteins(pep, f, level="peptide")
+        rollup_proteins(pep, f, model="exponential", level="peptide")
 
 
 def test_peptide_interaction_on_tissues_of_the_same_animals():

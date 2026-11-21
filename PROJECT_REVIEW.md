@@ -177,8 +177,11 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   same `characteristics[individual]` carries both conditions (tissues of the same animals),
   E+time adds the animal × condition term and tests on animals − 1 df; detected from the data,
   no flag. The protein level (the collapse) stays unpaired by design (user, 2026-11-16).
-- **TODO — k measurability and animal-level diagnostics in the rollup output (found 2026-11-13,
-  k-stability check on the non-primed D₂O set; local report).** Nothing built.
+- **NOTE — k measurability and animal-level diagnostics in the rollup output (found 2026-11-13,
+  k-stability check on the non-primed D₂O set; local report).** Nothing built; **kept as a note
+  for future reference (user, 2026-11-21)** — revisit when a slow-turnover dataset needs it. Since
+  `--min-peptides 1` the share of proteins whose k CI reaches 0 roughly doubled on that set
+  (one-peptide proteins), so the flag matters more than when it was found.
   - *Unmeasurable k is not flagged.* `to_phi` clamps θ/f at 0.001, so a linear-model k is always
     positive: a protein whose k cannot be told from 0 reads as a very long t½, not as k ≤ 0. Write
     the per-condition t½ upper bound and a "k CI reaches 0" flag into `riana_rollup_proteins.txt`.
@@ -335,11 +338,11 @@ manifest `precursor_rate_constant`. Choices made while building:
 hash, and on f/mixed refused guan/fornasiero (`protein.check_fs_basis`; moot since their removal
 2026-11-16, and it also refused `--linear-weights wls-var` until that was removed 2026-11-15); `linear simple` → `linear` with the old name accepted
 (warning). The Monte Carlo bench runs its f + `wls-var` arm with the refusal lifted (audit only;
-reproduces the stored arm exactly). **Default flip to `linear` held (user):** the collapse issue that
-blocked it was resolved 2026-11-16 (shared bands), so the flip is now only a decision, not to be
-made unasked. **Remaining:** the default (7), GUI φ-axis labels (say θ on f), validation before
-merge. Done 2026-11-16: the removal (5) and the `exponential` name (4).
-**k_p hint (2026-11-13), refits deferred (user).** On the non-primed set, mid-course timepoints sat
+reproduces the stored arm exactly). **Default flip to `linear` done 2026-11-21 (user; CHANGELOG).**
+**Remaining:** validation before merge. Done 2026-11-16: the removal (5) and the `exponential`
+name (4); 2026-11-21: the φ-axis labels say f on an f fit (GUI views and the `--plot` PDF).
+**k_p hint (2026-11-13), refits deferred (user; 2026-11-21: a science question for that
+experiment, not a Riana item — noted in its local report, picked up with the experiment).** On the non-primed set, mid-course timepoints sat
 below the fitted curves in every condition and tissue on a fixed protein set, while late ones sat
 on them — the pattern a k_p set too fast produces (labeling lags the assumed precursor). It
 conflicts with the dosing-calendar check and the earlier envelope-level k_p profile. Test when
@@ -504,8 +507,8 @@ rollup, linear Δk, interaction) runs unchanged on f.
    `--peptide-admission auto` resolves to `all` (fewer peptides per protein in multi-condition
    runs); the GUI default and docs follow; CHANGELOG results-affecting entry. With f input
    (`# fs_basis f`, any finite k_p) the line and the interaction use **`wls`** (`wls-var`,
-   miscalibrated there, is removed altogether since 2026-11-15). **Done 2026-11-16 except the
-   default:** `--level protein|peptide` replaced `--method` (`pooled` dropped), and admission
+   miscalibrated there, is removed altogether since 2026-11-15). **Done 2026-11-16; the default
+   flipped 2026-11-21:** `--level protein|peptide` replaced `--method` (`pooled` dropped), and admission
    is `auto` again, now by model and level (2026-11-18: `all` for the protein-level linear Δk,
    `own` otherwise).
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's

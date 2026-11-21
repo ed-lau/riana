@@ -330,7 +330,7 @@ def test_rollup_breakdown_and_exclude_mbr():
 
 def test_bioreps_are_independent_refit_points():
     pep, frac = _make_frames({"sp|P0|X": 0.5}, bioreps=(1, 2))
-    out = rollup_proteins(pep, frac, n_boot=20).set_index("protein")
+    out = rollup_proteins(pep, frac, model="exponential", n_boot=20).set_index("protein")
     assert out.loc["P0", "n_points"] == 10        # 2 bioreps x 5 timepoints
     assert out.loc["P0", "n_replicates"] == 2
     assert out.loc["P0", "n_timepoints"] == 5
@@ -604,7 +604,10 @@ def test_linear_rollup_with_three_conditions_needs_the_pair():
     with pytest.raises(DataError, match="not among the conditions"):
         rollup_proteins(pep, frac, model="linear", min_r2=0.8, reference_condition="ctrl",
                         test_condition="drgu")
-    assert set(rollup_proteins(pep, frac, min_r2=0.8, n_boot=10)["condition"]) == {
+    with pytest.raises(DataError, match="--model exponential"):
+        rollup_proteins(pep, frac, min_r2=0.8)          # the default (linear) refuses too
+    assert set(rollup_proteins(pep, frac, model="exponential", min_r2=0.8,
+                               n_boot=10)["condition"]) == {
         "ctrl", "drug", "other"}                         # exponential: no contrast
 
 
@@ -759,7 +762,7 @@ def test_unknown_model_parsimony_level_raise():
     with pytest.raises(DataError, match="level"):
         rollup_proteins(pep, frac, level="bogus")
     with pytest.raises(DataError, match="needs model 'linear'"):
-        rollup_proteins(pep, frac, level="peptide")       # exponential: no peptide level
+        rollup_proteins(pep, frac, model="exponential", level="peptide")  # no peptide level
 
 
 def test_rollup_fractions_carry_individual_when_the_fit_did():

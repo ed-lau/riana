@@ -8,7 +8,8 @@ matplotlib is a core dependency, so this adds nothing new; it runs on the Agg ba
 
 Reads the two rollup tables the GUI's ``load_rollup_results`` also reconstructs from:
 ``riana_rollup_proteins.txt`` (per-condition ``k_deg`` / ``ci_lo`` / ``ci_hi`` / ``delta_k``
-/ ``delta_k_p_adj``) and ``riana_rollup_fractions.txt`` (per-point collapsed ``fs`` = θ).
+/ ``delta_k_p_adj``) and ``riana_rollup_fractions.txt`` (per-point collapsed ``fs``: θ, or
+fraction new f on a rising-precursor fit).
 
 Performance: per-experiment PDFs are embarrassingly parallel, so ``workers > 1``
 dispatches one experiment per process (the ``-W`` lever); within a PDF the pages
@@ -26,7 +27,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from riana.core.linear_model import to_phi
+from riana.core.linear_model import phi_axis_label, to_phi
 
 # Match the GUI palette (gui/curve_view.py:_CONDITION_COLOURS) so CLI and GUI plots
 # read the same colour-per-condition.
@@ -34,7 +35,7 @@ _CONDITION_COLOURS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#1
 
 
 def _plot_one(ax, title: str, per_condition: dict, *, phi_limit: float,
-              delta_k=None, delta_k_p_adj=None) -> None:
+              delta_k=None, delta_k_p_adj=None, fs_basis: str = "theta") -> None:
     """Render one protein's φ-space condition comparison onto *ax* (mirrors the GUI)."""
     t_max = 0.0
     for i, cond in enumerate(sorted(per_condition)):
@@ -57,7 +58,7 @@ def _plot_one(ax, title: str, per_condition: dict, *, phi_limit: float,
                                 alpha=0.15, lw=0)
     ax.axhline(phi_limit, ls="--", color="grey", lw=0.8, alpha=0.7)
     ax.set_xlabel("Time")
-    ax.set_ylabel("Clearance  φ = log(1 − θ)")
+    ax.set_ylabel(f"Clearance  {phi_axis_label(fs_basis)}")
     if delta_k is not None and np.isfinite(delta_k):
         title += f"   Δk={delta_k:+.3g}"
     if delta_k_p_adj is not None and np.isfinite(delta_k_p_adj):
@@ -93,10 +94,10 @@ def _safe(name: str) -> str:
 def _render_experiment(args) -> tuple[str, int]:
     """Render one experiment's proteins to one PDF (a picklable process-pool task).
 
-    *args* = ``(exp, proteins_exp, fractions_exp, out_path, phi_limit)`` — pre-sliced
-    to this experiment so nothing else crosses the process boundary.
+    *args* = ``(exp, proteins_exp, fractions_exp, out_path, phi_limit, fs_basis)`` —
+    pre-sliced to this experiment so nothing else crosses the process boundary.
     """
-    exp, proteins_exp, fractions_exp, out_path, phi_limit = args
+    exp, proteins_exp, fractions_exp, out_path, phi_limit, fs_basis = args
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -120,7 +121,8 @@ def _render_experiment(args) -> tuple[str, int]:
                 continue
             ax.cla()
             _plot_one(ax, f"{exp} · {prot}", per_condition, phi_limit=phi_limit,
-                      delta_k=dk.get(prot), delta_k_p_adj=padj.get(prot))
+                      delta_k=dk.get(prot), delta_k_p_adj=padj.get(prot),
+                      fs_basis=fs_basis)
             pdf.savefig(fig)
             n += 1
     plt.close(fig)
@@ -129,6 +131,7 @@ def _render_experiment(args) -> tuple[str, int]:
 
 def render_linear_pdf(proteins: pd.DataFrame, fractions: pd.DataFrame, out_dir: Path,
                       *, phi_limit: float = -4.0, workers: int = 1,
+                      fs_basis: str = "theta",
                       progress: "Callable[[str, int], None] | None" = None) -> list[Path]:
     """Write ``linear`` Δk curves to one PDF per experiment.
 
@@ -137,7 +140,9 @@ def render_linear_pdf(proteins: pd.DataFrame, fractions: pd.DataFrame, out_dir: 
     through-origin −k·t line + CI ribbon per condition, and Δk / p_adj in the title.
     A single unnamed experiment writes ``riana_rollup_curves.pdf``; multiple write
     ``riana_rollup_curves_<experiment>.pdf``. ``workers > 1`` renders experiments in
-    parallel (one process per experiment). Returns the paths written.
+    parallel (one process per experiment). ``fs_basis`` (the fit's ``# fs_basis``)
+    labels the φ axis θ or, on a rising-precursor fit, fraction new f. Returns the
+    paths written.
     """
     if "delta_k" not in proteins.columns:
         raise ValueError("rollup is not 'linear' (no delta_k) — nothing to plot")
@@ -152,7 +157,7 @@ def render_linear_pdf(proteins: pd.DataFrame, fractions: pd.DataFrame, out_dir: 
         if pexp.drop_duplicates(["experiment", "protein"]).empty:
             continue
         fname = f"riana_rollup_curves_{_safe(exp)}.pdf" if multi else "riana_rollup_curves.pdf"
-        tasks.append((exp, pexp, fexp, out_dir / fname, phi_limit))
+        tasks.append((exp, pexp, fexp, out_dir / fname, phi_limit, fs_basis))
 
     written: list[Path] = []
     n_par = min(int(workers), len(tasks))

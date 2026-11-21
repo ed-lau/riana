@@ -33,6 +33,10 @@ The full list is in the repository `CHANGELOG.md`.
   gates reports its protein (`--min-peptides` default 1, was 2). Out-of-range θ
   points are dropped before fitting (`--no-fs-rail-drop` restores the old behaviour). Peptides with
   non-standard residues (U, O, B, Z, J, X) are dropped at intake.
+* **`linear` is the rollup default (changes results).** `riana rollup` without `--model` fits the
+  linear model: each condition's k and, with two conditions, the Δk test. More than two conditions
+  need the pair named (`--reference-condition` / `--test-condition`). `--model exponential` gives
+  the 1.1.0 behaviour (each condition's k from the exponential refit, no Δk).
 * **`rollup --model linear`** (was `linear simple`; the old name is still accepted). The rollup
   reads whether the fit's `fs` is θ or the fraction new f of a rising precursor (`fit --kp`).
 * **Models renamed and removed.** `simple` is now `exponential` (the old name is still accepted).

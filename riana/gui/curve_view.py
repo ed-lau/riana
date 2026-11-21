@@ -306,6 +306,7 @@ class CurveView(QWidget):
         phi_limit: float = -4.0,
         delta_k: float | None = None,
         delta_k_p_adj: float | None = None,
+        fs_basis: str = "theta",
     ) -> None:
         """φ-space view for the ``linear`` model — overlay each condition.
 
@@ -315,9 +316,10 @@ class CurveView(QWidget):
         from the fit) and the fitted through-origin line φ = −k·t — with a shaded
         ribbon between the lines at the k CI bounds when ``ci_lo`` / ``ci_hi`` are
         given. The slope difference between the lines *is* the cross-sample Δk,
-        which the title reports.
+        which the title reports. ``fs_basis`` (the fit's ``# fs_basis``) labels the
+        axis θ or, on a rising-precursor fit, fraction new f.
         """
-        from riana.core.linear_model import to_phi
+        from riana.core.linear_model import phi_axis_label, to_phi
 
         self.plot.clear()
         if not per_condition:
@@ -366,7 +368,7 @@ class CurveView(QWidget):
                                pen=pg.mkPen("#888888", style=Qt.PenStyle.DashLine))
         self.plot.addItem(line)
 
-        self.plot.setLabel("left", "Clearance  φ = log(1 − θ)")
+        self.plot.setLabel("left", f"Clearance  {phi_axis_label(fs_basis)}")
         title = protein
         if delta_k is not None and math.isfinite(delta_k):
             title += f"   Δk={delta_k:+.3g}/day"

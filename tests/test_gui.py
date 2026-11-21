@@ -501,7 +501,7 @@ def test_key_form_fields_have_tooltips(main_window):
 def test_protein_tab_build_params_defaults(main_window):
     params = main_window.protein_tab.build_params()
     assert params["parsimony"] == "unique"
-    assert params["model"] == "exponential"
+    assert params["model"] == "linear"  # the rollup default since 1.2.0
     assert params["min_peptides"] == 1
     assert params["min_points"] == 3
     assert params["min_fit_points"] is None  # 0 on the spin -> auto (2 for single-tp)
@@ -757,6 +757,32 @@ def test_curve_view_draws_ci_ribbon(main_window):
     }, phi_limit=-4.0, delta_k=0.05)
     items = cv.plot.items
     assert sum(isinstance(i, FillBetweenItem) for i in items) == 2  # one per condition
+
+
+def test_phi_axes_say_f_on_a_rising_precursor_fit(main_window):
+    """The φ-space views label the axis log(1 − f) when the fit's fs is fraction new f
+    (fit --kp), log(1 − θ) otherwise — for a fresh run and for loaded results alike."""
+    from riana.gui.protein_tab import _fs_basis
+
+    cv = main_window.protein_tab.curve
+    pts = {"control": ([1, 2, 4], [.05, .1, .18], 0.05, 0.04, 0.06)}
+    cv.plot_linear("P1", pts)
+    assert cv.plot.getAxis("left").labelText == "Clearance  φ = log(1 − θ)"
+    cv.plot_linear("P1", pts, fs_basis="f")
+    assert cv.plot.getAxis("left").labelText == "Clearance  φ = log(1 − f)"
+
+    assert _fs_basis({}) == "theta"                                # older fits
+    assert _fs_basis({"fit_basis": {"fs_basis": "f", "k_p_applied": "0.1"}}) == "f"
+
+    tab = main_window.protein_tab
+    table, points = _interaction_fixture()
+    tab._points = points
+    tab._last_params = {**tab.build_params(), "fit_basis": {"fs_basis": "f"}}
+    tab._set_interaction(table, ("control", "KO"))
+    tab.result_tabs.setCurrentIndex(1)
+    tab.interaction_table.setCurrentIndex(tab.interaction_model.index(0, 0))
+    assert tab.interaction_view.panels[0].getAxis("left").labelText == "φ = log(1 − f)"
+    tab._set_interaction(None, None)
 
 
 def test_curve_view_splits_mbr_and_folded_points(main_window):

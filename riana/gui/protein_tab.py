@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 from qasync import asyncSlot
 from PySide6.QtCore import QModelIndex, Qt
 
+from riana.constants import DEFAULT_ROLLUP_MODEL, ROLLUP_MODELS
 from riana.gui.curve_view import CurveView
 from riana.gui.interaction_view import InteractionView
 from riana.gui.models import DataFrameTableModel
@@ -138,11 +139,13 @@ class ProteinTab(QWidget):
         form.addRow("Parsimony", self.parsimony_combo)
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["exponential", "linear"])
+        self.model_combo.addItems(list(ROLLUP_MODELS))
+        self.model_combo.setCurrentText(DEFAULT_ROLLUP_MODEL)
         self.model_combo.setToolTip(
-            "exponential: refit θ = 1 − e^(−kt) per condition. 'linear': the "
-            "linearized φ=log(1−θ) cross-sample model — per-condition k + a Δk "
-            "test (writes delta_k / delta_k_p_adj), plotted in φ-space.")
+            "linear (default): the linearized φ=log(1−θ) cross-sample model — "
+            "per-condition k + a Δk test (writes delta_k / delta_k_p_adj), plotted in "
+            "φ-space; more than two conditions need the pair named. exponential: refit "
+            "θ = 1 − e^(−kt) per condition, no Δk (the default before 1.2.0).")
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
         form.addRow("Model", self.model_combo)
 
@@ -742,7 +745,7 @@ class ProteinTab(QWidget):
         self.interaction_view.plot_protein(
             str(prot), panels, reference=reference, test=test,
             phi_limit=float(p.get("phi_limit", -4.0)),
-            summary=_interaction_caption(row))
+            summary=_interaction_caption(row), fs_basis=_fs_basis(p))
 
     # --- per-protein refit curve on selection (pure, no worker) ------------- #
     def _on_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
@@ -791,6 +794,7 @@ class ProteinTab(QWidget):
             str(prot), per_condition,
             phi_limit=float(p.get("phi_limit", -4.0)),
             delta_k=row.get("delta_k"), delta_k_p_adj=row.get("delta_k_p_adj"),
+            fs_basis=_fs_basis(p),
         )
 
     # --- load prior results (no recompute) ---------------------------------- #
@@ -838,6 +842,10 @@ class ProteinTab(QWidget):
             params = self.build_params()
             from riana.core.protein import canonical_model  # 'simple' → 'exponential'
             params["model"] = canonical_model(header.get("model", params["model"]))
+            # What the fit's fs held (θ or fraction new f), echoed in the rollup header;
+            # rollups that predate the echo are θ.
+            params["fit_basis"] = {k: header[k] for k in ("fs_basis", "k_p_applied")
+                                   if k in header}
             self._result_df = proteins
             self._points = points
             self._last_params = params
@@ -925,6 +933,12 @@ def interaction_summary(table: pd.DataFrame) -> pd.DataFrame:
     return (per.merge(ratios, left_on="protein", right_index=True)
             .sort_values("interaction_p", na_position="last", kind="mergesort")
             .reset_index(drop=True))
+
+
+def _fs_basis(params: dict) -> str:
+    """What the rolled-up fit's ``fs`` holds — ``theta``, ``f`` or ``mixed`` — from the
+    run's / loaded header's ``fit_basis``; ``theta`` when absent (older fits)."""
+    return str((params.get("fit_basis") or {}).get("fs_basis", "theta"))
 
 
 def _interaction_caption(row) -> str:

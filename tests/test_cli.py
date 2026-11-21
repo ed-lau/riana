@@ -578,9 +578,20 @@ def test_rollup_level_peptide_with_interaction(tmp_path):
 def test_rollup_level_peptide_needs_the_linear_model(tmp_path):
     fit_dir = _multi_tissue_fit_dir(tmp_path)
     result = runner.invoke(app, ["rollup", str(fit_dir), "--level", "peptide",
-                                 "-o", str(tmp_path / "out")])
+                                 "--model", "exponential", "-o", str(tmp_path / "out")])
     assert result.exit_code != 0
     assert "add --model linear" in _norm(result.output)
+
+
+def test_rollup_default_model_is_linear(tmp_path):
+    """Since 1.2.0 a rollup without --model is the linear Δk (was exponential)."""
+    fit_dir = _multi_tissue_fit_dir(tmp_path)
+    out = tmp_path / "out"
+    result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    prot = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
+    assert {"delta_k", "delta_k_p", "delta_k_p_adj"} <= set(prot.columns)
+    assert "# model linear" in (out / "riana_rollup_proteins.txt").read_text()
 
 
 def test_rollup_method_is_replaced_by_level(tmp_path):

@@ -283,18 +283,22 @@ iso_abundances = [0.9893,  # C12
 # --------------------------------------------------------------------------- #
 # Model names (fit --model / rollup --model)
 # --------------------------------------------------------------------------- #
-#: The first-order turnover curve θ(t) = 1 − e^{−kt} (fit and rollup default). Under a
+#: The first-order turnover curve θ(t) = 1 − e^{−kt} (the fit default). Under a
 #: rising precursor (``fit --kp``) the fit solves each point for fraction new f and
 #: fits the same curve to it.
 EXPONENTIAL_MODEL = "exponential"
 #: The rollup's linearized model, φ = log(1 − θ) = −kt, fit jointly over a protein's
 #: conditions for a per-condition k and a Δk test (:mod:`riana.core.linear_model`).
+#: The rollup default since 1.2.0.
 LINEAR_MODEL = "linear"
 #: The fit's through-origin recovery line for mixing-proportion (calibration) runs.
 CALIBRATION_MODEL = "calibration"
 #: Fit models (``riana fit --model``) and rollup models (``riana rollup --model``).
 FIT_MODELS = (EXPONENTIAL_MODEL, CALIBRATION_MODEL)
 ROLLUP_MODELS = (EXPONENTIAL_MODEL, LINEAR_MODEL)
+#: ``riana rollup --model`` default (CLI, GUI and :func:`riana.core.protein.rollup_proteins`).
+#: ``exponential`` until 1.2.0 (user decision 2026-11-21).
+DEFAULT_ROLLUP_MODEL = LINEAR_MODEL
 #: Earlier model names still accepted, mapped to the current name. Each alias goes one
 #: release after its rename ships. (``linear simple`` renamed 2026-11-13, ``simple``
 #: 2026-11-16.)

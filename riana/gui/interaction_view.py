@@ -66,14 +66,16 @@ class InteractionView(QWidget):
         test: str,
         phi_limit: float = -4.0,
         summary: str = "",
+        fs_basis: str = "theta",
     ) -> None:
         """Draw one panel per experiment.
 
         ``panels``: ``[{"experiment", "k_ratio", "k_reference", "k_test",
         "points": {condition: (t_list, theta_list)}}]``. Points at or below
-        ``phi_limit`` (dropped by the fit) are drawn hollow.
+        ``phi_limit`` (dropped by the fit) are drawn hollow. ``fs_basis`` (the fit's
+        ``# fs_basis``) labels the axis θ or fraction new f.
         """
-        from riana.core.linear_model import to_phi
+        from riana.core.linear_model import phi_axis_label, to_phi
 
         self.widget.clear()
         self.panels = []
@@ -101,7 +103,7 @@ class InteractionView(QWidget):
             for axis in ("left", "bottom"):
                 plot.getAxis(axis).enableAutoSIPrefix(False)
             if i == 0:
-                plot.setLabel("left", "φ = log(1 − θ)")
+                plot.setLabel("left", phi_axis_label(fs_basis))
             title = str(panel["experiment"])
             ratio = panel.get("k_ratio")
             if ratio is not None and math.isfinite(ratio):
