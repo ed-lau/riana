@@ -19,9 +19,12 @@ robust line fit (slope/intercept/r) on representative pairs. A compact pairwise
 median-|dRT| matrix over one chamber's timepoints shows whether the offset grows
 with timepoint separation (the raw signature).
 
+Default input: the Boulder 4-tissue combined search (``data/timeseries_boulder_4tissues``;
+the 2026-06 numbers came from the LVE + ATR search, ``data/timeseries_lve_atr``, since removed).
+
 Usage:
     python tests/benchmark/bench_rt_alignment.py            # LVE chamber
-    python tests/benchmark/bench_rt_alignment.py --chamber ATR
+    python tests/benchmark/bench_rt_alignment.py --chamber ATR   # or EDL / SOL
 """
 
 from __future__ import annotations
@@ -36,8 +39,8 @@ import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MZTAB = os.path.join(
     REPO,
-    "data/timeseries_lve_atr/quantms_results/quant_tables",
-    "samplesheet_lve_atr.sdrf_openms_design_openms.mzTab",
+    "data/timeseries_boulder_4tissues/quantms_results/quant_tables",
+    "samplesheet_atr_lve_edl_sol.sdrf_openms_design_openms.mzTab",
 )
 
 # 0-based PSM column indices (verified against the PSH header)
@@ -121,7 +124,7 @@ def pair_stats(a: dict[str, float], b: dict[str, float]):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--chamber", default="LVE", choices=["LVE", "ATR"])
+    ap.add_argument("--chamber", default="LVE", choices=["LVE", "ATR", "EDL", "SOL"])
     ap.add_argument("--mztab", default=MZTAB)
     args = ap.parse_args()
 

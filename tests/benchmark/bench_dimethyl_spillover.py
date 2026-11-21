@@ -53,7 +53,7 @@ LEN_BINS = [(7, 12), (13, 18), (19, 25), (26, 35)]
 FS_SWEEP = [0.5, 0.7, 0.9, 1.0]
 # approximate DDA-detectability weights per length bin (short peptides dominate)
 LEN_WEIGHTS = {(7, 12): 0.40, (13, 18): 0.35, (19, 25): 0.18, (26, 35): 0.07}
-DEFAULT_FASTA = "data/timeseries_lve/uniprot_mouse_reviewed.fasta"
+DEFAULT_FASTA = "data/timeseries_atf6/quantms_params/uniprot_mouse_reviewed.fasta"
 
 
 def read_fasta(path):

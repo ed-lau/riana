@@ -1,8 +1,10 @@
 """
 Integrate one in-vivo acquisition from a quantms mzTab → a ``_riana.txt`` that
 serves as the subsample source for ``bench_zero_sweep.py --mzml`` (Part B of the
-generalizability check). Used for ``timeseries_lve`` time0 (= day-0, unlabelled
-→ natural-abundance IsoSpec ground truth, no Spep, like proportion 0).
+generalizability check). Used for the Boulder LVE time00 run (= day-0, unlabelled
+→ natural-abundance IsoSpec ground truth, no Spep, like proportion 0); now from the
+4-tissue search in ``data/timeseries_boulder_4tissues`` (the original ``timeseries_lve``
+search is removed).
 
 PSMs come from the OpenMS/quantms mzTab, filtered to the ms_run whose location
 matches the given mzML (via ``bench_zero_sweep._load_psms``). Config is the
@@ -11,8 +13,8 @@ stratified subsample; ``bench_zero_sweep`` re-extracts the XICs itself.
 
 Usage:
   python run_integrate_invivo.py \
-    --mzml  data/timeseries_lve/mzml/20230907_JC_Boulder_LVE_time0.mzML \
-    --mztab data/timeseries_lve/quantms_results/quant_tables/samplesheet_lve_sdrf_openms_design_openms.mzTab \
+    --mzml  data/timeseries_boulder_4tissues/mzml/20230907_JC_Boulder_LVE_time00.mzML \
+    --mztab data/timeseries_boulder_4tissues/quantms_results/quant_tables/samplesheet_atr_lve_edl_sol.sdrf_openms_design_openms.mzTab \
     --out   tests/data/timeseries_lve/time0_riana.txt
 """
 from __future__ import annotations
