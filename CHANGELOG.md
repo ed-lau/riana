@@ -25,6 +25,23 @@ The 1.2.0 development line (branch `1.2.0`).
   - `--peptide-admission auto` follows the model, so the default rollup now admits under `all`.
   - Pass `--model exponential` to reproduce a 1.1.0 rollup.
 
+### Added — timsTOF diaPASEF mzML (no ion mobility); faster mzML opening — 2026-11-21
+
+- **timsTOF intake (phase 1A of the timsTOF / ion-mobility item, `PROJECT_REVIEW.md`).** The
+  mzML reader takes tdf2mzml spectrum ids (`index=N`) and msconvert Bruker ids (`frame=N`) beside
+  Thermo `scan=N`, so a Bruker diaPASEF run converted without ion mobility integrates from a
+  DIA-NN report like an Orbitrap DIA run. A file whose MS1 keys repeat (one spectrum per
+  mobility scan) is refused with a pointer to the converters' combine option. Checked on a
+  timsTOF Pro run (285k spectra, 4,015 MS1 frames, 6.5 GB): integrate, fit and rollup run end to
+  end.
+- **mzML I/O, no result change.** The reader opens files with the offset index written at their
+  end (pyteomics `PreIndexedMzML`) instead of rebuilding it by scanning the whole file on every
+  open (~2 s vs ~400 s for a 12.7 GB file on a network share; Riana opens a file several times
+  per run), and reads the spectrum headers in one lean lxml pass (24 s vs 118 s on that run; 11 s
+  vs 53 s on an Exploris run), falling back to the pyteomics pass when a writer keeps the MS level
+  in a referenceable parameter group. Integrated output is identical (BSA golden index and
+  re-integrated runs).
+
 ### Fixed — φ axes on a rising-precursor fit — 2026-11-21
 
 - The φ-space plots (the app's Protein and Interaction views, `rollup --plot` PDFs) label the axis

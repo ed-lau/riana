@@ -133,7 +133,41 @@ pushes Δk *against* the observed effect (self-correcting, not manufacturing sig
   CLI Reference page (`riana_website/_gen_reference.py`, kept current by `tests/test_docs.py`),
   README slimmed to a landing page.
 
+**4. timsTOF intake, phase 1A — no-IM diaPASEF mzML** *(added 2026-11-21, user; plan below)*
+
+Data: `data/timeseries_trilineage` (local; facts in the memory file *trilineage timsTOF
+dataset*): the same WTC-11 → CP / ECTO / ENDO D₂O series (8 timepoints × 2 replicates) on an
+Exploris 480 (DIA) and a timsTOF Pro (diaPASEF), both searched by quantms-diann / DIA-NN 2.5; the
+timsTOF runs converted by tdf2mzml without and with ion mobility. Found 2026-11-21: tdf2mzml ids
+are `index=N`, which `io/mzml._scan_from_id` refuses; and pyteomics `MzML(use_index=True)`
+re-scans the whole file to build offsets on every open (~400 s for an untouched 12.7 GB file on
+the share, vs 2.2 s from the embedded index), which Riana does several times per run.
+
+- *Spectrum ids:* accept `index=N` and `frame=N` beside Thermo `scan=N`; refuse duplicate MS1
+  keys (an IM-expanded file with one spectrum per mobility scan).
+- *I/O:* open with the embedded offset index (`PreIndexedMzML`, spot-checked, fallback to the
+  scan-built index), a header-only index pass, no full-file re-scan per reader. No result
+  change (BSA golden + suite).
+- *Validate* on a local subset on the Mac: integrate a timsTOF no-IM and an Exploris run of the
+  same sample; memory and time per run; fit / rollup smoke with `alamillo_2025_ipsc`.
+- Out of scope (no data): DDA-PASEF (mzTab `index=` refs, 0- vs 1-based), Synchro-PASEF,
+  centroiding IM frames in Riana.
+
 #### Deferred beyond 1.2.0 (with rationale)
+
+- **timsTOF phase 2A — ion-mobility-aware extraction, then the platform reports 1B / 2B** (user
+  2026-11-21). 2A after 1.2.0 on a subset of files: read the `mean inverse reduced ion mobility
+  array`; a targeted MS1 cache (only the m/z × IM windows of the precursors active in each frame;
+  the whole-run cache would be ~18 GB per IM run); carry DIA-NN's `IM` apex on each PSM; an
+  `--im-tolerance` window in the per-isotopomer sum (off = today's sum); an isotopomer
+  co-mobility QC. The comprehensive runs and both science reports (1B Exploris vs timsTOF no-IM;
+  2B does IM help D₂O labeling, tolerance sweep) wait for the re-acquired timsTOF files (ETA
+  early Dec 2026: the two missing runs and reruns of four low-ID runs). Design for 1B: per-lineage
+  k (exponential) plus the three pairwise `linear` contrasts; `alamillo_2025_ipsc` sites for every
+  lineage; key metrics t = 0 envelope accuracy vs IsoSpec by intensity (TOF saturation, count-floor
+  censoring of heavy isotopomers, interference), yield, θ / k agreement, within-protein spread,
+  replicate agreement, lineage Δk concordance. The set also supports the >2-condition comparison,
+  after PASEF support.
 
 - **A2 — SILAC proper.** Registered as *geometry* only in `riana/multiplex.py`; its
   heavy-UNIMOD constants + intake CV terms land **when SILAC-D₂O data exists**. Blocked on data.

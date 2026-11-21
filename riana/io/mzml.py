@@ -29,11 +29,17 @@ from pyteomics import mzml
 
 from riana.exceptions import DataError
 
-
-# Thermo nativeID: ``controllerType=0 controllerNumber=1 scan=1432``.
-# WIFF/Sciex format uses ``cycle=N experiment=M``; we don't handle that here
-# (none of Riana's targets ship Sciex mzML today).
-_SCAN_RE = re.compile(r"scan=(\d+)")
+# The integer key of a spectrum, from its nativeID, by the first that matches:
+#   ``frame=F``  Bruker TDF via msconvert (``merged=0 frame=12 scanStart=…``): the frame.
+#   ``scan=N``   Thermo (``controllerType=0 controllerNumber=1 scan=1432``).
+#   ``index=N``  tdf2mzml (Bruker timsTOF) and other index-only writers (1-based there;
+#                only the file order matters — the DIA path resolves scans from RT).
+# Each key must stand alone (``scanStart=`` is not ``scan=``). WIFF/Sciex
+# ``cycle=N experiment=M`` is not handled (no Riana target ships Sciex mzML).
+_FRAME_RE = re.compile(r"(?:^|\s)frame=(\d+)")
+_SCAN_RE = re.compile(r"(?:^|\s)scan=(\d+)")
+_INDEX_RE = re.compile(r"(?:^|\s)index=(\d+)")
+_SPECTRUM_KEY_RES = (_FRAME_RE, _SCAN_RE, _INDEX_RE)
 
 # A directory entry that is an mzML file: ``foo.mzML`` or ``foo.mzML.gz``.
 _MZML_FILE_RE = re.compile(r"^.*\.mz[Mm][Ll](\.gz)?$")
@@ -83,7 +89,8 @@ class IndexedMzML:
 
     Attributes:
         path: source mzML path (``.mzML`` or ``.mzML.gz``).
-        scan_idx: ``np.ndarray[int64]`` of MS1 scan numbers, in file order.
+        scan_idx: ``np.ndarray[int64]`` of MS1 spectrum keys (Thermo scan, Bruker
+            frame or tdf2mzml index; :func:`_scan_from_id`), ascending in file order.
         rt_idx: ``np.ndarray[float64]`` of MS1 retention times, **in minutes**.
     """
 
@@ -111,25 +118,41 @@ class IndexedMzML:
         #: mass tolerance assumes centroid (one line per isotopomer); a profile
         #: mzML wants a wider window or centroiding first — the integrator warns.
         self.ms1_centroid: bool | None = None
-        with mzml.MzML(str(self._reader_path), use_index=True) as reader:
-            for spec in reader:
-                try:
-                    all_spec_ids[_scan_from_id(spec["id"])] = spec["id"]
-                except DataError:
-                    pass  # odd/non-Thermo id — just absent from the precursor index
-                if spec.get("ms level") != 1:
-                    continue
-                if not scans:  # first MS1: record its spectrum representation
-                    if "centroid spectrum" in spec:
-                        self.ms1_centroid = True
-                    elif "profile spectrum" in spec:
-                        self.ms1_centroid = False
-                scans.append(_scan_from_id(spec["id"]))
-                rts_min.append(_rt_minutes(spec))
-                spec_ids.append(spec["id"])
+        # One sequential pass over the spectrum headers (id, MS level, RT, centroid
+        # flag). The lean lxml scan reads only those fields (~5x faster than
+        # pyteomics building a full dict per spectrum: 24 s vs 118 s on a 285k-
+        # spectrum timsTOF run); it returns None when a spectrum's MS level or RT is
+        # not a direct cvParam (e.g. held in a referenceableParamGroup), and the
+        # pyteomics pass, which resolves those, runs instead.
+        headers = _scan_headers(self._reader_path)
+        if headers is None:
+            headers = self._pyteomics_headers()
+        for spec_id, ms_level, rt_min, centroid in headers:
+            try:
+                all_spec_ids[_scan_from_id(spec_id)] = spec_id
+            except DataError:
+                pass  # odd id — just absent from the precursor index
+            if ms_level != 1:
+                continue
+            if not scans:  # first MS1: record its spectrum representation
+                self.ms1_centroid = centroid
+            scans.append(_scan_from_id(spec_id))
+            rts_min.append(rt_min)
+            spec_ids.append(spec_id)
 
         self.scan_idx = np.asarray(scans, dtype=np.int64)
         self.rt_idx = np.asarray(rts_min, dtype=np.float64)
+        # The MS1 keys index everything downstream (``searchsorted`` on scan_idx, the
+        # scan → spectrum map), so they must be unique and ascending. A repeat means
+        # one spectrum per mobility scan (an IM-expanded timsTOF conversion), which
+        # this reader does not combine.
+        if len(self.scan_idx) > 1 and not bool(np.all(np.diff(self.scan_idx) > 0)):
+            dup = len(self.scan_idx) - len(np.unique(self.scan_idx))
+            raise DataError(
+                f"{self.path.name}: MS1 spectrum keys are not unique and ascending in file "
+                f"order ({dup} repeated). Riana expects one spectrum per MS1 scan or frame; "
+                "for timsTOF, convert with tdf2mzml or msconvert "
+                "--combineIonMobilitySpectra.")
         self._scan_to_spec_id: dict[int, str] = dict(zip(scans, spec_ids))
         self._scan_to_spec_id_all: dict[int, str] = all_spec_ids
 
@@ -148,6 +171,33 @@ class IndexedMzML:
         # per-call decode (the memory-light default); a dict = every MS1 decoded
         # once up front so overlapping per-PSM windows hit RAM, not the decoder.
         self._peak_cache: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
+
+    def _pyteomics_headers(self) -> list["_Header"]:
+        """The header pass through pyteomics (resolves referenceable param groups)."""
+        out: list[_Header] = []
+        with self._open(decode_binary=False) as reader:
+            for spec in reader:
+                centroid = (True if "centroid spectrum" in spec
+                            else False if "profile spectrum" in spec else None)
+                level = spec.get("ms level")
+                rt = _rt_minutes(spec) if level == 1 else float("nan")
+                out.append((spec["id"], level, rt, centroid))
+        return out
+
+    def _open(self, *, decode_binary: bool = True) -> "mzml.MzML":
+        """A pyteomics reader over this file, indexed for random access.
+
+        ``PreIndexedMzML`` takes the byte offsets an indexed mzML lists at its end
+        (every converter Riana sees writes them): ~2 s to open a 12.7 GB timsTOF
+        file on a network share. ``MzML(use_index=True)``, used before 1.2.0,
+        builds them by scanning the whole file on every open — minutes per open
+        there, and this reader opens a file several times per run. Results are
+        identical: pyteomics seeks to the listed offset and then searches forward
+        for the requested id (from the file start if it is not found), so wrong
+        offsets cost time, not correctness; a file without an index falls back to
+        the scan.
+        """
+        return mzml.PreIndexedMzML(str(self._reader_path), decode_binary=decode_binary)
 
     def _materialize_seekable(self, path: Path) -> Path:
         """Return a path to a seekable mzML; decompress .gz to a temp file."""
@@ -222,7 +272,7 @@ class IndexedMzML:
     def _thread_reader(self) -> "mzml.MzML":
         r = getattr(self._tl, "reader", None)
         if r is None:
-            r = mzml.MzML(str(self._reader_path), use_index=True)
+            r = self._open()
             self._tl.reader = r
             with self._readers_lock:
                 self._readers.append(r)
@@ -234,7 +284,7 @@ class IndexedMzML:
         A fresh streaming pass — one spectrum decoded at a time. Use this
         instead of ``peaks()`` when the caller will touch most of the run.
         """
-        with mzml.MzML(str(self._reader_path), use_index=True) as reader:
+        with self._open() as reader:
             for spec in reader:
                 if spec.get("ms level") != 1:
                     continue
@@ -264,7 +314,7 @@ class IndexedMzML:
         # whose persistent reader + lock state deadlocks a forked ``integrate
         # --workers`` child in its pthread_atfork handler.
         cache: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-        with mzml.MzML(str(self._reader_path), use_index=True) as reader:
+        with self._open() as reader:
             for scan in self.scan_idx.tolist():
                 spec = reader.get_by_id(self._scan_to_spec_id[scan])
                 mz, intens = _spec_peaks(spec)
@@ -304,15 +354,65 @@ class IndexedMzML:
         return f"IndexedMzML(path={self.path}, ms1={len(self.scan_idx)})"
 
 
+#: ``(spectrum id, ms level, RT in minutes, centroid flag)`` from the header pass.
+_Header = tuple[str, "int | None", float, "bool | None"]
+_MZML_NS = "{http://psi.hupo.org/ms/mzml}"
+_SECOND_UNITS = {"UO:0000010"}          # UO second; minutes is UO:0000031
+
+
+def _scan_headers(path: str | os.PathLike[str]) -> list[_Header] | None:
+    """The spectrum headers of an mzML from a lean lxml pass, or ``None`` to defer.
+
+    Reads each ``<spectrum>``'s id and its ``ms level`` (MS:1000511), ``scan start
+    time`` (MS:1000016, converted to minutes) and centroid / profile (MS:1000127 /
+    MS:1000128) cvParams, clearing each element after use so memory stays at one
+    spectrum. Returns ``None`` — the caller then uses the pyteomics pass — when no
+    spectrum is found or any spectrum lacks a direct MS level, or an MS1 its RT
+    (writers that keep them in a ``referenceableParamGroup``).
+    """
+    from lxml import etree
+
+    out: list[_Header] = []
+    tag = _MZML_NS + "spectrum"
+    cv_tag = _MZML_NS + "cvParam"
+    for _, el in etree.iterparse(str(path), events=("end",), tag=tag, huge_tree=True):
+        level: int | None = None
+        rt = float("nan")
+        centroid: bool | None = None
+        for cv in el.iter(cv_tag):
+            acc = cv.get("accession")
+            if acc == "MS:1000511":
+                level = int(cv.get("value"))
+            elif acc == "MS:1000016":
+                rt = float(cv.get("value"))
+                unit = cv.get("unitAccession") or ""
+                if unit in _SECOND_UNITS or "second" in (cv.get("unitName") or ""):
+                    rt /= 60.0
+            elif acc == "MS:1000127":
+                centroid = True
+            elif acc == "MS:1000128":
+                centroid = False
+        spec_id = el.get("id")
+        el.clear()
+        while el.getprevious() is not None:   # drop parsed siblings: O(1) memory
+            del el.getparent()[0]
+        if level is None or spec_id is None or (level == 1 and rt != rt):
+            return None
+        out.append((spec_id, level, rt, centroid))
+    return out or None
+
+
 def _scan_from_id(spec_id: str) -> int:
-    """Pull the integer scan number out of a Thermo nativeID-style id."""
-    m = _SCAN_RE.search(spec_id)
-    if m is None:
-        raise DataError(
-            f"could not extract scan number from spectrum id '{spec_id}' "
-            "(non-Thermo nativeID formats are not yet supported)"
-        )
-    return int(m.group(1))
+    """The integer key of a spectrum from its nativeID: ``frame=``, ``scan=`` or
+    ``index=`` (the first present; see :data:`_SPECTRUM_KEY_RES`)."""
+    for pattern in _SPECTRUM_KEY_RES:
+        m = pattern.search(spec_id)
+        if m is not None:
+            return int(m.group(1))
+    raise DataError(
+        f"could not extract a scan number from spectrum id '{spec_id}' "
+        "(supported: Thermo scan=N, Bruker frame=N, index=N)"
+    )
 
 
 def _rt_minutes(spec: dict) -> float:

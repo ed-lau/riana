@@ -110,6 +110,157 @@ def test_indexed_mzml_ms1_iter_yields_full_set():
     assert sorted(scans) == scans  # MS1 emitted in file order
 
 
+def _write_mzml(path: Path, ids: list[str], ms_levels: list[int]) -> Path:
+    """A small indexed mzML (psims) with the given nativeIDs and MS levels; RT in
+    minutes = 0.5 × position, MS2 spectra carry a precursor at m/z 400."""
+    import warnings
+
+    from psims.mzml.writer import MzMLWriter
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")      # psims schema-completeness chatter
+        with MzMLWriter(open(path, "wb"), close=True) as out:
+            out.controlled_vocabularies()
+            with out.run(id="r1"):
+                with out.spectrum_list(count=len(ids)):
+                    for i, (sid, level) in enumerate(zip(ids, ms_levels)):
+                        if level == 1:
+                            out.write_spectrum(
+                                np.array([400.0, 401.0, 402.0 + i]),
+                                np.array([10.0, 5.0, 2.0]), id=sid,
+                                params=["MS1 spectrum", {"ms level": 1},
+                                        "centroid spectrum"],
+                                scan_start_time=0.5 * i)
+                        else:
+                            out.write_spectrum(
+                                np.array([200.0]), np.array([1.0]), id=sid,
+                                params=["MSn spectrum", {"ms level": 2},
+                                        "centroid spectrum"],
+                                scan_start_time=0.5 * i,
+                                precursor_information={"mz": 400.0, "charge": 2})
+    return path
+
+
+@pytest.mark.parametrize("spec_id, key", [
+    ("controllerType=0 controllerNumber=1 scan=1432", 1432),   # Thermo
+    ("index=17", 17),                                          # tdf2mzml (timsTOF)
+    ("merged=0 frame=12 scanStart=0 scanEnd=917", 12),         # msconvert TDF, combined IM
+    ("frame=3 scan=40", 3),                                    # the frame, not the IM scan
+])
+def test_scan_from_id_reads_thermo_bruker_and_index_ids(spec_id, key):
+    assert iomzml._scan_from_id(spec_id) == key
+
+
+@pytest.mark.parametrize("spec_id", ["scanStart=5 scanEnd=9", "cycle=1 experiment=2"])
+def test_scan_from_id_refuses_ids_without_a_key(spec_id):
+    with pytest.raises(iomzml.DataError, match="could not extract"):
+        iomzml._scan_from_id(spec_id)
+
+
+def test_indexed_mzml_reads_tdf2mzml_index_ids(tmp_path):
+    """timsTOF mzML from tdf2mzml: ``index=N`` ids, MS1 frames among diaPASEF MS2."""
+    path = _write_mzml(tmp_path / "tims.mzML",
+                       [f"index={i}" for i in range(1, 7)], [1, 2, 2, 1, 2, 1])
+    with iomzml.IndexedMzML(path) as m:
+        assert list(m.scan_idx) == [1, 4, 6]
+        assert list(m.rt_idx) == [0.0, 1.5, 2.5]                 # minutes
+        assert m.ms1_centroid is True
+        mz, intens = m.peaks(4)
+        assert list(mz) == [400.0, 401.0, 405.0] and list(intens) == [10.0, 5.0, 2.0]
+        assert m.precursor_mz(2) == 400.0                        # MS2 by key
+        m.preload_peaks()
+        assert list(m.peaks(6)[0]) == [400.0, 401.0, 407.0]
+
+
+def test_indexed_mzml_refuses_repeated_ms1_keys(tmp_path):
+    """An IM-expanded conversion (one spectrum per mobility scan of a frame) repeats
+    the frame key; refuse it rather than index a scrambled run."""
+    path = _write_mzml(tmp_path / "expanded.mzML",
+                       ["frame=1 scan=1", "frame=1 scan=2", "frame=2 scan=1"], [1, 1, 1])
+    with pytest.raises(iomzml.DataError, match="not unique and ascending"):
+        iomzml.IndexedMzML(path)
+
+
+def test_indexed_mzml_reads_files_with_wrong_or_no_offset_index(tmp_path):
+    """pyteomics searches forward from a listed offset (and from the file start if the
+    id is not found), so swapped embedded offsets and a non-indexed mzML read the same
+    as a well-indexed file — only slower."""
+    import re
+    import warnings
+
+    good = _write_mzml(tmp_path / "good.mzML",
+                       [f"index={i}" for i in range(1, 5)], [1, 2, 1, 2])
+    text = good.read_text()
+    offs = dict(re.findall(r'<offset idRef="(index=\d+)">(\d+)</offset>', text))
+    swapped = (text.replace(f'"index=1">{offs["index=1"]}<', '"index=1">TMP<')
+               .replace(f'"index=3">{offs["index=3"]}<', f'"index=3">{offs["index=1"]}<')
+               .replace('"index=1">TMP<', f'"index=1">{offs["index=3"]}<'))
+    (tmp_path / "swapped.mzML").write_text(swapped)
+    body = text[text.index("<mzML"):text.index("</mzML>") + len("</mzML>")]
+    (tmp_path / "plain.mzML").write_text('<?xml version="1.0" encoding="utf-8"?>\n' + body)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")          # pyteomics: no embedded index
+        for name in ("good", "swapped", "plain"):
+            with iomzml.IndexedMzML(tmp_path / f"{name}.mzML") as m:
+                assert list(m.scan_idx) == [1, 3], name
+                assert list(m.peaks(3)[0]) == [400.0, 401.0, 404.0], name
+                assert m.precursor_mz(4) == 400.0, name
+
+
+def test_lean_header_scan_matches_the_pyteomics_pass(tmp_path):
+    """The lxml header pass returns exactly the pyteomics pass's (id, MS level, RT,
+    centroid) for every MS1 — on the Thermo BSA run and a tdf2mzml-style file."""
+    tims = _write_mzml(tmp_path / "tims.mzML",
+                       [f"index={i}" for i in range(1, 7)], [1, 2, 2, 1, 2, 1])
+    for path in (MZML_GZ, tims):
+        with iomzml.IndexedMzML(path) as m:
+            lean = iomzml._scan_headers(m._reader_path)
+            full = m._pyteomics_headers()
+        assert lean is not None and len(lean) == len(full)
+        assert [h[:2] for h in lean] == [h[:2] for h in full]           # id, level
+        ms1 = [(a, b) for a, b in zip(lean, full) if a[1] == 1]
+        assert all(a[3] == b[3] for a, b in ms1)                        # centroid
+        assert max(abs(a[2] - b[2]) for a, b in ms1) < 1e-9             # RT, minutes
+
+
+def test_header_scan_defers_to_pyteomics_for_referenceable_param_groups(tmp_path):
+    """A writer that keeps ``ms level`` in a referenceableParamGroup: the lean scan
+    defers (None) and the pyteomics pass, which resolves the group, reads the file."""
+    import warnings
+
+    good = _write_mzml(tmp_path / "good.mzML",
+                       [f"index={i}" for i in range(1, 5)], [1, 2, 1, 2])
+    text = good.read_text()
+    ms1_level = next(line.strip() for line in text.splitlines()
+                     if 'name="ms level"' in line and 'value="1"' in line)
+    group = ('<referenceableParamGroupList count="1"><referenceableParamGroup id="ms1">'
+             + ms1_level + "</referenceableParamGroup></referenceableParamGroupList>")
+    text = text.replace(ms1_level, '<referenceableParamGroupRef ref="ms1"/>')
+    text = text.replace("<run ", group + "\n<run ", 1)
+    path = tmp_path / "grouped.mzML"
+    path.write_text(text)
+    assert iomzml._scan_headers(path) is None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with iomzml.IndexedMzML(path) as m:
+            assert list(m.scan_idx) == [1, 3]
+            assert list(m.peaks(3)[0]) == [400.0, 401.0, 404.0]
+
+
+def test_embedded_offsets_read_the_same_bsa_peaks_as_a_scanned_index():
+    """The 1.2.0 embedded-offset reader returns exactly what the pre-1.2.0 scan-built
+    index (``MzML(use_index=True)``) did."""
+    with iomzml.IndexedMzML(MZML_GZ) as fast:
+        picks = [fast.scan_idx[i] for i in (0, len(fast.scan_idx) // 2, -1)]
+        ids = [fast._scan_to_spec_id[s] for s in picks]
+        new = [fast.peaks(s) for s in picks]
+        with iomzml.mzml.MzML(str(fast._reader_path), use_index=True) as old:
+            for sid, (mz, intens) in zip(ids, new):
+                spec = old.get_by_id(sid)
+                assert np.array_equal(spec["m/z array"], mz)
+                assert np.array_equal(spec["intensity array"], intens)
+
+
 def test_spec_peaks_handles_zero_peak_spectrum():
     """A zero-peak spectrum (pyteomics omits ``m/z array``) → empty arrays, not KeyError.
 

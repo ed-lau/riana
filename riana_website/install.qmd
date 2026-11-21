@@ -50,9 +50,14 @@ identifications and extracts the MS1 isotopomers from the mzML files itself.
 ## Mass spectrometry files
 
 RIANA reads mzML (plain or gzipped). Convert vendor files (e.g., Thermo `.raw`) with `msconvert`
-from [ProteoWizard](https://proteowizard.sourceforge.io/), with peak picking on, so MS1 is
-centroided: the integration mass window assumes centroid data and is taken from the SDRF's
-precursor mass tolerance by default.
+from [ProteoWizard](https://proteowizard.sourceforge.io/) or ThermoRawFileParser, with peak
+picking on, so MS1 is centroided: the integration mass window assumes centroid data and is taken
+from the SDRF's precursor mass tolerance by default.
+
+Bruker timsTOF (diaPASEF, searched by DIA-NN on the `.d` folders): convert with
+[tdf2mzml](https://github.com/mafreitas/tdf2mzml) **without ion mobility**, so each MS1 frame is
+one spectrum summed over mobility. Ion-mobility-resolved mzML (one entry per mobility scan) is not
+used yet.
 :::
 
 ### The SDRF sample sheet

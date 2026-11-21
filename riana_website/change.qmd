@@ -57,6 +57,9 @@ The full list is in the repository `CHANGELOG.md`.
   tissue in the table no longer changes the result. A Δk needs at least one peptide measured in
   both conditions; otherwise each condition gets its k and no Δk. Dimethyl light and heavy forms
   of a peptide count as the same peptide.
+* **Bruker timsTOF (diaPASEF).** mzML converted by tdf2mzml without ion mobility (`index=N`
+  spectrum ids) now integrates from a DIA-NN report. mzML files also open faster (the file's own
+  offset index, a lean header pass), with identical results.
 * **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
 * **Δk peptide mixing fixed (changes results).** Under `rollup --model linear` each peptide now
   carries one precision level across the conditions, so a protein's per-timepoint averages mix the
