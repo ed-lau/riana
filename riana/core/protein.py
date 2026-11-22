@@ -826,7 +826,7 @@ def _resolve_parsimony(peptides: pd.DataFrame, parsimony: str) -> pd.DataFrame:
     # own unit. Absent column / empty value → bare accession (the pre-B behaviour).
     if "mod sites" in peptides.columns:
         sites = peptides[["concat", "mod sites"]].drop_duplicates("concat")
-        site_map = dict(zip(sites["concat"], sites["mod sites"].fillna("")))
+        site_map = dict(zip(sites["concat"], sites["mod sites"].astype(object).fillna("")))
     else:
         site_map = {}
 
