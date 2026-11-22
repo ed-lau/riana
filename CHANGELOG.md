@@ -5,7 +5,7 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.2.0] — Unreleased
+## [1.2.0] — 2026-11-21
 
 Riana 1.2.0 adds multiplexed and single-timepoint labeling (TMT/TMTpro, dimethyl), multi-tissue
 and multi-factor designs with an animal-level interaction test, a reworked condition comparison

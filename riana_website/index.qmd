@@ -44,11 +44,13 @@ kinetic model for the turnover rate constant, and rolls peptides up to proteins.
 ::: {.column-margin}
 **Latest Updates**
 
-v1.2.0 (in development)
+v1.2.0
 --
-* Single-timepoint and multiplexed labeling (TMT/TMTpro, dimethyl).
-* Weighted Δk model; tissue-by-tissue comparisons; an interaction test with a random animal effect.
-* Standalone desktop app bundle.
+* Single-timepoint and multiplexed labeling (TMT/TMTpro, dimethyl); Bruker timsTOF diaPASEF.
+* Reworked Δk (`linear`, now the rollup default); tissue-by-tissue comparisons; an interaction
+  test with a random animal effect.
+* Rising-precursor fit (`--kp`, experimental); standalone desktop app bundle.
+* Model names changed (`simple` → `exponential`, `linear simple` → `linear`): see the Change Log.
 
 v1.1.0
 --

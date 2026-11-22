@@ -11,7 +11,7 @@ image: "images/riana_logo.png"
 image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 ---
 
-## Update v1.2.0 (in development)
+## Update v1.2.0
 
 The full list, with the evidence behind each change, is in the repository `CHANGELOG.md`.
 
