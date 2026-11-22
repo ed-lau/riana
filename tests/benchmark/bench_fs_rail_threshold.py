@@ -67,7 +67,7 @@ def geomcv(p, mp=3):
 
 
 def fit_cfg(manifest, coeffs, label, hi, lo, depth, workers, n_boot):
-    cfg = FitConfig(model="simple", label=label, q_value=1e-2, depth=depth,
+    cfg = FitConfig(model="exponential", label=label, q_value=1e-2, depth=depth,
                     workers=workers, fs_rail_drop=True, fs_rail_hi=hi, fs_rail_lo=lo)
     out = fit_project(cfg, manifest, coeffs, n_boot=n_boot).reset_index()
     out = out[np.isfinite(out["k_deg"])].copy()

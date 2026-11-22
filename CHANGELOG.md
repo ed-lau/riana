@@ -5,11 +5,141 @@ All notable changes to Riana are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] — Unreleased
 
-The 1.2.0 development line (branch `1.2.0`).
+Riana 1.2.0 adds multiplexed and single-timepoint labeling (TMT/TMTpro, dimethyl), multi-tissue
+and multi-factor designs with an animal-level interaction test, a reworked condition comparison
+(Δk) that holds its false-positive rate on real data, a rising-precursor fit (experimental), and
+timsTOF diaPASEF input. Several defaults change results; they are listed below with the switch
+that restores the 1.1.0 behaviour where one exists. The dated development log follows the summary.
 
-### Changed — `rollup --model` defaults to `linear` — 2026-11-21
+### Upgrade notes (breaking changes)
+
+- **Model names changed, and the old names are no longer accepted:** `simple` is `exponential`
+  (`fit` and `rollup`), `linear simple` is `linear` (`rollup`). Asking for an old name fails with
+  the new one. Result files written by 1.1.0 still load in the desktop app.
+- **`--model guan` and `--model fornasiero` are removed**, with `--kr`, `--rp` and rollup's `--kp`.
+  A precursor that rises after labeling starts is now handled at the fit (`fit --kp`, below).
+  Rollup refuses a fit made with a removed model. Reproducing an older guan / fornasiero analysis
+  needs Riana ≤ 1.1.0.
+- **`rollup --method` is removed.** `--level protein` (the default) is the old `weighted`;
+  `pooled` (every peptide point as an independent replicate) is gone. The protein table's
+  `method` column is now `level`.
+- **`rollup --model` defaults to `linear`** (was the exponential refit). Each condition gets a k
+  and, with two conditions, the Δk test. An experiment with more than two conditions needs the
+  pair named (`--reference-condition` / `--test-condition`), or `--model exponential` for each
+  condition's k without a Δk.
+- **Python API:** `rollup_proteins(level=...)` replaces `method`, and its default model is
+  `linear`; `riana.constants.MODEL_ALIASES` and `canonical_model` are gone (`RENAMED_MODELS`,
+  `model_from_header`).
+
+### Results-affecting changes
+
+| Change | Effect | To restore 1.1.0 |
+|---|---|---|
+| `linear` Δk fits by weighted least squares, weights (1 − θ̂)² from the fitted value; t = 0 left out | Simulated false-positive rate at α 0.05 0.29 → 0.06, CI coverage 0.54 → 0.93; fast-turnover k no longer read low | `--linear-weights ols` |
+| `linear` collapse: each peptide keeps one precision level across the two conditions | Both conditions average the same peptides in the same proportions; ATF6 permutation null 0.096 → 0.039 | — |
+| A `linear` rollup uses only its reference and test conditions; a protein-level Δk needs a peptide measured in both | A third condition no longer changes an A-vs-B result; no Δk from two different peptides | — |
+| Rollup gates are applied per condition (a peptide passing in one condition was kept in all) | Bug fix; multi-condition rollups | `--peptide-admission any` |
+| `--peptide-admission auto`: `all` for the protein-level `linear` Δk, `own` for `--level peptide` and the exponential model | The protein-level Δk rests on the same peptides in both conditions (the `own` policy fails its permutation null: 18 % vs 4.7 % at α 0.05) | `--peptide-admission own` |
+| `rollup --min-peptides` default 1 (was 2) | One peptide passing the gates reports its protein; e.g. 348 → 569 testable proteins on a mouse LV-vs-atrium set | `--min-peptides 2` |
+| Δk Benjamini–Hochberg within each experiment (multi-experiment rollups) | Each tissue / stratum is its own family | — |
+| Per-timepoint θ outside [−0.05, 1.05] dropped before the fit, every fit | Admitted-peptide yield +5–14 %, cleaner R², k unbiased | `--no-fs-rail-drop` |
+| Isotope envelopes: peaks assigned by exact mass offset | Fixes ~1–2 % of peptides (monoisotopic mass with a fractional part near 0.5) | — |
+| Peptides with a non-standard residue (U, O, B, Z, J, X) dropped at intake | Were silently mis-massed; none in our data | — |
+| A named Δk reference is never swapped for the alphabetical default | Fixes a silent sign flip in stratified designs | — |
+
+### Added
+
+- **Multiplexed and single-timepoint labeling.**
+  - TMT / TMTpro: the channels share one MS1 cluster and are measured together; isobaric SDRF
+    intake collapses a file's channels.
+  - Dimethyl duplex (light / medium / heavy): each channel is its own sample, integrated at its
+    own m/z and fit at its own enrichment, so a duplex flows into the two-condition Δk.
+  - One labeling time: detected from the data, k solved directly, curated on replicate count
+    (`rollup --min-fit-points`) and k uncertainty instead of R².
+- **Rising D₂O precursor, `fit --kp` (experimental).** Without a priming dose, give the precursor
+  rate constant (`--kp` or the SDRF's `characteristics[precursor rate constant]`); each timepoint
+  is solved for the fraction of protein made since labeling began, and the rollup models apply
+  unchanged. Validated on simulations, not yet on a dataset with a measured precursor; the plan is
+  in `PROJECT_REVIEW.md`.
+- **Multi-tissue and multi-factor designs.**
+  - `integrate --experiment-column` (the app's *Experiment from*) splits runs into experiments by
+    an SDRF column, e.g. tissue; Δk is then compared within each.
+  - Animal IDs from `characteristics[individual]`, carried into the fit and rollup tables.
+  - `rollup --test-condition` names the pair to compare; `rollup --experiment` restricts to one
+    experiment; `rollup --plot` writes the φ-space curves to a PDF per experiment.
+- **`rollup --interaction`**: does a condition's effect differ between tissues of the same
+  animals? One fit per protein across tissues with a random slope per animal; tests on the ratio
+  scale (Satterthwaite df, matching lmerTest), the additive scale and the mean Δk, each
+  BH-adjusted. Also in the app (*Interaction* option and results tab).
+- **`rollup --level peptide`** (opt-in; `protein` stays the default): a mixed model on each
+  protein's peptide points, with peptide offsets and random slopes for labeling time and animal,
+  paired automatically when animals carry both conditions. It holds its false-positive rate and
+  has somewhat more power than the protein level, at more run time.
+- **Bruker timsTOF diaPASEF**: mzML converted by tdf2mzml without ion mobility (`index=N` ids)
+  integrates from a DIA-NN report. Ion-mobility-resolved mzML is not used yet.
+- **Output columns:** `biological_replicate` (and `individual` when the SDRF has animal IDs) in
+  `riana_rollup_fractions.txt`; `fs_var` / `fs_df` per collapsed point (informational); the fit's
+  `fs_basis` (θ or fraction new) echoed in rollup headers.
+- **Standalone desktop app bundle** (PyInstaller, `packaging/`).
+- **Documentation site rewritten for 1.2**, with a CLI reference page generated from the CLI.
+
+### Fixed
+
+- quantms ≥ 1.8.0 mzTab files were filtered away entirely (their q-value is now read from
+  `search_engine_score[1]` when the metadata declares it a q-value).
+- `--iso auto`: summing fractions turned a never-extracted channel into an observed zero.
+- Single-point fits and single-point proteins report NaN uncertainty instead of a zero-width CI;
+  a degenerate single timepoint no longer reports the fit's starting k.
+- The post-rail-drop depth check counts distinct timepoints, not rows.
+- Clearer errors for an invalid smoothing window and for isobaric channels that disagree on
+  labeling time, enrichment or replicate.
+- The app and the CLI write the same rollup config hash.
+
+### Performance
+
+- mzML files open from their own offset index (~2 s instead of minutes for a multi-GB file on a
+  network share), and the spectrum headers are read in one lean pass (about 5× faster).
+- Isotopomer m/z windows are binary-searched on dense scans (window sums 1.3–2.7× faster at
+  10–40k centroids per scan).
+- Single-timepoint k is solved in closed form (~100× faster than curve fitting).
+
+### Development
+
+- `mypy --strict` on `riana/algorithms/`, with a CI type-check job.
+- The test suite runs in parallel (`pytest -n auto`), with a `slow` tier.
+
+### Known limitations
+
+- `fit --kp` is experimental (above).
+- Each protein's Δk test uses its own residual variance, which is noisy when a protein has few
+  points (single-timepoint and sparse designs); moderation across proteins is planned.
+- Proteins reported from a single peptide have a slightly higher false-positive rate (0.044–0.062
+  at α 0.05 in the permutation nulls; proteins with two or more peptides 0.016–0.039).
+- The interaction test compares two conditions.
+- A protein whose k cannot be told from zero is not flagged; it reads as a very long half-life.
+
+### Development log
+
+<details>
+<summary>Dated entries from the 1.2.0 branch, newest first. Kept for the record: some were later
+reversed or superseded, and where they disagree the summary above is authoritative.</summary>
+
+
+#### Removed — pre-1.2.0 model names and `rollup --method`; `fit --kp` marked experimental — 2026-11-21
+
+- **Breaking: `simple`, `linear simple` and `rollup --method` (including `weighted`) are no longer
+  accepted.** They were aliases with a warning; asking for one now fails with the new name
+  (`exponential`, `linear`, `--level protein`). `riana.constants.model_from_header` maps the old
+  names when reading result files written before 1.2.0, so 1.1.0 results still load in the app.
+  Removed from the API: `constants.MODEL_ALIASES`, `constants.canonical_model`,
+  `protein.LINEAR_MODEL_ALIASES` (now `constants.RENAMED_MODELS`, `renamed_model_message`).
+- **`fit --kp` is marked experimental** in the CLI help and the docs; its validation plan (after
+  the timsTOF PASEF work) is in `PROJECT_REVIEW.md`.
+
+
+#### Changed — `rollup --model` defaults to `linear` — 2026-11-21
 
 - **Results-affecting: `riana rollup` without `--model` now runs `linear`** (was
   `exponential`), on the CLI, in the app's Protein tab and in
@@ -25,7 +155,7 @@ The 1.2.0 development line (branch `1.2.0`).
   - `--peptide-admission auto` follows the model, so the default rollup now admits under `all`.
   - Pass `--model exponential` to reproduce a 1.1.0 rollup.
 
-### Added — timsTOF diaPASEF mzML (no ion mobility); faster mzML opening — 2026-11-21
+#### Added — timsTOF diaPASEF mzML (no ion mobility); faster mzML opening — 2026-11-21
 
 - **timsTOF intake (phase 1A of the timsTOF / ion-mobility item, `PROJECT_REVIEW.md`).** The
   mzML reader takes tdf2mzml spectrum ids (`index=N`) and msconvert Bruker ids (`frame=N`) beside
@@ -42,7 +172,7 @@ The 1.2.0 development line (branch `1.2.0`).
   in a referenceable parameter group. Integrated output is identical (BSA golden index and
   re-integrated runs).
 
-### Fixed — φ axes on a rising-precursor fit — 2026-11-21
+#### Fixed — φ axes on a rising-precursor fit — 2026-11-21
 
 - The φ-space plots (the app's Protein and Interaction views, `rollup --plot` PDFs) label the axis
   `φ = log(1 − f)` when the fit's `fs` is fraction new f (`fit --kp`), instead of always θ. The
@@ -52,7 +182,7 @@ The 1.2.0 development line (branch `1.2.0`).
   `bench_dimethyl_spillover.py` to the FASTA in `data/timeseries_atf6/quantms_params`, as the
   `timeseries_lve`, `timeseries_lve_atr` and `timeseries_dia` data folders are removed.
 
-### Changed — admission by model and level; a linear rollup uses only its pair; Δk needs a shared peptide; Fixed — dimethyl forms pair across conditions — 2026-11-18
+#### Changed — admission by model and level; a linear rollup uses only its pair; Δk needs a shared peptide; Fixed — dimethyl forms pair across conditions — 2026-11-18
 
 - **Results-affecting: `--peptide-admission auto` is the default again, now resolved by model
   and level.** It means `all` for the protein-level linear Δk and `own` for `--level peptide`
@@ -100,7 +230,7 @@ The 1.2.0 development line (branch `1.2.0`).
   min and the interaction filter 64 min. The points are now shared, not copied. `--plot` takes
   2 min and the interaction filter under 1 s; the outputs are unchanged.
 
-### Changed — `rollup --min-peptides` defaults to 1; Fixed — peptide-level Δk without a shared peptide — 2026-11-17
+#### Changed — `rollup --min-peptides` defaults to 1; Fixed — peptide-level Δk without a shared peptide — 2026-11-17
 
 - **Results-affecting: `--min-peptides` 2 → 1** (CLI, `rollup_proteins`, the peptide-level
   model and the GUI). One peptide that passes the gates now reports its protein. The 2-peptide
@@ -121,7 +251,7 @@ The 1.2.0 development line (branch `1.2.0`).
   Such a design now falls through to the next one (one shared animal slope, then WLS). This
   affected 2–6 proteins per Boulder tissue pair and 1 in SCVI480 mesoderm.
 
-### Docs — as-built Δk manual; ATF6 notebook on the redesign; benches on the new `runs/` layout — 2026-11-16
+#### Docs — as-built Δk manual; ATF6 notebook on the redesign; benches on the new `runs/` layout — 2026-11-16
 
 - **`reports/2026-11-16_deltak_inference_manual.md`** documents the `linear` rollup as built:
   the protein level (shared-band collapse C + WLS) and `--level peptide` (E+time / EJ+time), the
@@ -138,7 +268,7 @@ The 1.2.0 development line (branch `1.2.0`).
   `runs/<dataset>/current/`, the Δk evaluation under `runs/deltak_eval/`, calibration sets under
   `runs/calibration/`. Defaults and docstring examples only; no logic change.
 
-### Added — `rollup --level peptide`: the peptide-level Δk and interaction — 2026-11-16
+#### Added — `rollup --level peptide`: the peptide-level Δk and interaction — 2026-11-16
 
 - **`--level protein|peptide` replaces `--method`.**
   - `protein` (default) is the collapse refit, the old `weighted`.
@@ -182,7 +312,7 @@ The 1.2.0 development line (branch `1.2.0`).
   - `PROTEIN_PEPTIDE_COLUMNS`;
   - in the app, a *Level* option on the Protein tab, shown for `linear`.
 
-### Changed / Removed — models and peptide admission — 2026-11-16
+#### Changed / Removed — models and peptide admission — 2026-11-16
 
 - **`simple` is now `exponential`** in `fit --model`, `rollup --model`, `FitConfig` and the app.
   The old name is still accepted, with a warning on the command line, and goes in a later
@@ -215,7 +345,7 @@ The 1.2.0 development line (branch `1.2.0`).
   - `linear` and single-condition rollups are unchanged.
   - The policies, least to most stringent, are `any`, `own` and `all`.
 
-### Changed — `linear` Δk: each peptide keeps one precision level across conditions — 2026-11-16
+#### Changed — `linear` Δk: each peptide keeps one precision level across conditions — 2026-11-16
 
 - **[RESULTS-AFFECTING] The `linear` collapse now pools each peptide's band level over the
   conditions** before averaging a protein's peptides within each (biological replicate,
@@ -240,7 +370,7 @@ The 1.2.0 development line (branch `1.2.0`).
     - Boulder EDL–SOL: 152 → 136 calls.
     - lve_atr: 234 → 235 calls.
 
-### Removed — `--linear-weights wls-var` — 2026-11-15
+#### Removed — `--linear-weights wls-var` — 2026-11-15
 
 - **The opt-in `wls-var` weighting is gone** from `rollup --linear-weights` (and from
   `fit_linear_deltak` / `fit_interaction`), before any release shipped it. Asking for it is now
@@ -258,7 +388,7 @@ The 1.2.0 development line (branch `1.2.0`).
   - *Next:* a peptide-level mixed model replaces the collapse for Δk once the EDL / SOL data are
     in (report §5). Until then `wls` stays the default.
 
-### Known issue — `linear` (was `linear simple`) Δk: the peptide collapse mixes conditions differently — 2026-11-12
+#### Known issue — `linear` (was `linear simple`) Δk: the peptide collapse mixes conditions differently — 2026-11-12
 
 *Resolved 2026-11-16 by the shared band level (Changed, above).*
 
@@ -286,9 +416,9 @@ The 1.2.0 development line (branch `1.2.0`).
   are at its permutation-null level (20 and 69 per permutation); every candidate that holds the
   null makes 0 calls.
 
-### Rollup — fraction new f input; `linear` (was `linear simple`) — 2026-11-13
+#### Rollup — fraction new f input; `linear` (was `linear simple`) — 2026-11-13
 
-#### Added
+##### Added
 
 - **Rollup reads what the fit's `fs` holds** (its `# fs_basis` header: `theta`, `f` or `mixed`;
   fits without the line are θ) and echoes `fs_basis` / `k_p_applied` in its own headers
@@ -296,22 +426,22 @@ The 1.2.0 development line (branch `1.2.0`).
   exponential refit, the linear model and `--interaction` run unchanged; `wls` weights by (1−f̂)².
   The desktop app reads the same header.
 
-#### Changed
+##### Changed
 
 - **`--model "linear simple"` is now `--model linear`** (CLI, desktop app, output `method` column
   and header `model`). The old name is still accepted, with a warning, for one more release; saved
   results under the old name still load in the app. A rollup's config hash changes with the name.
 
-#### Refused on f (`fs_basis f` or `mixed`)
+##### Refused on f (`fs_basis f` or `mixed`)
 
 - **`--linear-weights wls-var`**, which is miscalibrated there (false-positive rate 0.255 at α 0.05
   in simulation; `wls` 0.042 — `reports/2026-11-12_deltak_inference_manual.md` §6.2). The weights
   also feed `--interaction`. *(`wls-var` removed altogether 2026-11-15, entry above.)*
 - **`--model guan|fornasiero`**, which would apply the rising precursor a second time.
 
-### Fit — a rising D₂O precursor (`--kp`, per-point envelope solve) — 2026-11-12
+#### Fit — a rising D₂O precursor (`--kp`, per-point envelope solve) — 2026-11-12
 
-#### Added
+##### Added
 
 - **`fit --kp` / SDRF `characteristics[precursor rate constant]`: a precursor that rises as
   1 − e^(−k_p·t)** (no priming dose). Each timepoint's envelope is solved for the fraction of protein
@@ -349,11 +479,11 @@ The 1.2.0 development line (branch `1.2.0`).
   `fs_basis theta` and the config's `precursor_k_p` line; the manifest gains an (empty)
   `precursor_rate_constant` column.
 
-### Interaction model follows `--linear-weights` — 2026-11-12
+#### Interaction model follows `--linear-weights` — 2026-11-12
 
 *Superseded: `wls-var` was removed 2026-11-15 (entry above), so the interaction uses `wls`.*
 
-#### Changed
+##### Changed
 
 - **`rollup --interaction --linear-weights wls-var` now weights the joint fit by each point's
   precision** (RESULTS-AFFECTING for that flag combination only). The mixed model always used the
@@ -370,9 +500,9 @@ The 1.2.0 development line (branch `1.2.0`).
   - `fit_interaction(weights=...)`, `riana.gui.tasks.run_interaction(weights=...)` (the GUI keeps
     `wls`, as its rollup does). Tests: `tests/test_interaction_model.py`.
 
-### Isotope envelopes — peaks assigned to the wrong isotopomer near half-integer masses — 2026-11-11
+#### Isotope envelopes — peaks assigned to the wrong isotopomer near half-integer masses — 2026-11-11
 
-#### Fixed
+##### Fixed
 
 - **Envelope binning (RESULTS-AFFECTING for ~1–2 % of peptides).** `get_envelope` and
   `_binned_envelope` (`riana/algorithms/isotope_dist.py`) summed IsoSpec peaks within ±0.5 Da of
@@ -392,9 +522,9 @@ The 1.2.0 development line (branch `1.2.0`).
   - `reports/2026-11-11_non_first_order_linearization_feasibility.md` is corrected: its one outlier
     peptide was this bug.
 
-### Documentation refresh — 2026-11-11
+#### Documentation refresh — 2026-11-11
 
-#### Changed
+##### Changed
 
 - **Website (`riana_website/`) rewritten for 1.2.** Quick Start (install, the SDRF columns Riana
   reads including `characteristics[individual]`, the project workflow, comparing conditions,
@@ -411,7 +541,7 @@ The 1.2.0 development line (branch `1.2.0`).
   longer says D₂O-only; `rollup` and `gui` no longer show developer notes). Internal references
   were removed from option help.
 
-#### Fixed
+##### Fixed
 
 - `riana gui --help` dropped the extra's name (`[gui]` was read as terminal markup).
 - `fit --ria` help printed `6%%`.
@@ -420,9 +550,9 @@ The 1.2.0 development line (branch `1.2.0`).
 - The site's GitHub link pointed to another repository; a citation link was malformed; author
   names in the Hammond 2022 citation are corrected.
 
-### Interaction follow-ups — animal IDs, Satterthwaite df, singular fits, GUI — 2026-11-11
+#### Interaction follow-ups — animal IDs, Satterthwaite df, singular fits, GUI — 2026-11-11
 
-#### Added
+##### Added
 
 - **Animal IDs from the SDRF.** `characteristics[individual]` is read at intake
   (`RunIdentity.individual`), kept in the manifest and the per-run provenance header, and
@@ -446,7 +576,7 @@ The 1.2.0 development line (branch `1.2.0`).
   per experiment, with both conditions' points and the joint-fit lines. Load results
   restores it.
 
-#### Changed
+##### Changed
 
 - **Ratio-scale interaction test: Satterthwaite denominator df** (lmerTest's `contestMD`
   method) instead of the conservative between-animal df. Checked against lmerTest 3.2.1
@@ -463,14 +593,14 @@ The 1.2.0 development line (branch `1.2.0`).
   order before the fit. Previously, borderline proteins could converge differently when
   only the labels changed.
 
-#### Not yet supported
+##### Not yet supported
 
 - **More than two conditions** in the interaction (one reference and one test condition per
   run). Deferred until a dataset with three or more conditions is available to test on.
 
-### Rollup — experiment × condition interaction with a random animal effect — 2026-11-10
+#### Rollup — experiment × condition interaction with a random animal effect — 2026-11-10
 
-#### Added
+##### Added
 
 - **`rollup --interaction`** (`linear simple`, two or more experiments). Tests whether the
   condition effect differs between experiments that are strata of the **same animals**, such as
@@ -501,7 +631,7 @@ The 1.2.0 development line (branch `1.2.0`).
   - Background: `reports/2026-11-10_random_animal_lme_feasibility.md`. New module
     `riana.core.interaction_model`.
 
-#### Changed
+##### Changed
 
 - **`notebooks/atf6_biology.ipynb`**: the "global turnover brake under ATF6-KO" is withdrawn.
   At the animal level, KO vs control is −1.5 % ± 3.7 % (p = 0.69). §3 now uses the shipped
@@ -509,9 +639,9 @@ The 1.2.0 development line (branch `1.2.0`).
   biology of the top-ranked proteins (left-atrium top 10 and interaction top 10), with
   references.
 
-### GUI — split runs into experiments by an SDRF column — 2026-11-10
+#### GUI — split runs into experiments by an SDRF column — 2026-11-10
 
-#### Added
+##### Added
 
 - **Integrate tab "Experiment from" dropdown** — the GUI counterpart of
   `integrate --experiment-column`, previously CLI-only (so standalone-app users could
@@ -525,9 +655,9 @@ The 1.2.0 development line (branch `1.2.0`).
   shows the run count per experiment, as the CLI does. Fit and protein tabs already
   handled multi-experiment projects. New `riana.io.sdrf.stratifier_candidates`.
 
-### Stratified Δk — consistent condition labels, no silent sign flip — 2026-11-10
+#### Stratified Δk — consistent condition labels, no silent sign flip — 2026-11-10
 
-#### Fixed
+##### Fixed
 
 - **`integrate --experiment-column` now leaves the stratifier's own `factor value[...]`
   column out of the condition label.** SDRF convention lists a studied variable as both
@@ -550,9 +680,9 @@ The 1.2.0 development line (branch `1.2.0`).
   Re-fitting the canonical ATF6 rollup points gives unchanged results (same rows and
   NaN pattern).
 
-### `biological_replicate` in the rollup fractions — 2026-08-10
+#### `biological_replicate` in the rollup fractions — 2026-08-10
 
-#### Added
+##### Added
 
 - **`riana_rollup_fractions.txt` now carries a `biological_replicate` column** — the collapse already
   keys each point on `(biological_replicate, labeling_time)`, but only wrote the timepoint. Writing the
@@ -565,9 +695,9 @@ The 1.2.0 development line (branch `1.2.0`).
   (`biological_replicate` is a within-`(condition, timepoint)` index as written by the SDRF, not a
   cross-timepoint pairing.)
 
-### Multi-factor designs: `--experiment-column`, `rollup --plot`, per-experiment Δk BH — 2026-08-09
+#### Multi-factor designs: `--experiment-column`, `rollup --plot`, per-experiment Δk BH — 2026-08-09
 
-#### Added
+##### Added
 
 - **`integrate --experiment-column COL`** — set each run's `experiment` from an SDRF
   column (e.g. `characteristics[organism part]`) instead of the one file-stem label, so
@@ -586,7 +716,7 @@ The 1.2.0 development line (branch `1.2.0`).
 - **`rollup --experiment EXP`** — restrict a rollup to one experiment (the focused
   counterpart to the default all-experiments-in-one-pass behaviour).
 
-#### Changed
+##### Changed
 
 - **`linear simple` Δk BH is now per-experiment** (results-affecting for multi-experiment
   rollups only). Benjamini-Hochberg is applied within each experiment's protein set — each
@@ -594,9 +724,9 @@ The 1.2.0 development line (branch `1.2.0`).
   from another) — rather than pooled across all `(experiment, protein)` pairs. A
   single-experiment rollup (the common case) is unchanged.
 
-### Standalone GUI bundle + strict typing for `algorithms/` — 2026-08-08
+#### Standalone GUI bundle + strict typing for `algorithms/` — 2026-08-08
 
-#### Added
+##### Added
 
 - **`packaging/` — a PyInstaller build for a standalone Riana bundle** (a macOS `.app`,
   or a one-dir bundle elsewhere) so non-Python users can launch the GUI. The frozen
@@ -605,16 +735,16 @@ The 1.2.0 development line (branch `1.2.0`).
   test are automated; GUI-window launch needs manual verification on a machine with a
   display (see `packaging/README.md`).
 
-#### Changed
+##### Changed
 
 - **`mypy --strict` now gates `riana/algorithms/`** — a scoped `[tool.mypy]` config
   (widen `files` to roll out further), a CI `typecheck` job, and a tox `typecheck` env;
   `mypy` added to the `[dev]` extra. The package is annotated to zero strict errors, made
   robust across numpy stub versions (the CI/local numpy differ).
 
-### Fit / rollup / integrate robustness guards (audit tail) — 2026-08-08
+#### Fit / rollup / integrate robustness guards (audit tail) — 2026-08-08
 
-#### Fixed
+##### Fixed
 
 - **Single-timepoint fit at a degenerate time** (`t* ≤ 0` / zero span) returns a null
   result instead of falling through to `curve_fit`, which reported the arbitrary init
@@ -632,9 +762,9 @@ The 1.2.0 development line (branch `1.2.0`).
   `test_condition`) so GUI- and CLI-produced rollups hash to the same `config_hash`; and the
   single-timepoint hint now displays (it was overwritten before it could show).
 
-### Non-canonical residue intake guard — 2026-08-08
+#### Non-canonical residue intake guard — 2026-08-08
 
-#### Fixed
+##### Fixed
 
 - **Peptides with a non-canonical residue (selenocysteine `U`, pyrrolysine `O`, or the
   ambiguity codes `B`/`Z`/`J`/`X`) are now dropped at intake** (mzTab, DIA-NN, Percolator)
@@ -647,12 +777,12 @@ The 1.2.0 development line (branch `1.2.0`).
   **zero** across ~808k identified PSMs in our data, so the practical impact is nil — this
   closes a silent-wrong-mass hole rather than changing any current result.
 
-### Rollup curation & weighting correctness fixes — 2026-08-03
+#### Rollup curation & weighting correctness fixes — 2026-08-03
 
 A code audit of the post-1.1.0 additions surfaced one results-affecting rollup defect and
 two narrower weighting/collapse bugs on opt-in paths.
 
-#### Fixed
+##### Fixed
 
 - **Rollup curation gates are now per-condition (RESULTS-AFFECTING for multi-condition
   rollups).** The `--min-r2` (default 0.8), single-timepoint `k_cv`, and `--min-fit-points`
@@ -666,7 +796,7 @@ two narrower weighting/collapse bugs on opt-in paths.
   construction). Single-condition rollups are unaffected. New regression test
   `test_rollup_gates_are_per_condition_not_leaked_across_conditions`.
 
-#### Added
+##### Added
 
 - **`rollup --peptide-admission {auto,own,any,all}`** (default `auto`) — makes the
   cross-condition admission policy explicit and auditable. `auto` picks per-model: **`all`
@@ -693,11 +823,11 @@ two narrower weighting/collapse bugs on opt-in paths.
   missing-variance fallback is now the pooled prior `s0²` (the df→0 limit of the eBayes
   moderation), putting the point on the same scale as its siblings.
 
-### `linear simple` Δk — opt-in per-point Var(θ) weighting (`wls-var`) — 2026-07-30
+#### `linear simple` Δk — opt-in per-point Var(θ) weighting (`wls-var`) — 2026-07-30
 
 *`wls-var` was removed 2026-11-15 (entry at the top); the `fs_var` / `fs_df` columns stay.*
 
-#### Added
+##### Added
 
 - **`riana rollup --linear-weights wls-var`** — an opt-in refinement of the WLS Δk fit that
   multiplies the delta-method transform weight `(1−θ̂)²` by the per-point precision `1/Var̂(θ)`,
@@ -711,14 +841,14 @@ two narrower weighting/collapse bugs on opt-in paths.
   curve richness), so it stays opt-in — single-peptide proteins use pooled pseudoreplicates and
   see no gain. See `reports/2026-07-24_linear_wls_per_point_var.md`.
 
-### Single-timepoint fits — direct k solve + fit-step detection — 2026-07-21
+#### Single-timepoint fits — direct k solve + fit-step detection — 2026-07-21
 
 Single-timepoint data (TMT, dimethyl, any one-labeling-time run) is a flagship 1.2.0
 substrate; the fit now handles it directly instead of burning futile nonlinear least
 squares on it. **Numerically identical results — this is perf, correctness, and UX, not a
 results change.**
 
-#### Changed
+##### Changed
 
 - **`riana fit` auto-detects a single labeling timepoint and relaxes the `--depth` floor to
   1** (with an INFO log) instead of emptying the frame with the generic "no peptides survive
@@ -746,7 +876,7 @@ results change.**
   time. The fit tab's Depth tooltip notes the single-timepoint auto-relax, and its summary
   reads "single timepoint — R² N/A, k solved directly" instead of a spurious "0 R²≥0.9".
 
-#### Fixed
+##### Fixed
 
 - guan/fornasiero single-timepoint fits no longer risk a silent null from the default fit
   init `k=0.5` landing on guan's `k=k_p` pole (`config.k_p=0.5`): the direct root-find
@@ -756,9 +886,9 @@ Tests: `tests/test_fitting.py` (closed-form ≡ `curve_fit`, guan root-find, edg
 auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py`
 (`min_fit_points` in `build_params` + `run_rollup` forwarding).
 
-### `linear simple` Δk — weighted least squares (RESULTS-AFFECTING DEFAULT) — 2026-07-13
+#### `linear simple` Δk — weighted least squares (RESULTS-AFFECTING DEFAULT) — 2026-07-13
 
-#### Changed
+##### Changed
 
 - **The `linear simple` Δk model now fits by weighted least squares (`--linear-weights wls`,
   the new default) instead of unweighted OLS.** θ carries roughly homoscedastic *measurement*
@@ -795,9 +925,9 @@ auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py
   k's rise ~15 % (the old ones read low). This does **not** overturn biology — the large effects
   survive; what changes is that the p-values no longer overstate the evidence.
 
-### True (sample-axis) multiplexing — dimethyl channel→sample intake — 2026-07-13
+#### True (sample-axis) multiplexing — dimethyl channel→sample intake — 2026-07-13
 
-#### Added
+##### Added
 
 - **Sample-axis multiplexing intake (dimethyl duplex).** A multiplexing label marks a
   *different sample* that co-elutes but stays separable at MS1 (the label shifts the whole
@@ -828,7 +958,7 @@ auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py
   Validated end-to-end on the dimethyl-D₂O liver duplex; see
   `reports/2026-07-13_dimethyl_duplex_intake.md`.
 
-#### Fixed
+##### Fixed
 
 - **quantms ≥ 1.8.0 (OpenMS 3.6.0) mzTabs were silently unusable.** 1.8.0 stopped writing the
   *optional* `opt_global_q-value` column, so every PSM fell back to `q = 1.0` — which can never
@@ -839,9 +969,9 @@ auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py
   column and falls back to `search_engine_score[1]` **only when the metadata declares it to be a
   q-value**, so the FDR semantics stay exact and pre-1.8.0 files are unaffected.
 
-### Multi-point FS rail-drop + physical-margin rails — 2026-07-05
+#### Multi-point FS rail-drop + physical-margin rails — 2026-07-05
 
-#### Changed
+##### Changed
 
 - **FS rail-drop now applies to every fit, single- and multi-timepoint** (was
   single-timepoint only). A per-timepoint fraction-synthesis value that the solver
@@ -864,7 +994,7 @@ auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py
   plateau or a near-0 t₀ anchor (the exact physical bound `1.0 / 0.0` did, cutting AC16
   yield 16 %). Confirmed non-harmful on the ¹⁸O and single-timepoint TMT regimes.
 
-#### Added
+##### Added
 
 - **`FitConfig.fs_rail_drop` (CLI `--fs-rail-drop / --no-fs-rail-drop`, default on)**
   gates the whole rail-drop; `--no-fs-rail-drop` reproduces the pre-1.2.0 multi-timepoint
@@ -873,12 +1003,12 @@ auto-relax + warning-free `fit_run`, replicate-vs-single CI); `tests/test_gui.py
   −0.099`, or the aggressive physical bound `1.0 / 0.0`). All flow into the provenance
   header via the full-config record.
 
-### TMT / TMTpro + single-timepoint labeling — 2026-07-05
+#### TMT / TMTpro + single-timepoint labeling — 2026-07-05
 
 Process an isobaric TMTpro D₂O turnover experiment end-to-end (integrate → fit →
 rollup), validated on a 16-plex AC16 single-timepoint dataset.
 
-#### Added
+##### Added
 
 - **TMT / TMTpro peptides are modelled and processed.** Their built-in ¹³C/¹⁵N
   (≈100% heavy by synthesis) are injected as **pinned single-isotope pseudo-elements**
@@ -900,7 +1030,7 @@ rollup), validated on a 16-plex AC16 single-timepoint dataset.
   plus the `k_cv` relative-uncertainty gate, with the R²/rescue machinery bypassed and
   logged. `fit --depth 1` recovers k analytically from the replicate points.
 
-#### Fixed
+##### Fixed
 
 - **Single-point fits report NaN uncertainty, not a spurious zero-width CI.** A
   one-point residual bootstrap collapses to `k_cv = 0` (undefined uncertainty read as
@@ -914,9 +1044,9 @@ rollup), validated on a 16-plex AC16 single-timepoint dataset.
   (identical FS → R²=NaN, k_cv=0). Single-timepoint only for now; the same drop for
   multi-point fits (same criterion) is a re-validation follow-up.
 
-### Rollup — selectable two-condition pair for the linear-simple Δk — 2026-07-03
+#### Rollup — selectable two-condition pair for the linear-simple Δk — 2026-07-03
 
-#### Added
+##### Added
 
 - **`rollup --test-condition` names the Δk comparison condition** (alongside the
   existing `--reference-condition` baseline), so `--model "linear simple"` can
@@ -937,9 +1067,9 @@ rollup), validated on a 16-plex AC16 single-timepoint dataset.
   unchanged — with no `--test-condition`, a Δk is emitted only for a protein that has
   exactly two conditions.
 
-### Integrate — binary-searched isotopomer m/z window — 2026-07-02
+#### Integrate — binary-searched isotopomer m/z window — 2026-07-02
 
-#### Performance
+##### Performance
 
 - **`integrate` binary-searches the isotopomer m/z window on dense scans.** The
   per-(scan, isotopomer) extraction matched centroids with an O(n)
@@ -955,15 +1085,15 @@ rollup), validated on a 16-plex AC16 single-timepoint dataset.
   makes the final selection over a contiguous ascending slice — verified bit-for-bit
   on the sample1 integrate across both `use_range` paths and all output columns.
 
-#### Fixed
+##### Fixed
 
 - **`IndexedMzML.preload_peaks` verifies each MS1's m/z is non-decreasing** (the
   binary-search extractor's precondition) and raises `DataError` on a pathological
   file, rather than silently under-summing.
 
-### Testing — parallel suite + a `slow` tier — 2026-07-02
+#### Testing — parallel suite + a `slow` tier — 2026-07-02
 
-#### Changed
+##### Changed
 
 - **The test suite runs under `pytest-xdist`.** `pytest-xdist` is added to the
   `[dev]` extra, and the CI test job + `tox` now pass `-n auto` to spread the
@@ -975,6 +1105,8 @@ rollup), validated on a 16-plex AC16 single-timepoint dataset.
   `IndexedMzML` decode checks). `pytest -m "not slow"` skips them for a fast
   inner-loop run — **~24 s (parallel) vs ~5.5 min for the full serial suite** — while
   CI still runs the full tier. The `slow` marker is registered in `pyproject.toml`.
+
+</details>
 
 ## [1.1.0] — 2026-07-01
 

@@ -41,7 +41,7 @@ def run(run_name, coefficients, workers, n_boot):
     manifest = f"runs/{run_name}/integrate/riana_manifest.tsv"
     for lbl, drop, hi, lo in ARMS:
         t0 = time.time()
-        cfg = FitConfig(model="simple", label="hw", q_value=1e-2, depth=1, ria_max=0.06,
+        cfg = FitConfig(model="exponential", label="hw", q_value=1e-2, depth=1, ria_max=0.06,
                         min_spep=8, workers=workers, fs_rail_drop=drop,
                         fs_rail_hi=hi, fs_rail_lo=lo)
         out = fit_project(cfg, manifest, coeffs, n_boot=n_boot)
@@ -49,7 +49,7 @@ def run(run_name, coefficients, workers, n_boot):
         fit = pep[np.isfinite(pep["k_deg"])]
         reps2 = fit[fit["n_points"] >= 2]
         admit = reps2[reps2["k_cv"] < 0.2]  # single-tp gate: >=2 reps AND k_cv<0.2
-        prot = rollup_proteins(pep, frac, model="simple", method="weighted",
+        prot = rollup_proteins(pep, frac, model="exponential",
                                parsimony="unique", min_peptides=2, k_cv_max=0.2,
                                workers=workers)
         print(f"[{lbl:13s}] fit={len(fit):5d}  n>=2reps={len(reps2):5d}  "

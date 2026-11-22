@@ -927,11 +927,12 @@ def test_solve_k_single_t_rising_precursor_root_find_recovers_k():
 
 
 def test_fit_config_model_names():
-    """'exponential' is the default; 'simple' is normalized to it; guan / fornasiero
-    are refused with a pointer to --kp."""
+    """'exponential' is the default; 'simple' (its name before 1.2.0) is refused with
+    the new name; guan / fornasiero are refused with a pointer to --kp."""
     from riana.config import FitConfig
     assert FitConfig().model == "exponential"
-    assert FitConfig(model="simple").model == "exponential"
+    with pytest.raises(ValueError, match="renamed 'exponential'"):
+        FitConfig(model="simple")
     for removed in ("guan", "fornasiero"):
         with pytest.raises(ValueError, match="--kp"):
             FitConfig(model=removed)

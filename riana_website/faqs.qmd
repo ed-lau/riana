@@ -43,7 +43,7 @@ D~2~O), per experiment. `riana fit --ria` overrides it for every curve; without 
 
 #### Q: Which kinetic models are available?
 
-A: `exponential` (one compartment; called `simple` before 1.2), plus `calibration` for mixing
+A: `exponential` (one compartment; called `simple` before 1.2; the old name is no longer accepted), plus `calibration` for mixing
 experiments. A precursor that rises after labeling starts is given as its rate constant (`fit --kp`
 or the SDRF), and each timepoint is solved for fraction new before k is fitted; this replaced the
 `guan` and `fornasiero` models in 1.2. At the protein level, `riana rollup --model linear` fits a

@@ -521,9 +521,8 @@ def fit(
         help="'exponential' (default): the first-order turnover curve θ = 1 − e^(−kt) "
         "(with --kp, fitted to fraction new under a rising precursor). Or "
         "'calibration': a through-origin FS-vs-mixing-proportion recovery line (R² = "
-        "recovery quality), auto-selected on --manifest calibration runs. The earlier "
-        "name 'simple' is still accepted; guan and fornasiero were removed in 1.2.0 "
-        "(use --kp)."),
+        "recovery quality), auto-selected on --manifest calibration runs. 'simple' was "
+        "renamed 'exponential' in 1.2.0; guan and fornasiero were removed (use --kp)."),
     label: str = typer.Option(
         "hw", "-l", "--label",
         help="Labeling chemistry: 'hw' (heavy water / D2O, default) or 'o18' "
@@ -533,8 +532,9 @@ def fit(
     ),
     kp: Optional[float] = typer.Option(
         None, "--kp", metavar="K_P",
-        help="Precursor rate constant k_p (per labeling-time unit) for a precursor "
-        "that rises as 1 − e^(−k_p·t) from the start of labeling (no priming dose). "
+        help="[Experimental] Precursor rate constant k_p (per labeling-time unit) for a "
+        "precursor that rises as 1 − e^(−k_p·t) from the start of labeling (no priming "
+        "dose). "
         "With the exponential model each timepoint's envelope is then solved with the "
         "precursor built in: fs holds the fraction of protein made since labeling "
         "began, and the peptide curve, R² and k CI are fitted on label content. "
@@ -695,9 +695,6 @@ def fit(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info("fit (typed pipeline)")
-    if config.model != model:
-        logger.warning("--model %r is now %r; the old name will be removed in a later "
-                       "release.", model, config.model)
     logger.info(
         "Spep gate: --min-spep %d%s",
         config.min_spep,
@@ -873,8 +870,8 @@ def rollup(
         "(--reference-condition / --test-condition). 'exponential' (the default "
         "before 1.2.0): refit θ = 1 − e^(−kt) per (experiment, condition, protein), "
         "with no Δk. On a rising-precursor fit both apply to fraction new f "
-        "unchanged. The earlier names 'simple' and 'linear simple' are still "
-        "accepted."),
+        "unchanged. Renamed in 1.2.0: 'simple' → 'exponential', 'linear simple' → "
+        "'linear'."),
     phi_limit: float = typer.Option(
         -4.0, "--phi-limit", metavar="PHI",
         help="['linear' only] Plateau-truncation threshold in φ-space: "
@@ -914,7 +911,7 @@ def rollup(
         "The median of peptide k is always carried as peptide_median_k."),
     method: Optional[str] = typer.Option(
         None, "--method", hidden=True,
-        help="Removed; use --level. 'weighted' is --level protein."),
+        help="Removed in 1.2.0; use --level ('weighted' was --level protein)."),
     parsimony: str = typer.Option(
         "unique", "--parsimony",
         help="Protein attribution at summarize time. 'unique' (default): only "
@@ -1074,15 +1071,14 @@ def rollup(
                     f"{p.name} not found in {fit_dir}. Run `riana fit` first.")
         id_source = str(fit_dir)
 
-    renamed_method = None
     if method is not None:
-        if method != "weighted":
-            raise typer.BadParameter(
-                f"--method {method} was removed in Riana 1.2.0 (every peptide point as "
-                "an independent replicate overstates the evidence). Use --level "
-                "protein (the collapse, the old 'weighted') or --level peptide (a "
-                "peptide-level mixed model, --model linear).", param_hint="--method")
-        level, renamed_method = "protein", method
+        why = ("--method weighted is now --level protein" if method == "weighted" else
+               f"--method {method} was removed (every peptide point as an independent "
+               "replicate overstates the evidence)")
+        raise typer.BadParameter(
+            f"--method was removed in Riana 1.2.0: {why}. Use --level protein (the "
+            "collapse) or --level peptide (a peptide-level mixed model, --model "
+            "linear).", param_hint="--method")
     from riana.core.protein import LEVELS
     if level not in LEVELS:
         raise typer.BadParameter(
@@ -1095,9 +1091,10 @@ def rollup(
         raise typer.BadParameter(
             "--test-condition must differ from --reference-condition — a condition "
             "compared to itself has no Δk.", param_hint="--test-condition")
-    from riana.core.protein import canonical_model, check_fit_model, fit_basis_header
-    renamed_from = model if canonical_model(model) != model else None
-    model = canonical_model(model)
+    from riana.constants import RENAMED_MODELS, renamed_model_message
+    from riana.core.protein import check_fit_model, fit_basis_header
+    if model in RENAMED_MODELS:
+        raise typer.BadParameter(renamed_model_message(model), param_hint="--model")
     if level == "peptide" and model != "linear":
         raise typer.BadParameter(
             f"--level peptide fits the linear model at the peptide level; add --model "
@@ -1114,12 +1111,6 @@ def rollup(
     logger = get_logger(__name__, str(out))
     logger.info(f"riana {__version__}")
     logger.info(f"rollup (level={level}, parsimony={parsimony}, model={model})")
-    if renamed_method is not None:
-        logger.warning("--method weighted is now --level protein; --method will be "
-                       "removed in a later release.")
-    if renamed_from is not None:
-        logger.warning("--model %r is now %r; the old name will be removed in a later "
-                       "release.", renamed_from, model)
     if fs_basis == "theta":
         logger.info("fit fs basis: theta (precursor at plateau from t = 0)")
     else:

@@ -155,6 +155,27 @@ the share, vs 2.2 s from the embedded index), which Riana does several times per
 
 #### Deferred beyond 1.2.0 (with rationale)
 
+- **`fit --kp` (rising precursor) validation — after the timsTOF PASEF work** (user 2026-11-21:
+  1.2.0 ships `--kp` marked experimental in the CLI help, docs and release notes). Done so far:
+  Type-I of the Δk test on f (`wls` calibrated), simulation k bias ≤ 1 %, real-data behaviour on
+  the non-primed D₂O set. Data in hand: the simulation benches (`bench_rising_null.py`,
+  `eval_rising_variance.py`); that non-primed set (local, one animal per condition × day, k_p a
+  mass-balance estimate, not measured); instant-precursor controls (every cell-culture set,
+  primed in-vivo ATF6). Missing: a non-primed in-vivo set with measured body-water enrichment —
+  the only real ground truth for k_p (to ask: was Boulder primed? if not, its dense days 1–4 make
+  it a second real set). Steps:
+  1. *Identity:* `--kp inf` and a very large k_p reproduce the θ fit on the controls.
+  2. *Simulation:* add the early-timepoint baseline-bias arm (+0.01–0.05 θ) the benches lack; k
+     bias and CI coverage; the interaction test on f under `wls`; a k_p misspecification sweep
+     (±25–50 %) → a bias table by turnover rate.
+  3. *Gates and rails:* the gate's yield on f vs θ (3a); the early-point rail rule (3b: cap
+     instead of drop for fast proteins).
+  4. *Real data:* within-protein k spread on f vs θ on identical gated peptides (the open
+     +10–15 % on f); the residual-vs-time curve pooled over proteins as the k_p diagnostic; a k_p
+     sensitivity refit (also the deferred k_p refit of that set).
+  5. *Decision:* drop "experimental" when 1–3 pass and 4 shows no unexplained precision cost;
+     otherwise document the limits.
+
 - **timsTOF phase 2A — ion-mobility-aware extraction, then the platform reports 1B / 2B** (user
   2026-11-21). 2A after 1.2.0 on a subset of files: read the `mean inverse reduced ion mobility
   array`; a targeted MS1 cache (only the m/z × IM windows of the precursors active in each frame;
@@ -373,7 +394,7 @@ hash, and on f/mixed refused guan/fornasiero (`protein.check_fs_basis`; moot sin
 2026-11-16, and it also refused `--linear-weights wls-var` until that was removed 2026-11-15); `linear simple` → `linear` with the old name accepted
 (warning). The Monte Carlo bench runs its f + `wls-var` arm with the refusal lifted (audit only;
 reproduces the stored arm exactly). **Default flip to `linear` done 2026-11-21 (user; CHANGELOG).**
-**Remaining:** validation before merge. Done 2026-11-16: the removal (5) and the `exponential`
+**Remaining:** validation (after the timsTOF PASEF work; `--kp` ships experimental in 1.2.0). Done 2026-11-16: the removal (5) and the `exponential`
 name (4); 2026-11-21: the φ-axis labels say f on an f fit (GUI views and the `--plot` PDF).
 **k_p hint (2026-11-13), refits deferred (user; 2026-11-21: a science question for that
 experiment, not a Riana item — noted in its local report, picked up with the experiment).** On the non-primed set, mid-course timepoints sat
@@ -506,7 +527,7 @@ rollup, linear Δk, interaction) runs unchanged on f.
    inside the per-point solve, fits the peptide on label content (3a) and writes f_i — one switch, so
    nothing in fit can count the precursor twice. One shared value across tissues and conditions
    unless the SDRF says otherwise. The fit logs which path ran and why (SDRF or CLI). `fit --model`
-   keeps only `exponential` (rename of `simple`, alias kept) and `calibration` (auto from the SDRF).
+   keeps only `exponential` (rename of `simple`; the alias was dropped before 1.2.0 shipped) and `calibration` (auto from the SDRF).
 5. *Remove guan/fornasiero (user, 2026-11-11, plan 2026-11-12).* **DONE 2026-11-16: removed
    outright in 1.2.0, the release that ships the solve (user, 2026-11-16, superseding the
    deprecate-then-remove timing below).** Asking for either model, or rolling up a fit made
@@ -534,7 +555,7 @@ rollup, linear Δk, interaction) runs unchanged on f.
    (`# k_p`, with its source). With guan/fornasiero gone the double-count guard is moot (the only
    curve refit left is exponential, valid on θ and on f); rollup echoes the basis in its own
    header and log.
-7. *Rollup.* Two models: `linear` (rename of `linear simple`, alias kept for a release) as the
+7. *Rollup.* Two models: `linear` (rename of `linear simple`; alias dropped before 1.2.0 shipped) as the
    **default**, and the `exponential` curve refit. `--method weighted|pooled` stays a separate
    choice (collapse to one point per biological replicate × timepoint, or fit every peptide point).
    Results-affecting: the protein output becomes per-condition rows with Δk columns;
@@ -548,7 +569,8 @@ rollup, linear Δk, interaction) runs unchanged on f.
 8. *Fix in passing.* The fit header prints the CLI `ria_max` default even when the manifest's
    per-experiment enrichment is the value applied.
 
-**Validation before merge.** Type-I of the Δk and interaction tests on f — done (above): `wls`
+**Validation** *(moved after the timsTOF PASEF work, 2026-11-21; the step plan is under
+"Deferred beyond 1.2.0"; `--kp` ships experimental)*. Type-I of the Δk and interaction tests on f — done (above): `wls`
 calibrated, `wls-var` not; the interaction under the chosen weights still to re-check. The report's §6 checks on real data (within-protein agreement,
 residual shape over time, Δk and interaction); the simulation benches (k bias ≤ 1 %, coverage) —
 **add an early-timepoint baseline-bias arm** (a constant +0.01–0.05 θ offset), which the original

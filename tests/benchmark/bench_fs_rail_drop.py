@@ -59,7 +59,7 @@ def geomcv(pep: pd.DataFrame, min_pep: int = 3) -> tuple[float, int]:
 
 
 def fit_arm(manifest, coeffs, label, rail_drop, depth, workers, n_boot):
-    cfg = FitConfig(model="simple", label=label, q_value=1e-2, depth=depth,
+    cfg = FitConfig(model="exponential", label=label, q_value=1e-2, depth=depth,
                     workers=workers, fs_rail_drop=rail_drop)
     out = fit_project(cfg, manifest, coeffs, n_boot=n_boot).reset_index()
     out = out[np.isfinite(out["k_deg"])].copy()

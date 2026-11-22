@@ -544,8 +544,7 @@ def test_unknown_peptide_admission_raises():
 
 @pytest.mark.parametrize("model, level, expected", [
     ("exponential", "protein", "own"), ("calibration", "protein", "own"),
-    ("linear", "protein", "all"), ("linear", "peptide", "own"),
-    ("simple", "protein", "own"), ("linear simple", "protein", "all")])
+    ("linear", "protein", "all"), ("linear", "peptide", "own")])
 def test_auto_admission_resolves_by_model_and_level(model, level, expected):
     from riana.core.protein import resolve_admission
     assert resolve_admission("auto", model, level) == expected
@@ -786,20 +785,22 @@ def test_rollup_fractions_carry_individual_when_the_fit_did():
 # --------------------------------------------------------------------------- #
 # Model name + what the fit's fs holds (rising precursor, 2026-11-13)
 # --------------------------------------------------------------------------- #
-def test_models_accept_their_earlier_names():
-    from riana.core.protein import LINEAR_MODEL, canonical_model
-
-    assert LINEAR_MODEL == "linear"
-    assert canonical_model("linear simple") == "linear"
-    assert canonical_model("simple") == "exponential"
-    assert canonical_model("exponential") == "exponential"
-
-
-def test_simple_alias_rolls_up_as_exponential():
+@pytest.mark.parametrize("old, new", [("simple", "exponential"), ("linear simple", "linear")])
+def test_pre_1_2_model_names_are_refused_with_the_new_name(old, new):
+    """No aliases since 1.2.0 (breaking change): the old names are refused, the error
+    names the new one."""
     pep, frac = _make_frames({"sp|P0|X": 0.5})
-    a = rollup_proteins(pep, frac, model="simple", n_boot=20)
-    b = rollup_proteins(pep, frac, model="exponential", n_boot=20)
-    pd.testing.assert_frame_equal(a, b)
+    with pytest.raises(DataError, match=f"renamed '{new}' in Riana 1.2.0"):
+        rollup_proteins(pep, frac, model=old)
+
+
+def test_model_from_header_reads_files_written_before_1_2():
+    """Reading old outputs (the app's Load results) still maps the old names."""
+    from riana.constants import model_from_header
+
+    assert model_from_header("simple") == "exponential"
+    assert model_from_header("linear simple") == "linear"
+    assert model_from_header("linear") == "linear"
 
 
 @pytest.mark.parametrize("model", ["guan", "fornasiero"])

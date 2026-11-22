@@ -128,7 +128,7 @@ def run_riana_fit(files: list[Path], out_dir: Path, ria: float, label: str,
     cmd = [
         sys.executable, '-m', 'riana', 'fit',
         *[str(f) for f in files],
-        '-m', 'simple',
+        '-m', 'exponential',
         '-l', str(label),
         '-r', str(ria),
         '-q', str(q_value),

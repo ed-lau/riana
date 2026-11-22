@@ -52,7 +52,7 @@ def main() -> None:
     print(f"\n{'table':18} {'med within-prot k geoCV':>24} {'n groups':>9} "
           f"{'fs_ds−fs bias':>14} {'|Δ|<0.1':>8} {'n pep':>7}")
     for tbl in a.tables:
-        cfg = FitConfig(model="simple", label="hw", q_value=0.01, depth=4,
+        cfg = FitConfig(model="exponential", label="hw", q_value=0.01, depth=4,
                         ria_max=a.ria)
         out = fit_project(cfg, a.manifest, load_aa_coefficients(tbl),
                           n_boot=0, random_state=1)

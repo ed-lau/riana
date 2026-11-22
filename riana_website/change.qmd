@@ -13,59 +13,49 @@ image-alt: "RIANA - Relative Isotope Abundance Analyzer"
 
 ## Update v1.2.0 (in development)
 
-The full list is in the repository `CHANGELOG.md`.
+The full list, with the evidence behind each change, is in the repository `CHANGELOG.md`.
 
-* **Single-timepoint and multiplexed labeling.** TMT/TMTpro (channels share one MS1 peak, so a
-  file's channels are measured together) and dimethyl channels (separate samples, read from the
-  SDRF's `comment[label]`). With one labeling time, k is solved directly from θ.
-* **Weighted Δk model (changes results).** `rollup --model "linear simple"` now fits by weighted
-  least squares; the unweighted fit gave too many false positives. `--linear-weights ols` restores
-  it for comparison. `--test-condition` names the pair to compare when there are more than two conditions.
-* **Several tissues or strata in one project.** `integrate --experiment-column` (*Experiment from*
-  in the app) splits runs into experiments by an SDRF column; Δk is BH-adjusted within each
-  experiment (changes results for multi-experiment projects); `rollup --plot` writes the φ-space
-  curves to PDF.
-* **Interaction with a random animal effect.** `rollup --interaction` (the Protein tab's
-  *Interaction* option) tests whether a condition's effect differs between tissues of the same
-  animals. Animals are read from `characteristics[individual]`.
-* **Curation (changes results).** Rollup gates are applied per condition, and how a peptide's
-  result carries across conditions is `--peptide-admission` (below). One peptide that passes the
-  gates reports its protein (`--min-peptides` default 1, was 2). Out-of-range θ
-  points are dropped before fitting (`--no-fs-rail-drop` restores the old behaviour). Peptides with
-  non-standard residues (U, O, B, Z, J, X) are dropped at intake.
-* **`linear` is the rollup default (changes results).** `riana rollup` without `--model` fits the
-  linear model: each condition's k and, with two conditions, the Δk test. More than two conditions
-  need the pair named (`--reference-condition` / `--test-condition`). `--model exponential` gives
-  the 1.1.0 behaviour (each condition's k from the exponential refit, no Δk).
-* **`rollup --model linear`** (was `linear simple`; the old name is still accepted). The rollup
-  reads whether the fit's `fs` is θ or the fraction new f of a rising precursor (`fit --kp`).
-* **Models renamed and removed.** `simple` is now `exponential` (the old name is still accepted).
-  `guan` and `fornasiero`, with `--kr` and `--rp`, are removed: a rising precursor is given as
-  `fit --kp` (or in the SDRF) and solved at each timepoint. Rollup refuses a fit made with a
-  removed model.
-* **Peptide-level Δk (`rollup --level peptide`).** With `--model linear`, fits the peptides' own
-  points in a mixed model per protein (peptide slope offsets; random slopes for labeling time and
-  animal; paired automatically when animals carry both conditions), and with `--interaction` the
-  matching joint model. `--level` replaces `--method`: `--method weighted` is `--level protein`
-  (still accepted), and `pooled` is removed. The protein table's `method` column is now `level`.
-* **Peptide admission (changes results).** `--peptide-admission auto` (the default) means `all`
-  for the protein-level linear Δk (a peptide is used only if it passes curation in both
-  conditions) and `own` for `--level peptide` and the exponential model (each condition keeps the
-  peptides that pass there).
-* **A linear Δk uses only its two conditions (changes results).** With `--reference-condition`
-  and `--test-condition` named, admission and the fit see only those two conditions, so a third
-  tissue in the table no longer changes the result. A Δk needs at least one peptide measured in
-  both conditions; otherwise each condition gets its k and no Δk. Dimethyl light and heavy forms
-  of a peptide count as the same peptide.
-* **Bruker timsTOF (diaPASEF).** mzML converted by tdf2mzml without ion mobility (`index=N`
-  spectrum ids) now integrates from a DIA-NN report. mzML files also open faster (the file's own
-  offset index, a lean header pass), with identical results.
-* **Desktop app** packaged as a standalone bundle (see `packaging/README.md` in the repository).
-* **Δk peptide mixing fixed (changes results).** Under `rollup --model linear` each peptide now
-  carries one precision level across the conditions, so a protein's per-timepoint averages mix the
-  same peptides in the same proportions in both. Before, the levels came from each condition's
-  own fit, and peptides that differ in apparent k produced a Δk that was not turnover. This removes
-  most false positives on small effects, and in `--interaction` too.
+**Upgrade notes (breaking changes)**
+
+* **Model names:** `simple` is now `exponential` and `linear simple` is now `linear`. The old
+  names are no longer accepted; results saved by 1.1.0 still open in the desktop app.
+* **Removed:** `--model guan` / `fornasiero` (with `--kr`, `--rp` and rollup's `--kp`). A precursor
+  that rises after labeling starts is handled by `fit --kp` (below). Reproducing an older guan
+  analysis needs Riana ≤ 1.1.0.
+* **`rollup --method` is removed:** `--level protein` (the default) is the old `weighted`, and
+  `pooled` is gone.
+* **`rollup` defaults to `--model linear`:** each condition's k and, with two conditions, the Δk
+  test. More than two conditions need the pair named, or `--model exponential`.
+
+**Changes that affect results** (switch to restore 1.1.0 in brackets)
+
+* The Δk model fits by weighted least squares; the unweighted fit gave too many false positives
+  [`--linear-weights ols`].
+* Each peptide carries one precision level across the two conditions compared, and a linear rollup
+  uses only the two conditions it compares; a Δk needs a peptide measured in both.
+* Rollup gates apply per condition, and `--peptide-admission auto` uses only peptides that pass
+  in both conditions for the protein-level Δk [`--peptide-admission any`].
+* One peptide that passes the gates reports its protein [`--min-peptides 2`].
+* Δk is adjusted for multiple testing within each experiment.
+* Out-of-range per-timepoint θ are dropped before fitting [`--no-fs-rail-drop`].
+* Isotope envelopes of peptides with a monoisotopic mass near a half-integer are fixed (~1–2 % of
+  peptides); peptides with non-standard residues (U, O, B, Z, J, X) are dropped at intake.
+
+**New**
+
+* **TMT/TMTpro and dimethyl labeling, and single-timepoint experiments** (k solved directly,
+  curated on replicates and k uncertainty).
+* **Rising precursor (`fit --kp`, experimental):** without a priming dose, each timepoint is
+  solved for the fraction of protein made since labeling began.
+* **Multi-tissue designs:** `integrate --experiment-column` (*Experiment from* in the app), animal
+  IDs from `characteristics[individual]`, `--test-condition`, `rollup --plot`.
+* **Interaction test** (`rollup --interaction`, *Interaction* in the app): does a condition's
+  effect differ between tissues of the same animals, with a random effect per animal.
+* **Peptide-level Δk** (`rollup --level peptide`, opt-in): a mixed model on the peptides' own
+  points.
+* **Bruker timsTOF (diaPASEF)** mzML converted by tdf2mzml without ion mobility.
+* quantms ≥ 1.8.0 mzTab files are read correctly; mzML files open faster.
+* **Desktop app** packaged as a standalone bundle (`packaging/README.md` in the repository).
 
 ## Update v1.1.0
 

@@ -74,7 +74,7 @@ carry co-eluting interference.
 
 θ over labeling time t is fitted for the turnover rate constant k:
 
-- `exponential` (default; `simple` before 1.2), one compartment: $\theta(t) = 1 - e^{-kt}$. A
+- `exponential` (default; named `simple` before 1.2, a name no longer accepted), one compartment: $\theta(t) = 1 - e^{-kt}$. A
   precursor that rises after labeling starts is handled at the fit (`--kp`, below), not by a
   different curve.
 - `calibration`, for mixing experiments: θ against the known labeled proportion, a line through the
@@ -88,7 +88,10 @@ around the fitted curve, unweighted. It is the statistic the rollup's admission 
 [Rollup](#rollup)).
 
 ::: {.callout-note}
-## A rising precursor (`--kp`, in development)
+## A rising precursor (`--kp`, experimental)
+
+Experimental in 1.2: validated on simulations, not yet on a dataset with a measured precursor
+(see the roadmap). Check results against your own expectations before relying on absolute k.
 
 Without a priming dose the D~2~O precursor rises over days, so molecules made early carry less
 than the plateau label. Give the precursor rate constant $k_p$ (per labeling-time unit; the
@@ -161,7 +164,7 @@ median of the peptides' k is reported alongside.
 
 ### Comparing conditions (`linear`, the default)
 
-`--model linear` (the default since 1.2; earlier `linear simple`, still accepted) linearizes the
+`--model linear` (the default since 1.2; named `linear simple` before, no longer accepted) linearizes the
 exponential model, φ = log(1 − θ) = −k t, and fits a protein's conditions together by weighted
 least squares (weights from the delta method, which keeps the noisy near-plateau points from
 dominating; points past `--phi-limit` are dropped). It reports each condition's k and the

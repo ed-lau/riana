@@ -48,7 +48,7 @@ from PySide6.QtWidgets import (
 from qasync import asyncSlot
 
 from riana.config import FitConfig
-from riana.constants import EXPONENTIAL_MODEL, REMOVED_MODELS, canonical_model
+from riana.constants import EXPONENTIAL_MODEL, REMOVED_MODELS, model_from_header
 from riana.core.fitting import available_coefficient_presets
 from riana.core.fitting import peptide_summary, precursor_header
 from riana.gui.curve_view import CurveView
@@ -671,7 +671,8 @@ class ModelTab(QWidget):
             # The fitted curve needs the model that produced the results (only
             # k_deg is in the table); take model/label from the provenance header
             # and the rest from the current form.
-            fit_model = canonical_model(header.get("model", EXPONENTIAL_MODEL))
+            # model_from_header: a pre-1.2.0 file says "simple" (now "exponential").
+            fit_model = model_from_header(header.get("model", EXPONENTIAL_MODEL))
             if fit_model in REMOVED_MODELS:
                 self._info(f"these results were fit with --model {fit_model} (removed "
                            "in 1.2.0); curves are drawn with the exponential model.")

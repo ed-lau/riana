@@ -242,8 +242,9 @@ def run(store: Path, labels: dict, out: Path, depth: int, workers: int, r2_floor
     pep = pd.read_table(store / "riana_fit_peptides.txt", comment="#", low_memory=False)
     model = next(ln.split()[2] for ln in open(store / "riana_fit_peptides.txt")
                  if ln.startswith("# model "))
-    if fast and model != "simple":
-        raise SystemExit(f"--fast supports model simple only (store has {model})")
+    from riana.constants import model_from_header
+    if fast and model_from_header(model) != "exponential":
+        raise SystemExit(f"--fast supports the exponential model only (store has {model})")
     keys = list(zip(frac.experiment, frac.condition, frac.labeling_time.astype(float),
                     frac.biological_replicate.astype(int)))
     new = [labels[k] for k in keys]

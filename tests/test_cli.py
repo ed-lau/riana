@@ -452,18 +452,21 @@ def test_rollup_refuses_a_fit_made_with_a_removed_model(tmp_path):
     assert "made with --model guan" in out and "Refit" in out
 
 
-def test_rollup_accepts_simple_as_the_old_name_of_exponential(tmp_path):
+@pytest.mark.parametrize("old, new", [("simple", "exponential"), ("linear simple", "linear")])
+def test_rollup_refuses_pre_1_2_model_names(tmp_path, old, new):
+    """Breaking change in 1.2.0: no aliases — the old names fail with the new name."""
     fit_dir = _multi_tissue_fit_dir(tmp_path)
-    outs = {}
-    for model in ("simple", "exponential"):
-        out = tmp_path / model
-        result = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(out),
-                                     "--model", model])
-        assert result.exit_code == 0, result.output
-        outs[model] = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
-    pd.testing.assert_frame_equal(outs["simple"], outs["exponential"])
-    log = (tmp_path / "simple" / "logfile.log").read_text()
-    assert "'simple' is now 'exponential'" in log
+    result = runner.invoke(app, ["rollup", str(fit_dir), "--model", old,
+                                 "-o", str(tmp_path / "out")])
+    assert result.exit_code != 0
+    assert f"renamed '{new}' in Riana 1.2.0" in _norm(result.output)
+
+
+def test_fit_refuses_simple(tmp_path):
+    result = runner.invoke(app, ["fit", str(ONE_TIMEPOINT), "--coefficients",
+                                 "commerford_1983", "--model", "simple", "-o", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "renamed 'exponential' in Riana 1.2.0" in _norm(result.output)
 
 
 def test_rollup_rejects_the_removed_wls_var_scheme(tmp_path):
@@ -502,25 +505,6 @@ def test_rollup_on_fraction_new_echoes_the_basis_outside_the_hash(tmp_path):
         pd.testing.assert_frame_equal(
             pd.read_table(outs["theta"] / name, comment="#"),
             pd.read_table(outs["f"] / name, comment="#"))
-
-
-def test_rollup_linear_simple_is_an_alias_of_linear(tmp_path):
-    from riana.io.writers import read_provenance_header
-
-    fit_dir = _multi_tissue_fit_dir(tmp_path)
-    tables = {}
-    for name in ("linear", "linear simple"):
-        out = tmp_path / name.replace(" ", "_")
-        result = runner.invoke(app, ["rollup", str(fit_dir), "--model", name,
-                                     "--reference-condition", "control",
-                                     "-o", str(out)])
-        assert result.exit_code == 0, result.output
-        assert read_provenance_header(out / "riana_rollup_proteins.txt")["model"] == "linear"
-        tables[name] = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
-        log = (out / "logfile.log").read_text()
-        assert ("is now 'linear'" in log) == (name == "linear simple")
-    pd.testing.assert_frame_equal(tables["linear"], tables["linear simple"])
-    assert set(tables["linear"]["level"]) == {"protein"}
 
 
 def test_fit_kp_switches_to_the_rising_precursor_and_records_it(tmp_path):
@@ -592,20 +576,16 @@ def test_rollup_default_model_is_linear(tmp_path):
     prot = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
     assert {"delta_k", "delta_k_p", "delta_k_p_adj"} <= set(prot.columns)
     assert "# model linear" in (out / "riana_rollup_proteins.txt").read_text()
+    assert set(prot["level"]) == {"protein"}     # --level peptide stays opt-in
 
 
-def test_rollup_method_is_replaced_by_level(tmp_path):
+@pytest.mark.parametrize("method, why", [
+    ("pooled", "--method pooled was removed"),
+    ("weighted", "--method weighted is now --level protein")])
+def test_rollup_method_is_refused_with_a_pointer_to_level(tmp_path, method, why):
+    """Breaking change in 1.2.0: --method is gone (no alias for 'weighted' either)."""
     fit_dir = _multi_tissue_fit_dir(tmp_path)
-    pooled = runner.invoke(app, ["rollup", str(fit_dir), "--method", "pooled",
-                                 "-o", str(tmp_path / "p")])
-    assert pooled.exit_code != 0
-    assert "--method pooled was removed" in _norm(pooled.output)
-    tables = {}
-    for name, args in (("old", ["--method", "weighted"]), ("new", [])):
-        out = tmp_path / name
-        res = runner.invoke(app, ["rollup", str(fit_dir), "-o", str(out), *args])
-        assert res.exit_code == 0, res.output
-        tables[name] = pd.read_table(out / "riana_rollup_proteins.txt", comment="#")
-    pd.testing.assert_frame_equal(tables["old"], tables["new"])
-    assert "--method weighted is now --level protein" in (
-        tmp_path / "old" / "logfile.log").read_text()
+    res = runner.invoke(app, ["rollup", str(fit_dir), "--method", method,
+                              "-o", str(tmp_path / "out")])
+    assert res.exit_code != 0
+    assert why in _norm(res.output) and "--level" in _norm(res.output)

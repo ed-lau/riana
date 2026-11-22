@@ -77,8 +77,8 @@ import pandas as pd
 from scipy.optimize import curve_fit
 
 from riana.constants import (
-    DEFAULT_ROLLUP_MODEL, EXPONENTIAL_MODEL, LINEAR_MODEL, MODEL_ALIASES, REMOVED_MODELS,
-    ROLLUP_MODELS, canonical_model, removed_model_message,
+    DEFAULT_ROLLUP_MODEL, EXPONENTIAL_MODEL, LINEAR_MODEL, REMOVED_MODELS, RENAMED_MODELS,
+    ROLLUP_MODELS, removed_model_message, renamed_model_message,
 )
 from riana.core import models
 from riana.core.fitting import _solve_k_single_t
@@ -96,9 +96,6 @@ _LOGGER = logging.getLogger(__name__)
 #: φ = log(1−θ) space that fits a protein's conditions jointly for a Δk test
 #: (:mod:`riana.core.linear_model`).
 _MODELS = {EXPONENTIAL_MODEL: models.one_exponent}
-#: Earlier names of :data:`LINEAR_MODEL`, still accepted (see
-#: :data:`riana.constants.MODEL_ALIASES`).
-LINEAR_MODEL_ALIASES = tuple(k for k, v in MODEL_ALIASES.items() if v == LINEAR_MODEL)
 #: What a fit's ``fs`` holds — its ``# fs_basis`` header line
 #: (:func:`riana.core.fitting.precursor_header`): ``theta`` (precursor at plateau from
 #: t = 0, every fit before the rising-precursor solve), ``f`` (fraction new, every curve
@@ -208,7 +205,7 @@ def resolve_admission(policy: str, model: str, level: str = "protein") -> str:
             f"peptide_admission must be one of {list(ADMISSION_INPUTS)}, got {policy!r}")
     if policy != "auto":
         return policy
-    return "all" if (canonical_model(model) == LINEAR_MODEL and level == "protein") else "own"
+    return "all" if (model == LINEAR_MODEL and level == "protein") else "own"
 
 #: Output column order for ``riana_protein.txt``. One ``k_deg`` (+ CI / R²) from
 #: the collapse refit (``level`` = ``"protein"``); ``peptide_median_k`` is the
@@ -369,7 +366,7 @@ def scope_to_contrast(
     its rows of the pair). Without both, an experiment may hold at most two conditions.
     The exponential and calibration models (no Δk) pass through unchanged.
     """
-    if canonical_model(model) != LINEAR_MODEL or fractions.empty:
+    if model != LINEAR_MODEL or fractions.empty:
         return peptides, fractions
     conds = fractions.groupby("experiment")["condition"].agg(
         lambda s: sorted(set(s.astype(str))))
@@ -451,7 +448,8 @@ def rollup_proteins(
             ``fs_lower``, ``fs_upper``.
         model: ``"linear"`` (default since 1.2.0; the φ-space joint fit with a Δk
             test) or ``"exponential"`` (the nonlinear refit; the default before
-            1.2.0). Earlier names (``"simple"``, ``"linear simple"``) are accepted.
+            1.2.0). The names before 1.2.0 (``"simple"``, ``"linear simple"``) are
+            refused with a pointer to the new ones.
         kinetic_kwargs: extra keyword arguments for the exponential curve (none
             are needed); ``a_0`` / ``a_max`` are pinned 0 / 1.
         parsimony: ``"unique"`` (default) or ``"isoform"`` (deferred).
@@ -509,7 +507,6 @@ def rollup_proteins(
             rollup uses those two conditions only — admission, the shared bands and
             the joint fit — and drops the others (:func:`scope_to_contrast`); without
             both, an experiment may hold at most two conditions.
-            ``model="linear simple"`` (the earlier name) is accepted.
         fs_basis: what the fit's ``fs`` holds — its ``# fs_basis`` header line
             (:data:`FS_BASES`; ``"theta"`` for fits that predate it). On ``"f"`` /
             ``"mixed"``; every rollup model applies to each (:func:`check_fs_basis`).
@@ -524,7 +521,8 @@ def rollup_proteins(
         schema (per-condition φ-slope k + the protein-level Δk test), and
         ``level="peptide"`` :data:`PROTEIN_PEPTIDE_COLUMNS`.
     """
-    model = canonical_model(model)
+    if model in RENAMED_MODELS:
+        raise DataError(renamed_model_message(model))
     if model in REMOVED_MODELS:
         raise DataError(removed_model_message(model))
     if model not in ROLLUP_MODELS:

@@ -299,19 +299,29 @@ ROLLUP_MODELS = (EXPONENTIAL_MODEL, LINEAR_MODEL)
 #: ``riana rollup --model`` default (CLI, GUI and :func:`riana.core.protein.rollup_proteins`).
 #: ``exponential`` until 1.2.0 (user decision 2026-11-21).
 DEFAULT_ROLLUP_MODEL = LINEAR_MODEL
-#: Earlier model names still accepted, mapped to the current name. Each alias goes one
-#: release after its rename ships. (``linear simple`` renamed 2026-11-13, ``simple``
-#: 2026-11-16.)
-MODEL_ALIASES = {"simple": EXPONENTIAL_MODEL, "linear simple": LINEAR_MODEL}
+#: Model names before 1.2.0 and their current names. Not accepted as input since 1.2.0
+#: (user decision 2026-11-21: no aliases); naming one is refused with a pointer
+#: (:func:`renamed_model_message`). The map is kept to read the ``# model`` header of
+#: result files written before 1.2.0 (:func:`model_from_header`).
+RENAMED_MODELS = {"simple": EXPONENTIAL_MODEL, "linear simple": LINEAR_MODEL}
 #: Models removed in 1.2.0 (2026-11-16). A rising precursor is now solved at fit time
 #: (``riana fit --kp``), so a fit or rollup naming one of these is refused with that pointer.
 REMOVED_MODELS = ("guan", "fornasiero")
 
 
-def canonical_model(model: str) -> str:
-    """The current name of a model (``"simple"`` → ``"exponential"``, ``"linear
-    simple"`` → ``"linear"``); other names pass through unchanged."""
-    return MODEL_ALIASES.get(model, model)
+def renamed_model_message(model: str) -> str:
+    """Why ``model`` (a key of :data:`RENAMED_MODELS`) is refused and its new name."""
+    return (f"--model {model!r} was renamed {RENAMED_MODELS[model]!r} in Riana 1.2.0; "
+            "the old name is no longer accepted.")
+
+
+def model_from_header(model: str) -> str:
+    """The current name of the model recorded in a result file's ``# model`` header.
+
+    For *reading* outputs written before 1.2.0 (``simple`` / ``linear simple``); a model
+    given as input with an old name is refused instead (:func:`renamed_model_message`).
+    """
+    return RENAMED_MODELS.get(model, model)
 
 
 def removed_model_message(model: str) -> str:

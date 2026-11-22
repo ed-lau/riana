@@ -840,8 +840,9 @@ class ProteinTab(QWidget):
             # The refit / φ-space curve needs the model that produced the results;
             # take it from the provenance header, the rest from the form.
             params = self.build_params()
-            from riana.core.protein import canonical_model  # 'simple' → 'exponential'
-            params["model"] = canonical_model(header.get("model", params["model"]))
+            # A pre-1.2.0 file says "simple" / "linear simple" (now exponential / linear).
+            from riana.constants import model_from_header
+            params["model"] = model_from_header(header.get("model", params["model"]))
             # What the fit's fs held (θ or fraction new f), echoed in the rollup header;
             # rollups that predate the echo are θ.
             params["fit_basis"] = {k: header[k] for k in ("fs_basis", "k_p_applied")

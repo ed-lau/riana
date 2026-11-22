@@ -20,8 +20,8 @@ import math
 from dataclasses import dataclass
 
 from riana.constants import (
-    EXPONENTIAL_MODEL, FIT_MODELS, REMOVED_MODELS, canonical_model,
-    removed_model_message,
+    EXPONENTIAL_MODEL, FIT_MODELS, REMOVED_MODELS, RENAMED_MODELS,
+    removed_model_message, renamed_model_message,
 )
 
 
@@ -349,7 +349,7 @@ class FitConfig:
 
     #: -m / --model. ``"exponential"`` (the kinetic curve) or ``"calibration"``
     #: (through-origin FS-vs-mixing-proportion recovery line, auto-dispatched for
-    #: calibration runs). The earlier name ``"simple"`` is accepted and normalized;
+    #: calibration runs). ``"simple"`` (its name before 1.2.0) is refused with a pointer;
     #: guan / fornasiero were removed in 1.2.0 (a rising precursor is
     #: :attr:`precursor_k_p`).
     model: str = "exponential"
@@ -466,7 +466,8 @@ class FitConfig:
     out_dir: str = "."
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "model", canonical_model(self.model))
+        if self.model in RENAMED_MODELS:
+            raise ValueError(renamed_model_message(self.model))
         if self.model in REMOVED_MODELS:
             raise ValueError(removed_model_message(self.model))
         if self.model not in FIT_MODELS:
